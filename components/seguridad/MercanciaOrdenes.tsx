@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ChevronRight, FileText, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, ChevronRight, FileText, Search, X } from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
-import { PageHeader, EmptyState } from "./mercancia-ui";
-import { describirMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
+import { PageHeader, EmptyState, inputClases } from "./mercancia-ui";
+import { describirMetodo, METODOS_RETIRO, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 
 /**
  * Ordenes de despacho (stock.picking) de Odoo, "Listas" o ya validadas desde
@@ -38,6 +38,30 @@ type Orden = {
   metodo_retiro?: FilaMetodo | null;
 };
 
+/** "todas", un método de retiro, o "sin_metodo" (el vendedor todavía no lo cargó). */
+const FILTROS = ["todas", ...METODOS_RETIRO, "sin_metodo"] as const;
+type Filtro = (typeof FILTROS)[number];
+
+/** Sin acentos ni mayúsculas: "panama" encuentra "Panamá". */
+function normalizar(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+/** Todo lo que se ve en la tarjeta, más el pedido de origen. */
+function textoBuscable(o: Orden): string {
+  return normalizar(
+    [
+      o.odoo_picking_name,
+      o.contraparte,
+      o.origen,
+      ...o.facturas.map((f) => f.numero),
+      o.metodo_retiro ? describirMetodo(o.metodo_retiro) : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
 export default function MercanciaOrdenes() {
   const to = useTranslations("seguridad.mercancia.ordenes");
   const params = useParams();
@@ -47,6 +71,28 @@ export default function MercanciaOrdenes() {
   const [sinFacturar, setSinFacturar] = useState(0);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busqueda, setBusqueda] = useState("");
+  const [filtro, setFiltro] = useState<Filtro>("todas");
+
+  // Los chips cuentan sobre lo que deja la búsqueda, y solo se muestran los
+  // métodos que tienen alguna orden.
+  const { visibles, chips } = useMemo(() => {
+    const palabras = normalizar(busqueda).split(/\s+/).filter(Boolean);
+    const porTexto = palabras.length
+      ? ordenes.filter((o) => {
+          const texto = textoBuscable(o);
+          return palabras.every((p) => texto.includes(p));
+        })
+      : ordenes;
+    const deFiltro = (o: Orden, f: Filtro) =>
+      f === "todas" || (f === "sin_metodo" ? !o.metodo_retiro : o.metodo_retiro?.metodo === f);
+    return {
+      visibles: porTexto.filter((o) => deFiltro(o, filtro)),
+      chips: FILTROS.map((id) => ({ id, n: porTexto.filter((o) => deFiltro(o, id)).length })).filter(
+        (c) => c.id === "todas" || c.id === filtro || ordenes.some((o) => deFiltro(o, c.id)),
+      ),
+    };
+  }, [ordenes, busqueda, filtro]);
 
   const cargar = useCallback(async () => {
     setError(null);
@@ -96,8 +142,57 @@ export default function MercanciaOrdenes() {
         ) : ordenes.length === 0 ? (
           <EmptyState icon={FileText} texto={to("vacio")} />
         ) : (
+          <>
+          <div className="mb-4 space-y-3">
+            <div className="relative sm:max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder={to("buscar")}
+                aria-label={to("buscar")}
+                className={`${inputClases} pl-10 pr-10`}
+              />
+              {busqueda && (
+                <button
+                  type="button"
+                  onClick={() => setBusqueda("")}
+                  aria-label={to("limpiar")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5" role="tablist">
+              {chips.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={filtro === c.id}
+                  onClick={() => setFiltro(c.id)}
+                  className={`shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold transition-colors ${
+                    filtro === c.id
+                      ? "bg-[color:var(--portal-primary,#741DFE)] text-white"
+                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {to(`filtro_${c.id}`)}
+                  <span className={`tabular-nums ${filtro === c.id ? "text-white/80" : "text-slate-400"}`}>{c.n}</span>
+                </button>
+              ))}
+            </div>
+            {visibles.length !== ordenes.length && (
+              <p className="text-xs text-slate-500">{to("mostrando", { n: visibles.length, total: ordenes.length })}</p>
+            )}
+          </div>
+          {visibles.length === 0 ? (
+            <EmptyState icon={Search} texto={to("sin_resultados")} />
+          ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-            {ordenes.map((o) => (
+            {visibles.map((o) => (
               <Link
                 key={o.odoo_picking_id}
                 // Con el id: el nombre se repite entre compañias (ver lib/seguridad/mercancia).
@@ -147,6 +242,8 @@ export default function MercanciaOrdenes() {
               </Link>
             ))}
           </div>
+          )}
+          </>
         )}
       </main>
     </div>
