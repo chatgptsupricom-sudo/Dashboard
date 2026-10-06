@@ -272,13 +272,15 @@ function PanelRoles() {
   );
 }
 
-// Costo estimado del agente: totales, por conversación y por mensaje
-// (/api/superadmin/agenteia/consumo).
+// Costo estimado del agente, de todos los que lo usan: totales, por usuario,
+// por conversación y por mensaje (/api/superadmin/agenteia/consumo). Solo lo
+// ve el SuperAdmin: la API lo exige y la tuerca no se le muestra a nadie más.
 type Consumo = {
   hoy: number;
   mes: number;
   mensajesHoy: number;
   mensajesMes: number;
+  usuarios: { email: string; nombre: string | null; mensajes: number; costo: number; hoy: number; ultimo: string }[];
   conversaciones: { chat_id: string | null; email: string; nombre: string | null; titulo: string | null; mensajes: number; costo: number; ultimo: string }[];
   mensajes: { id: number; email: string; nombre: string | null; modelo: string; tokens_entrada: number; tokens_salida: number; tokens_cache_escritura: number; tokens_cache_lectura: number; costo: number; created_at: string }[];
 };
@@ -289,7 +291,7 @@ const fechaCorta = (f: string) => new Date(f).toLocaleString("es-VE", { dateStyl
 function PanelConsumo() {
   const [datos, setDatos] = useState<Consumo | null>(null);
   const [error, setError] = useState("");
-  const [detalle, setDetalle] = useState<"conversaciones" | "mensajes">("conversaciones");
+  const [detalle, setDetalle] = useState<"usuarios" | "conversaciones" | "mensajes">("usuarios");
   useEffect(() => {
     fetch("/api/superadmin/agenteia/consumo")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -325,6 +327,7 @@ function PanelConsumo() {
       <div className="flex gap-1 p-1 rounded-lg bg-slate-100 w-fit text-[13px] font-medium" role="tablist">
         {(
           [
+            ["usuarios", "Por usuario"],
             ["conversaciones", "Por conversación"],
             ["mensajes", "Por mensaje"],
           ] as const
@@ -342,7 +345,25 @@ function PanelConsumo() {
         ))}
       </div>
       <div className="max-h-[45vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
-        {detalle === "conversaciones" ? (
+        {detalle === "usuarios" ? (
+          datos.usuarios.length === 0 ? (
+            <p className="py-6 text-sm text-slate-500">Todavía no hay consumo registrado este mes.</p>
+          ) : (
+            datos.usuarios.map((u) => (
+              <div key={u.email} className="py-2 flex items-baseline gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-900 truncate">{u.nombre || u.email}</p>
+                  <p className="text-xs text-slate-500">
+                    {u.nombre ? `${u.email} · ` : ""}
+                    {miles(u.mensajes)} {u.mensajes === 1 ? "mensaje" : "mensajes"} este mes · hoy {usd(u.hoy)} · último{" "}
+                    {fechaCorta(u.ultimo)}
+                  </p>
+                </div>
+                <span className="text-sm font-semibold text-slate-900 tabular-nums shrink-0">{usd(u.costo)}</span>
+              </div>
+            ))
+          )
+        ) : detalle === "conversaciones" ? (
           datos.conversaciones.length === 0 ? (
             <p className="py-6 text-sm text-slate-500">Todavía no hay consumo registrado este mes.</p>
           ) : (

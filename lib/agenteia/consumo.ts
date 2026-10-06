@@ -81,7 +81,7 @@ function cortesCaracas() {
   return { hoy: new Date(Date.UTC(a, m, d, 4)), mes: new Date(Date.UTC(a, m, 1, 4)) };
 }
 
-/** Totales de hoy y del mes, costo por conversación y los últimos mensajes. */
+/** Totales de hoy y del mes, costo por usuario y por conversación, y los últimos mensajes (de todos los usuarios). */
 export async function resumenConsumo() {
   await ensureTabla();
   const { hoy, mes } = cortesCaracas();
@@ -107,6 +107,13 @@ export async function resumenConsumo() {
       )
     )[0];
   const porConversacion = await conversaciones(true).catch(() => conversaciones(false));
+  const [porUsuario] = await db.query(
+    `SELECT email, MAX(nombre) AS nombre, COUNT(*) AS mensajes, SUM(costo_usd) AS costo,
+            SUM(IF(created_at >= ?, costo_usd, 0)) AS hoy, MAX(created_at) AS ultimo
+     FROM agenteia_consumo WHERE created_at >= ?
+     GROUP BY email ORDER BY costo DESC`,
+    [hoy, mes],
+  );
   const [mensajes] = await db.query(
     `SELECT id, email, nombre, chat_id, modelo, tokens_entrada, tokens_salida, tokens_cache_escritura, tokens_cache_lectura,
             costo_usd AS costo, created_at
@@ -118,6 +125,7 @@ export async function resumenConsumo() {
     mensajesHoy: n(totales.mensajes_hoy),
     mes: n(totales.mes),
     mensajesMes: n(totales.mensajes_mes),
+    usuarios: (porUsuario as any[]).map((u) => ({ ...u, mensajes: n(u.mensajes), costo: n(u.costo), hoy: n(u.hoy) })),
     conversaciones: (porConversacion as any[]).map((c) => ({ ...c, mensajes: n(c.mensajes), costo: n(c.costo) })),
     mensajes: (mensajes as any[]).map((m) => ({ ...m, costo: n(m.costo) })),
   };
