@@ -235,6 +235,27 @@ export async function alcanceDe(payload: any): Promise<Alcance | null> {
   };
 }
 
+/**
+ * "Ver como": la sesión de un usuario del panel armada desde su correo (rol y
+ * sede de users_config, usuario de Odoo por login), para que el SuperAdmin
+ * pruebe el alcance de un rol sin su contraseña. null si no existe.
+ */
+export async function sesionDeCorreo(email: string): Promise<Record<string, unknown> | null> {
+  const [filas] = await db.execute(
+    `SELECT uc.email, uc.name, uc.cids, r.name AS rol
+     FROM users_config uc JOIN roles r ON r.id = uc.role_id WHERE uc.email = ? LIMIT 1`,
+    [email],
+  );
+  const u = (filas as any[])[0];
+  if (!u) return null;
+  let uid = 0;
+  try {
+    const ids = await callOdooRPCEstricto<number[]>("res.users", "search", [[["login", "=", u.email]]], { limit: 1 });
+    uid = ids?.[0] ?? 0;
+  } catch {}
+  return { email: u.email, name: u.name, cids: u.cids, role: u.rol, uid };
+}
+
 // ── Reglas que aplican las herramientas ──────────────────────────────────────
 
 export function modeloPermitido(a: Alcance, model: string): boolean {

@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { esSuperadmin as rolSuperadmin, requireAgente } from "@/lib/agenteia/acceso";
-import { alcanceDe } from "@/lib/agenteia/alcance";
+import { alcanceDe, sesionDeCorreo } from "@/lib/agenteia/alcance";
 import { ejecutarCambio, MODELO_DEFECTO, responder, titular, type MensajeChat } from "@/lib/agenteia/agente";
 import { MODELOS_AGENTE, modelosPara } from "@/lib/agenteia/modelos";
 import { NextRequest, NextResponse } from "next/server";
@@ -9,7 +9,8 @@ import { NextRequest, NextResponse } from "next/server";
 // Lo usa el SuperAdmin y los correos que él habilite (lib/agenteia/acceso.ts);
 // confirmar cambios en Odoo es del SuperAdmin y de los editores.
 //
-//   POST { messages, modelo? } -> respuesta en texto plano, en streaming
+//   POST { messages, modelo?, verComo? } -> respuesta en texto plano, en streaming
+//        (verComo = correo: el SuperAdmin prueba el alcance de ese usuario)
 //   POST { confirmar }  -> ejecuta un cambio en Odoo ya preparado por el agente
 //   POST { titular }    -> título corto para la conversación (Haiku)
 //   POST { cancelar }   -> descarta un cambio preparado (solo responde el texto)
@@ -99,6 +100,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Formato no válido." }, { status: 400 });
   }
 
+  // "Ver como" (solo SuperAdmin): responde con el alcance de otro usuario, por
+  // correo, para probar qué ve su rol. Siempre de solo lectura.
+  let sesion = auth.payload;
+  let soloLectura = !editor;
+  if (typeof body?.verComo === "string" && body.verComo.trim()) {
+    if (!esSuperadmin) return NextResponse.json({ error: "Solo el SuperAdmin puede usar «ver como»." }, { status: 403 });
+    sesion = await sesionDeCorreo(body.verComo.trim().toLowerCase());
+    if (!sesion) return NextResponse.json({ error: "Ese correo no es un usuario del panel." }, { status: 404 });
+    soloLectura = true;
+    console.log(`[agenteia] ${auth.payload?.email} consulta viendo como ${sesion.email} (${sesion.role})`);
+  }
+  const alcance = await alcanceDe(sesion);
+
   // Si el usuario detiene la respuesta o cierra la pestaña, se corta también
   // la llamada a Claude: si no, el agente sigue consultando y gastando tokens.
   const corte = new AbortController();
@@ -118,7 +132,7 @@ export async function POST(request: NextRequest) {
       // espacio de ancho cero cada 15 s la mantiene viva; la pantalla lo descarta.
       const latido = setInterval(() => emitir(LATIDO), 15_000);
       try {
-        await responder(messages, uid, emitir, modelo, corte.signal, !editor, await alcanceDe(auth.payload));
+        await responder(messages, uid, emitir, modelo, corte.signal, soloLectura, alcance);
       } catch (e: any) {
         if (corte.signal.aborted) {
           console.log(`[agenteia] consulta de ${uid} detenida por el usuario`);
