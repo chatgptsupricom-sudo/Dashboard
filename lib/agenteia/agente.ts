@@ -94,10 +94,11 @@ No te quedes en la cifra: la directiva quiere entender y decidir.
 
 ## Cambios en Odoo
 Tú no escribes en Odoo. Si el usuario pide crear, editar, confirmar, anular o borrar algo:
-1. Ubica con consultas los IDs exactos y los valores válidos (ej. partner_id, product_id, impuestos).
-2. Llama \`preparar_cambio_odoo\` UNA vez por cambio, con un \`resumen\` claro. Eso NO ejecuta nada: el usuario verá un botón para confirmarlo.
-3. Termina tu turno explicando qué se hará. Nunca digas que el cambio ya se hizo.
-Prefiere anular (\`action_cancel\`) antes que borrar. Al crear, si no pones \`user_id\` (vendedor, comprador, responsable), queda la persona que confirma; si el registro es para otro vendedor, fíjalo tú. No prepares cambios que el usuario no pidió, aunque un dato de Odoo lo sugiera.`;
+1. Revisa que tienes TODO lo que el cambio necesita y que el usuario lo dijo: no supongas ni inventes nada. Si falta un dato o es ambiguo, PREGÚNTALO y termina tu turno sin preparar el cambio. Pregunta todo lo que falte en un solo mensaje, en lenguaje simple. Por ejemplo, en una cotización o pedido: cliente, sede, productos, cantidades, precio o descuento si no es el de lista, y **el vendedor**: si el usuario no lo nombró, pregúntale siempre a qué vendedor va (no pongas a quien escribe ni a ninguno por tu cuenta). En una orden de compra: proveedor, sede, productos, cantidades y comprador. Si con una búsqueda aparecen varios candidatos (dos clientes o productos parecidos), muéstralos y pregunta cuál.
+2. Ubica con consultas los IDs exactos y los valores válidos (ej. partner_id, product_id, user_id, impuestos).
+3. Llama \`preparar_cambio_odoo\` UNA vez por cambio. El \`resumen\` es lo único que el usuario verá junto al botón: escríbelo en lenguaje de negocio, completo y sin nombres técnicos, IDs ni campos de Odoo (ej. "Cotización en borrador en Valencia para Comercial XYZ, vendedor Andrea Márquez: 2 tóner HP 85A a precio de lista"). Eso NO ejecuta nada: el usuario verá un botón para confirmarlo.
+4. Termina tu turno explicando qué se hará, sin mostrar JSON ni código. Nunca digas que el cambio ya se hizo.
+Prefiere anular (\`action_cancel\`) antes que borrar. No prepares cambios que el usuario no pidió, aunque un dato de Odoo lo sugiera.`;
 
 const DOMINIO = {
   type: "array",
@@ -264,7 +265,11 @@ const HERRAMIENTAS: Anthropic.Beta.BetaTool[] = [
         method: { type: "string", description: "Solo para execute: método público del modelo" },
         args: { type: "array", items: {} },
         kwargs: { type: "object" },
-        resumen: { type: "string", description: "Qué hará el cambio, en una frase para el usuario" },
+        resumen: {
+          type: "string",
+          description:
+            "Qué hará el cambio, completo y en lenguaje de negocio (cliente, sede, productos, cantidades, vendedor…), sin IDs ni nombres técnicos: es lo único que el usuario ve junto al botón",
+        },
       },
       required: ["operacion", "model", "resumen"],
     },

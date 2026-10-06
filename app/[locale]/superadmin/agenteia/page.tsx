@@ -1768,23 +1768,6 @@ export default function AgenteIAPage() {
                               <TriangleAlert size={15} /> Cambio en Odoo pendiente de confirmar
                             </div>
                             <p className="text-sm text-slate-800">{detalle?.resumen || "Cambio preparado por el agente"}</p>
-                            {detalle && (
-                              <pre className="text-[11px] leading-relaxed bg-white rounded-lg border border-amber-100 p-3 overflow-x-auto text-slate-600 font-mono">
-                                {JSON.stringify(
-                                  {
-                                    operacion: detalle.operacion,
-                                    model: detalle.model,
-                                    ids: detalle.ids,
-                                    method: detalle.method,
-                                    values: detalle.values,
-                                    args: detalle.args,
-                                    kwargs: detalle.kwargs,
-                                  },
-                                  null,
-                                  2,
-                                )}
-                              </pre>
-                            )}
                             <div className={`flex gap-2 ${acceso?.editor ? "" : "hidden"}`}>
                               <button
                                 type="button"
