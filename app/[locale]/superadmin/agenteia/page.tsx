@@ -272,10 +272,123 @@ function PanelRoles() {
   );
 }
 
+// Costo estimado del agente: totales, por conversación y por mensaje
+// (/api/superadmin/agenteia/consumo).
+type Consumo = {
+  hoy: number;
+  mes: number;
+  mensajesHoy: number;
+  mensajesMes: number;
+  conversaciones: { chat_id: string | null; email: string; nombre: string | null; titulo: string | null; mensajes: number; costo: number; ultimo: string }[];
+  mensajes: { id: number; email: string; nombre: string | null; modelo: string; tokens_entrada: number; tokens_salida: number; tokens_cache_escritura: number; tokens_cache_lectura: number; costo: number; created_at: string }[];
+};
+const usd = (n: number) => `$${n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 4 : 2 })}`;
+const miles = (n: number) => Number(n || 0).toLocaleString("es-VE");
+const fechaCorta = (f: string) => new Date(f).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" });
+
+function PanelConsumo() {
+  const [datos, setDatos] = useState<Consumo | null>(null);
+  const [error, setError] = useState("");
+  const [detalle, setDetalle] = useState<"conversaciones" | "mensajes">("conversaciones");
+  useEffect(() => {
+    fetch("/api/superadmin/agenteia/consumo")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(setDatos)
+      .catch(() => setError("No se pudo cargar el consumo."));
+  }, []);
+  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (!datos)
+    return (
+      <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+        <Loader2 size={14} className="animate-spin" /> Cargando consumo…
+      </div>
+    );
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        {(
+          [
+            ["Hoy", datos.hoy, datos.mensajesHoy],
+            ["Este mes", datos.mes, datos.mensajesMes],
+          ] as const
+        ).map(([titulo, costo, mensajes]) => (
+          <div key={titulo} className="rounded-lg border border-slate-200 px-3 py-2">
+            <p className="text-xs text-slate-500">{titulo}</p>
+            <p className="text-lg font-semibold text-slate-900 tabular-nums">{usd(costo)}</p>
+            <p className="text-xs text-slate-500">
+              {miles(mensajes)} {mensajes === 1 ? "mensaje" : "mensajes"}
+              {mensajes > 0 && ` · ${usd(costo / mensajes)} por mensaje`}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-1 p-1 rounded-lg bg-slate-100 w-fit text-[13px] font-medium" role="tablist">
+        {(
+          [
+            ["conversaciones", "Por conversación"],
+            ["mensajes", "Por mensaje"],
+          ] as const
+        ).map(([id, etiqueta]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={detalle === id}
+            onClick={() => setDetalle(id)}
+            className={`px-3 py-1 rounded-md transition-colors ${detalle === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+          >
+            {etiqueta}
+          </button>
+        ))}
+      </div>
+      <div className="max-h-[45vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
+        {detalle === "conversaciones" ? (
+          datos.conversaciones.length === 0 ? (
+            <p className="py-6 text-sm text-slate-500">Todavía no hay consumo registrado este mes.</p>
+          ) : (
+            datos.conversaciones.map((c, i) => (
+              <div key={`${c.chat_id}-${i}`} className="py-2 flex items-baseline gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-900 truncate">{c.titulo || "Conversación sin título"}</p>
+                  <p className="text-xs text-slate-500">
+                    {c.nombre || c.email} · {miles(c.mensajes)} {c.mensajes === 1 ? "mensaje" : "mensajes"} · {fechaCorta(c.ultimo)}
+                  </p>
+                </div>
+                <span className="text-sm font-semibold text-slate-900 tabular-nums shrink-0">{usd(c.costo)}</span>
+              </div>
+            ))
+          )
+        ) : datos.mensajes.length === 0 ? (
+          <p className="py-6 text-sm text-slate-500">Todavía no hay mensajes registrados.</p>
+        ) : (
+          datos.mensajes.map((m) => (
+            <div key={m.id} className="py-2 flex items-baseline gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-slate-900 truncate">
+                  {m.nombre || m.email} · {m.modelo.replace(/^claude-/, "").replace(/-\d{8}$/, "")}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {fechaCorta(m.created_at)} · entrada {miles(m.tokens_entrada + m.tokens_cache_escritura)} · de caché{" "}
+                  {miles(m.tokens_cache_lectura)} · salida {miles(m.tokens_salida)} tokens
+                </p>
+              </div>
+              <span className="text-sm font-semibold text-slate-900 tabular-nums shrink-0">{usd(m.costo)}</span>
+            </div>
+          ))
+        )}
+      </div>
+      <p className="text-xs text-slate-500">
+        Costo estimado con los precios de lista de Claude. No incluye lo que se cobra aparte por búsquedas web y por crear
+        archivos. Se registra desde que se activó esta función.
+      </p>
+    </div>
+  );
+}
+
 // SuperAdmin: Configuración del agente (la tuerca). Quién lo usa, por correo,
 // y la bitácora de cambios hechos en Odoo (/api/superadmin/agenteia/acceso y /cambios).
 function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
-  const [vista, setVista] = useState<"acceso" | "roles" | "cambios">("acceso");
+  const [vista, setVista] = useState<"acceso" | "roles" | "cambios" | "consumo">("acceso");
   const [usuarios, setUsuarios] = useState<UsuarioAcceso[] | null>(null);
   const [cambios, setCambios] = useState<CambioOdoo[] | null>(null);
   const [filtro, setFiltro] = useState("");
@@ -346,6 +459,7 @@ function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerra
               ["acceso", "Acceso"],
               ["roles", "Qué ve cada rol"],
               ["cambios", "Historial de cambios"],
+              ["consumo", "Consumo"],
             ] as const
           ).map(([id, etiqueta]) => (
             <button
@@ -433,6 +547,8 @@ function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerra
           </div>
         ) : vista === "roles" ? (
           <PanelRoles />
+        ) : vista === "consumo" ? (
+          <PanelConsumo />
         ) : (
           <div className="max-h-[60vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
             {!cambios && !error && (
@@ -1304,7 +1420,7 @@ export default function AgenteIAPage() {
       const response = await fetch("/api/superadmin/agenteia", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages, modelo: modelo || undefined }),
+        body: JSON.stringify({ messages: updatedMessages, modelo: modelo || undefined, chatId }),
         signal: control.signal,
       });
 
