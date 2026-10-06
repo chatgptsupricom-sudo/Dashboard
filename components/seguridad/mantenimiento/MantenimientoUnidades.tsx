@@ -15,20 +15,23 @@ import {
   type LucideIcon,
   MousePointerClick,
   Plus,
+  Route,
   Search,
+  Settings2,
+  Sparkles,
   Truck,
+  Undo2,
   Wrench,
   X,
   XCircle,
 } from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
 import {
-  DIAS_AVISO_SERVICIO,
   PRIORIDADES,
   TAREAS_SUGERIDAS,
   TIPOS_EQUIPO,
   TIPOS_ORDEN,
-  diasParaServicio,
+  servicioPendiente,
   situacionDe,
   tareasCompletas,
   unidadMedidor,
@@ -40,6 +43,7 @@ import {
   type TipoOrden,
 } from "@/lib/mantenimiento/tipos";
 import type { VehiculoEscena } from "@/lib/mantenimiento/escena3d";
+import type { DiagnosticoIa, Recomendacion } from "@/lib/mantenimiento/ia";
 import {
   PageHeader,
   Card,
@@ -52,6 +56,7 @@ import {
   labelClases,
   normalizar,
 } from "../mercancia-ui";
+import AsistenteIA from "./AsistenteIA";
 import Escena3D from "./Escena3D";
 
 /**
@@ -62,16 +67,27 @@ import Escena3D from "./Escena3D";
  * Abajo, la flota en lista (lo mismo, para buscar y para quien no tenga 3D) y
  * la ficha del vehículo elegido, con el paso que toca.
  *
+ * Los camiones que el despacho mandó a ruta aparecen "en ruta" hasta que se
+ * marca el regreso. El jefe de taller IA (AsistenteIA) revisa la flota y
+ * propone mantenimientos; nada se crea sin que una persona lo confirme.
+ *
  * El flujo y sus reglas están en lib/mantenimiento/tipos; la API es la que
  * manda en cada paso, esto solo evita mostrar botones que serían rechazados.
  */
 
 const ANCHO = "max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8";
 
-const SITUACIONES: Situacion[] = ["operativo", "reportado", "en_taller", "listo"];
+const SITUACIONES: Situacion[] = ["operativo", "en_ruta", "reportado", "en_taller", "listo"];
+
+/** Si ya toca avisar del preventivo (lib/mantenimiento/tipos › servicioPendiente). */
+type Pendiente = { dias: number | null; porMedidor: boolean } | null;
+
+/** Con qué llega lleno el formulario de reportar (una recomendación de la IA). */
+type Prellenado = Pick<Recomendacion, "equipo_id" | "tipo" | "prioridad" | "titulo" | "tareas"> & { detalle?: string };
 
 const TONO: Record<Situacion, { punto: string; pastilla: string; texto: string }> = {
   operativo: { punto: "bg-slate-400", pastilla: "bg-slate-100 text-slate-600 ring-slate-200", texto: "text-slate-600" },
+  en_ruta: { punto: "bg-sky-500", pastilla: "bg-sky-50 text-sky-700 ring-sky-200", texto: "text-sky-700" },
   reportado: { punto: "bg-amber-500", pastilla: "bg-amber-50 text-amber-700 ring-amber-200", texto: "text-amber-700" },
   en_taller: {
     punto: "bg-[color:var(--portal-primary,#741DFE)]",
@@ -120,6 +136,7 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
   const [filtro, setFiltro] = useState<"todos" | TipoEquipo>("todos");
   const [busqueda, setBusqueda] = useState("");
   const [modal, setModal] = useState<null | "equipo" | "reportar">(null);
+  const [prellenado, setPrellenado] = useState<Prellenado | null>(null);
   const [ahora] = useState(() => Date.now());
 
   const aplicar = useCallback((json: any) => {
@@ -174,15 +191,15 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
   const elegido = equipos.find((e) => e.id === seleccion) || null;
 
   const cuenta = useMemo(() => {
-    const c: Record<Situacion, number> = { operativo: 0, reportado: 0, en_taller: 0, listo: 0 };
+    const c: Record<Situacion, number> = { operativo: 0, en_ruta: 0, reportado: 0, en_taller: 0, listo: 0 };
     for (const e of equipos) c[situacionDe(e)]++;
     return c;
   }, [equipos]);
 
   const aviso = useCallback(
-    (e: Equipo) => {
-      const d = diasParaServicio(e.proximo_servicio, ahora);
-      return situacionDe(e) === "operativo" && d !== null && d <= DIAS_AVISO_SERVICIO ? d : null;
+    (e: Equipo): Pendiente => {
+      // Con un mantenimiento abierto ya se está atendiendo: no hace falta avisar.
+      return e.orden ? null : servicioPendiente(e, ahora);
     },
     [ahora],
   );
@@ -219,6 +236,7 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
       reportado: t("zona.reportado"),
       taller: t("zona.en_taller"),
       listo: t("zona.listo"),
+      ruta: t("zona.en_ruta"),
     }),
     [t],
   );
@@ -237,7 +255,14 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
               <BotonSecundario onClick={() => setModal("equipo")} icon={Plus}>
                 <span className="hidden sm:inline">{t("agregar_equipo")}</span>
               </BotonSecundario>
-              <BotonPrimario onClick={() => setModal("reportar")} icon={Wrench} disabled={equipos.length === 0}>
+              <BotonPrimario
+                onClick={() => {
+                  setPrellenado(null);
+                  setModal("reportar");
+                }}
+                icon={Wrench}
+                disabled={equipos.length === 0}
+              >
                 <span className="hidden sm:inline">{t("reportar")}</span>
               </BotonPrimario>
             </div>
@@ -291,6 +316,19 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
             </p>
           )}
         </section>
+
+        {!cargando && !errorCarga && (
+          <AsistenteIA
+            equipos={equipos}
+            puedeEditar={puedeEditar}
+            onCrear={(r) => {
+              setError(null);
+              setPrellenado(r);
+              setSeleccion(r.equipo_id);
+              setModal("reportar");
+            }}
+          />
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_420px] gap-5 items-start">
           {/* Flota */}
@@ -349,7 +387,7 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
                       <TarjetaEquipo
                         equipo={e}
                         elegido={e.id === seleccion}
-                        dias={aviso(e)}
+                        pendiente={aviso(e)}
                         onClick={() => setSeleccion(e.id === seleccion ? null : e.id)}
                         t={t}
                       />
@@ -370,13 +408,19 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
             )}
             {elegido ? (
               <Ficha
-                key={`${elegido.id}-${elegido.orden?.id ?? 0}-${elegido.orden?.estado ?? "x"}`}
+                key={`${elegido.id}-${elegido.orden?.id ?? 0}-${elegido.orden?.estado ?? "x"}-${elegido.ruta?.estado ?? "x"}`}
                 equipo={elegido}
                 historial={historial.filter((o) => o.equipo_id === elegido.id)}
-                dias={aviso(elegido)}
+                pendiente={aviso(elegido)}
                 puedeEditar={puedeEditar}
                 enviando={enviando}
-                onReportar={() => setModal("reportar")}
+                onReportar={() => {
+                  setPrellenado(null);
+                  setModal("reportar");
+                }}
+                onEquipo={(cuerpo) =>
+                  enviar("/api/seguridad/mercancia/mantenimiento", { ...cuerpo, equipo_id: elegido.id })
+                }
                 onAccion={(cuerpo) =>
                   enviar(`/api/seguridad/mercancia/mantenimiento/${elegido.orden!.id}`, cuerpo)
                 }
@@ -436,8 +480,9 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
       )}
       {modal === "reportar" && (
         <ModalReportar
-          equipos={equipos.filter((e) => situacionDe(e) === "operativo")}
-          inicial={elegido && situacionDe(elegido) === "operativo" ? elegido.id : null}
+          equipos={equipos.filter((e) => !e.orden)}
+          inicial={elegido && !elegido.orden ? elegido.id : null}
+          prellenado={prellenado}
           enviando={enviando}
           error={error}
           onCerrar={() => {
@@ -471,14 +516,14 @@ function Pastilla({ situacion, t }: { situacion: Situacion; t: T }) {
 function TarjetaEquipo({
   equipo,
   elegido,
-  dias,
+  pendiente,
   onClick,
   t,
 }: {
   equipo: Equipo;
   elegido: boolean;
-  /** Días para el próximo servicio, si ya toca avisar. */
-  dias: number | null;
+  /** El preventivo, si ya toca avisar. */
+  pendiente: Pendiente;
   onClick: () => void;
   t: T;
 }) {
@@ -527,13 +572,43 @@ function TarjetaEquipo({
           </span>
         </div>
       )}
-      {dias !== null && (
-        <p className={`mt-2 inline-flex items-center gap-1 text-[11px] font-semibold ${dias < 0 ? "text-red-600" : "text-amber-700"}`}>
-          <CalendarClock className="w-3.5 h-3.5" />
-          {dias < 0 ? t("servicio_vencido", { n: -dias }) : t("servicio_en", { n: dias })}
+      {equipo.ruta && (
+        <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-sky-700 truncate">
+          <Route className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">
+            {t(`ruta.${equipo.ruta.estado}`)}
+            {equipo.ruta.chofer ? ` · ${equipo.ruta.chofer}` : ""}
+          </span>
         </p>
       )}
+      <AvisoServicio pendiente={pendiente} equipo={equipo} t={t} className="mt-2" />
     </button>
+  );
+}
+
+/** "Servicio en 3 días", "vencido hace 2", o que ya toca por kilometraje u horas. */
+function AvisoServicio({
+  pendiente,
+  equipo,
+  t,
+  className = "",
+}: {
+  pendiente: Pendiente;
+  equipo: Equipo;
+  t: T;
+  className?: string;
+}) {
+  if (!pendiente) return null;
+  const vencido = pendiente.porMedidor || (pendiente.dias !== null && pendiente.dias < 0);
+  return (
+    <p className={`inline-flex items-center gap-1 text-[11px] font-semibold ${vencido ? "text-red-600" : "text-amber-700"} ${className}`}>
+      <CalendarClock className="w-3.5 h-3.5 shrink-0" />
+      {pendiente.dias !== null
+        ? pendiente.dias < 0
+          ? t("servicio_vencido", { n: -pendiente.dias })
+          : t("servicio_en", { n: pendiente.dias })
+        : t(`servicio_por_medidor.${unidadMedidor(equipo.tipo)}`)}
+    </p>
   );
 }
 
@@ -566,26 +641,39 @@ function Recorrido({ situacion, t }: { situacion: Situacion; t: T }) {
 function Ficha({
   equipo,
   historial,
-  dias,
+  pendiente,
   puedeEditar,
   enviando,
   onReportar,
   onAccion,
+  onEquipo,
   t,
 }: {
   equipo: Equipo;
   historial: Orden[];
-  dias: number | null;
+  pendiente: Pendiente;
   puedeEditar: boolean;
   enviando: boolean;
   onReportar: () => void;
+  /** Pasos de la orden abierta. */
   onAccion: (cuerpo: Record<string, unknown>) => Promise<boolean>;
+  /** Lo que es del equipo y no de una orden: el regreso de la ruta y el plan preventivo. */
+  onEquipo: (cuerpo: Record<string, unknown>) => Promise<boolean>;
   t: T;
 }) {
   const Icono = ICONO_EQUIPO[equipo.tipo];
   const situacion = situacionDe(equipo);
   const orden = equipo.orden;
+  // La etapa de la orden, que no siempre es donde está el camión: uno con
+  // algo reportado puede andar en ruta.
+  const etapa = orden?.estado ?? null;
   const unidad = unidadMedidor(equipo.tipo);
+
+  const [kmRegreso, setKmRegreso] = useState("");
+  const [planAbierto, setPlanAbierto] = useState(false);
+  const [cadaDias, setCadaDias] = useState(equipo.intervalo_dias != null ? String(equipo.intervalo_dias) : "");
+  const [cadaMedidor, setCadaMedidor] = useState(equipo.intervalo_medidor != null ? String(equipo.intervalo_medidor) : "");
+  const [proximoPlan, setProximoPlan] = useState(equipo.proximo_servicio || "");
 
   const [responsable, setResponsable] = useState("");
   const [nuevaTarea, setNuevaTarea] = useState("");
@@ -625,20 +713,157 @@ function Ficha({
               <CalendarClock className="w-3 h-3" />
               {t("proximo_servicio")}
             </dt>
-            <dd className={`text-sm font-semibold tabular-nums ${dias !== null ? (dias < 0 ? "text-red-600" : "text-amber-700") : "text-slate-900"}`}>
+            <dd className={`text-sm font-semibold tabular-nums ${pendiente ? "text-amber-700" : "text-slate-900"}`}>
               {equipo.proximo_servicio ? fechaCorta(equipo.proximo_servicio) : "—"}
             </dd>
           </div>
         </dl>
+        <AvisoServicio pendiente={pendiente} equipo={equipo} t={t} className="mt-3" />
       </div>
 
       <div className="p-5 space-y-4">
+        {/* Lo que dice el despacho: cargando en el portón, o ya en la calle. */}
+        {equipo.ruta && (
+          <div className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4 space-y-3">
+            <div className="flex items-start gap-2.5">
+              <Route className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-sky-900">{t(`ruta.${equipo.ruta.estado}`)}</p>
+                <p className="text-xs text-sky-800">
+                  {[equipo.ruta.chofer, hora(equipo.ruta.desde)].filter(Boolean).join(" · ") || "—"}
+                </p>
+              </div>
+            </div>
+            <ul className="space-y-1">
+              {equipo.ruta.ordenes.slice(0, 6).map((o) => (
+                <li key={o.orden} className="flex items-baseline gap-2 text-xs text-slate-700">
+                  <span className="font-mono font-semibold text-slate-900 shrink-0">{o.orden}</span>
+                  <span className="min-w-0 truncate">{o.cliente || ""}</span>
+                </li>
+              ))}
+            </ul>
+            {puedeEditar && equipo.ruta.estado === "en_ruta" && (
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={kmRegreso}
+                  onChange={(e) => setKmRegreso(e.target.value)}
+                  placeholder={t("km_al_regresar")}
+                  aria-label={t("km_al_regresar")}
+                  className={`${inputClases} h-11`}
+                />
+                <BotonPrimario
+                  onClick={() => void onEquipo({ accion: "regreso", medidor: kmRegreso === "" ? null : Number(kmRegreso) })}
+                  disabled={enviando}
+                  icon={Undo2}
+                  className="shrink-0"
+                >
+                  {t("marcar_regreso")}
+                </BotonPrimario>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Plan preventivo: cada cuánto le toca servicio. */}
+        <div className="rounded-2xl border border-slate-200/80">
+          <button
+            type="button"
+            onClick={() => setPlanAbierto((v) => !v)}
+            aria-expanded={planAbierto}
+            className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left"
+          >
+            <Settings2 className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold text-slate-900">{t("plan.titulo")}</span>
+              <span className="block text-xs text-slate-500 truncate">
+                {equipo.intervalo_dias || equipo.intervalo_medidor
+                  ? [
+                      equipo.intervalo_dias ? t("plan.cada_dias", { n: equipo.intervalo_dias }) : null,
+                      equipo.intervalo_medidor ? `${miles(equipo.intervalo_medidor)} ${unidad}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : t("plan.sin_plan")}
+              </span>
+            </span>
+            <span className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)]">
+              {t(planAbierto ? "plan.cerrar" : "plan.editar")}
+            </span>
+          </button>
+          {planAbierto && (
+            <div className="px-3.5 pb-3.5 space-y-3 border-t border-slate-100 pt-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClases}>{t("plan.dias")}</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={cadaDias}
+                    disabled={!puedeEditar}
+                    onChange={(e) => setCadaDias(e.target.value)}
+                    placeholder="90"
+                    className={inputClases}
+                  />
+                </div>
+                <div>
+                  <label className={labelClases}>{t(`plan.medidor.${unidad}`)}</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={cadaMedidor}
+                    disabled={!puedeEditar}
+                    onChange={(e) => setCadaMedidor(e.target.value)}
+                    placeholder={unidad === "km" ? "10000" : "250"}
+                    className={inputClases}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className={labelClases}>{t("proximo_servicio")}</label>
+                <input
+                  type="date"
+                  value={proximoPlan}
+                  disabled={!puedeEditar}
+                  onChange={(e) => setProximoPlan(e.target.value)}
+                  className={inputClases}
+                />
+              </div>
+              <p className="text-[11px] text-slate-500">{t("plan.ayuda")}</p>
+              {puedeEditar && (
+                <BotonSecundario
+                  onClick={async () => {
+                    const ok = await onEquipo({
+                      accion: "plan",
+                      intervalo_dias: cadaDias === "" ? null : Number(cadaDias),
+                      intervalo_medidor: cadaMedidor === "" ? null : Number(cadaMedidor),
+                      proximo_servicio: proximoPlan || null,
+                    });
+                    if (ok) setPlanAbierto(false);
+                  }}
+                  disabled={enviando}
+                  icon={Check}
+                  className="w-full"
+                >
+                  {t("plan.guardar")}
+                </BotonSecundario>
+              )}
+            </div>
+          )}
+        </div>
+
         {!orden ? (
           <>
-            <div className="flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <p className="text-sm text-emerald-900">{t("operativo_texto")}</p>
-            </div>
+            {situacion === "operativo" && (
+              <div className="flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <p className="text-sm text-emerald-900">{t("operativo_texto")}</p>
+              </div>
+            )}
             {puedeEditar && (
               <BotonPrimario onClick={onReportar} icon={Wrench} className="w-full h-12">
                 {t("reportar")}
@@ -647,7 +872,7 @@ function Ficha({
           </>
         ) : (
           <>
-            <Recorrido situacion={situacion} t={t} />
+            <Recorrido situacion={orden.estado === "cerrado" ? "operativo" : orden.estado} t={t} />
 
             <div>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -685,7 +910,7 @@ function Ficha({
               </div>
               <ul className="space-y-1.5">
                 {tareas.map((x, i) => {
-                  const editable = puedeEditar && situacion === "en_taller";
+                  const editable = puedeEditar && etapa === "en_taller";
                   return (
                     <li key={`${i}-${x.texto}`}>
                       <button
@@ -710,7 +935,7 @@ function Ficha({
                   );
                 })}
               </ul>
-              {puedeEditar && situacion === "en_taller" && (
+              {puedeEditar && etapa === "en_taller" && (
                 <div className="mt-2 flex gap-2">
                   <input
                     type="text"
@@ -739,7 +964,7 @@ function Ficha({
             </div>
 
             {/* El paso que toca */}
-            {puedeEditar && situacion === "reportado" && (
+            {puedeEditar && etapa === "reportado" && (
               <div className="rounded-2xl border border-violet-200 bg-violet-50/50 p-4 space-y-3">
                 <div>
                   <label className={labelClases}>{t("responsable")} *</label>
@@ -762,7 +987,7 @@ function Ficha({
               </div>
             )}
 
-            {puedeEditar && situacion === "en_taller" && (
+            {puedeEditar && etapa === "en_taller" && (
               <div className="space-y-2">
                 <BotonPrimario
                   onClick={() => void onAccion({ accion: "terminar" })}
@@ -778,7 +1003,7 @@ function Ficha({
               </div>
             )}
 
-            {puedeEditar && situacion === "listo" && (
+            {puedeEditar && etapa === "listo" && (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1017,33 +1242,74 @@ function ModalEquipo({
 function ModalReportar({
   equipos,
   inicial,
+  prellenado,
   enviando,
   error,
   onCerrar,
   onGuardar,
   t,
 }: {
-  /** Solo los operativos: un equipo tiene una orden abierta a la vez. */
+  /** Solo los que no tienen orden: un equipo tiene una abierta a la vez. */
   equipos: Equipo[];
   inicial: number | null;
+  /** Una recomendación de la IA, para revisarla y confirmarla. */
+  prellenado: Prellenado | null;
   enviando: boolean;
   error: string | null;
   onCerrar: () => void;
   onGuardar: (cuerpo: Record<string, unknown>) => void;
   t: T;
 }) {
-  const [equipoId, setEquipoId] = useState<number | null>(inicial ?? equipos[0]?.id ?? null);
-  const [tipo, setTipo] = useState<TipoOrden>("preventivo");
-  const [prioridad, setPrioridad] = useState<Prioridad>("media");
-  const [titulo, setTitulo] = useState("");
-  const [detalle, setDetalle] = useState("");
+  const pre = prellenado && equipos.some((e) => e.id === prellenado.equipo_id) ? prellenado : null;
+  const [equipoId, setEquipoId] = useState<number | null>(pre?.equipo_id ?? inicial ?? equipos[0]?.id ?? null);
+  const [tipo, setTipo] = useState<TipoOrden>(pre?.tipo ?? "preventivo");
+  const [prioridad, setPrioridad] = useState<Prioridad>(pre?.prioridad ?? "media");
+  const [titulo, setTitulo] = useState(pre?.titulo ?? "");
+  const [detalle, setDetalle] = useState(pre?.detalle ?? "");
   const [medidor, setMedidor] = useState("");
   const equipo = equipos.find((e) => e.id === equipoId) || null;
   // Las tareas habituales del servicio; se vuelven a cargar al cambiar de
-  // equipo o de tipo, salvo que ya se hayan tocado a mano.
-  const [tareas, setTareas] = useState<string[]>(() => (equipo ? TAREAS_SUGERIDAS[equipo.tipo].preventivo : []));
-  const [tocadas, setTocadas] = useState(false);
+  // equipo o de tipo, salvo que ya se hayan tocado a mano (o las trajo la IA).
+  const [tareas, setTareas] = useState<string[]>(() =>
+    pre?.tareas.length ? pre.tareas : equipo ? TAREAS_SUGERIDAS[equipo.tipo][pre?.tipo ?? "preventivo"] : [],
+  );
+  const [tocadas, setTocadas] = useState(!!pre?.tareas.length);
   const [nueva, setNueva] = useState("");
+
+  // Diagnóstico de la IA a partir de lo escrito en "qué hay que hacerle" y el detalle.
+  const [diagnosticando, setDiagnosticando] = useState(false);
+  const [diagnostico, setDiagnostico] = useState<DiagnosticoIa | null>(null);
+  const [errorIa, setErrorIa] = useState<string | null>(null);
+  const falla = [titulo, detalle].map((x) => x.trim()).filter(Boolean).join(". ");
+  const diagnosticar = async () => {
+    if (!equipoId || falla.length < 5) return;
+    setErrorIa(null);
+    setDiagnosticando(true);
+    try {
+      const res = await fetch("/api/seguridad/mercancia/mantenimiento/ia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modo: "diagnostico", equipo_id: equipoId, falla }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || t("error"));
+      const d = json.diagnostico as DiagnosticoIa;
+      setDiagnostico(d);
+      // Lo que escribió la persona queda en el detalle; la IA propone el resto.
+      if (!detalle.trim()) setDetalle(titulo.trim());
+      setTitulo(d.titulo || titulo);
+      setTipo("correctivo");
+      setPrioridad(d.prioridad);
+      if (d.tareas.length) {
+        setTareas(d.tareas);
+        setTocadas(true);
+      }
+    } catch (e: any) {
+      setErrorIa(e?.message || t("error"));
+    } finally {
+      setDiagnosticando(false);
+    }
+  };
 
   const sugerir = (e: Equipo | null, tp: TipoOrden) => {
     if (!tocadas && e) setTareas(TAREAS_SUGERIDAS[e.tipo][tp]);
@@ -1110,6 +1376,38 @@ function ModalReportar({
           placeholder={t(tipo === "preventivo" ? "que_hacer_preventivo_ph" : "que_hacer_correctivo_ph")}
           className={inputClases}
         />
+      </div>
+      {/* La IA arma la orden a partir de la falla descrita. */}
+      <div className="rounded-2xl border border-violet-200 bg-violet-50/50 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <p className="min-w-0 flex-1 text-xs text-slate-600">{t("ia.diagnostico_ayuda")}</p>
+          <BotonSecundario
+            onClick={() => void diagnosticar()}
+            disabled={diagnosticando || !equipoId || falla.length < 5}
+            icon={diagnosticando ? undefined : Sparkles}
+            className="h-9 shrink-0"
+          >
+            {diagnosticando && <Loader2 className="w-4 h-4 animate-spin" />}
+            {t(diagnosticando ? "ia.diagnosticando" : "ia.diagnosticar")}
+          </BotonSecundario>
+        </div>
+        {errorIa && <p className="text-xs text-red-600 break-words">{errorIa}</p>}
+        {diagnostico && (
+          <div className="space-y-1.5 text-xs text-slate-700 animate-in fade-in">
+            {!diagnostico.puede_seguir_operando && (
+              <p className="flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 font-semibold text-red-700">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                {t("ia.no_operar")}
+              </p>
+            )}
+            {diagnostico.recomendacion && <p className="break-words">{diagnostico.recomendacion}</p>}
+            {diagnostico.causas_probables.length > 0 && (
+              <p className="break-words">
+                <span className="font-semibold">{t("ia.causas")}:</span> {diagnostico.causas_probables.join(" · ")}
+              </p>
+            )}
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_140px] gap-3">
         <div>
