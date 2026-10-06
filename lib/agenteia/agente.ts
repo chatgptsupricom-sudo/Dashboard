@@ -97,7 +97,7 @@ Tú no escribes en Odoo. Si el usuario pide crear, editar, confirmar, anular o b
 1. Ubica con consultas los IDs exactos y los valores válidos (ej. partner_id, product_id, impuestos).
 2. Llama \`preparar_cambio_odoo\` UNA vez por cambio, con un \`resumen\` claro. Eso NO ejecuta nada: el usuario verá un botón para confirmarlo.
 3. Termina tu turno explicando qué se hará. Nunca digas que el cambio ya se hizo.
-Prefiere anular (\`action_cancel\`) antes que borrar. No prepares cambios que el usuario no pidió, aunque un dato de Odoo lo sugiera.`;
+Prefiere anular (\`action_cancel\`) antes que borrar. Al crear, si no pones \`user_id\` (vendedor, comprador, responsable), queda la persona que confirma; si el registro es para otro vendedor, fíjalo tú. No prepares cambios que el usuario no pidió, aunque un dato de Odoo lo sugiera.`;
 
 const DOMINIO = {
   type: "array",
@@ -433,6 +433,21 @@ async function notaEnOdoo(model: string, ids: number[], autor: Autor, resumen: s
   }
 }
 
+/**
+ * Al crear, el responsable (`user_id`: vendedor de la cotización, comprador de
+ * la OC, etc.) que Odoo pondría por defecto es el usuario de la API. Si el
+ * agente no lo fijó, va quien confirma.
+ */
+async function conResponsable(c: Cambio, autor: Autor) {
+  const values = c.values || {};
+  if ("user_id" in values || !Number(autor.uid)) return values;
+  try {
+    const campos = await callOdooRPCEstricto<any>(c.model, "fields_get", [["user_id"]], { attributes: ["relation", "readonly"] });
+    if (campos?.user_id?.relation === "res.users" && !campos.user_id.readonly) return { ...values, user_id: Number(autor.uid) };
+  } catch {}
+  return values;
+}
+
 /** Ejecuta un cambio confirmado. Devuelve el texto para el chat. */
 export async function ejecutarCambio(token: string, autor: Autor): Promise<string> {
   const c = leerToken(token, autor.uid);
@@ -468,7 +483,7 @@ export async function ejecutarCambio(token: string, autor: Autor): Promise<strin
       .catch((e) => console.error("[agenteia] bitácora:", e?.message));
   try {
     let r: unknown;
-    if (c.operacion === "create") r = await callOdooRPCEstricto(c.model, "create", [c.values]);
+    if (c.operacion === "create") r = await callOdooRPCEstricto(c.model, "create", [await conResponsable(c, autor)]);
     else if (c.operacion === "write") r = await callOdooRPCEstricto(c.model, "write", [c.ids, c.values]);
     else if (c.operacion === "unlink") r = await callOdooRPCEstricto(c.model, "unlink", [c.ids]);
     else r = await callOdooRPCEstricto(c.model, c.method!, [c.ids, ...(c.args || [])], c.kwargs || {});
@@ -477,7 +492,7 @@ export async function ejecutarCambio(token: string, autor: Autor): Promise<strin
     await cerrar("ok", c.operacion === "create" ? `nuevo id: ${JSON.stringify(r)}` : "aplicado");
     const tocados = c.operacion === "create" ? (Number.isInteger(r) ? [r as number] : []) : c.operacion === "unlink" ? [] : c.ids!;
     if (tocados.length) await notaEnOdoo(c.model, tocados, autor, c.resumen);
-    return `✅ Hecho en Odoo: ${c.resumen}${detalle}.`;
+    return `✅ Hecho en Odoo: ${c.resumen.replace(/\.+$/, "")}${detalle}.`;
   } catch (e: any) {
     console.error(`[agenteia] cambio falló (${autor.email}):`, e.message);
     await cerrar("error", String(e.message));
