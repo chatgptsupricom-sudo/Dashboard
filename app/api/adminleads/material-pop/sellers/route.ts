@@ -13,6 +13,10 @@ export const dynamic = "force-dynamic";
  * No se reusa /api/adminleads/sellers porque ese filtra con la regla de leads
  * (`cids != 7` para todo lo que no sea Panamá) y acá hace falta la sede del
  * módulo y nada más.
+ *
+ * Sin filtrar por `activo`: ese campo es la pausa de leads de Configuración
+ * (un vendedor pausado no recibe leads), no si trabaja en la empresa. Con el
+ * filtro, la lista quedaba solo con quien tuviera leads activos ese día.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -21,9 +25,9 @@ export async function GET(request: NextRequest) {
 
     const cids = resolveMaterialPopCids(auth.payload);
     const params: any[] = [];
-    let where = "WHERE activo = 1";
+    let where = "";
     if (cids !== null) {
-      where += " AND cids = ?";
+      where = "WHERE cids = ?";
       params.push(cids);
     }
 
