@@ -131,7 +131,10 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/gestion") ||
     pathname.includes("/reportes-comerciales") ||
     // Agente IA de los roles habilitados por el SuperAdmin (lib/agenteia/acceso.ts).
-    pathname.includes("/agente-ia");
+    pathname.includes("/agente-ia") ||
+    // Manuales de procedimiento: todos los roles con sesión; cada manual
+    // decide qué roles lo ven (lib/manuales/datos.ts).
+    pathname.includes("/manuales");
 
   if (isProtectedPath) {
     if (!token) {
@@ -309,6 +312,11 @@ export default async function middleware(request: NextRequest) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
+      }
+
+      // 10b. Manuales: leer, cualquier rol; crear y editar, solo SuperAdmin.
+      if (/^\/(es|en)\/manuales\/(nuevo|\d+\/editar)(\/|$)/.test(pathname) && !isSuperAdmin) {
+        return NextResponse.redirect(new URL(`/${locale}/manuales`, request.url));
       }
 
       // 11. Lógica para Seguridad (Almacén / Control de acceso)

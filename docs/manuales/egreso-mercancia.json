@@ -1,0 +1,180 @@
+{
+  "codigo": "PR-ALM-001",
+  "titulo": "Egreso de mercancía (despacho a clientes)",
+  "area": "Almacén",
+  "version": "1.0",
+  "roles": ["almacen", "seguridad", "vendedor", "seller", "asistente de ventas"],
+  "publicado": false,
+  "contenido": {
+    "objetivo": "Asegurar que cada pedido facturado salga del almacén completo, con los productos y seriales correctos, verificado por Seguridad y con constancia de quién lo armó, quién lo despachó y quién lo aprobó.\nCualquier persona del área debe poder continuar un despacho en curso siguiendo este manual, aunque no lo haya empezado.",
+    "alcance": "- Aplica a todos los pedidos de clientes facturados en Odoo que salen por el almacén, en todas las sedes (Valencia, Caracas y Panamá).\n- Empieza cuando el vendedor indica el método de retiro del pedido y termina cuando Seguridad califica y cierra el despacho.\n- Cubre las cuatro formas de entrega: retiro en sucursal, transporte externo, ruta propia y encomienda.\n- No cubre la recepción de mercancía (packing list) ni los ingresos y despachos de servicio técnico (RMA), que tienen su propio manual.",
+    "responsables": [
+      {
+        "rol": "Vendedor / Asistente de ventas",
+        "responsabilidad": "Indicar en el panel el método de retiro de cada pedido (Método de retiro). Sin ese dato Almacén no puede registrar el despacho."
+      },
+      {
+        "rol": "Almacén",
+        "responsabilidad": "- Registrar el despacho a partir de la orden de Odoo.\n- Armar el pedido y verificar que lo armado coincide con la orden.\n- Cargar los seriales en el picking de Odoo.\n- Empaquetar las encomiendas.\n- Asignar almacenista de despacho y, si va por ruta, chofer y vehículo.\n- Mantener al día el personal (almacenistas y choferes) y las unidades."
+      },
+      {
+        "rol": "Seguridad",
+        "responsabilidad": "- Verificar en el portón (C4) lo que sale, pistoleando seriales y códigos.\n- Firmar el acta de salida.\n- Decidir si el pedido sale, vuelve a Almacén o se cancela.\n- Calificar el armado (picking) y el despacho."
+      },
+      {
+        "rol": "SuperAdmin / Sistemas",
+        "responsabilidad": "Puede ejecutar cualquier paso en caso de ausencia y es el único que puede rehacer una firma. Atiende los errores del sistema."
+      }
+    ],
+    "definiciones": [
+      {
+        "termino": "Egreso o despacho",
+        "definicion": "El registro en el panel de la salida de un pedido. Va pasando por etapas hasta quedar cerrado."
+      },
+      {
+        "termino": "Orden de despacho",
+        "definicion": "La orden de salida de Odoo (picking), con un nombre como CENT1/OUT/06321. Cada orden solo puede tener un egreso."
+      },
+      {
+        "termino": "Renglón",
+        "definicion": "Cada producto de la orden con su cantidad. Si un producto aparece varias veces en Odoo, el panel lo suma en un solo renglón."
+      },
+      {
+        "termino": "Método de retiro / tipo de entrega",
+        "definicion": "Cómo sale el pedido. Lo indica el vendedor y el panel lo convierte en tipo de entrega:\n- Retiro en sucursal y Transporte externo → Retira el cliente.\n- Por ruta → Ruta.\n- Encomienda → Encomienda (es la única que pasa por empaquetado)."
+      },
+      {
+        "termino": "Armado (picking)",
+        "definicion": "Buscar y reunir en el almacén los productos de la orden."
+      },
+      {
+        "termino": "Pre-despacho",
+        "definicion": "Etapa en la que Almacén cuenta lo armado y lo compara con la orden antes de entregarlo."
+      },
+      {
+        "termino": "Portón (C4)",
+        "definicion": "Punto de control de Seguridad donde se verifica lo que sale."
+      },
+      {
+        "termino": "Serial",
+        "definicion": "Número único de un equipo. Los productos con serial se verifican pistoleando cada serial; los demás, por código o cantidad."
+      },
+      {
+        "termino": "Novedad",
+        "definicion": "Cualquier diferencia en la verificación: algo que falta, sobra, un serial que no es de la orden o un producto que no salió. Con novedades el despacho no se puede aprobar directamente."
+      },
+      {
+        "termino": "Almacenista de armado / de despacho",
+        "definicion": "La persona que armó el pedido y la que lo entregó. Seguridad califica a cada una."
+      }
+    ],
+    "pasos": [
+      {
+        "titulo": "Indicar el método de retiro del pedido",
+        "responsable": "Vendedor / Asistente de ventas",
+        "descripcion": "- Entra en el menú «Método de retiro».\n- Busca el pedido y elige cómo sale: «Retiro en sucursal», «Por ruta», «Encomienda» o «Transporte externo».\n- Si es ruta, elige la ruta; si es encomienda, la agencia; si es transporte externo, la compañía.\n- El panel avisa si la ruta es gratis o si el flete corre por cuenta del cliente según el monto.",
+        "imagenes": [],
+        "nota": "Sin método de retiro Almacén no puede registrar el despacho. Una vez que Almacén lo registra, el vendedor ya no puede cambiar el método: lo cambia Almacén (ver el paso «Cambiar el método de retiro»)."
+      },
+      {
+        "titulo": "Buscar las órdenes pendientes",
+        "responsable": "Almacén",
+        "descripcion": "- Entra en el menú «Órdenes pendientes».\n- Ahí salen las órdenes de Odoo listas y facturadas que todavía no tienen despacho, de la más vieja a la más nueva.\n- Cada tarjeta muestra el cliente y el método de retiro; si dice «Sin método del vendedor», hay que pedírselo al vendedor.\n- Toca la orden para ver el cliente, la factura y los productos.",
+        "imagenes": [],
+        "nota": "Si una orden está lista pero no aparece, todavía no está facturada: aparece cuando Caja la facture."
+      },
+      {
+        "titulo": "Registrar el despacho",
+        "responsable": "Almacén",
+        "descripcion": "- En el detalle de la orden pulsa «Registrar despacho con esta orden». También se puede entrar por «Despachos de mercancía» → «Registrar» y escribir la orden (ej: CENT1/OUT/06321) → «Buscar».\n- Revisa el cliente, la factura y los renglones que trae Odoo (no se editan).\n- Revisa la «Fecha» (por defecto, hoy).\n- Elige el «Almacenista del armado».\n- Revisa el «Tipo de entrega» que indicó el vendedor.\n- Agrega «Observaciones» si hace falta.\n- Pulsa «Guardar». El despacho queda en «Por armar» y a Almacén le llega el aviso «Nuevo despacho por armar».",
+        "imagenes": [],
+        "nota": "Mensajes que pueden salir al guardar:\n- «Esta orden todavía no está Lista en Odoo»: falta apartar el inventario en Odoo.\n- «Esta orden todavía no está facturada»: esperar a Caja.\n- «Esta orden ya se registró como egreso»: buscarla en «Despachos de mercancía».\n- «El vendedor todavía no indicó el método de retiro»: pedírselo al vendedor.\n- «El almacenista del armado no esta en el personal de Almacen»: agregarlo en «Personal»."
+      },
+      {
+        "titulo": "Iniciar el armado",
+        "responsable": "Almacén",
+        "descripcion": "- Abre el despacho desde «Despachos de mercancía» (pestaña «Para mí»).\n- Pulsa «Iniciar armado». El despacho pasa a «Armando» y queda registrada la hora de inicio.",
+        "imagenes": [],
+        "nota": ""
+      },
+      {
+        "titulo": "Terminar el armado",
+        "responsable": "Almacén",
+        "descripcion": "- Cuando todos los productos están reunidos, pulsa «Terminar armado y pasar a pre-despacho».\n- Queda registrada la hora de fin del armado.",
+        "imagenes": [],
+        "nota": ""
+      },
+      {
+        "titulo": "Verificar el armado (pre-despacho)",
+        "responsable": "Almacén",
+        "descripcion": "- En la columna «Armado» escribe cuántas unidades se armaron de cada producto.\n- Si algún producto lleva serial, carga los seriales en el picking de Odoo y pulsa «Actualizar seriales desde Odoo». Cada renglón muestra cuántos seriales hay cargados de los que hacen falta.\n- Pulsa «Verificar armado».\n- Si todo coincide con la orden, avanza solo: a «Por empaquetar» si es encomienda, o a «Por asignar despacho» en los demás casos.",
+        "imagenes": [],
+        "nota": "Si sale «No coincide con la orden: … con diferencia y … sin contar», el conteo queda guardado. Corrige lo que está en rojo y vuelve a pulsar «Verificar armado».\nSin todos los seriales cargados en Odoo el pedido no pasa a Seguridad."
+      },
+      {
+        "titulo": "Empaquetar (solo encomiendas)",
+        "responsable": "Almacén",
+        "descripcion": "- Empaqueta el pedido para la agencia.\n- Pulsa «Empaquetado listo». El despacho pasa a «Por asignar despacho».",
+        "imagenes": [],
+        "nota": "Los pedidos que no son encomienda se saltan este paso."
+      },
+      {
+        "titulo": "Asignar el despacho y enviarlo a Seguridad",
+        "responsable": "Almacén",
+        "descripcion": "- Elige el «Almacenista de despacho» (quien entrega en el portón).\n- Si es ruta, elige también el «Chofer» y la «Placa del vehículo».\n- Pulsa «Asignar y enviar a Seguridad».\n- El panel vuelve a leer los seriales de Odoo; si están completos, el despacho pasa a «En portón» y a Seguridad le llega el aviso «Despacho listo para verificar en portón».",
+        "imagenes": [],
+        "nota": "Si no aparece el chofer, el almacenista o la placa, agrégalos en «Personal» o «Gestionar Unidades».\nSi sale «Seriales de Odoo: faltan en N productos», cárgalos en el picking de Odoo y vuelve a intentar."
+      },
+      {
+        "titulo": "Verificar en el portón (C4)",
+        "responsable": "Seguridad",
+        "descripcion": "- Abre el despacho desde «Despachos» (pestaña «Para mí»).\n- Pistolea lo que sale:\n- Productos con serial: pistolea cada serial. Un serial repetido no suma.\n- Productos sin serial: pistolea su código (suma 1 por lectura) o escribe la cantidad en la columna «Portón».\n- Si la pistola lee un código que el panel no conoce, pregunta «¿Qué es?»: elige «Es un serial», «Es su código», «No está en la orden» o «No es nada, ignorar».\n- Si un producto no sale, marca «No salió» y escribe el motivo.",
+        "imagenes": [],
+        "nota": "Mientras falte algo por pistolear, cuenta como novedad y no deja aprobar, aunque la pantalla solo diga «Faltan N por pistolear»."
+      },
+      {
+        "titulo": "Firmar el acta",
+        "responsable": "Seguridad",
+        "descripcion": "- En «Firmas del acta» pulsa «Firmar».\n- Elige tu nombre en «Elige quién firma…».\n- Firma con el dedo en el recuadro y pulsa «Guardar firma».",
+        "imagenes": [],
+        "nota": "La firma no se puede cambiar después de guardarla. Si hubo un error, solo SuperAdmin puede rehacerla. Sin firma el pedido no puede salir."
+      },
+      {
+        "titulo": "Decidir la salida",
+        "responsable": "Seguridad",
+        "descripcion": "- Si todo cuadra y está firmado, pulsa «Aprobar y despachar».\n- Si hay novedades, pulsa «Hay novedades: decidir» (o «No aprobar») y elige una opción:\n- «Sí, despachar igual»: el pedido sale con la diferencia anotada (pide la firma).\n- «Devolver a Almacén»: vuelve a «Por asignar despacho» para que Almacén corrija; la próxima verificación empieza de cero, salvo los seriales ya pistoleados.\n- «No se despacha (cancelado)»: el pedido no sale y la orden queda libre para registrarse otra vez.\n- Escribe el motivo y pulsa «Registrar decisión».\n- Almacén recibe el aviso de la decisión.",
+        "imagenes": [],
+        "nota": "Antes de dejar salir el pedido, el panel vuelve a consultar Odoo. Si la orden se canceló, se quedó sin factura o cambió sus productos, no deja aprobar: hay que devolverla a Almacén, cancelarla o despacharla igual con el motivo."
+      },
+      {
+        "titulo": "Calificar y cerrar",
+        "responsable": "Seguridad",
+        "descripcion": "- Revisa las «Novedades de la verificación», si las hubo.\n- Califica de 1 a 5 estrellas el «Picking» (quien armó: completo, sin faltas ni sobras, seriales correctos) y el «Despacho» (quien entregó: empaquetado y orden en C4). Agrega un comentario.\n- Pulsa «Calificar y cerrar». El despacho queda «Cerrado».",
+        "imagenes": [],
+        "nota": "Si hubo novedades y das 4 o 5 estrellas al picking, el comentario es obligatorio. En un despacho cancelado solo se califica el picking. Las calificaciones se ven en «Almacenistas»."
+      },
+      {
+        "titulo": "Caso especial: cambiar el método de retiro",
+        "responsable": "Almacén",
+        "descripcion": "- Si el cliente cambia la forma de retiro mientras el pedido está en Almacén, abre el despacho y pulsa «Cambiar método».\n- Elige el nuevo método (y la ruta, la agencia o la compañía de transporte).\n- El panel ajusta la etapa y deja anotado el cambio en las observaciones.",
+        "imagenes": [],
+        "nota": "Cuando el pedido ya está en el portón con Seguridad, el método ya no se puede cambiar."
+      },
+      {
+        "titulo": "Caso especial: despacho devuelto por Seguridad",
+        "responsable": "Almacén",
+        "descripcion": "- El despacho vuelve a aparecer en «Para mí» en la etapa «Por asignar despacho», con el motivo de Seguridad.\n- Corrige lo indicado (producto faltante, serial equivocado, etc.).\n- Vuelve a pulsar «Asignar y enviar a Seguridad».",
+        "imagenes": [],
+        "nota": "Un despacho no se puede editar, borrar ni reabrir una vez cerrado. Si el pedido se cancela antes de llegar al portón, avisa a tu supervisor."
+      }
+    ],
+    "documentos": "- «Despachos de mercancía» (pestañas «Para mí», «En proceso», «Cerrados», «Todos») con el botón «Exportar Excel».\n- «Excel de seriales» de cada despacho, desde la verificación en adelante.\n- «Recorrido» de cada despacho: quién hizo cada paso y a qué hora (hora de Caracas).\n- Firma de Seguridad en el acta del despacho.\n- Calificaciones de almacenistas en «Almacenistas» y en el dashboard de Almacén.\n- El despacho no genera nota de entrega impresa ni PDF.",
+    "cambios": [
+      {
+        "version": "1.0",
+        "fecha": "2026-10-07",
+        "descripcion": "Creación del procedimiento a partir del flujo de egreso por etapas del panel."
+      }
+    ]
+  }
+}

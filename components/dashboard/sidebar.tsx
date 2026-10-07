@@ -28,6 +28,7 @@ import {
   Award,
   BarChart3,
   Bell,
+  BookOpen,
   Boxes,
   BrainCircuit,
   Calendar,
@@ -244,6 +245,8 @@ export function Sidebar({
   if (puedeAgenteIA && !allowedSections.includes("agenteia")) {
     allowedSections.push("agenteia");
   }
+  // Manuales: en el menú de todos; cada manual decide qué roles lo ven.
+  if (!allowedSections.includes("manuales")) allowedSections.push("manuales");
 
   // Definición del menú base
   const menuItems = [
@@ -257,6 +260,7 @@ export function Sidebar({
     { id: "cuota", label: t("cuota"), icon: FileText, slug: "/cuota" },
     { id: "inventory", label: t("inventario"), icon: Package, slug: "/inventory" },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
+    { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
     { id: "integraciondepago", label: t("integracion_pago"), icon: CreditCard, slug: "/integraciondepago" },
     { id: "clientes", label: t("clientes"), icon: UserCheck, slug: "/clientes" },
     { id: "catalogo", label: t("catalogo"), icon: Boxes, slug: "/catalogo" },
