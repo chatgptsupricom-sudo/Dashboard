@@ -3585,7 +3585,24 @@
     "pistola_van_de": "{recibido} of {esperado}",
     "pistola_terminar": "Done",
     "pistola_completo": "{producto}: complete ({cantidad} of {esperado}). Scan the next product.",
-    "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it is the box code, choose \"It's its code\"."
+    "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it is the box code, choose \"It's its code\".",
+    "escena": {
+      "avance": "received",
+      "contados": "rows counted",
+      "faltantes": "short",
+      "sobrantes": "over",
+      "danados": "damaged",
+      "ayuda": "Tap a pallet to jump to its row · drag to rotate",
+      "sin_contar": "Not counted",
+      "recibido": "{n} of {de} received",
+      "leyenda": {
+        "completo": "Complete",
+        "falta": "Short",
+        "sobra": "Over",
+        "danado": "Damaged",
+        "sin_contar": "Not counted"
+      }
+    }
   },
   "llegadas": {
     "titulo": "Packing List",

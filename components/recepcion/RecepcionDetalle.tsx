@@ -53,6 +53,7 @@ import {
   labelClases,
 } from "@/components/seguridad/mercancia-ui";
 import FotoCaptura, { type ArchivoRecepcion } from "./FotoCaptura";
+import EscenaRecepcion from "./EscenaRecepcion";
 
 /**
  * Detalle de una recepcion por packing list.
@@ -465,6 +466,23 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-4 pb-32">
         <Estado rec={rec} trabajando={trabajando} llegados={llegados} total={contenedores.length} t={t} />
+
+        {/* La descarga en 3D: el mismo conteo de abajo, visto de un golpe. */}
+        <EscenaRecepcion
+          renglones={items.map((i) => ({
+            id: i.id,
+            producto: i.producto,
+            codigo: i.codigo,
+            esperada: Number(i.cantidad_esperada),
+            recibida:
+              conteo[i.id]?.recibida === "" || conteo[i.id]?.recibida === undefined ? null : Number(conteo[i.id].recibida),
+            danado: (conteo[i.id]?.danos?.length ?? 0) > 0,
+          }))}
+          contenedores={contenedores.map((c) => ({ id: c.id, numero: c.numero, etapa: c.etapa }))}
+          seleccion={ultimo}
+          onSeleccion={marcar}
+          resumen={ev}
+        />
 
         {aviso && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{aviso}</div>
