@@ -300,6 +300,15 @@ export default function BuscarFacturasPage() {
   // Rango por fecha de factura; con rango no hace falta escribir nada.
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
+  // Lo elegido en los campos y atajos; solo filtra al pulsar Aplicar.
+  const [desdeB, setDesdeB] = useState("");
+  const [hastaB, setHastaB] = useState("");
+  const sinAplicar = desdeB !== desde || hastaB !== hasta;
+  const aplicarFechas = () => {
+    setDesde(desdeB);
+    setHasta(hastaB);
+    setPage(1);
+  };
   const [exportando, setExportando] = useState(false);
   const hayFiltro = Boolean(debouncedQuery || desde || hasta);
 
@@ -402,12 +411,9 @@ export default function BuscarFacturasPage() {
           <label className="block text-[11px] font-medium text-slate-500">Desde</label>
           <input
             type="date"
-            value={desde}
-            max={hasta || undefined}
-            onChange={(e) => {
-              setDesde(e.target.value);
-              setPage(1);
-            }}
+            value={desdeB}
+            max={hastaB || undefined}
+            onChange={(e) => setDesdeB(e.target.value)}
             className="mt-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
           />
         </div>
@@ -415,26 +421,22 @@ export default function BuscarFacturasPage() {
           <label className="block text-[11px] font-medium text-slate-500">Hasta</label>
           <input
             type="date"
-            value={hasta}
-            min={desde || undefined}
-            onChange={(e) => {
-              setHasta(e.target.value);
-              setPage(1);
-            }}
+            value={hastaB}
+            min={desdeB || undefined}
+            onChange={(e) => setHastaB(e.target.value)}
             className="mt-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
           {RANGOS.map((r) => {
             const [d, h] = r.rango();
-            const activo = desde === d && hasta === h;
+            const activo = desdeB === d && hastaB === h;
             return (
               <button
                 key={r.label}
                 onClick={() => {
-                  setDesde(d);
-                  setHasta(h);
-                  setPage(1);
+                  setDesdeB(d);
+                  setHastaB(h);
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                   activo
@@ -446,9 +448,11 @@ export default function BuscarFacturasPage() {
               </button>
             );
           })}
-          {(desde || hasta) && (
+          {(desde || hasta || desdeB || hastaB) && (
             <button
               onClick={() => {
+                setDesdeB("");
+                setHastaB("");
                 setDesde("");
                 setHasta("");
                 setPage(1);
@@ -459,6 +463,20 @@ export default function BuscarFacturasPage() {
             </button>
           )}
         </div>
+        <button
+          onClick={aplicarFechas}
+          disabled={!sinAplicar}
+          className="ml-auto px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+        >
+          Aplicar
+        </button>
+        <p className="basis-full text-xs text-slate-500">
+          {sinAplicar
+            ? "Pulsa Aplicar para filtrar con estas fechas."
+            : desde || hasta
+              ? `Facturas con fecha ${desde ? `desde ${formatDDMMYYYY(desde)}` : ""}${desde && hasta ? " " : ""}${hasta ? `hasta ${formatDDMMYYYY(hasta)}` : ""}.`
+              : "Sin filtro de fecha."}
+        </p>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
