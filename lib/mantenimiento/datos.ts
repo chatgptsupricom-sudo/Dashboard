@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import {
   HORAS_EN_RUTA,
+  PLAN_SERVICIOS,
+  serviciosDeBase,
   type Equipo,
   type Estado,
   type Orden,
@@ -83,6 +85,7 @@ export async function asegurarTablas() {
     ["intervalo_medidor", "INT NULL"],
     ["ultimo_servicio_at", "DATE NULL"],
     ["ultimo_servicio_medidor", "INT NULL"],
+    ["servicios_json", "TEXT NULL"],
   ];
   for (const [nombre, tipo] of nuevas) {
     if (!hay.has(nombre)) await db.execute(`ALTER TABLE mantenimiento_equipos ADD COLUMN ${nombre} ${tipo}`);
@@ -179,6 +182,21 @@ async function traerCamionesDelCatalogo(cids: number | null) {
 
 const entero = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
+function leerServicios(json: unknown): Record<string, number> | null {
+  if (!json) return null;
+  try {
+    const crudo = JSON.parse(String(json));
+    if (!crudo || typeof crudo !== "object" || Array.isArray(crudo)) return null;
+    const limpio: Record<string, number> = {};
+    for (const [clave, valor] of Object.entries(crudo)) {
+      if (Number.isFinite(Number(valor))) limpio[clave] = Number(valor);
+    }
+    return limpio;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Qué dice el despacho de cada camión: cargando en el portón, o en ruta (un
  * egreso por ruta aprobado después del último regreso, en las últimas
@@ -273,7 +291,7 @@ export async function listar(cids: number | null): Promise<{ equipos: Equipo[]; 
   const sede = deSede(cids);
   const [equipos] = await db.execute(
     `SELECT id, tipo, codigo, descripcion, medidor, proximo_servicio, regreso_at,
-            intervalo_dias, intervalo_medidor, ultimo_servicio_at, ultimo_servicio_medidor
+            intervalo_dias, intervalo_medidor, ultimo_servicio_at, ultimo_servicio_medidor, servicios_json
        FROM mantenimiento_equipos
       WHERE activo = 1 AND ${sede.sql}
       ORDER BY tipo ASC, codigo ASC`,
@@ -303,6 +321,22 @@ export async function listar(cids: number | null): Promise<{ equipos: Equipo[]; 
   }
   const { rutas, conteo } = await rutasPorPlaca(cids, regresos);
 
+  // La primera vez que un equipo tiene medidor, su calendario arranca dando por
+  // hecho lo anterior (serviciosDeBase), y se guarda: a partir de ahí lo que
+  // se pase de su kilometraje queda vencido hasta que se marque hecho.
+  for (const f of equipos as any[]) {
+    if (f.medidor === null || f.medidor === undefined || f.servicios_json) continue;
+    f.servicios_json = JSON.stringify(serviciosDeBase(f.tipo as TipoEquipo, Number(f.medidor)));
+    try {
+      await db.execute("UPDATE mantenimiento_equipos SET servicios_json = ? WHERE id = ? AND servicios_json IS NULL", [
+        f.servicios_json,
+        f.id,
+      ]);
+    } catch (e: any) {
+      console.error(`[mantenimiento] no se guardó el calendario inicial del equipo ${f.id}:`, e?.message || e);
+    }
+  }
+
   return {
     equipos: (equipos as any[]).map((f) => {
       const placa = String(f.codigo).toUpperCase();
@@ -318,6 +352,7 @@ export async function listar(cids: number | null): Promise<{ equipos: Equipo[]; 
         intervalo_medidor: entero(f.intervalo_medidor),
         ultimo_servicio_at: soloFecha(f.ultimo_servicio_at),
         ultimo_servicio_medidor: entero(f.ultimo_servicio_medidor),
+        servicios: leerServicios(f.servicios_json),
         orden: porEquipo.get(Number(f.id)) || null,
         ruta: (camion && rutas.get(placa)) || null,
         rutas_30d: (camion && conteo.get(placa)) || 0,
@@ -452,4 +487,29 @@ export async function guardarPlan(
       WHERE id = ?`,
     [d.intervaloDias, d.intervaloMedidor, d.medidor, ...(d.proximo !== undefined ? [d.proximo] : []), equipoId],
   );
+}
+
+/** El kilometraje (u horas) de hoy. El calendario se arma solo al listar. */
+export async function guardarMedidor(equipoId: number, medidor: number) {
+  await db.execute("UPDATE mantenimiento_equipos SET medidor = ? WHERE id = ?", [medidor, equipoId]);
+}
+
+/**
+ * Un servicio del calendario se hizo: queda anotado al medidor de hoy y le
+ * vuelve a tocar un intervalo después. "sin_medidor" si el equipo todavía no
+ * tiene kilometraje; "desconocido" si esa clave no es de su plan.
+ */
+export async function marcarServicioHecho(
+  equipoId: number,
+  tipo: TipoEquipo,
+  clave: string,
+): Promise<"ok" | "sin_medidor" | "desconocido"> {
+  if (!PLAN_SERVICIOS[tipo].some((p) => p.clave === clave)) return "desconocido";
+  const [filas] = await db.execute("SELECT medidor, servicios_json FROM mantenimiento_equipos WHERE id = ?", [equipoId]);
+  const f = (filas as any[])[0];
+  if (!f || f.medidor === null || f.medidor === undefined) return "sin_medidor";
+  const servicios = leerServicios(f.servicios_json) || serviciosDeBase(tipo, Number(f.medidor));
+  servicios[clave] = Number(f.medidor);
+  await db.execute("UPDATE mantenimiento_equipos SET servicios_json = ? WHERE id = ?", [JSON.stringify(servicios), equipoId]);
+  return "ok";
 }

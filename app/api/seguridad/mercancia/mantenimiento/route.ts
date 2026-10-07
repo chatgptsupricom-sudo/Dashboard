@@ -1,5 +1,14 @@
 import { requireAlmacen, resolverCidsSesion } from "@/lib/seguridad/auth";
-import { crearEquipo, crearOrden, equipoDeSede, guardarPlan, listar, marcarRegreso } from "@/lib/mantenimiento/datos";
+import {
+  crearEquipo,
+  crearOrden,
+  equipoDeSede,
+  guardarMedidor,
+  guardarPlan,
+  listar,
+  marcarRegreso,
+  marcarServicioHecho,
+} from "@/lib/mantenimiento/datos";
 import {
   PRIORIDADES,
   TAREAS_SUGERIDAS,
@@ -21,6 +30,9 @@ export const dynamic = "force-dynamic";
  * POST { accion, ... }:
  *  - equipo: dar de alta un equipo.
  *  - reportar: abrir una orden de mantenimiento para uno.
+ *  - km { equipo_id, medidor }: el kilometraje (u horas) de hoy; de ahí sale
+ *    cuándo le toca cada mantenimiento.
+ *  - servicio { equipo_id, clave }: un mantenimiento del calendario se hizo.
  *  - regreso { equipo_id, medidor? }: el camión volvió de la ruta.
  *  - plan { equipo_id, intervalo_dias, intervalo_medidor, proximo_servicio?,
  *    medidor? }: el plan preventivo del equipo.
@@ -145,6 +157,27 @@ export async function POST(request: NextRequest) {
         );
       }
       return NextResponse.json({ success: true, ...(await listar(cids)) }, { status: 201 });
+    }
+
+    if (body?.accion === "km" || body?.accion === "servicio") {
+      const equipoId = Number(body?.equipo_id);
+      const equipo = Number.isInteger(equipoId) && equipoId > 0 ? await equipoDeSede(equipoId, cids) : null;
+      if (!equipo) return NextResponse.json({ error: "No encontramos ese equipo" }, { status: 404 });
+
+      if (body.accion === "km") {
+        const m = medidor(body?.medidor);
+        if (m === "invalido" || m === null) {
+          return NextResponse.json({ error: "Escribe el kilometraje (o las horas) con un número válido" }, { status: 400 });
+        }
+        await guardarMedidor(equipoId, m);
+      } else {
+        const r = await marcarServicioHecho(equipoId, equipo.tipo, String(body?.clave || ""));
+        if (r === "desconocido") return NextResponse.json({ error: "Ese mantenimiento no es del plan de este equipo" }, { status: 400 });
+        if (r === "sin_medidor") {
+          return NextResponse.json({ error: "Primero coloca el kilometraje (o las horas) del equipo" }, { status: 400 });
+        }
+      }
+      return NextResponse.json({ success: true, ...(await listar(cids)) });
     }
 
     if (body?.accion === "regreso" || body?.accion === "plan") {
