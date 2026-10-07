@@ -17,7 +17,6 @@ import {
   Plus,
   Route,
   Search,
-  Settings2,
   Sparkles,
   Truck,
   Undo2,
@@ -25,17 +24,17 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { fechaCorta } from "@/lib/fecha";
 import {
   PRIORIDADES,
   TAREAS_SUGERIDAS,
   TIPOS_EQUIPO,
   TIPOS_ORDEN,
-  servicioPendiente,
+  calendario,
   situacionDe,
   tareasCompletas,
   unidadMedidor,
   type Equipo,
+  type ItemCalendario,
   type Orden,
   type Prioridad,
   type Situacion,
@@ -67,6 +66,10 @@ import Escena3D from "./Escena3D";
  * Abajo, la flota en lista (lo mismo, para buscar y para quien no tenga 3D) y
  * la ficha del vehículo elegido, con el paso que toca.
  *
+ * Lo de todos los días es una sola cosa: anotar el kilometraje (u horas) del
+ * equipo. Con eso la ficha dice cuándo le toca cada mantenimiento
+ * (lib/mantenimiento/tipos › calendario) y cuáles ya están vencidos.
+ *
  * Los camiones que el despacho mandó a ruta aparecen "en ruta" hasta que se
  * marca el regreso. El jefe de taller IA (AsistenteIA) revisa la flota y
  * propone mantenimientos; nada se crea sin que una persona lo confirme.
@@ -79,8 +82,15 @@ const ANCHO = "max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8";
 
 const SITUACIONES: Situacion[] = ["operativo", "en_ruta", "reportado", "en_taller", "listo"];
 
-/** Si ya toca avisar del preventivo (lib/mantenimiento/tipos › servicioPendiente). */
-type Pendiente = { dias: number | null; porMedidor: boolean } | null;
+/** Lo que hay que avisar del calendario de un equipo: lo vencido y lo que ya viene. */
+type Pendiente = { vencidos: number; proximo: ItemCalendario } | null;
+
+/** null si el equipo no tiene medidor, o si no hay nada vencido ni por vencer. */
+function pendienteDe(e: Equipo): Pendiente {
+  const items = calendario(e);
+  const vencidos = items.filter((x) => x.estado === "vencido").length;
+  return items[0] && items[0].estado !== "al_dia" ? { vencidos, proximo: items[0] } : null;
+}
 
 /** Con qué llega lleno el formulario de reportar (una recomendación de la IA). */
 type Prellenado = Pick<Recomendacion, "equipo_id" | "tipo" | "prioridad" | "titulo" | "tareas"> & { detalle?: string };
@@ -137,7 +147,6 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
   const [busqueda, setBusqueda] = useState("");
   const [modal, setModal] = useState<null | "equipo" | "reportar">(null);
   const [prellenado, setPrellenado] = useState<Prellenado | null>(null);
-  const [ahora] = useState(() => Date.now());
 
   const aplicar = useCallback((json: any) => {
     if (Array.isArray(json.equipos)) setEquipos(json.equipos);
@@ -197,11 +206,8 @@ export default function MantenimientoUnidades({ volverA }: { volverA: string }) 
   }, [equipos]);
 
   const aviso = useCallback(
-    (e: Equipo): Pendiente => {
-      // Con un mantenimiento abierto ya se está atendiendo: no hace falta avisar.
-      return e.orden ? null : servicioPendiente(e, ahora);
-    },
-    [ahora],
+    (e: Equipo): Pendiente => pendienteDe(e),
+    [],
   );
 
   const vehiculos = useMemo<VehiculoEscena[]>(
@@ -586,7 +592,7 @@ function TarjetaEquipo({
   );
 }
 
-/** "Servicio en 3 días", "vencido hace 2", o que ya toca por kilometraje u horas. */
+/** "2 mantenimientos vencidos", o el que ya viene: "Aceite en 300 km". */
 function AvisoServicio({
   pendiente,
   equipo,
@@ -599,15 +605,17 @@ function AvisoServicio({
   className?: string;
 }) {
   if (!pendiente) return null;
-  const vencido = pendiente.porMedidor || (pendiente.dias !== null && pendiente.dias < 0);
+  const unidad = unidadMedidor(equipo.tipo);
   return (
-    <p className={`inline-flex items-center gap-1 text-[11px] font-semibold ${vencido ? "text-red-600" : "text-amber-700"} ${className}`}>
+    <p
+      className={`flex items-center gap-1 text-[11px] font-semibold ${pendiente.vencidos > 0 ? "text-red-600" : "text-amber-700"} ${className}`}
+    >
       <CalendarClock className="w-3.5 h-3.5 shrink-0" />
-      {pendiente.dias !== null
-        ? pendiente.dias < 0
-          ? t("servicio_vencido", { n: -pendiente.dias })
-          : t("servicio_en", { n: pendiente.dias })
-        : t(`servicio_por_medidor.${unidadMedidor(equipo.tipo)}`)}
+      <span className="truncate">
+        {pendiente.vencidos > 0
+          ? t("calendario.vencidos", { n: pendiente.vencidos })
+          : t("calendario.viene", { nombre: pendiente.proximo.nombre, n: miles(pendiente.proximo.faltan), u: unidad })}
+      </span>
     </p>
   );
 }
@@ -670,16 +678,25 @@ function Ficha({
   const unidad = unidadMedidor(equipo.tipo);
 
   const [kmRegreso, setKmRegreso] = useState("");
-  const [planAbierto, setPlanAbierto] = useState(false);
-  const [cadaDias, setCadaDias] = useState(equipo.intervalo_dias != null ? String(equipo.intervalo_dias) : "");
-  const [cadaMedidor, setCadaMedidor] = useState(equipo.intervalo_medidor != null ? String(equipo.intervalo_medidor) : "");
-  const [proximoPlan, setProximoPlan] = useState(equipo.proximo_servicio || "");
+  const [km, setKm] = useState("");
+  const items = calendario(equipo);
+  const guardarKm = async () => {
+    if (km === "" || !Number.isInteger(Number(km)) || Number(km) < 0) return;
+    // Un medidor no baja: si se anota menos, casi siempre es un dedo de más o de menos.
+    if (
+      equipo.medidor !== null &&
+      Number(km) < equipo.medidor &&
+      !window.confirm(t("km.menor", { antes: miles(equipo.medidor), ahora: miles(Number(km)), u: unidad }))
+    ) {
+      return;
+    }
+    if (await onEquipo({ accion: "km", medidor: Number(km) })) setKm("");
+  };
 
   const [responsable, setResponsable] = useState("");
   const [nuevaTarea, setNuevaTarea] = useState("");
   const [costo, setCosto] = useState("");
   const [medidor, setMedidor] = useState(orden?.medidor != null ? String(orden.medidor) : "");
-  const [proximo, setProximo] = useState("");
   const [notas, setNotas] = useState("");
 
   const tareas = orden?.tareas || [];
@@ -698,27 +715,44 @@ function Ficha({
           </div>
           <Pastilla situacion={situacion} t={t} />
         </div>
-        <dl className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-white/80 border border-slate-200/70 px-3 py-2">
-            <dt className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-              <Gauge className="w-3 h-3" />
-              {t(`medidor.${unidad}`)}
-            </dt>
-            <dd className="text-sm font-semibold tabular-nums text-slate-900">
-              {equipo.medidor !== null ? `${miles(equipo.medidor)} ${unidad}` : "—"}
-            </dd>
+        {/* Lo único que hay que anotar: el kilometraje (u horas) de hoy. */}
+        <div className="mt-4 rounded-2xl bg-white/85 border border-slate-200/70 p-3.5">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <Gauge className="w-3 h-3" />
+                {t(`medidor.${unidad}`)}
+              </p>
+              <p className="text-2xl font-semibold tabular-nums tracking-tight text-slate-900">
+                {equipo.medidor !== null ? miles(equipo.medidor) : "—"}
+                <span className="ml-1 text-sm font-medium text-slate-400">{unidad}</span>
+              </p>
+            </div>
+            <AvisoServicio pendiente={pendiente} equipo={equipo} t={t} className="max-w-[55%] justify-end text-right" />
           </div>
-          <div className="rounded-xl bg-white/80 border border-slate-200/70 px-3 py-2">
-            <dt className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-              <CalendarClock className="w-3 h-3" />
-              {t("proximo_servicio")}
-            </dt>
-            <dd className={`text-sm font-semibold tabular-nums ${pendiente ? "text-amber-700" : "text-slate-900"}`}>
-              {equipo.proximo_servicio ? fechaCorta(equipo.proximo_servicio) : "—"}
-            </dd>
-          </div>
-        </dl>
-        <AvisoServicio pendiente={pendiente} equipo={equipo} t={t} className="mt-3" />
+          {puedeEditar && (
+            <div className="mt-3 flex gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={km}
+                onChange={(e) => setKm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  void guardarKm();
+                }}
+                placeholder={t(`km.ph.${unidad}`)}
+                aria-label={t(`km.ph.${unidad}`)}
+                className={`${inputClases} tabular-nums`}
+              />
+              <BotonPrimario onClick={() => void guardarKm()} disabled={enviando || km === ""} icon={Check} className="shrink-0">
+                {t("km.guardar")}
+              </BotonPrimario>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="p-5 space-y-4">
@@ -767,92 +801,71 @@ function Ficha({
           </div>
         )}
 
-        {/* Plan preventivo: cada cuánto le toca servicio. */}
-        <div className="rounded-2xl border border-slate-200/80">
-          <button
-            type="button"
-            onClick={() => setPlanAbierto((v) => !v)}
-            aria-expanded={planAbierto}
-            className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left"
-          >
-            <Settings2 className="w-4 h-4 text-slate-400 shrink-0" />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-semibold text-slate-900">{t("plan.titulo")}</span>
-              <span className="block text-xs text-slate-500 truncate">
-                {equipo.intervalo_dias || equipo.intervalo_medidor
-                  ? [
-                      equipo.intervalo_dias ? t("plan.cada_dias", { n: equipo.intervalo_dias }) : null,
-                      equipo.intervalo_medidor ? `${miles(equipo.intervalo_medidor)} ${unidad}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")
-                  : t("plan.sin_plan")}
-              </span>
-            </span>
-            <span className="text-[11px] font-semibold text-[color:var(--portal-primary,#741DFE)]">
-              {t(planAbierto ? "plan.cerrar" : "plan.editar")}
-            </span>
-          </button>
-          {planAbierto && (
-            <div className="px-3.5 pb-3.5 space-y-3 border-t border-slate-100 pt-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelClases}>{t("plan.dias")}</label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    value={cadaDias}
-                    disabled={!puedeEditar}
-                    onChange={(e) => setCadaDias(e.target.value)}
-                    placeholder="90"
-                    className={inputClases}
-                  />
-                </div>
-                <div>
-                  <label className={labelClases}>{t(`plan.medidor.${unidad}`)}</label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    value={cadaMedidor}
-                    disabled={!puedeEditar}
-                    onChange={(e) => setCadaMedidor(e.target.value)}
-                    placeholder={unidad === "km" ? "10000" : "250"}
-                    className={inputClases}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className={labelClases}>{t("proximo_servicio")}</label>
-                <input
-                  type="date"
-                  value={proximoPlan}
-                  disabled={!puedeEditar}
-                  onChange={(e) => setProximoPlan(e.target.value)}
-                  className={inputClases}
-                />
-              </div>
-              <p className="text-[11px] text-slate-500">{t("plan.ayuda")}</p>
-              {puedeEditar && (
-                <BotonSecundario
-                  onClick={async () => {
-                    const ok = await onEquipo({
-                      accion: "plan",
-                      intervalo_dias: cadaDias === "" ? null : Number(cadaDias),
-                      intervalo_medidor: cadaMedidor === "" ? null : Number(cadaMedidor),
-                      proximo_servicio: proximoPlan || null,
-                    });
-                    if (ok) setPlanAbierto(false);
-                  }}
-                  disabled={enviando}
-                  icon={Check}
-                  className="w-full"
-                >
-                  {t("plan.guardar")}
-                </BotonSecundario>
-              )}
-            </div>
+        {/* Cuándo le toca cada mantenimiento, según el kilometraje. */}
+        <div>
+          <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-900 mb-2.5">
+            <CalendarClock className="w-4 h-4 text-slate-400" />
+            {t("calendario.titulo")}
+          </h3>
+          {items.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3.5 py-3 text-sm text-slate-600">
+              {t(`calendario.sin_medidor.${unidad}`)}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {items.map((x) => {
+                const tono =
+                  x.estado === "vencido"
+                    ? { caja: "border-red-200 bg-red-50/60", barra: "bg-red-500", texto: "text-red-700" }
+                    : x.estado === "pronto"
+                      ? { caja: "border-amber-200 bg-amber-50/60", barra: "bg-amber-500", texto: "text-amber-700" }
+                      : { caja: "border-slate-200/80 bg-white", barra: "bg-emerald-500", texto: "text-slate-500" };
+                const recorrido = Math.max(0, Math.min(1, (x.cada - x.faltan) / x.cada));
+                return (
+                  <li key={x.clave} className={`rounded-xl border px-3 py-2.5 ${tono.caja}`}>
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-900 break-words">{x.nombre}</p>
+                        <p className={`text-xs font-semibold tabular-nums ${tono.texto}`}>
+                          {x.faltan <= 0
+                            ? t("calendario.vencido", { n: miles(-x.faltan), u: unidad })
+                            : t("calendario.faltan", { n: miles(x.faltan), u: unidad })}
+                          <span className="font-medium text-slate-400">
+                            {" · "}
+                            {t("calendario.a_los", { n: miles(x.proximo), u: unidad })}
+                          </span>
+                        </p>
+                      </div>
+                      {puedeEditar && x.estado !== "al_dia" && (
+                        <button
+                          type="button"
+                          disabled={enviando}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                t("calendario.hecho_confirmar", { nombre: x.nombre, n: miles(equipo.medidor ?? 0), u: unidad }),
+                              )
+                            ) {
+                              void onEquipo({ accion: "servicio", clave: x.clave });
+                            }
+                          }}
+                          className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {t("calendario.hecho")}
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-2 h-1.5 rounded-full bg-slate-200/70 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all duration-500 ${tono.barra}`} style={{ width: `${recorrido * 100}%` }} />
+                    </div>
+                    <p className="mt-1 text-[10px] font-medium text-slate-400 tabular-nums">
+                      {t("calendario.cada", { n: miles(x.cada), u: unidad })}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
 
@@ -1033,10 +1046,6 @@ function Ficha({
                   </div>
                 </div>
                 <div>
-                  <label className={labelClases}>{t("proximo_servicio")}</label>
-                  <input type="date" value={proximo} onChange={(e) => setProximo(e.target.value)} className={inputClases} />
-                </div>
-                <div>
                   <label className={labelClases}>{t("notas")}</label>
                   <textarea
                     value={notas}
@@ -1052,7 +1061,6 @@ function Ficha({
                       accion: "cerrar",
                       costo: costo === "" ? null : Number(costo),
                       medidor: medidor === "" ? null : Number(medidor),
-                      proximo_servicio: proximo || null,
                       notas: notas.trim() || null,
                     })
                   }

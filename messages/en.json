@@ -3124,6 +3124,29 @@
           "diagnosticando": "Diagnosing…",
           "no_operar": "The AI recommends not using the equipment until it is repaired.",
           "causas": "Likely causes"
+        },
+        "km": {
+          "ph": {
+            "km": "Today's mileage",
+            "h": "Today's hours of use"
+          },
+          "guardar": "Save",
+          "menor": "It had {antes} {u} and you are entering {ahora} {u}, which is less. Save it anyway?"
+        },
+        "calendario": {
+          "titulo": "When each maintenance is due",
+          "sin_medidor": {
+            "km": "Enter the mileage above to see when each maintenance is due.",
+            "h": "Enter the hours of use above to see when each maintenance is due."
+          },
+          "faltan": "{n} {u} to go",
+          "vencido": "Overdue by {n} {u}",
+          "a_los": "due at {n} {u}",
+          "cada": "Every {n} {u}",
+          "hecho": "Done",
+          "hecho_confirmar": "Mark \"{nombre}\" as done at {n} {u}?",
+          "vencidos": "{n, plural, =1 {1 maintenance overdue} other {# maintenances overdue}}",
+          "viene": "{nombre} in {n} {u}"
         }
       },
       "catalogo_ui": {

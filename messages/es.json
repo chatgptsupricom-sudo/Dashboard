@@ -3113,6 +3113,29 @@
           "diagnosticando": "Diagnosticando…",
           "no_operar": "La IA recomienda no usar el equipo hasta repararlo.",
           "causas": "Causas probables"
+        },
+        "km": {
+          "ph": {
+            "km": "Kilometraje de hoy",
+            "h": "Horas de uso de hoy"
+          },
+          "guardar": "Guardar",
+          "menor": "Tenía {antes} {u} y estás anotando {ahora} {u}, que es menos. ¿Lo guardo así?"
+        },
+        "calendario": {
+          "titulo": "Cuándo le toca cada mantenimiento",
+          "sin_medidor": {
+            "km": "Coloca el kilometraje arriba y aquí verás cuándo le toca cada mantenimiento.",
+            "h": "Coloca las horas de uso arriba y aquí verás cuándo le toca cada mantenimiento."
+          },
+          "faltan": "Faltan {n} {u}",
+          "vencido": "Vencido por {n} {u}",
+          "a_los": "le toca a los {n} {u}",
+          "cada": "Cada {n} {u}",
+          "hecho": "Hecho",
+          "hecho_confirmar": "¿Marcar \"{nombre}\" como hecho a los {n} {u}?",
+          "vencidos": "{n, plural, =1 {1 mantenimiento vencido} other {# mantenimientos vencidos}}",
+          "viene": "{nombre} en {n} {u}"
         }
       },
       "catalogo_ui": {
