@@ -13,12 +13,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
   FileText,
+  Loader2,
   Search,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { descargarExcel } from "@/lib/excel";
 
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("en-US", {
@@ -35,11 +38,48 @@ function formatDDMMYYYY(dateStr: string | null) {
   return `${day}-${m}-${y}`;
 }
 
+// Fecha local en YYYY-MM-DD (toISOString la pasaría a UTC y cambia el día de noche).
+function ymd(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function diasAtras(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return ymd(d);
+}
+
+const RANGOS: { label: string; rango: () => [string, string] }[] = [
+  { label: "Hoy", rango: () => [diasAtras(0), diasAtras(0)] },
+  { label: "Ayer", rango: () => [diasAtras(1), diasAtras(1)] },
+  { label: "Últimos 7 días", rango: () => [diasAtras(6), diasAtras(0)] },
+  { label: "Últimos 30 días", rango: () => [diasAtras(29), diasAtras(0)] },
+  {
+    label: "Este mes",
+    rango: () => {
+      const n = new Date();
+      return [ymd(new Date(n.getFullYear(), n.getMonth(), 1)), ymd(n)];
+    },
+  },
+  {
+    label: "Mes pasado",
+    rango: () => {
+      const n = new Date();
+      return [
+        ymd(new Date(n.getFullYear(), n.getMonth() - 1, 1)),
+        ymd(new Date(n.getFullYear(), n.getMonth(), 0)),
+      ];
+    },
+  },
+];
+
 function PaymentBadge({ state }: { state: string }) {
   const map: Record<string, { label: string; cls: string }> = {
     paid: { label: "Pagada", cls: "bg-emerald-100 text-emerald-700" },
     partial: { label: "Parcial", cls: "bg-amber-100 text-amber-700" },
     not_paid: { label: "No pagada", cls: "bg-red-100 text-red-700" },
+    in_payment: { label: "En pago", cls: "bg-emerald-100 text-emerald-700" },
+    reversed: { label: "Revertida", cls: "bg-slate-100 text-slate-600" },
     invoicing_app_payment: { label: "Pago", cls: "bg-blue-100 text-blue-700" },
   };
   const info = map[state] || { label: state, cls: "bg-slate-100 text-slate-600" };
@@ -257,6 +297,19 @@ export default function BuscarFacturasPage() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  // Rango por fecha de factura; con rango no hace falta escribir nada.
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
+  const [exportando, setExportando] = useState(false);
+  const hayFiltro = Boolean(debouncedQuery || desde || hasta);
+
+  const paramsBase = useCallback(() => {
+    const params = new URLSearchParams({ q: debouncedQuery, empresa });
+    if (desde) params.set("desde", desde);
+    if (hasta) params.set("hasta", hasta);
+    if (!empresa && userCids) params.set("userCids", String(userCids));
+    return params;
+  }, [debouncedQuery, empresa, desde, hasta, userCids]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 300);
@@ -264,19 +317,15 @@ export default function BuscarFacturasPage() {
   }, [query]);
 
   const fetchData = useCallback(async () => {
-    if (!debouncedQuery) {
+    if (!hayFiltro) {
       setData(null);
       return;
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        q: debouncedQuery,
-        empresa,
-        page: String(page),
-        limit: "50",
-      });
-      if (!empresa && userCids) params.set("userCids", String(userCids));
+      const params = paramsBase();
+      params.set("page", String(page));
+      params.set("limit", "50");
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/search?${params}`);
       const json = await res.json();
       setData(json);
@@ -284,7 +333,41 @@ export default function BuscarFacturasPage() {
       console.error(e);
     }
     setLoading(false);
-  }, [debouncedQuery, empresa, userCids, page]);
+  }, [hayFiltro, paramsBase, page]);
+
+  // Exporta todo lo filtrado (no solo la página): una fila por documento.
+  const exportarExcel = async () => {
+    setExportando(true);
+    try {
+      const params = paramsBase();
+      params.set("todos", "1");
+      const res = await fetch(`/api/superadmin/cuentas-por-cobrar/search?${params}`);
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json?.error || `HTTP ${res.status}`);
+      // El reporte de CxC trae una fila por vencimiento: una factura en
+      // cuotas aparece varias veces.
+      const vistos = new Set<number>();
+      const filas = (json.data?.invoices || [])
+        .filter((inv: any) => {
+          const k = inv.moveId || -inv.id;
+          if (vistos.has(k)) return false;
+          vistos.add(k);
+          return true;
+        })
+        .map((inv: any) => ({
+          "Número de factura": inv.name || `#${inv.id}`,
+          Cliente: inv.partnerName,
+          "Monto total": inv.amountTotal,
+          "Término de pago": inv.paymentTerm || "—",
+        }));
+      const rango = desde || hasta ? `_${desde || "inicio"}_a_${hasta || "hoy"}` : "";
+      descargarExcel(`Facturas${rango}`, [{ nombre: "Facturas", filas }]);
+    } catch (e: any) {
+      alert("Error al exportar: " + (e?.message || e));
+    } finally {
+      setExportando(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -308,8 +391,73 @@ export default function BuscarFacturasPage() {
           Buscar Facturas
         </h2>
         <p className="text-slate-500">
-          Busca por número de factura, cliente o vendedor
+          Busca por número de factura, cliente o vendedor, o filtra por fecha de factura
         </p>
+      </div>
+
+      {/* Fecha de factura */}
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div>
+          <label className="block text-[11px] font-medium text-slate-500">Desde</label>
+          <input
+            type="date"
+            value={desde}
+            max={hasta || undefined}
+            onChange={(e) => {
+              setDesde(e.target.value);
+              setPage(1);
+            }}
+            className="mt-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-slate-500">Hasta</label>
+          <input
+            type="date"
+            value={hasta}
+            min={desde || undefined}
+            onChange={(e) => {
+              setHasta(e.target.value);
+              setPage(1);
+            }}
+            className="mt-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+          />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {RANGOS.map((r) => {
+            const [d, h] = r.rango();
+            const activo = desde === d && hasta === h;
+            return (
+              <button
+                key={r.label}
+                onClick={() => {
+                  setDesde(d);
+                  setHasta(h);
+                  setPage(1);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  activo
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {r.label}
+              </button>
+            );
+          })}
+          {(desde || hasta) && (
+            <button
+              onClick={() => {
+                setDesde("");
+                setHasta("");
+                setPage(1);
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-800"
+            >
+              Quitar fechas
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -367,7 +515,7 @@ export default function BuscarFacturasPage() {
         </div>
       )}
 
-      {!loading && debouncedQuery && invoices.length === 0 && (
+      {!loading && hayFiltro && invoices.length === 0 && (
         <div className="p-12 text-center text-slate-400">
           <FileText size={40} className="mx-auto mb-3 opacity-40" />
           <p className="text-sm font-semibold">No se encontraron facturas</p>
@@ -382,16 +530,26 @@ export default function BuscarFacturasPage() {
               <span className="text-xs font-bold text-slate-500 uppercase">
                 {total} resultado{total !== 1 ? "s" : ""}
               </span>
-              <span className="text-xs text-slate-400">
-                Página {page} de {totalPages}
-              </span>
+              <div className="flex items-center gap-4">
+                <span className="text-xs text-slate-400">
+                  Página {page} de {totalPages}
+                </span>
+                <button
+                  onClick={exportarExcel}
+                  disabled={exportando}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+                >
+                  {exportando ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  {exportando ? "Exportando..." : "Exportar Excel"}
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-100 text-center">
-                    {["Factura", "Cliente", "Empresa", "Vendedor", "Fecha", "Vence", "Saldo", "Estado", "Días", ""].map(
+                    {["Factura", "Cliente", "Empresa", "Vendedor", "Fecha", "Vence", "Término", "Saldo", "Estado", "Días", ""].map(
                       (h) => (
                         <th
                           key={h}
@@ -426,7 +584,7 @@ export default function BuscarFacturasPage() {
                               </DialogDescription>
                             </DialogHeader>
                             <div className="mt-4 max-h-[70vh] overflow-y-auto pr-2">
-                              <InvoiceDetailView invoiceId={inv.id} />
+                              <InvoiceDetailView invoiceId={inv.moveId || inv.id} />
                             </div>
                           </DialogContent>
                         </Dialog>
@@ -445,6 +603,9 @@ export default function BuscarFacturasPage() {
                       </td>
                       <td className="px-3 py-3 text-slate-500 font-mono">
                         {formatDDMMYYYY(inv.invoiceDateDue)}
+                      </td>
+                      <td className="px-3 py-3 text-slate-600">
+                        {inv.paymentTerm || "—"}
                       </td>
                       <td className="px-3 py-3 font-bold text-slate-900">
                         {formatCurrency(Math.abs(inv.amountResidual))}
@@ -472,7 +633,7 @@ export default function BuscarFacturasPage() {
                               </DialogDescription>
                             </DialogHeader>
                             <div className="mt-4 max-h-[70vh] overflow-y-auto pr-2">
-                              <InvoiceDetailView invoiceId={inv.id} />
+                              <InvoiceDetailView invoiceId={inv.moveId || inv.id} />
                             </div>
                           </DialogContent>
                         </Dialog>
@@ -513,12 +674,12 @@ export default function BuscarFacturasPage() {
         </>
       )}
 
-      {!debouncedQuery && !loading && (
+      {!hayFiltro && !loading && (
         <div className="p-16 text-center text-slate-400">
           <Search size={48} className="mx-auto mb-4 opacity-30" />
-          <p className="text-sm font-semibold">Escribe para buscar facturas</p>
+          <p className="text-sm font-semibold">Escribe o elige un rango de fechas</p>
           <p className="text-xs mt-1">
-            Puedes buscar por número de factura, nombre del cliente o vendedor
+            Puedes buscar por número de factura, nombre del cliente o vendedor, o por fecha de factura
           </p>
         </div>
       )}
