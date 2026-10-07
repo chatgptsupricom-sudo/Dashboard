@@ -19,6 +19,7 @@ export enum UserRole {
   ADMINISTRACION = "administración",
   SEGURIDAD = "seguridad",
   ALMACEN = "almacen",
+  PROCESOS = "procesos",
 }
 
 // Permisos por rol
@@ -397,6 +398,16 @@ export const rolePermissions: RolePermissions = {
       "almacen_mantenimiento", // Mantenimiento de camiones y montacargas
       "almacen_actas_rma",
     ],
+  },
+  // Rol Procesos: documenta los procesos. Por ahora solo ve Manuales, donde
+  // crea y edita (lib/manuales/datos.ts, puedeEditar).
+  [UserRole.PROCESOS]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: ["manuales"],
   },
 };
 

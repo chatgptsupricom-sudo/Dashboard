@@ -131,7 +131,9 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/gestion") ||
     pathname.includes("/reportes-comerciales") ||
     // Agente IA de los roles habilitados por el SuperAdmin (lib/agenteia/acceso.ts).
-    pathname.includes("/agente-ia");
+    pathname.includes("/agente-ia") ||
+    // Manuales de procedimiento (por ahora, solo el rol Procesos).
+    pathname.includes("/manuales");
 
   if (isProtectedPath) {
     if (!token) {
@@ -173,6 +175,8 @@ export default async function middleware(request: NextRequest) {
       // — sin esto, el guard de la seccion 11 lo redirige antes de llegar a
       // ninguna pantalla del modulo.
       const isAlmacen = userRole === "almacen";
+      // Rol Procesos: arma los manuales de procedimiento.
+      const isProcesos = userRole === "procesos";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -311,6 +315,12 @@ export default async function middleware(request: NextRequest) {
         );
       }
 
+      // 10b. Manuales: por ahora solo el rol Procesos (crea, edita y lee); ni
+      // el SuperAdmin entra. Cada manual ya guarda qué roles lo leerán.
+      if (pathname.includes("/manuales") && !isProcesos) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
       // 11. Lógica para Seguridad (Almacén / Control de acceso)
       // El modulo vive en /seguridad y NO en el dashboard principal.
       // Por eso redirigimos al login del modulo (no al /dashboard comun).
@@ -363,6 +373,9 @@ export default async function middleware(request: NextRequest) {
       }
       // El Diseñador tiene su propio dashboard en /disenador/dashboard: el
       // general no es su inicio (no hay loop: el regex es de /dashboard exacto).
+      if (esDashboardComun && isProcesos) {
+        return NextResponse.redirect(new URL(`/${locale}/manuales`, request.url));
+      }
       if (esDashboardComun && isDisenador) {
         return NextResponse.redirect(
           new URL(`/${locale}/disenador/dashboard`, request.url),
