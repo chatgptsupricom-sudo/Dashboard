@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import RotacionEstados from "@/components/adminleads/RotacionEstados";
 
 const SEDE_NAMES: Record<number, string> = { 7: "Panama", 9: "Valencia", 10: "Caracas" };
 
@@ -599,6 +600,9 @@ export default function ConfiguracionPage() {
             </div>
           )}
         </div>
+
+        {/* Sección Estados por vendedor (rotación de leads nuevos) */}
+        <RotacionEstados />
 
         {/* Sección Servicios */}
         <div className="bg-white rounded-3xl border border-zinc-100 shadow-sm overflow-hidden">
