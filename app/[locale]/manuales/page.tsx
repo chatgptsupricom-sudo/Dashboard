@@ -1,6 +1,6 @@
 "use client";
 
-import { puedeEditar } from "@/lib/manuales/permisos";
+import { esProcesos } from "@/lib/manuales/permisos";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { BookOpen, ChevronRight, Loader2, Plus } from "lucide-react";
 import Link from "next/link";
@@ -20,7 +20,7 @@ type Resumen = {
 export default function ManualesPage() {
   const { locale } = useParams<{ locale: string }>();
   const { user } = useAuthStore();
-  const esSuper = puedeEditar(user?.role);
+  const puedeEditar = esProcesos(user?.role);
   const [manuales, setManuales] = useState<Resumen[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +65,7 @@ export default function ManualesPage() {
             placeholder="Buscar manual…"
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm sm:w-64"
           />
-          {esSuper && (
+          {puedeEditar && (
             <Link
               href={`/${locale}/manuales/nuevo`}
               className="flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"

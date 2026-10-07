@@ -2,7 +2,7 @@
 
 import { VistaManual } from "@/components/manuales/VistaManual";
 import type { Manual } from "@/lib/manuales/datos";
-import { puedeEditar } from "@/lib/manuales/permisos";
+import { esProcesos } from "@/lib/manuales/permisos";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { ArrowLeft, Loader2, Pencil, Printer } from "lucide-react";
 import Link from "next/link";
@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 export default function ManualPage() {
   const { locale, id } = useParams<{ locale: string; id: string }>();
   const { user } = useAuthStore();
-  const esSuper = puedeEditar(user?.role);
+  const puedeEditar = esProcesos(user?.role);
   const [manual, setManual] = useState<Manual | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +37,7 @@ export default function ManualPage() {
             >
               <Printer className="h-4 w-4" /> Imprimir
             </button>
-            {esSuper && (
+            {puedeEditar && (
               <Link
                 href={`/${locale}/manuales/${id}/editar`}
                 className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"

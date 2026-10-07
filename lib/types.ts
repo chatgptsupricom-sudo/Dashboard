@@ -63,7 +63,6 @@ export const rolePermissions: RolePermissions = {
       "marketing_management", // Gestión de marketing
       "marketing", // Marketing operativo
       "agenteia", // Agente IA para pruebas internas
-      "manuales", // Manuales de procedimiento (los arma el rol Procesos)
       "integraciondepago", // Integración De Pago
       "compras", // Agregado para que el SuperAdmin también vea compras
       "ordenes_compra", // Órdenes de compra: cola de aprobación del SuperAdmin

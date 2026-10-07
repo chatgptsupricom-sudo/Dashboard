@@ -1,6 +1,7 @@
 -- Rol Procesos: arma y mantiene los manuales de procedimiento (sección
--- Manuales, /manuales). Por ahora solo ve esa sección: entra directo a
--- Manuales y puede crear, editar, publicar y eliminar manuales.
+-- Manuales, /manuales). Por ahora es el único rol que ve esa sección (ni el
+-- SuperAdmin entra): entra directo a Manuales y crea, edita, publica y
+-- elimina manuales.
 --
 -- Para el phpMyAdmin de EasyPanel: tablas con la base delante
 -- (supricom_panel.roles) y sin information_schema.

@@ -53,7 +53,7 @@ const mover = <T,>(arr: T[], i: number, dir: number) => {
   return copia;
 };
 
-/** Crear (id = null) o editar un manual. SuperAdmin y Procesos (middleware y API). */
+/** Crear (id = null) o editar un manual. Solo rol Procesos (middleware y API). */
 export function EditorManual({ id }: { id: number | null }) {
   const { locale } = useParams<{ locale: string }>();
   const router = useRouter();
@@ -232,7 +232,7 @@ export function EditorManual({ id }: { id: number | null }) {
             </div>
           </Bloque>
 
-          <Bloque titulo="Quién lo ve" ayuda="Roles que leerán el manual cuando Manuales se abra a ellos (por ahora solo entran Procesos y SuperAdmin). Además tiene que estar publicado.">
+          <Bloque titulo="Quién lo ve" ayuda="Roles que leerán el manual cuando Manuales se abra a ellos (por ahora solo entra el rol Procesos). Además tendrá que estar publicado.">
             <div className="grid gap-2 sm:grid-cols-3">
               {roles.map((r) => (
                 <label key={r.rol} className="flex items-center gap-2 text-sm text-slate-700">

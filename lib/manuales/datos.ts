@@ -1,13 +1,13 @@
 import { db } from "@/lib/db";
-import { normRol, puedeEditar } from "@/lib/manuales/permisos";
+import { normRol } from "@/lib/manuales/permisos";
 
 /**
  * Manuales de procedimiento (sección "Manuales" del panel).
  *
  * Cada manual sigue el formato de procedimiento: código, versión, objetivo,
  * alcance, responsables, definiciones, pasos (con capturas) y control de
- * cambios. Lo escribe el SuperAdmin en el editor del panel; lo leen los roles
- * que el manual tenga asignados. Las tablas se crean solas; las imágenes van
+ * cambios. Por ahora la sección es solo del rol Procesos, que los escribe y
+ * los lee; `roles` guarda qué roles los leerán cuando se abra a ellos. Las tablas se crean solas; las imágenes van
  * en MySQL (LONGBLOB), como product_images y los adjuntos de RMA.
  */
 
@@ -42,7 +42,6 @@ export type Manual = {
   updatedAt: string | null;
 };
 
-export { normRol, puedeEditar, ROLES_EDITORES } from "@/lib/manuales/permisos";
 
 export const CONTENIDO_VACIO: Contenido = {
   objetivo: "",
@@ -110,23 +109,15 @@ const aManual = (f: any): Manual => ({
   updatedAt: f.updated_at ? new Date(f.updated_at).toISOString() : null,
 });
 
-/** Los editores ven todo (también borradores); los demás, lo publicado de su rol. */
-export function puedeVer(m: Pick<Manual, "roles" | "publicado">, rol: string) {
-  if (puedeEditar(rol)) return true;
-  return m.publicado && m.roles.includes(normRol(rol));
-}
-
-export async function listarManuales(rol: string): Promise<Omit<Manual, "contenido">[]> {
+export async function listarManuales(): Promise<Omit<Manual, "contenido">[]> {
   await ensureTablas();
   const [filas] = await db.execute(
     "SELECT id, codigo, titulo, area, version, roles, publicado, updated_by, updated_at FROM manuales ORDER BY area, codigo, titulo",
   );
-  return (filas as any[])
-    .map((f) => {
-      const { contenido: _, ...m } = aManual(f);
-      return m;
-    })
-    .filter((m) => puedeVer(m, rol));
+  return (filas as any[]).map((f) => {
+    const { contenido: _, ...m } = aManual(f);
+    return m;
+  });
 }
 
 export async function obtenerManual(id: number): Promise<Manual | null> {

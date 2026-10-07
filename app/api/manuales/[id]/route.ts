@@ -1,5 +1,5 @@
-import { requireRoles, requireSession } from "@/lib/auth/roles";
-import { borrarManual, guardarManual, obtenerManual, puedeVer, ROLES_EDITORES } from "@/lib/manuales/datos";
+import { requireProcesos } from "@/lib/manuales/acceso";
+import { borrarManual, guardarManual, obtenerManual } from "@/lib/manuales/datos";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -11,20 +11,19 @@ const idDe = async (ctx: Ctx) => {
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
-// GET: el manual, si el rol puede verlo. PUT / DELETE: SuperAdmin y Procesos.
+// GET / PUT / DELETE de un manual. Solo rol Procesos.
 export async function GET(request: NextRequest, ctx: Ctx) {
-  const auth = await requireSession(request);
+  const auth = await requireProcesos(request);
   if (auth.error) return auth.error;
   const id = await idDe(ctx);
   const manual = id ? await obtenerManual(id) : null;
-  // 404 también sin permiso: no se cuenta qué manuales existen para otros roles.
-  if (!manual || !puedeVer(manual, String(auth.payload?.role ?? "")))
+  if (!manual)
     return NextResponse.json({ error: "Manual no encontrado" }, { status: 404 });
   return NextResponse.json({ manual });
 }
 
 export async function PUT(request: NextRequest, ctx: Ctx) {
-  const auth = await requireRoles(request, ROLES_EDITORES);
+  const auth = await requireProcesos(request);
   if (auth.error) return auth.error;
   const id = await idDe(ctx);
   if (!id || !(await obtenerManual(id))) return NextResponse.json({ error: "Manual no encontrado" }, { status: 404 });
@@ -37,7 +36,7 @@ export async function PUT(request: NextRequest, ctx: Ctx) {
 }
 
 export async function DELETE(request: NextRequest, ctx: Ctx) {
-  const auth = await requireRoles(request, ROLES_EDITORES);
+  const auth = await requireProcesos(request);
   if (auth.error) return auth.error;
   const id = await idDe(ctx);
   if (!id) return NextResponse.json({ error: "Manual no encontrado" }, { status: 404 });
