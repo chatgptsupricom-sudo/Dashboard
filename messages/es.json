@@ -3572,7 +3572,24 @@
     "pistola_van_de": "{recibido} de {esperado}",
     "pistola_terminar": "Terminar",
     "pistola_completo": "{producto}: completo ({cantidad} de {esperado}). Pistolee el siguiente producto.",
-    "pistola_parece_producto": "Parece el código del modelo (UPC/EAN), que es igual en todas las cajas, no un serial. Si es el código de la caja, elija \"Es su código\"."
+    "pistola_parece_producto": "Parece el código del modelo (UPC/EAN), que es igual en todas las cajas, no un serial. Si es el código de la caja, elija \"Es su código\".",
+    "escena": {
+      "avance": "recibido",
+      "contados": "renglones contados",
+      "faltantes": "con faltante",
+      "sobrantes": "con sobrante",
+      "danados": "con daño",
+      "ayuda": "Toca un pallet para ir a su renglón · arrastra para girar",
+      "sin_contar": "Sin contar",
+      "recibido": "{n} de {de} recibidas",
+      "leyenda": {
+        "completo": "Completo",
+        "falta": "Falta",
+        "sobra": "Sobra",
+        "danado": "Con daño",
+        "sin_contar": "Sin contar"
+      }
+    }
   },
   "llegadas": {
     "titulo": "Packing List",
