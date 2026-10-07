@@ -356,6 +356,7 @@ export default function BuscarFacturasPage() {
         })
         .map((inv: any) => ({
           "Número de factura": inv.name || `#${inv.id}`,
+          Fecha: formatDDMMYYYY(inv.invoiceDate),
           Cliente: inv.partnerName,
           "Monto total": inv.amountTotal,
           "Término de pago": inv.paymentTerm || "—",
