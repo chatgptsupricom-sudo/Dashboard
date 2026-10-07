@@ -1,5 +1,6 @@
 "use client";
 
+import { puedeEditar } from "@/lib/manuales/permisos";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { BookOpen, ChevronRight, Loader2, Plus } from "lucide-react";
 import Link from "next/link";
@@ -19,7 +20,7 @@ type Resumen = {
 export default function ManualesPage() {
   const { locale } = useParams<{ locale: string }>();
   const { user } = useAuthStore();
-  const esSuper = String(user?.role || "").toLowerCase().trim() === "superadmin";
+  const esSuper = puedeEditar(user?.role);
   const [manuales, setManuales] = useState<Resumen[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -19,6 +19,7 @@ export enum UserRole {
   ADMINISTRACION = "administración",
   SEGURIDAD = "seguridad",
   ALMACEN = "almacen",
+  PROCESOS = "procesos",
 }
 
 // Permisos por rol
@@ -62,6 +63,7 @@ export const rolePermissions: RolePermissions = {
       "marketing_management", // Gestión de marketing
       "marketing", // Marketing operativo
       "agenteia", // Agente IA para pruebas internas
+      "manuales", // Manuales de procedimiento (los arma el rol Procesos)
       "integraciondepago", // Integración De Pago
       "compras", // Agregado para que el SuperAdmin también vea compras
       "ordenes_compra", // Órdenes de compra: cola de aprobación del SuperAdmin
@@ -397,6 +399,16 @@ export const rolePermissions: RolePermissions = {
       "almacen_mantenimiento", // Mantenimiento de camiones y montacargas
       "almacen_actas_rma",
     ],
+  },
+  // Rol Procesos: documenta los procesos. Por ahora solo ve Manuales, donde
+  // crea y edita (lib/manuales/datos.ts, puedeEditar).
+  [UserRole.PROCESOS]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: ["manuales"],
   },
 };
 

@@ -263,6 +263,8 @@ export function LoginForm() {
         router.push(`/${locale}/seguridad`);
       } else if (role === "diseñador") {
         router.push(`/${locale}/disenador/dashboard`);
+      } else if (role === "procesos") {
+        router.push(`/${locale}/manuales`);
       } else {
         console.log("Redirigiendo a /dashboard por fallo de coincidencia");
         router.push(`/${locale}/dashboard`);

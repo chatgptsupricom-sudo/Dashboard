@@ -1,13 +1,13 @@
 import { requireRoles } from "@/lib/auth/roles";
-import { guardarImagen, MAX_IMAGEN, MIMES_IMAGEN, obtenerManual } from "@/lib/manuales/datos";
+import { guardarImagen, MAX_IMAGEN, MIMES_IMAGEN, obtenerManual, ROLES_EDITORES } from "@/lib/manuales/datos";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-// POST multipart { manualId, archivo } -> { id }. Captura para un paso (solo SuperAdmin).
+// POST multipart { manualId, archivo } -> { id }. Captura para un paso (SuperAdmin y Procesos).
 // SVG no se acepta: puede llevar scripts.
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
+  const auth = await requireRoles(request, ROLES_EDITORES);
   if (auth.error) return auth.error;
   const form = await request.formData().catch(() => null);
   const manualId = Number(form?.get("manualId"));

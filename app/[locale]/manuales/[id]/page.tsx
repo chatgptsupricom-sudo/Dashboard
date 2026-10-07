@@ -2,6 +2,7 @@
 
 import { VistaManual } from "@/components/manuales/VistaManual";
 import type { Manual } from "@/lib/manuales/datos";
+import { puedeEditar } from "@/lib/manuales/permisos";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { ArrowLeft, Loader2, Pencil, Printer } from "lucide-react";
 import Link from "next/link";
@@ -11,7 +12,7 @@ import { useEffect, useState } from "react";
 export default function ManualPage() {
   const { locale, id } = useParams<{ locale: string; id: string }>();
   const { user } = useAuthStore();
-  const esSuper = String(user?.role || "").toLowerCase().trim() === "superadmin";
+  const esSuper = puedeEditar(user?.role);
   const [manual, setManual] = useState<Manual | null>(null);
   const [error, setError] = useState<string | null>(null);
 

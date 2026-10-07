@@ -132,8 +132,7 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/reportes-comerciales") ||
     // Agente IA de los roles habilitados por el SuperAdmin (lib/agenteia/acceso.ts).
     pathname.includes("/agente-ia") ||
-    // Manuales de procedimiento: todos los roles con sesión; cada manual
-    // decide qué roles lo ven (lib/manuales/datos.ts).
+    // Manuales de procedimiento (por ahora, solo Procesos y SuperAdmin).
     pathname.includes("/manuales");
 
   if (isProtectedPath) {
@@ -176,6 +175,8 @@ export default async function middleware(request: NextRequest) {
       // — sin esto, el guard de la seccion 11 lo redirige antes de llegar a
       // ninguna pantalla del modulo.
       const isAlmacen = userRole === "almacen";
+      // Rol Procesos: arma los manuales de procedimiento.
+      const isProcesos = userRole === "procesos";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -314,9 +315,10 @@ export default async function middleware(request: NextRequest) {
         );
       }
 
-      // 10b. Manuales: leer, cualquier rol; crear y editar, solo SuperAdmin.
-      if (/^\/(es|en)\/manuales\/(nuevo|\d+\/editar)(\/|$)/.test(pathname) && !isSuperAdmin) {
-        return NextResponse.redirect(new URL(`/${locale}/manuales`, request.url));
+      // 10b. Manuales: por ahora solo Procesos (que crea y edita) y SuperAdmin.
+      // Cada manual ya guarda qué roles lo leen, para cuando se abra a ellos.
+      if (pathname.includes("/manuales") && !isProcesos && !isSuperAdmin) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 
       // 11. Lógica para Seguridad (Almacén / Control de acceso)
@@ -371,6 +373,9 @@ export default async function middleware(request: NextRequest) {
       }
       // El Diseñador tiene su propio dashboard en /disenador/dashboard: el
       // general no es su inicio (no hay loop: el regex es de /dashboard exacto).
+      if (esDashboardComun && isProcesos) {
+        return NextResponse.redirect(new URL(`/${locale}/manuales`, request.url));
+      }
       if (esDashboardComun && isDisenador) {
         return NextResponse.redirect(
           new URL(`/${locale}/disenador/dashboard`, request.url),

@@ -245,8 +245,6 @@ export function Sidebar({
   if (puedeAgenteIA && !allowedSections.includes("agenteia")) {
     allowedSections.push("agenteia");
   }
-  // Manuales: en el menú de todos; cada manual decide qué roles lo ven.
-  if (!allowedSections.includes("manuales")) allowedSections.push("manuales");
 
   // Definición del menú base
   const menuItems = [

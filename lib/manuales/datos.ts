@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { normRol, puedeEditar } from "@/lib/manuales/permisos";
 
 /**
  * Manuales de procedimiento (sección "Manuales" del panel).
@@ -41,8 +42,7 @@ export type Manual = {
   updatedAt: string | null;
 };
 
-export const normRol = (r: unknown) => String(r ?? "").toLowerCase().trim();
-export const esSuperadmin = (r: unknown) => normRol(r) === "superadmin";
+export { normRol, puedeEditar, ROLES_EDITORES } from "@/lib/manuales/permisos";
 
 export const CONTENIDO_VACIO: Contenido = {
   objetivo: "",
@@ -110,9 +110,9 @@ const aManual = (f: any): Manual => ({
   updatedAt: f.updated_at ? new Date(f.updated_at).toISOString() : null,
 });
 
-/** El SuperAdmin ve todo (también borradores); los demás, lo publicado de su rol. */
+/** Los editores ven todo (también borradores); los demás, lo publicado de su rol. */
 export function puedeVer(m: Pick<Manual, "roles" | "publicado">, rol: string) {
-  if (esSuperadmin(rol)) return true;
+  if (puedeEditar(rol)) return true;
   return m.publicado && m.roles.includes(normRol(rol));
 }
 
