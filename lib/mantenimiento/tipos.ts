@@ -87,6 +87,8 @@ export type Equipo = {
   /** El último preventivo cerrado: cuándo y con qué medidor. */
   ultimo_servicio_at: string | null;
   ultimo_servicio_medidor: number | null;
+  /** A qué medidor se hizo por última vez cada servicio del calendario (ver `calendario`). */
+  servicios: Record<string, number> | null;
   /** La orden en curso, si tiene. */
   orden: Orden | null;
   /** Solo camiones: el despacho por ruta que lo tiene ocupado, si hay. */
@@ -184,4 +186,78 @@ export function servicioPendiente(
     e.ultimo_servicio_medidor !== null &&
     e.medidor >= e.ultimo_servicio_medidor + e.intervalo_medidor;
   return dias !== null || porMedidor ? { dias, porMedidor } : null;
+}
+
+/**
+ * El calendario de mantenimiento por medidor: Almacén solo anota el
+ * kilometraje (u horas, en un montacargas) y de aquí sale cuándo le toca cada
+ * cosa.
+ *
+ * Cada servicio se repite cada tantos km. De cada uno se guarda a qué
+ * kilometraje se hizo la última vez (`Equipo.servicios`); le vuelve a tocar
+ * `cada` km después, y queda vencido hasta que alguien lo marca hecho. La
+ * primera vez que se anota el kilometraje se da por hecho todo lo anterior
+ * (`serviciosDeBase`): un camión con 47.300 km tiene su cambio de aceite a los
+ * 50.000, no ocho vencidos.
+ */
+export type ServicioPlan = { clave: string; nombre: string; cada: number };
+
+export const PLAN_SERVICIOS: Record<TipoEquipo, ServicioPlan[]> = {
+  // Kilómetros
+  camion: [
+    { clave: "aceite", nombre: "Cambio de aceite y filtro de aceite", cada: 5000 },
+    { clave: "filtro_aire", nombre: "Filtro de aire", cada: 10000 },
+    { clave: "filtro_combustible", nombre: "Filtro de combustible", cada: 10000 },
+    { clave: "cauchos", nombre: "Rotación y revisión de cauchos", cada: 10000 },
+    { clave: "frenos", nombre: "Revisión de frenos", cada: 20000 },
+    { clave: "alineacion", nombre: "Alineación y balanceo", cada: 20000 },
+    { clave: "refrigerante", nombre: "Refrigerante y mangueras", cada: 40000 },
+    { clave: "caja", nombre: "Aceite de caja y diferencial", cada: 40000 },
+    { clave: "correas", nombre: "Correas", cada: 60000 },
+  ],
+  // Horas de uso
+  montacargas: [
+    { clave: "aceite", nombre: "Aceite de motor y filtro", cada: 250 },
+    { clave: "engrase", nombre: "Engrase, cadenas y mástil", cada: 250 },
+    { clave: "filtro_aire", nombre: "Filtro de aire", cada: 500 },
+    { clave: "frenos", nombre: "Frenos y dirección", cada: 500 },
+    { clave: "hidraulico", nombre: "Aceite hidráulico y filtro", cada: 1000 },
+    { clave: "transmision", nombre: "Aceite de transmisión", cada: 1000 },
+  ],
+};
+
+/** Todo lo anterior al medidor de hoy se da por hecho: cada servicio, en su último múltiplo. */
+export function serviciosDeBase(tipo: TipoEquipo, medidor: number): Record<string, number> {
+  const base: Record<string, number> = {};
+  for (const p of PLAN_SERVICIOS[tipo]) base[p.clave] = Math.floor(medidor / p.cada) * p.cada;
+  return base;
+}
+
+export type ItemCalendario = ServicioPlan & {
+  /** A qué medidor se hizo la última vez. */
+  hecho: number;
+  /** A qué medidor le vuelve a tocar. */
+  proximo: number;
+  /** Lo que falta para que le toque; cero o negativo = vencido. */
+  faltan: number;
+  estado: "vencido" | "pronto" | "al_dia";
+};
+
+/** "Pronto": cuando falta el 15 % del intervalo o menos. */
+const AVISO_PRONTO = 0.15;
+
+/** Cuándo le toca cada mantenimiento, lo más urgente primero. Vacío sin medidor. */
+export function calendario(e: Pick<Equipo, "tipo" | "medidor" | "servicios">): ItemCalendario[] {
+  if (e.medidor === null) return [];
+  const medidor = e.medidor;
+  return PLAN_SERVICIOS[e.tipo]
+    .map((p) => {
+      const guardado = e.servicios?.[p.clave];
+      const hecho = Number.isFinite(guardado) ? Number(guardado) : Math.floor(medidor / p.cada) * p.cada;
+      const proximo = hecho + p.cada;
+      const faltan = proximo - medidor;
+      const estado: ItemCalendario["estado"] = faltan <= 0 ? "vencido" : faltan <= p.cada * AVISO_PRONTO ? "pronto" : "al_dia";
+      return { ...p, hecho, proximo, faltan, estado };
+    })
+    .sort((a, b) => a.faltan - b.faltan);
 }

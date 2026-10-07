@@ -3,6 +3,7 @@ import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import {
   PRIORIDADES,
   TIPOS_ORDEN,
+  calendario,
   esUno,
   servicioPendiente,
   situacionDe,
@@ -92,6 +93,8 @@ function resumenFlota(equipos: Equipo[], historial: Orden[], ahora: number) {
       servicio_pendiente: pendiente
         ? { dias_para_la_fecha: pendiente.dias, vencido_por_medidor: pendiente.porMedidor }
         : null,
+      // Cuándo le toca cada mantenimiento según su medidor (faltan <= 0: vencido).
+      calendario: calendario(e).map((c) => ({ servicio: c.nombre, le_toca_a: c.proximo, faltan: c.faltan })),
       rutas_30d: e.tipo === "camion" ? e.rutas_30d : undefined,
       en_ruta_ahora: e.ruta?.estado === "en_ruta" || undefined,
       orden_abierta: e.orden
