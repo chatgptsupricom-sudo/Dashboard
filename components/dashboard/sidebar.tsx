@@ -303,6 +303,8 @@ export function Sidebar({
     // Cómo recibe el cliente cada pedido: lo carga el vendedor (o el asistente
     // de ventas por él) y Almacén lo usa en el egreso (lib/ventas/metodoRetiro).
     { id: "metodo_retiro", label: t("metodo_retiro"), icon: Truck, slug: "/metodo-retiro" },
+    // Casos de RMA de los clientes del vendedor, solo lectura (lib/rma/vendedor).
+    { id: "rma_seller", label: t("rma_clientes"), icon: Wrench, slug: "/casos-rma" },
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
     // Inventario de RMA separado por procedencia del equipo.
     { id: "rma_inventario_supricom", label: t("rma_inventario_supricom"), icon: PackageCheck, slug: "/rma/inventario/supricom", absoluteHref: true },
