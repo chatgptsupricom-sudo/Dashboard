@@ -146,6 +146,7 @@ export const rolePermissions: RolePermissions = {
     sections: [
       "dashboard",
       "metodo_retiro", // Método de retiro de sus pedidos (sucursal, ruta, encomienda o transporte externo)
+      "rma_seller", // Casos de RMA de sus clientes, del ticket a la entrega (solo lectura)
       "clientes",
       "leads",
       "cierres",
