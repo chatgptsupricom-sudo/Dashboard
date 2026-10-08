@@ -32,6 +32,8 @@ import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
 import NotaPedido from "@/components/seguridad/NotaPedido";
+import { VerAutorizacion } from "@/components/ventas/AutorizacionTransporte";
+import { describirMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 import Pistola from "@/components/escaneo/Pistola";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { CambiarMetodoRetiro } from "@/components/seguridad/CambiarMetodoRetiro";
@@ -216,6 +218,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const tAlm = useTranslations("seguridad.mercancia.almacenistas_catalogo");
   const tCho = useTranslations("seguridad.mercancia.choferes_catalogo");
   const tUni = useTranslations("seguridad.mercancia.unidades");
+  const tr = useTranslations("metodoRetiro");
   const params = useParams();
   const locale = (params?.locale as string) || "es";
   const { user } = useAuthStore();
@@ -230,6 +233,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const [novedadesGuardadas, setNovedadesGuardadas] = useState<NovedadGuardada[]>([]);
   // Nota del pedido en Odoo: quién retira, instrucciones del despacho.
   const [notaPedido, setNotaPedido] = useState<string | null>(null);
+  // Método de retiro del pedido: si es transporte externo, con la foto de la
+  // autorización del cliente para dejar salir el camión.
+  const [metodoRetiro, setMetodoRetiro] = useState<FilaMetodo | null>(null);
   // La orden ya está validada en Odoo: hay recibo de entrega para imprimir.
   const [odooValidada, setOdooValidada] = useState(false);
   // Producto con serial elegido en la pistola (como en la recepcion).
@@ -318,6 +324,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
     setNovedadesGuardadas(json.novedades || []);
     // Solo la trae la carga del egreso; las acciones no la tocan.
     if ("nota_pedido" in json) setNotaPedido(json.nota_pedido || null);
+    if ("metodo_retiro" in json) setMetodoRetiro(json.metodo_retiro || null);
     // Una orden validada no vuelve atrás: solo se enciende.
     if (json.odoo_validada === true) setOdooValidada(true);
     const a: Record<number, string> = {};
@@ -874,6 +881,18 @@ export default function EgresoFlujo({ id }: { id: string }) {
                   onGuardado={() => void cargar()}
                   className="mt-3"
                 />
+              )}
+              {/* Transporte externo: la autorización del cliente para el camión que no es de la empresa. */}
+              {metodoRetiro?.metodo === "transporte" && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5 space-y-2">
+                  <p className="text-sm font-semibold text-amber-900">{describirMetodo(metodoRetiro)}</p>
+                  {metodoRetiro.nota && <p className="text-xs text-slate-600 whitespace-pre-wrap">{metodoRetiro.nota}</p>}
+                  {metodoRetiro.autorizacion_id ? (
+                    <VerAutorizacion id={metodoRetiro.autorizacion_id} />
+                  ) : (
+                    <p className="text-xs font-medium text-rose-700">{tr("autorizacion_falta")}</p>
+                  )}
+                </div>
               )}
               {/* Quién retira: lo escribe Ventas en la nota del pedido de Odoo. */}
               <NotaPedido nota={notaPedido} retira={tipo === "puerta"} className="mt-4" />

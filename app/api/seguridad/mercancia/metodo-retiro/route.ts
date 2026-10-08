@@ -13,7 +13,9 @@ import { ErrorMetodo, guardarMetodoRetiro, metodosEvaluados } from "@/lib/ventas
  *
  *  - GET: rutas y agencias de la sucursal, para el formulario; con
  *    `?odoo_picking_id=`, también el método actual del pedido.
- *  - PUT: { odoo_picking_id, metodo, ruta_id?, agencia?, nota? }
+ *  - PUT: { odoo_picking_id, metodo, ruta_id?, agencia?, nota?, autorizacion_id? }
+ *    (transporte externo: la foto de la autorización del cliente, subida a
+ *    /api/ventas/metodo-retiro/autorizacion; si el pedido ya la tenía, no hace falta)
  */
 
 export async function GET(request: NextRequest) {
@@ -57,14 +59,16 @@ export async function PUT(request: NextRequest) {
     if (!picking?.odoo_sale_id) return NextResponse.json({ error: "Orden de despacho no encontrada" }, { status: 404 });
 
     const { metodo, egresos } = await guardarMetodoRetiro({
-      saleId: picking.odoo_sale_id,
+      saleIds: [picking.odoo_sale_id],
       metodo: body.metodo,
       rutaId: parseInt(String(body.ruta_id ?? ""), 10) || null,
       agencia: body.agencia ? String(body.agencia) : null,
       nota: body.nota ? String(body.nota) : null,
+      autorizacionId: parseInt(String(body.autorizacion_id ?? ""), 10) || null,
       cids,
       vendedorUid: null,
       autor: auth.payload?.name || auth.payload?.email || "Almacén",
+      email: String(auth.payload?.email || ""),
       rol: "almacen",
       porAlmacen: true,
     });

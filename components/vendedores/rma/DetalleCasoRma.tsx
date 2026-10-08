@@ -101,6 +101,9 @@ function SiNo({ valor, si, no }: { valor: any; si: string; no: string }) {
   );
 }
 
+/** La guía de la agencia que RMA adjunta al entregar (`tipo` = "guia_agencia"). */
+const esGuia = (a: { tipo?: string | null }) => String(a.tipo || "").startsWith("guia");
+
 function datosEntrega(v: any): Record<string, string> | null {
   if (!v) return null;
   if (typeof v === "string") {
@@ -247,7 +250,7 @@ export function DetalleCasoRma() {
         detalle: c.entrega_ciudad || c.entrega_agencia,
       });
     }
-    for (const a of datos.adjuntos.filter((x) => x.tipo === "guia")) {
+    for (const a of datos.adjuntos.filter((x) => esGuia(x))) {
       ev.push({ fecha: a.created_at, icono: FileText, color: "bg-slate-100 text-slate-600", titulo: t("ev_guia") });
     }
     for (const d of datos.despachos) {
@@ -318,8 +321,8 @@ export function DetalleCasoRma() {
     { etiqueta: t("etapa_entregado"), fecha: c.despachado_at ? fechaCorta(c.despachado_at) : null },
   ];
 
-  const fotosGenerales = datos.adjuntos.filter((a) => a.tipo !== "guia" && (!varios || !a.item_id));
-  const guias = datos.adjuntos.filter((a) => a.tipo === "guia");
+  const fotosGenerales = datos.adjuntos.filter((a) => !esGuia(a) && (!varios || !a.item_id));
+  const guias = datos.adjuntos.filter((a) => esGuia(a));
   const entrega = datosEntrega(c.entrega_datos);
   const dias = diasDelCaso(c);
 
@@ -406,7 +409,7 @@ export function DetalleCasoRma() {
           <Tarjeta titulo={varios ? t("productos", { count: productos.length }) : t("producto")} icono={Package}>
             <div className="space-y-4">
               {productos.map((p: any, idx: number) => {
-                const fotos = varios ? datos.adjuntos.filter((a) => a.item_id === p.id && a.tipo !== "guia") : [];
+                const fotos = varios ? datos.adjuntos.filter((a) => a.item_id === p.id && !esGuia(a)) : [];
                 return (
                   <div key={p.id ?? idx} className={varios ? "rounded-xl border border-slate-200 p-3 sm:p-4" : ""}>
                     <div className="flex flex-wrap items-start justify-between gap-2">
