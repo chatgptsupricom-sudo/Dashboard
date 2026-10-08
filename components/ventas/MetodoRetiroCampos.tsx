@@ -1,19 +1,32 @@
 "use client";
 
+import { AdjuntarAutorizacion, subirAutorizacion } from "@/components/ventas/AutorizacionTransporte";
 import { Input } from "@/components/ui/input";
 import { esDeLaSede, METODOS_RETIRO, type FilaMetodo, type MetodoRetiro as Metodo } from "@/lib/ventas/metodoRetiroTipos";
 import { Building2, Check, Package, Store, Truck } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 /**
- * Formulario del método de retiro (botones + ruta / agencia / compañía + nota).
+ * Formulario del método de retiro (botones + ruta / agencia / compañía + nota,
+ * y la foto de la autorización del cliente en el transporte externo).
  * Lo usan la sección del vendedor (MetodoRetiro) y el cambio que hace Almacén
  * (components/seguridad/CambiarMetodoRetiro).
  */
 
 /** Ruta o agencia, con su sede (null = Venezuela, 7 = Panamá). */
 export type Opcion = { id: number; nombre: string; cids?: number | null };
-export type Borrador = { metodo: Metodo | ""; ruta_id: string; agencia: string; otra: string; empresa: string; nota: string };
+export type Borrador = {
+  metodo: Metodo | "";
+  ruta_id: string;
+  agencia: string;
+  otra: string;
+  empresa: string;
+  nota: string;
+  /** Transporte externo: la autorización que ya tiene el pedido. */
+  autorizacion_id: number | null;
+  /** Transporte externo: foto nueva, se sube al guardar (cuerpoConAutorizacion). */
+  archivo: File | null;
+};
 
 export const ICONO_METODO: Record<Metodo, any> = { sucursal: Store, ruta: Truck, encomienda: Package, transporte: Building2 };
 
@@ -32,6 +45,8 @@ export function borradorDe(m: FilaMetodo | null, agencias: Opcion[], companyId: 
     otra: agenciaEnc && !conocida ? agenciaEnc : "",
     empresa: m?.metodo === "transporte" ? m.agencia || "" : "",
     nota: m?.nota || "",
+    autorizacion_id: m?.metodo === "transporte" ? m.autorizacion_id ?? null : null,
+    archivo: null,
   };
 }
 
@@ -41,6 +56,7 @@ export function errorBorrador(b: Borrador): string | null {
   if (b.metodo === "ruta" && !b.ruta_id) return "error_ruta";
   if (b.metodo === "encomienda" && !(b.agencia === "otra" ? b.otra.trim() : b.agencia)) return "error_agencia";
   if (b.metodo === "transporte" && !b.empresa.trim()) return "error_empresa";
+  if (b.metodo === "transporte" && !b.archivo && !b.autorizacion_id) return "error_autorizacion";
   return null;
 }
 
@@ -52,7 +68,18 @@ export function cuerpoBorrador(b: Borrador) {
     ruta_id: b.metodo === "ruta" ? Number(b.ruta_id) : null,
     agencia: b.metodo === "encomienda" ? agencia : b.metodo === "transporte" ? b.empresa.trim() : null,
     nota: b.nota,
+    autorizacion_id: b.metodo === "transporte" ? b.autorizacion_id : null,
   };
+}
+
+/**
+ * cuerpoBorrador, subiendo antes la foto nueva de la autorización (transporte
+ * externo). `mensajeError`: el texto si la subida falla sin decir por qué.
+ */
+export async function cuerpoConAutorizacion(b: Borrador, mensajeError: string) {
+  const cuerpo = cuerpoBorrador(b);
+  if (b.metodo === "transporte" && b.archivo) cuerpo.autorizacion_id = await subirAutorizacion(b.archivo, mensajeError);
+  return cuerpo;
 }
 
 export function MetodoRetiroCampos({
@@ -156,6 +183,13 @@ export function MetodoRetiroCampos({
             placeholder={t(b.metodo === "sucursal" ? "nota_sucursal" : b.metodo === "transporte" ? "nota_transporte" : "nota_envio")}
             className={`h-10 rounded-lg ${b.metodo === "sucursal" ? "sm:col-span-2" : ""}`}
           />
+          {b.metodo === "transporte" && (
+            <AdjuntarAutorizacion
+              archivo={b.archivo}
+              autorizacionId={b.autorizacion_id}
+              onArchivo={(archivo) => onChange({ archivo })}
+            />
+          )}
         </div>
       )}
     </div>

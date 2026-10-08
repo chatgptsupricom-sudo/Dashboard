@@ -9,6 +9,7 @@ import {
   describirMetodo,
   esDeLaSede,
   evaluarRutaGratis,
+  MAX_PEDIDOS_GRUPO,
   METODOS_RETIRO,
   nombreImpuesto,
   type FilaMetodo,
@@ -16,22 +17,25 @@ import {
 } from "@/lib/ventas/metodoRetiroTipos";
 import {
   borradorDe,
-  cuerpoBorrador,
+  cuerpoConAutorizacion,
   errorBorrador,
   ICONO_METODO,
   MetodoRetiroCampos,
   type Borrador,
   type Opcion,
 } from "@/components/ventas/MetodoRetiroCampos";
+import { VerAutorizacion } from "@/components/ventas/AutorizacionTransporte";
 import {
   AlertTriangle,
+  Building2,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
+  FileText,
   Inbox,
+  Link2,
   Loader2,
   Lock,
-  Pencil,
   RefreshCw,
   Search,
   Truck,
@@ -45,6 +49,8 @@ type Pedido = {
   sale_id: number;
   pedido: string;
   cliente: string;
+  /** Empresa del cliente (commercial_partner_id): agrupa sus pedidos. */
+  cliente_id: number | null;
   vendedor_uid: number | null;
   vendedor: string;
   fecha: string | null;
@@ -65,6 +71,9 @@ type Pedido = {
   metodo: FilaMetodo | null;
 };
 
+/** Los pedidos pendientes de un cliente. */
+type Cliente = { clave: string; nombre: string; pedidos: Pedido[] };
+
 type Estado = "todos" | "pendientes" | "con_metodo" | "en_despacho";
 type Facturacion = "todas" | "facturados" | "sin_facturar";
 type Orden = "antiguos" | "recientes" | "monto";
@@ -83,10 +92,21 @@ function estadoDe(p: Pedido): Exclude<Estado, "todos"> {
   return p.metodo ? "con_metodo" : "pendientes";
 }
 
+const claveCliente = (p: Pedido) => (p.cliente_id ? `c${p.cliente_id}` : `n${p.cliente}`);
+
+/** Los mismos datos de método (para saber si los elegidos ya van igual). */
+const firmaMetodo = (m: FilaMetodo | null) => (m ? `${m.metodo}|${m.ruta_id ?? ""}|${m.agencia ?? ""}` : "");
+
 /**
  * Sección "Método de retiro" (lib/ventas/metodoRetiro.ts): el vendedor indica
- * cómo recibe el cliente cada pedido (retiro en sucursal, ruta, encomienda o
- * transporte externo, con la compañía y una descripción opcional).
+ * cómo recibe el cliente sus pedidos (retiro en sucursal, ruta, encomienda o
+ * transporte externo, con la compañía, una descripción opcional y la foto de
+ * la autorización del cliente).
+ *
+ * Va por cliente: se eligen varios de sus pedidos y se les pone el mismo
+ * método de una vez. Muchas veces se factura por separado lo que sale en un
+ * solo viaje; guardados juntos, la ruta gratis se decide con la suma.
+ *
  * El Asistente de Ventas ve los de todos los vendedores y lo carga por ellos.
  * Almacén no registra el egreso de un pedido sin método.
  */
@@ -109,11 +129,12 @@ export function MetodoRetiro() {
   const [orden, setOrden] = useState<Orden>("antiguos");
   const [limite, setLimite] = useState(POR_PAGINA);
 
-  const [borradores, setBorradores] = useState<Record<number, Borrador>>({});
-  const [editando, setEditando] = useState<Record<number, boolean>>({});
-  const [guardando, setGuardando] = useState<number | null>(null);
-  const [errores, setErrores] = useState<Record<number, string>>({});
-  const [guardados, setGuardados] = useState<Record<number, boolean>>({});
+  // Por cliente: los pedidos elegidos y el formulario.
+  const [seleccion, setSeleccion] = useState<Record<string, number[]>>({});
+  const [borradores, setBorradores] = useState<Record<string, Borrador>>({});
+  const [guardando, setGuardando] = useState<string | null>(null);
+  const [errores, setErrores] = useState<Record<string, string>>({});
+  const [guardados, setGuardados] = useState<Record<string, boolean>>({});
 
   const cargar = useCallback(
     async (inicial = false) => {
@@ -127,6 +148,8 @@ export function MetodoRetiro() {
         setRutas(j.rutas || []);
         setAgencias(j.agencias || []);
         setPorVendedor(!!j.puedeElegirVendedor);
+        setSeleccion({});
+        setBorradores({});
       } catch (e: any) {
         setError(e?.message || t("error_cargar"));
       } finally {
@@ -150,20 +173,29 @@ export function MetodoRetiro() {
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [pedidos]);
 
+  const delVendedor = useMemo(
+    () => pedidos.filter((p) => vendedor === "todos" || String(p.vendedor_uid) === vendedor),
+    [pedidos, vendedor],
+  );
+
   // Todos los filtros menos el de estado: sobre esto se cuentan las tarjetas.
   const base = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    return pedidos.filter((p) => {
-      if (vendedor !== "todos" && String(p.vendedor_uid) !== vendedor) return false;
+    return delVendedor.filter((p) => {
       if (filtroMetodo !== "todos" && p.metodo?.metodo !== filtroMetodo) return false;
       if (facturacion === "facturados" && p.facturas.length === 0) return false;
       if (facturacion === "sin_facturar" && p.facturas.length > 0) return false;
-      if (q && ![p.pedido, p.cliente, ...p.ordenes.map((o) => o.nombre)].some((x) => x.toLowerCase().includes(q))) {
+      if (
+        q &&
+        ![p.pedido, p.cliente, ...p.ordenes.map((o) => o.nombre), ...p.facturas.map((f) => f.numero)].some((x) =>
+          String(x || "").toLowerCase().includes(q),
+        )
+      ) {
         return false;
       }
       return true;
     });
-  }, [pedidos, busqueda, vendedor, filtroMetodo, facturacion]);
+  }, [delVendedor, busqueda, filtroMetodo, facturacion]);
 
   const conteo = useMemo(() => {
     const c = { todos: base.length, pendientes: 0, con_metodo: 0, en_despacho: 0 };
@@ -171,17 +203,37 @@ export function MetodoRetiro() {
     return c;
   }, [base]);
 
-  const visibles = useMemo(() => {
-    const lista = base.filter(
-      // Uno recién guardado sigue a la vista (con su "Guardado") aunque ya no
-      // sea de la pestaña de pendientes.
-      (p) => estado === "todos" || estadoDe(p) === estado || (estado === "pendientes" && guardados[p.sale_id]),
-    );
+  // Los clientes con algún pedido que pasa los filtros. Adentro se ven todos
+  // sus pedidos (del vendedor elegido), para poder juntarlos.
+  const clientes = useMemo(() => {
+    const pasan = new Set(base.filter((p) => estado === "todos" || estadoDe(p) === estado).map((p) => p.sale_id));
+    const porClave = new Map<string, Cliente>();
+    for (const p of delVendedor) {
+      const clave = claveCliente(p);
+      const c = porClave.get(clave) || { clave, nombre: p.cliente, pedidos: [] };
+      c.pedidos.push(p);
+      porClave.set(clave, c);
+    }
     const f = (p: Pedido) => String(p.fecha || "");
-    return lista.sort((a, b) =>
-      orden === "monto" ? b.total - a.total : orden === "recientes" ? f(b).localeCompare(f(a)) : f(a).localeCompare(f(b)),
+    const lista = [...porClave.values()].filter(
+      // Uno recién guardado sigue a la vista (con su "Guardado") aunque ya no
+      // sea de la pestaña en que estaba.
+      (c) => c.pedidos.some((p) => pasan.has(p.sale_id)) || guardados[c.clave],
     );
-  }, [base, estado, orden, guardados]);
+    for (const c of lista) {
+      c.pedidos.sort((a, b) => Number(!!a.metodo) - Number(!!b.metodo) || f(a).localeCompare(f(b)));
+    }
+    const masViejo = (c: Cliente) => c.pedidos.map(f).sort()[0] || "";
+    const masNuevo = (c: Cliente) => c.pedidos.map(f).sort().reverse()[0] || "";
+    const suma = (c: Cliente) => c.pedidos.reduce((t, p) => t + p.total, 0);
+    return lista.sort((a, b) =>
+      orden === "monto"
+        ? suma(b) - suma(a)
+        : orden === "recientes"
+          ? masNuevo(b).localeCompare(masNuevo(a))
+          : masViejo(a).localeCompare(masViejo(b)),
+    );
+  }, [base, delVendedor, estado, orden, guardados]);
 
   const hayFiltros =
     busqueda.trim() !== "" || filtroMetodo !== "todos" || facturacion !== "todas" || vendedor !== "todos" || orden !== "antiguos";
@@ -193,42 +245,83 @@ export function MetodoRetiro() {
     setOrden("antiguos");
   };
 
-  const borrador = (p: Pedido): Borrador => borradores[p.sale_id] || borradorDe(p.metodo, agencias, p.company_id);
-  const cambiar = (p: Pedido, c: Partial<Borrador>) => {
-    setBorradores((prev) => ({ ...prev, [p.sale_id]: { ...borrador(p), ...c } }));
-    setGuardados((prev) => ({ ...prev, [p.sale_id]: false }));
-  };
-  const cancelar = (p: Pedido) => {
-    setBorradores((prev) => {
-      const n = { ...prev };
-      delete n[p.sale_id];
-      return n;
-    });
-    setEditando((prev) => ({ ...prev, [p.sale_id]: false }));
-    setErrores((prev) => ({ ...prev, [p.sale_id]: "" }));
+  // Elegidos de entrada: los que todavía no tienen método.
+  const elegidos = (c: Cliente): number[] =>
+    seleccion[c.clave] ?? c.pedidos.filter((p) => !p.metodo && !p.en_despacho).map((p) => p.sale_id);
+
+  // El formulario parte del método que ya tienen los elegidos, si es el mismo.
+  const borrador = (c: Cliente): Borrador => {
+    if (borradores[c.clave]) return borradores[c.clave];
+    const ps = c.pedidos.filter((p) => elegidos(c).includes(p.sale_id));
+    const comun = ps.length && ps.every((p) => firmaMetodo(p.metodo) === firmaMetodo(ps[0].metodo)) ? ps[0].metodo : null;
+    return borradorDe(comun, agencias, ps[0]?.company_id ?? null);
   };
 
-  const guardar = async (p: Pedido) => {
-    const b = borrador(p);
-    const falta = errorBorrador(b);
-    setErrores((prev) => ({ ...prev, [p.sale_id]: falta ? t(falta) : "" }));
+  const elegir = (c: Cliente, saleId: number, si: boolean) => {
+    const actuales = elegidos(c);
+    setSeleccion((prev) => ({
+      ...prev,
+      [c.clave]: si ? [...new Set([...actuales, saleId])] : actuales.filter((x) => x !== saleId),
+    }));
+    setGuardados((prev) => ({ ...prev, [c.clave]: false }));
+  };
+  const elegirTodos = (c: Cliente, si: boolean) => {
+    setSeleccion((prev) => ({ ...prev, [c.clave]: si ? c.pedidos.filter((p) => !p.en_despacho).map((p) => p.sale_id) : [] }));
+    setGuardados((prev) => ({ ...prev, [c.clave]: false }));
+  };
+  const cambiar = (c: Cliente, cambio: Partial<Borrador>) => {
+    setBorradores((prev) => ({ ...prev, [c.clave]: { ...borrador(c), ...cambio } }));
+    setGuardados((prev) => ({ ...prev, [c.clave]: false }));
+  };
+  const cancelar = (c: Cliente) => {
+    setBorradores((prev) => {
+      const n = { ...prev };
+      delete n[c.clave];
+      return n;
+    });
+    setSeleccion((prev) => ({ ...prev, [c.clave]: [] }));
+    setErrores((prev) => ({ ...prev, [c.clave]: "" }));
+  };
+
+  const guardar = async (c: Cliente) => {
+    const ids = elegidos(c);
+    const b = borrador(c);
+    const falta = ids.length === 0 ? "error_elegir" : errorBorrador(b);
+    setErrores((prev) => ({ ...prev, [c.clave]: falta ? t(falta) : "" }));
     if (falta) return;
-    setGuardando(p.sale_id);
+    setGuardando(c.clave);
     try {
+      // Transporte externo: la foto nueva de la autorización se sube primero.
+      const cuerpo = await cuerpoConAutorizacion(b, t("error_guardar"));
       const r = await fetch("/api/ventas/metodo-retiro", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sale_id: p.sale_id, ...cuerpoBorrador(b) }),
+        body: JSON.stringify({ sale_ids: ids, ...cuerpo }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.success) throw new Error(j.error || t("error_guardar"));
-      setPedidos((prev) => prev.map((x) => (x.sale_id === p.sale_id ? { ...x, metodo: j.metodo } : x)));
-      cancelar(p);
-      setGuardados((prev) => ({ ...prev, [p.sale_id]: true }));
+      const nuevos = new Map<number, FilaMetodo>(((j.metodos || [j.metodo]) as FilaMetodo[]).map((m) => [m.odoo_sale_id, m]));
+      // Los que antes iban en el mismo grupo que estos cambian su suma: se
+      // recarga en segundo plano para que la ruta gratis de todos quede al día.
+      const tocaOtros = c.pedidos.some((p) => !nuevos.has(p.sale_id) && p.metodo?.grupo);
+      setPedidos((prev) => prev.map((x) => (nuevos.has(x.sale_id) ? { ...x, metodo: nuevos.get(x.sale_id)! } : x)));
+      cancelar(c);
+      setGuardados((prev) => ({ ...prev, [c.clave]: true }));
+      if (tocaOtros) void cargarSilencioso();
     } catch (e: any) {
-      setErrores((prev) => ({ ...prev, [p.sale_id]: e?.message || t("error_guardar") }));
+      setErrores((prev) => ({ ...prev, [c.clave]: e?.message || t("error_guardar") }));
     } finally {
       setGuardando(null);
+    }
+  };
+
+  const cargarSilencioso = async () => {
+    try {
+      const r = await fetch("/api/ventas/metodo-retiro");
+      const j = await r.json();
+      if (j.success) setPedidos(j.pedidos || []);
+    } catch {
+      // La próxima recarga lo pone al día.
     }
   };
 
@@ -265,7 +358,7 @@ export function MetodoRetiro() {
         </Button>
       </div>
 
-      {/* Resumen: cada tarjeta filtra por estado */}
+      {/* Resumen: cada tarjeta filtra por estado (cuenta pedidos) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
         {tarjetas.map(({ id, icono: Icono, color, activo }) => (
           <button
@@ -368,7 +461,7 @@ export function MetodoRetiro() {
         </div>
         {!loading && (
           <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-            <span>{t("mostrando", { n: Math.min(limite, visibles.length), total: visibles.length })}</span>
+            <span>{t("mostrando_clientes", { n: Math.min(limite, clientes.length), total: clientes.length })}</span>
             {hayFiltros && (
               <button type="button" onClick={limpiar} className="inline-flex items-center gap-1 font-medium text-violet-600 hover:text-violet-700">
                 <X className="w-3.5 h-3.5" />
@@ -390,22 +483,13 @@ export function MetodoRetiro() {
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
             <div key={i} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-              <div className="flex justify-between gap-4">
-                <div className="space-y-2 flex-1">
-                  <Skeleton className="h-5 w-32" />
-                  <Skeleton className="h-4 w-3/5" />
-                </div>
-                <Skeleton className="h-6 w-24" />
-              </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                {[0, 1, 2, 3].map((j) => (
-                  <Skeleton key={j} className="h-14 rounded-xl" />
-                ))}
-              </div>
+              <Skeleton className="h-5 w-1/2" />
+              <Skeleton className="h-14 w-full rounded-xl" />
+              <Skeleton className="h-14 w-full rounded-xl" />
             </div>
           ))}
         </div>
-      ) : visibles.length === 0 ? (
+      ) : clientes.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white py-12 sm:py-16 px-4 text-center">
           <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
             {estado === "pendientes" && !hayFiltros && pedidos.length ? (
@@ -430,195 +514,253 @@ export function MetodoRetiro() {
           )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {visibles.slice(0, limite).map((p) => {
-            const b = borrador(p);
-            const est = estadoDe(p);
-            const abierto = !p.en_despacho && (!p.metodo || editando[p.sale_id] || !!borradores[p.sale_id]);
-            // Rutas y agencias de la sede del pedido: Panamá tiene las suyas.
-            const rutasP = rutas.filter((r) => esDeLaSede(r.cids, p.company_id));
-            const agenciasP = agencias.filter((a) => esDeLaSede(a.cids, p.company_id));
-            const imp = nombreImpuesto(p.company_id);
-            const IconoActual = p.metodo ? ICONO_METODO[p.metodo.metodo] : null;
-            const franja =
-              est === "pendientes" ? "before:bg-amber-400" : est === "en_despacho" ? "before:bg-sky-400" : "before:bg-violet-500";
+        <div className="space-y-4">
+          {clientes.slice(0, limite).map((c) => {
+            const ids = elegidos(c);
+            const elegidosP = c.pedidos.filter((p) => ids.includes(p.sale_id));
+            const b = borrador(c);
+            const sinMetodo = c.pedidos.filter((p) => !p.metodo && !p.en_despacho).length;
+            const libres = c.pedidos.filter((p) => !p.en_despacho);
+            const todosElegidos = libres.length > 0 && libres.every((p) => ids.includes(p.sale_id));
+            const companyId = c.pedidos[0]?.company_id ?? null;
+            const imp = nombreImpuesto(companyId);
+            const rutasC = rutas.filter((r) => esDeLaSede(r.cids, companyId));
+            const agenciasC = agencias.filter((a) => esDeLaSede(a.cids, companyId));
+            const vendedoresC = [...new Set(c.pedidos.map((p) => p.vendedor).filter(Boolean))];
+            const franja = sinMetodo ? "before:bg-amber-400" : c.pedidos.every((p) => p.en_despacho) ? "before:bg-sky-400" : "before:bg-violet-500";
             return (
-              <div
-                key={p.sale_id}
-                className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md before:absolute before:inset-y-0 before:left-0 before:w-1 ${franja}`}
+              <section
+                key={c.clave}
+                className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-1 ${franja}`}
               >
-                <div className="p-3 pl-4 sm:p-5 sm:pl-6 space-y-4">
-                  {/* Datos del pedido */}
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-base font-bold text-slate-900">{p.pedido}</span>
-                        {est === "pendientes" && (
-                          <Badge className="bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-100">{t("sin_metodo")}</Badge>
-                        )}
-                        {est === "en_despacho" && (
-                          <Badge className="bg-sky-100 text-sky-800 border border-sky-200 hover:bg-sky-100">
-                            <Lock className="w-3 h-3 mr-1" />
-                            {t("kpi_en_despacho")}
-                          </Badge>
-                        )}
-                        {p.facturas.length === 0 && (
-                          <Badge className="bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-100">{t("sin_facturar")}</Badge>
-                        )}
-                      </div>
-                      <p className="text-sm font-medium text-slate-700 break-words">{p.cliente}</p>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                {/* Cliente */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 pl-4 sm:px-5 sm:pl-6 border-b border-slate-100">
+                  <div className="min-w-0">
+                    <h2 className="flex items-center gap-2 text-base font-bold text-slate-900 break-words">
+                      <Building2 className="w-4 h-4 shrink-0 text-slate-400" />
+                      {c.nombre}
+                    </h2>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                      <span>{t("n_pedidos", { n: c.pedidos.length })}</span>
+                      {sinMetodo > 0 && <span className="font-medium text-amber-700">{t("n_sin_metodo", { n: sinMetodo })}</span>}
+                      {porVendedor && vendedoresC.length > 0 && (
                         <span className="inline-flex items-center gap-1">
-                          <CalendarDays className="w-3.5 h-3.5" />
-                          {fecha(p.fecha)}
+                          <UserRound className="w-3.5 h-3.5" />
+                          {vendedoresC.join(", ")}
                         </span>
-                        {porVendedor && p.vendedor && (
-                          <span className="inline-flex items-center gap-1">
-                            <UserRound className="w-3.5 h-3.5" />
-                            {p.vendedor}
-                          </span>
-                        )}
-                        <span className="inline-flex flex-wrap items-center gap-1">
-                          {p.ordenes.map((o) => (
-                            <span key={o.id} className="font-mono text-[11px] rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">
-                              {o.nombre}
-                            </span>
-                          ))}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex sm:flex-col items-end sm:items-end justify-between gap-x-3 rounded-xl bg-slate-50 sm:bg-transparent px-3 py-2 sm:p-0 sm:text-right whitespace-nowrap">
-                      <p className="text-base sm:text-lg font-bold text-slate-900 tabular-nums">
-                        {usd(p.total)} <span className="text-xs font-semibold text-slate-500">{p.moneda}</span>
-                      </p>
-                      <div className="text-right">
-                        <p className="text-[11px] text-slate-400 tabular-nums">{t("sin_iva", { monto: usd(p.base), imp })}</p>
-                        {p.facturado !== null && (
-                          <p className="text-[11px] font-semibold text-slate-600 tabular-nums">{t("facturado", { monto: usd(p.facturado), imp })}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Método ya cargado: resumen */}
-                  {p.metodo && !abierto && IconoActual && (
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <span className="shrink-0 p-2 rounded-lg bg-white text-violet-600 shadow-sm">
-                          <IconoActual className="w-4 h-4" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-violet-900 break-words">{describirMetodo(p.metodo)}</p>
-                          {p.metodo.nota && <p className="text-xs text-violet-800/80 break-words">{p.metodo.nota}</p>}
-                          {guardados[p.sale_id] && (
-                            <p className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 mt-0.5">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              {t("guardado")}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      {!p.en_despacho && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setEditando((prev) => ({ ...prev, [p.sale_id]: true }))}
-                          className="w-full sm:w-auto rounded-lg bg-white"
-                        >
-                          <Pencil className="w-3.5 h-3.5 mr-1.5" />
-                          {t("cambiar")}
-                        </Button>
                       )}
                     </div>
-                  )}
-
-                  {p.en_despacho && (
-                    <p className="flex items-center gap-1.5 text-xs text-slate-500">
-                      <Lock className="w-3.5 h-3.5 shrink-0" />
-                      {t("en_despacho")}
-                    </p>
-                  )}
-
-                  {/* Formulario */}
-                  {abierto && (
-                    <div className="space-y-3">
-                      <MetodoRetiroCampos valor={b} onChange={(c) => cambiar(p, c)} rutas={rutasP} agencias={agenciasP} />
-
-                      {b.metodo === "ruta" && b.ruta_id && (() => {
-                        const ruta = rutasP.find((r) => String(r.id) === b.ruta_id)?.nombre;
-                        // El mismo monto que usa el servidor: lo facturado, o el
-                        // pedido mientras se factura por partes.
-                        const monto = p.monto_ruta;
-                        const ev = evaluarRutaGratis({ companyId: p.company_id, rutaNombre: ruta, monto, moneda: p.moneda_ruta, estadoCliente: p.estado_cliente });
-                        // gratis null (pedido en otra moneda, sin facturar): no hay
-                        // veredicto, pero el aviso de por qué sí se muestra.
-                        if (ev.minimo === null) return null;
-                        return (
-                          <div className="space-y-1.5">
-                            {ev.gratis === 1 ? (
-                              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                                {t("ruta_gratis", { base: usd(monto), minimo: usd(ev.minimo), imp })}
-                              </p>
-                            ) : ev.gratis === 0 ? (
-                              <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                                {t("ruta_flete", { base: usd(monto), minimo: usd(ev.minimo), falta: usd(ev.minimo - monto), imp })}
-                              </p>
-                            ) : null}
-                            {ev.alerta && (
-                              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{ev.alerta}</p>
-                            )}
-                            {p.facturado === null && <p className="text-[11px] text-slate-400">{t("se_recalcula")}</p>}
-                          </div>
-                        );
-                      })()}
-
-                      <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
-                        {errores[p.sale_id] && (
-                          <span className="text-xs text-red-600 sm:mr-auto sm:text-right">{errores[p.sale_id]}</span>
-                        )}
-                        {p.metodo && (
-                          <Button variant="ghost" size="sm" onClick={() => cancelar(p)} className="w-full sm:w-auto rounded-lg">
-                            {t("cancelar")}
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          onClick={() => guardar(p)}
-                          disabled={guardando === p.sale_id || !b.metodo}
-                          className="w-full sm:w-auto rounded-lg bg-violet-600 hover:bg-violet-700 text-white"
-                        >
-                          {guardando === p.sale_id && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                          {t(p.metodo ? "actualizar" : "guardar")}
-                        </Button>
-                      </div>
-                    </div>
+                  </div>
+                  {libres.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => elegirTodos(c, !todosElegidos)}
+                      className="self-start sm:self-auto text-xs font-medium text-violet-600 hover:text-violet-700"
+                    >
+                      {todosElegidos ? t("quitar_todos") : t("elegir_todos")}
+                    </button>
                   )}
                 </div>
 
-                {(p.metodo?.alerta || p.metodo?.registrado_por) && (
-                  <div className="border-t border-slate-100 bg-slate-50/70 px-4 sm:px-6 py-2 space-y-1.5">
-                    {p.metodo?.alerta && (
-                      <p className="flex items-start gap-1.5 text-xs text-rose-700">
-                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                        {p.metodo.alerta}
-                      </p>
+                {/* Pedidos del cliente */}
+                <ul className="divide-y divide-slate-100">
+                  {c.pedidos.map((p) => {
+                    const est = estadoDe(p);
+                    const marcado = ids.includes(p.sale_id);
+                    const Icono = p.metodo ? ICONO_METODO[p.metodo.metodo] : null;
+                    return (
+                      <li key={p.sale_id} className={`px-3 pl-4 sm:px-5 sm:pl-6 py-3 ${marcado ? "bg-violet-50/50" : ""}`}>
+                        <label className={`flex items-start gap-3 ${p.en_despacho ? "cursor-not-allowed" : "cursor-pointer"}`}>
+                          <input
+                            type="checkbox"
+                            checked={marcado}
+                            disabled={p.en_despacho}
+                            onChange={(e) => elegir(c, p.sale_id, e.target.checked)}
+                            className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-violet-600"
+                            aria-label={t("elegir_pedido", { pedido: p.pedido })}
+                          />
+                          <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-sm font-bold text-slate-900">{p.pedido}</span>
+                                {est === "pendientes" && (
+                                  <Badge className="bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-100">{t("sin_metodo")}</Badge>
+                                )}
+                                {est === "en_despacho" && (
+                                  <Badge className="bg-sky-100 text-sky-800 border border-sky-200 hover:bg-sky-100">
+                                    <Lock className="w-3 h-3 mr-1" />
+                                    {t("kpi_en_despacho")}
+                                  </Badge>
+                                )}
+                                {p.facturas.length === 0 && (
+                                  <Badge className="bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-100">{t("sin_facturar")}</Badge>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                                <span className="inline-flex items-center gap-1">
+                                  <CalendarDays className="w-3.5 h-3.5" />
+                                  {fecha(p.fecha)}
+                                </span>
+                                {p.facturas.length > 0 && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <FileText className="w-3.5 h-3.5" />
+                                    {p.facturas.map((f) => f.numero).join(", ")}
+                                  </span>
+                                )}
+                                <span className="inline-flex flex-wrap items-center gap-1">
+                                  {p.ordenes.map((o) => (
+                                    <span key={o.id} className="font-mono text-[11px] rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">
+                                      {o.nombre}
+                                    </span>
+                                  ))}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="sm:text-right whitespace-nowrap">
+                              <p className="text-sm font-bold text-slate-900 tabular-nums">
+                                {usd(p.total)} <span className="text-[11px] font-semibold text-slate-500">{p.moneda}</span>
+                              </p>
+                              <p className="text-[11px] text-slate-400 tabular-nums">{t("sin_iva", { monto: usd(p.base), imp })}</p>
+                              {p.facturado !== null && (
+                                <p className="text-[11px] font-semibold text-slate-600 tabular-nums">{t("facturado", { monto: usd(p.facturado), imp })}</p>
+                              )}
+                            </div>
+                          </div>
+                        </label>
+
+                        {/* Método que ya tiene */}
+                        {p.metodo && Icono && (
+                          <div className="mt-2 ml-7 rounded-xl border border-violet-100 bg-violet-50/60 p-2.5 space-y-1.5">
+                            <div className="flex items-start gap-2">
+                              <Icono className="w-4 h-4 mt-0.5 shrink-0 text-violet-600" />
+                              <div className="min-w-0">
+                                <p className="text-[13px] font-semibold text-violet-900 break-words">{describirMetodo(p.metodo)}</p>
+                                {!!p.metodo.grupo_pedidos?.length && (
+                                  <p className="flex items-center gap-1 text-xs text-violet-800/90">
+                                    <Link2 className="w-3.5 h-3.5 shrink-0" />
+                                    {t("junto_con", { pedidos: p.metodo.grupo_pedidos.join(", ") })}
+                                    {p.metodo.monto_grupo != null && ` · ${t("suman", { monto: usd(Number(p.metodo.monto_grupo)), imp })}`}
+                                  </p>
+                                )}
+                                {p.metodo.nota && <p className="text-xs text-violet-800/80 break-words">{p.metodo.nota}</p>}
+                                {p.metodo.registrado_por && (
+                                  <p className="text-[11px] text-slate-400">{t("indicado_por", { quien: p.metodo.registrado_por })}</p>
+                                )}
+                              </div>
+                            </div>
+                            {p.metodo.metodo === "transporte" && p.metodo.autorizacion_id && (
+                              <VerAutorizacion id={p.metodo.autorizacion_id} />
+                            )}
+                            {p.metodo.alerta && (
+                              <p className="flex items-start gap-1.5 text-xs text-rose-700">
+                                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                                {p.metodo.alerta}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {p.en_despacho && (
+                          <p className="mt-1.5 ml-7 flex items-center gap-1.5 text-xs text-slate-500">
+                            <Lock className="w-3.5 h-3.5 shrink-0" />
+                            {t("en_despacho")}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {guardados[c.clave] && ids.length === 0 && (
+                  <p className="flex items-center gap-1.5 border-t border-slate-100 px-4 sm:px-6 py-2.5 text-xs font-medium text-emerald-600">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {t("guardado")}
+                  </p>
+                )}
+
+                {/* Método para los elegidos */}
+                {ids.length > 0 && (
+                  <div className="border-t border-violet-100 bg-slate-50/70 p-3 pl-4 sm:p-5 sm:pl-6 space-y-3">
+                    <p className="text-sm font-semibold text-slate-800">
+                      {t("metodo_para", { n: ids.length })}{" "}
+                      <span className="font-normal text-slate-500">{elegidosP.map((p) => p.pedido).join(", ")}</span>
+                    </p>
+                    {ids.length > 1 && <p className="text-xs text-slate-500">{t("juntos_ayuda")}</p>}
+                    {ids.length > MAX_PEDIDOS_GRUPO && (
+                      <p className="text-xs text-red-600">{t("demasiados", { n: MAX_PEDIDOS_GRUPO })}</p>
                     )}
-                    {p.metodo?.registrado_por && (
-                      <p className="text-[11px] text-slate-400">{t("indicado_por", { quien: p.metodo.registrado_por })}</p>
-                    )}
+
+                    <MetodoRetiroCampos valor={b} onChange={(cambio) => cambiar(c, cambio)} rutas={rutasC} agencias={agenciasC} />
+
+                    {b.metodo === "ruta" && b.ruta_id && (() => {
+                      const ruta = rutasC.find((r) => String(r.id) === b.ruta_id)?.nombre;
+                      // El mismo monto que usa el servidor: la suma de lo
+                      // facturado (o del pedido mientras se factura por partes).
+                      const monto = Math.round(elegidosP.reduce((t, p) => t + p.monto_ruta, 0) * 100) / 100;
+                      const otra = elegidosP.find((p) => !["USD", "PAB"].includes(String(p.moneda_ruta).toUpperCase()));
+                      const ev = evaluarRutaGratis({
+                        companyId,
+                        rutaNombre: ruta,
+                        monto,
+                        moneda: otra ? otra.moneda_ruta : "USD",
+                        estadoCliente: elegidosP.find((p) => p.estado_cliente)?.estado_cliente,
+                      });
+                      // gratis null (pedido en otra moneda, sin facturar): no hay
+                      // veredicto, pero el aviso de por qué sí se muestra.
+                      if (ev.minimo === null) return null;
+                      const varios = elegidosP.length > 1;
+                      return (
+                        <div className="space-y-1.5">
+                          {ev.gratis === 1 ? (
+                            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                              {t(varios ? "ruta_gratis_varios" : "ruta_gratis", { base: usd(monto), minimo: usd(ev.minimo), imp, n: elegidosP.length })}
+                            </p>
+                          ) : ev.gratis === 0 ? (
+                            <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                              {t(varios ? "ruta_flete_varios" : "ruta_flete", {
+                                base: usd(monto),
+                                minimo: usd(ev.minimo),
+                                falta: usd(ev.minimo - monto),
+                                imp,
+                                n: elegidosP.length,
+                              })}
+                            </p>
+                          ) : null}
+                          {ev.alerta && (
+                            <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{ev.alerta}</p>
+                          )}
+                          {elegidosP.some((p) => p.facturado === null) && <p className="text-[11px] text-slate-400">{t("se_recalcula")}</p>}
+                        </div>
+                      );
+                    })()}
+
+                    <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
+                      {errores[c.clave] && <span className="text-xs text-red-600 sm:mr-auto">{errores[c.clave]}</span>}
+                      <Button variant="ghost" size="sm" onClick={() => cancelar(c)} className="w-full sm:w-auto rounded-lg">
+                        {t("cancelar")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => guardar(c)}
+                        disabled={guardando === c.clave || !b.metodo || ids.length > MAX_PEDIDOS_GRUPO}
+                        className="w-full sm:w-auto rounded-lg bg-violet-600 hover:bg-violet-700 text-white"
+                      >
+                        {guardando === c.clave && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        {t("guardar_n", { n: ids.length })}
+                      </Button>
+                    </div>
                   </div>
                 )}
-              </div>
+              </section>
             );
           })}
 
-          {visibles.length > limite && (
+          {clientes.length > limite && (
             <Button
               variant="outline"
               onClick={() => setLimite((l) => l + POR_PAGINA)}
               className="w-full rounded-xl h-11 border-dashed"
             >
-              {t("ver_mas", { n: visibles.length - limite })}
+              {t("ver_mas_clientes", { n: clientes.length - limite })}
             </Button>
           )}
         </div>

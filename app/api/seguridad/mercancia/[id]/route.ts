@@ -8,6 +8,9 @@ import { emitirMercancia } from "@/lib/seguridad/eventos";
 import { cargarMovimiento as cargar, evaluarDescuadre } from "@/lib/seguridad/mercancia";
 import { notaDelPedidoDePicking } from "@/lib/seguridad/notaPedido";
 import { pickingValidado } from "@/lib/seguridad/validarOdoo";
+import { callOdooRPC } from "@/lib/odoo";
+import { metodosEvaluados } from "@/lib/ventas/metodoRetiro";
+import type { FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -45,15 +48,33 @@ export async function GET(
     // Egreso: la nota del pedido en Odoo (quién retira, instrucciones) y si
     // la orden ya está validada allá (hay recibo de entrega para imprimir).
     const pickingId = datos.movimiento.tipo === "egreso" ? Number(datos.movimiento.odoo_picking_id) || null : null;
-    const [nota_pedido, odoo_validada] = await Promise.all([
+    const [nota_pedido, odoo_validada, metodo_retiro] = await Promise.all([
       notaDelPedidoDePicking(pickingId),
       pickingValidado(pickingId),
+      metodoDePicking(pickingId),
     ]);
 
-    return NextResponse.json({ success: true, ...datos, nota_pedido, odoo_validada });
+    return NextResponse.json({ success: true, ...datos, nota_pedido, odoo_validada, metodo_retiro });
   } catch (error: any) {
     console.error("Error leyendo mercancia:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * El método de retiro del pedido de la orden: Almacén y Seguridad ven cómo lo
+ * recibe el cliente y, si es transporte externo, la foto de su autorización.
+ * Si Odoo o la tabla fallan, el detalle sale igual (sin método).
+ */
+async function metodoDePicking(pickingId: number | null): Promise<FilaMetodo | null> {
+  if (!pickingId) return null;
+  try {
+    const [p] = (await callOdooRPC<any[]>("stock.picking", "read", [[pickingId], ["sale_id"]])) || [];
+    const saleId = p?.sale_id?.[0];
+    return saleId ? (await metodosEvaluados([saleId])).get(saleId) ?? null : null;
+  } catch (e: any) {
+    console.warn("[mercancia] no se pudo leer el método de retiro:", e?.message);
+    return null;
   }
 }
 

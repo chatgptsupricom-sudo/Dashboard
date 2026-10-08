@@ -27,6 +27,8 @@ export function tipoEntregaDeMetodo(m: MetodoRetiro): TipoEntrega {
 
 export type FilaMetodo = {
   odoo_sale_id: number;
+  /** Nombre del pedido (S-01234). */
+  pedido?: string | null;
   metodo: MetodoRetiro;
   ruta_id: number | null;
   ruta_nombre: string | null;
@@ -48,7 +50,22 @@ export type FilaMetodo = {
   ruta_gratis_final?: number | null;
   /** Cuándo se fijó `ruta_gratis_final`; con valor, ya no se recalcula. */
   recalculado_at?: string | null;
+  /**
+   * Pedidos del mismo cliente que el vendedor guardó juntos: van en el mismo
+   * viaje, así que la ruta gratis se decide con la suma de los que siguen por
+   * la misma ruta. null = el pedido va solo.
+   */
+  grupo?: string | null;
+  /** Los otros pedidos del grupo que cuentan para la ruta gratis. */
+  grupo_pedidos?: string[];
+  /** Monto con el que se decidió la ruta gratis del grupo (sin impuesto). */
+  monto_grupo?: number | null;
+  /** Transporte externo: foto de la autorización del cliente (ventas_metodo_retiro_autorizaciones). */
+  autorizacion_id?: number | null;
 };
+
+/** Pedidos que se pueden guardar juntos en una sola vez. */
+export const MAX_PEDIDOS_GRUPO = 30;
 
 /**
  * Con qué monto se decide la ruta gratis:
