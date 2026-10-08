@@ -284,6 +284,7 @@ export function Sidebar({
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     { id: "metas_marca", label: t("metas_marca"), icon: Target, slug: "/metas-marca" },
+    { id: "stock_marca", label: t("stock_marca"), icon: Boxes, slug: "/stock-marca" },
     { id: "sorteo_caracas", label: t("sorteo_caracas"), icon: Trophy, slug: "/sorteo" },
     // Respuestas de la encuesta pública a clientes (landing "Queremos conocer su opinión").
     { id: "opiniones", label: t("opiniones"), icon: MessageSquareHeart, slug: "/opiniones" },
@@ -429,7 +430,7 @@ export function Sidebar({
   const isSuperAdminRole = userRole === "superAdmin";
   const normalizedUserRole = userRole?.toLowerCase().trim();
   const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
-  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas", "metas_marca"];
+  const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas", "metas_marca", "stock_marca"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
   const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables"];
@@ -1271,6 +1272,10 @@ export function Sidebar({
                               label: t("metas_marca"),
                               href: `${basePath}/metas-marca`,
                               permission: "metas_marca",
+                            }, {
+                              label: t("stock_marca"),
+                              href: `${basePath}/stock-marca`,
+                              permission: "stock_marca",
                             }]
                           : []),
                         // El Sorteo pasó a Marketing. Reportes Comerciales vive

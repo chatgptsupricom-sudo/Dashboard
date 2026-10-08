@@ -1,7 +1,7 @@
 import { AlertTriangle, CheckCircle2, CircleDashed, Clock, TrendingUp, XCircle } from "lucide-react";
 import type { EstadoMarca, FilaMarca, ResumenMetasMarca } from "@/lib/metas-marca/calculo";
 import type { AuditoriaSede, EstadoControl } from "@/lib/metas-marca/auditoria";
-import type { InventarioMarca, StockSede } from "@/lib/metas-marca/inventario";
+import type { InventarioMarca } from "@/lib/metas-marca/inventario";
 
 export type { EstadoMarca, FilaMarca, AuditoriaSede, EstadoControl, InventarioMarca };
 
@@ -15,8 +15,6 @@ export interface DatosMetas extends ResumenMetasMarca {
   catalogo: { clave: string; marca: string }[];
   /** Stock disponible hoy por marca (clave), en el almacén principal. null si no se pudo leer. */
   inventario: Record<string, InventarioMarca> | null;
-  /** Totales del stock disponible hoy, uno por sede. null si no se pudo leer. */
-  stock: (StockSede & { nombre: string })[] | null;
   inventarioError: string | null;
   generado: string;
 }
