@@ -69,7 +69,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** PUT: { sale_id, metodo: sucursal|ruta|encomienda|transporte, ruta_id?, agencia?, nota? } */
+/**
+ * PUT: { sale_ids: number[] (o sale_id), metodo: sucursal|ruta|encomienda|transporte,
+ *        ruta_id?, agencia?, nota?, autorizacion_id? }
+ * Varios pedidos del mismo cliente se guardan juntos: van en el mismo viaje y
+ * la ruta gratis se decide con la suma (lib/ventas/metodoRetiro.ts).
+ * Transporte externo pide la foto de la autorización del cliente, subida antes
+ * a /api/ventas/metodo-retiro/autorizacion.
+ */
 export async function PUT(request: NextRequest) {
   const auth = await requireRoles(request, ROLES);
   if (auth.error) return auth.error;
@@ -78,21 +85,25 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const saleId = parseInt(String(body.sale_id ?? ""), 10);
-    if (!saleId) return NextResponse.json({ error: "sale_id requerido" }, { status: 400 });
+    const saleIds = (Array.isArray(body.sale_ids) ? body.sale_ids : [body.sale_id])
+      .map((x: unknown) => parseInt(String(x ?? ""), 10))
+      .filter((x: number) => x > 0);
+    if (!saleIds.length) return NextResponse.json({ error: "sale_ids requerido" }, { status: 400 });
 
-    const { metodo: fila } = await guardarMetodoRetiro({
-      saleId,
+    const { metodo: fila, metodos } = await guardarMetodoRetiro({
+      saleIds,
       metodo: body.metodo,
       rutaId: parseInt(String(body.ruta_id ?? ""), 10) || null,
       agencia: body.agencia ? String(body.agencia) : null,
       nota: body.nota ? String(body.nota) : null,
+      autorizacionId: parseInt(String(body.autorizacion_id ?? ""), 10) || null,
       cids: a.cids,
       vendedorUid: a.vendedorUid,
       autor: auth.payload?.name || auth.payload?.email || "Ventas",
+      email: String(auth.payload?.email || ""),
       rol: a.rol,
     });
-    return NextResponse.json({ success: true, metodo: fila });
+    return NextResponse.json({ success: true, metodo: fila, metodos });
   } catch (error: any) {
     if (error instanceof ErrorMetodo) {
       return NextResponse.json({ error: error.message }, { status: error.status });

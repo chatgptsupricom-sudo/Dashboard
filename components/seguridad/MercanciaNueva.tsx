@@ -8,6 +8,7 @@ import { Loader2, Package, Plus, Search, X, XCircle } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { type TipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { describirMetodo, tipoEntregaDeMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
+import { VerAutorizacion } from "@/components/ventas/AutorizacionTransporte";
 import { CambiarMetodoRetiro } from "@/components/seguridad/CambiarMetodoRetiro";
 import { PageHeader, Card, SectionTitle, BotonPrimario, inputClases, labelClases } from "./mercancia-ui";
 import NotaPedido from "./NotaPedido";
@@ -463,6 +464,10 @@ export default function MercanciaNueva({
                       <p className="mt-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs font-semibold text-rose-700">
                         ⚠ {picking.metodo_retiro.alerta}
                       </p>
+                    )}
+                    {/* Transporte externo: la autorización del cliente para dejar salir el camión. */}
+                    {picking.metodo_retiro.metodo === "transporte" && picking.metodo_retiro.autorizacion_id && (
+                      <VerAutorizacion id={picking.metodo_retiro.autorizacion_id} className="mt-2" />
                     )}
                     <p className="text-[11px] text-slate-400 mt-1">
                       {tf("metodo_indicado_por", { quien: picking.metodo_retiro.registrado_por || "—" })}

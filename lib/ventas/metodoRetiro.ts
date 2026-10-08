@@ -2,12 +2,15 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { CORTE_VALIDADAS_ODOO, facturasDeVentas, sqlEgresoOcupaOrden, type FacturaVenta } from "@/lib/seguridad/mercancia";
 import { listarRutasConSede } from "@/lib/rma/rutasEnvio";
+import { autorizacionUsable } from "@/lib/ventas/autorizacionTransporte";
+import { randomUUID } from "crypto";
 import { enAlmacen, esTipoEntrega, type Etapa } from "@/lib/seguridad/egresoFlujo";
 import {
   describirMetodo,
   esDeLaSede,
   esMetodoRetiro,
   evaluarRutaGratis,
+  MAX_PEDIDOS_GRUPO,
   montoRutaGratis,
   nombreImpuesto,
   tipoEntregaDeMetodo,
@@ -34,6 +37,13 @@ export * from "@/lib/ventas/metodoRetiroTipos";
  *
  * Es por pedido (sale.order): todas sus órdenes de despacho salen igual. Una
  * vez que Almacén registró el egreso de alguna, ya no se cambia.
+ *
+ * El vendedor lo carga por cliente: elige varios pedidos y les pone el mismo
+ * método de una vez. Esos pedidos quedan en un `grupo`: muchas veces se
+ * factura por separado lo que sale en un solo viaje, y la ruta gratis se
+ * decide con la suma de los del grupo que siguen por la misma ruta
+ * (evaluarConGrupos). El transporte externo pide además la foto de la
+ * autorización del cliente (lib/ventas/autorizacionTransporte.ts).
  */
 
 let tabla: Promise<void> | null = null;
@@ -80,9 +90,14 @@ export function asegurarTablaMetodoRetiro(): Promise<void> {
           "ALTER TABLE ventas_metodo_retiro ADD COLUMN ruta_gratis_final TINYINT(1) DEFAULT NULL",
           "ALTER TABLE ventas_metodo_retiro ADD COLUMN alerta VARCHAR(400) DEFAULT NULL",
           "ALTER TABLE ventas_metodo_retiro ADD COLUMN recalculado_at DATETIME DEFAULT NULL",
+          // Pedidos guardados juntos y autorización del transporte externo
+          // (sql/ventas_metodo_retiro_grupo.sql).
+          "ALTER TABLE ventas_metodo_retiro ADD COLUMN grupo VARCHAR(40) DEFAULT NULL",
+          "ALTER TABLE ventas_metodo_retiro ADD COLUMN autorizacion_id INT DEFAULT NULL",
+          "ALTER TABLE ventas_metodo_retiro ADD INDEX idx_vmr_grupo (grupo)",
         ]) {
           await query(sql).catch((e: any) => {
-            if (!/Duplicate column/i.test(e?.message || "")) throw e;
+            if (!/Duplicate (column|key)/i.test(e?.message || "")) throw e;
           });
         }
       })
@@ -101,12 +116,19 @@ export async function metodosDePedidos(saleIds: number[]): Promise<Map<number, F
   if (!ids.length) return porVenta;
   await asegurarTablaMetodoRetiro();
   const r = await query(
-    `SELECT odoo_sale_id, metodo, ruta_id, ruta_nombre, agencia, nota, registrado_por, updated_at,
-            ruta_gratis, monto_base, monto_facturado, ruta_gratis_final, alerta, recalculado_at
+    `SELECT odoo_sale_id, pedido, metodo, ruta_id, ruta_nombre, agencia, nota, registrado_por, updated_at,
+            ruta_gratis, monto_base, monto_facturado, ruta_gratis_final, alerta, recalculado_at,
+            grupo, autorizacion_id
        FROM ventas_metodo_retiro WHERE odoo_sale_id IN (${ids.map(() => "?").join(",")})`,
     ids,
   );
-  for (const f of r.rows as any[]) porVenta.set(Number(f.odoo_sale_id), { ...f, odoo_sale_id: Number(f.odoo_sale_id) });
+  for (const f of r.rows as any[]) {
+    porVenta.set(Number(f.odoo_sale_id), {
+      ...f,
+      odoo_sale_id: Number(f.odoo_sale_id),
+      autorizacion_id: f.autorizacion_id == null ? null : Number(f.autorizacion_id),
+    });
+  }
   return porVenta;
 }
 
@@ -170,61 +192,143 @@ export async function datosDePedidos(saleIds: number[]): Promise<Map<number, Dat
 const usd = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
+ * El monto de la ruta gratis de varios pedidos que viajan juntos: la suma de
+ * `montoRutaGratis` de cada uno. Con uno solo es lo de siempre. `moneda` es
+ * USD si todo sale de lo facturado (moneda de la compañía); si alguno se
+ * cuenta por el pedido y está en otra moneda, esa, para que
+ * evaluarRutaGratis avise en vez de comparar peras con manzanas.
+ */
+export function montoDelGrupo(ds: DatosPedido[]): { monto: number; fuente: "pedido" | "facturado"; moneda: string } {
+  let monto = 0;
+  let todoFacturado = true;
+  let moneda = "USD";
+  for (const d of ds) {
+    const x = montoRutaGratis(d);
+    monto += x.monto;
+    if (x.fuente === "pedido") {
+      todoFacturado = false;
+      if (d.moneda && !["USD", "PAB"].includes(d.moneda.toUpperCase())) moneda = d.moneda;
+    }
+  }
+  return { monto: Math.round(monto * 100) / 100, fuente: todoFacturado ? "facturado" : "pedido", moneda };
+}
+
+/** Los pedidos que viajan con uno: su grupo, por la misma ruta. */
+export type GrupoRuta = { datos: DatosPedido[]; pedidos: string[] };
+
+/**
  * La ruta gratis que vale ahora: con el monto de `montoRutaGratis` (lo
  * facturado, o el pedido mientras se factura por partes) y con el estado del
  * cliente. Devuelve el método con `ruta_gratis` actualizado, lo que marcó el
  * vendedor en `ruta_gratis_vendedor` y un aviso si cambió o si la ruta no es
  * la del cliente. Métodos que no son por ruta, tal cual.
  *
+ * `grupo`: los otros pedidos del cliente que se guardaron junto con este y
+ * siguen por la misma ruta. Se facturan aparte pero salen en el mismo viaje,
+ * así que el mínimo se cumple con la suma de todos (montoDelGrupo).
+ *
  * Una vez que Almacén registró el egreso (`recalculado_at`), vale lo que se
  * fijó ahí: una NC posterior no cambia "gratis / flete" de un pedido que ya
  * salió.
  */
-export function aplicarEvaluacion(m: FilaMetodo, d: DatosPedido | undefined): FilaMetodo {
+export function aplicarEvaluacion(m: FilaMetodo, d: DatosPedido | undefined, grupo?: GrupoRuta): FilaMetodo {
   if (m.metodo !== "ruta") return m;
   const vendedor = m.ruta_gratis === null || m.ruta_gratis === undefined ? null : Number(m.ruta_gratis);
+  const juntos = grupo && grupo.pedidos.length ? { grupo_pedidos: grupo.pedidos } : {};
   if (m.recalculado_at) {
     return {
       ...m,
+      ...juntos,
       ruta_gratis_vendedor: vendedor,
       ruta_gratis: m.ruta_gratis_final === null || m.ruta_gratis_final === undefined ? null : Number(m.ruta_gratis_final),
     };
   }
   if (!d) return m;
-  const { monto, fuente } = montoRutaGratis(d);
+  const ds = [d, ...(grupo?.datos || [])];
+  // Lo facturado viene en la moneda de la compañía (USD), aunque el pedido
+  // sea en otra: ahí sí se puede comparar con el mínimo (montoDelGrupo).
+  const { monto, fuente, moneda } = montoDelGrupo(ds);
   const ev = evaluarRutaGratis({
     companyId: d.company_id,
     rutaNombre: m.ruta_nombre,
     monto,
-    // Lo facturado viene en la moneda de la compañía (USD), aunque el pedido
-    // sea en otra: ahí sí se puede comparar con el mínimo.
-    moneda: fuente === "facturado" ? "USD" : d.moneda,
-    estadoCliente: d.estado_cliente,
+    moneda,
+    estadoCliente: d.estado_cliente ?? ds.find((x) => x.estado_cliente)?.estado_cliente,
   });
   const alertas: string[] = [];
   if (vendedor === 1 && ev.gratis === 0) {
+    const que = ds.length > 1 ? "los pedidos juntos" : fuente === "facturado" ? "lo facturado" : "el pedido";
     alertas.push(
-      `Ya no es gratis: se marcó gratis con ${usd(Number(m.monto_base) || 0)} $, pero ${fuente === "facturado" ? "lo facturado" : "el pedido"} sin ${nombreImpuesto(d.company_id)} es ${usd(monto)} $ (mínimo ${usd(ev.minimo || 0)} $). Flete a cargo del cliente`,
+      `Ya no es gratis: se marcó gratis con ${usd(Number(m.monto_base) || 0)} $, pero ${que} sin ${nombreImpuesto(d.company_id)} ${ds.length > 1 ? "suman" : "es"} ${usd(monto)} $ (mínimo ${usd(ev.minimo || 0)} $). Flete a cargo del cliente`,
     );
   }
   if (ev.alerta) alertas.push(ev.alerta);
   return {
     ...m,
+    ...juntos,
     ruta_gratis_vendedor: vendedor,
     ruta_gratis: ev.gratis,
     monto_facturado: d.facturado,
+    monto_grupo: ds.length > 1 ? monto : null,
     alerta: alertas.join(". ") || null,
   };
 }
 
-/** metodosDePedidos + aplicarEvaluacion con los datos actuales de Odoo. */
-export async function metodosEvaluados(saleIds: number[]): Promise<Map<number, FilaMetodo>> {
-  const metodos = await metodosDePedidos(saleIds);
-  const conRuta = [...metodos.values()].filter((m) => m.metodo === "ruta").map((m) => m.odoo_sale_id);
+/**
+ * aplicarEvaluacion a cada método por ruta, con su grupo: busca los otros
+ * pedidos del grupo (aunque ya no estén en la lista, p. ej. uno que ya salió)
+ * y sus datos de Odoo. `datosConocidos` evita volver a pedir a Odoo lo que el
+ * que llama ya tiene.
+ */
+export async function evaluarConGrupos(
+  metodos: Map<number, FilaMetodo>,
+  datosConocidos: Map<number, DatosPedido> = new Map(),
+): Promise<Map<number, FilaMetodo>> {
+  const conRuta = [...metodos.values()].filter((m) => m.metodo === "ruta");
   if (!conRuta.length) return metodos;
-  const datos = await datosDePedidos(conRuta);
-  for (const id of conRuta) metodos.set(id, aplicarEvaluacion(metodos.get(id)!, datos.get(id)));
-  return metodos;
+
+  // Del grupo cuentan los que siguen por ruta, y por la misma: uno que el
+  // cliente pasó a retirar en sucursal ya no viaja con los demás.
+  const grupos = [...new Set(conRuta.map((m) => m.grupo).filter(Boolean))] as string[];
+  const miembros = new Map<string, { odoo_sale_id: number; pedido: string; ruta_id: number | null }[]>();
+  if (grupos.length) {
+    const r = await query(
+      `SELECT odoo_sale_id, pedido, ruta_id, grupo FROM ventas_metodo_retiro
+        WHERE metodo = 'ruta' AND grupo IN (${grupos.map(() => "?").join(",")})`,
+      grupos,
+    );
+    for (const f of r.rows as any[]) {
+      const lista = miembros.get(f.grupo) || [];
+      lista.push({ odoo_sale_id: Number(f.odoo_sale_id), pedido: String(f.pedido || ""), ruta_id: f.ruta_id == null ? null : Number(f.ruta_id) });
+      miembros.set(f.grupo, lista);
+    }
+  }
+  const companeros = (m: FilaMetodo) =>
+    m.grupo
+      ? (miembros.get(m.grupo) || []).filter((x) => x.odoo_sale_id !== m.odoo_sale_id && x.ruta_id === (m.ruta_id ?? null))
+      : [];
+
+  const faltan = [
+    ...new Set([...conRuta.map((m) => m.odoo_sale_id), ...conRuta.flatMap((m) => companeros(m).map((x) => x.odoo_sale_id))]),
+  ].filter((id) => !datosConocidos.has(id));
+  const datos = new Map(datosConocidos);
+  if (faltan.length) for (const [id, d] of await datosDePedidos(faltan)) datos.set(id, d);
+
+  const salida = new Map(metodos);
+  for (const m of conRuta) {
+    const otros = companeros(m);
+    const grupo: GrupoRuta = {
+      datos: otros.map((x) => datos.get(x.odoo_sale_id)).filter(Boolean) as DatosPedido[],
+      pedidos: otros.map((x) => x.pedido).filter(Boolean),
+    };
+    salida.set(m.odoo_sale_id, aplicarEvaluacion(m, datos.get(m.odoo_sale_id), grupo));
+  }
+  return salida;
+}
+
+/** metodosDePedidos + aplicarEvaluacion (con su grupo) con los datos actuales de Odoo. */
+export async function metodosEvaluados(saleIds: number[]): Promise<Map<number, FilaMetodo>> {
+  return evaluarConGrupos(await metodosDePedidos(saleIds));
 }
 
 /**
@@ -248,6 +352,8 @@ export type PedidoPendiente = {
   sale_id: number;
   pedido: string;
   cliente: string;
+  /** Empresa del cliente (commercial_partner_id): agrupa los pedidos de un mismo cliente. */
+  cliente_id: number | null;
   vendedor_uid: number | null;
   vendedor: string;
   fecha: string | null;
@@ -330,12 +436,21 @@ export async function listarPedidosPendientes(opciones: {
   const saleIds = [...new Set(porSalir.map((p) => p.sale_id?.[0]).filter(Boolean))] as number[];
   if (!saleIds.length) return [];
 
-  const [ventas, facturas, metodos, datos] = await Promise.all([
+  const [ventas, facturas, metodosGuardados, datos] = await Promise.all([
     callOdooRPC<any[]>("sale.order", "read", [saleIds, ["name", "partner_id", "user_id", "date_order", "amount_total", "amount_untaxed", "currency_id", "company_id"]]),
     facturasDeVentas(saleIds),
     metodosDePedidos(saleIds),
     datosDePedidos(saleIds),
   ]);
+  // La ruta gratis que vale hoy, con los pedidos que viajan juntos.
+  const metodos = await evaluarConGrupos(metodosGuardados, datos);
+  // Empresa de cada cliente: los pedidos de sus contactos van con ella.
+  const partnerIds = [...new Set((ventas || []).map((v) => v.partner_id?.[0]).filter(Boolean))] as number[];
+  const empresas = new Map<number, number>(
+    ((partnerIds.length ? await callOdooRPC<any[]>("res.partner", "read", [partnerIds, ["commercial_partner_id"]]) : []) || []).map(
+      (x: any) => [x.id, x.commercial_partner_id?.[0] ?? x.id],
+    ),
+  );
 
   const porVenta = new Map<number, PedidoPendiente>();
   for (const v of ventas || []) {
@@ -343,6 +458,7 @@ export async function listarPedidosPendientes(opciones: {
       sale_id: v.id,
       pedido: v.name,
       cliente: v.partner_id?.[1] || "",
+      cliente_id: v.partner_id?.[0] ? empresas.get(v.partner_id[0]) ?? v.partner_id[0] : null,
       vendedor_uid: v.user_id?.[0] ?? null,
       vendedor: v.user_id?.[1] || "",
       fecha: v.date_order || null,
@@ -359,8 +475,8 @@ export async function listarPedidosPendientes(opciones: {
       ordenes: [],
       facturas: facturas.get(v.id) || [],
       en_despacho: false,
-      // La ruta gratis que vale hoy (con lo facturado si ya hay factura).
-      metodo: metodos.has(v.id) ? aplicarEvaluacion(metodos.get(v.id)!, datos.get(v.id)) : null,
+      // La ruta gratis que vale hoy (con lo facturado y su grupo).
+      metodo: metodos.get(v.id) ?? null,
     });
   }
   for (const p of porSalir) {
@@ -388,57 +504,98 @@ export class ErrorMetodo extends Error {
 export type EgresoCambiado = { id: number; etapa: Etapa };
 
 /**
- * Guarda el método de un pedido. `vendedorUid`: si viene, el pedido tiene
- * que ser de ese vendedor (sesión de vendedor). `cids`: la sucursal de la
- * sesión (null = superadmin).
+ * Guarda el método de uno o varios pedidos. `vendedorUid`: si viene, los
+ * pedidos tienen que ser de ese vendedor (sesión de vendedor). `cids`: la
+ * sucursal de la sesión (null = superadmin).
+ *
+ * Varios pedidos: tienen que ser del mismo cliente (la misma empresa,
+ * `commercial_partner_id`) y de la misma sede. Quedan en un mismo `grupo`:
+ * se facturan aparte pero salen en el mismo viaje, y la ruta gratis se decide
+ * con la suma de todos (montoDelGrupo). Guardar un pedido solo lo saca del
+ * grupo en que estaba.
+ *
+ * Transporte externo: hace falta la foto de la autorización del cliente
+ * (`autorizacionId`, subida antes con lib/ventas/autorizacionTransporte). Un
+ * pedido que ya la tenía la conserva si no se manda otra.
  *
  * `porAlmacen`: el cliente cambió cómo recibe el pedido y Almacén lo cambia
- * desde su panel. Solo cambia uno que ya cargó el vendedor, y también con el
- * egreso registrado mientras siga en manos de Almacén (hasta asignar el
- * despacho): el egreso toma el nuevo tipo de entrega (ver cambiarEgresos).
- * Cuando ya pasó a Seguridad, no.
+ * desde su panel (un pedido por vez, y no toca su grupo). Solo cambia uno que
+ * ya cargó el vendedor, y también con el egreso registrado mientras siga en
+ * manos de Almacén (hasta asignar el despacho): el egreso toma el nuevo tipo
+ * de entrega (ver cambiarEgresos). Cuando ya pasó a Seguridad, no.
  */
 export async function guardarMetodoRetiro(datos: {
-  saleId: number;
+  saleIds: number[];
   metodo: unknown;
   rutaId: number | null;
   agencia: string | null;
   nota: string | null;
+  autorizacionId?: number | null;
   cids: number | null;
   vendedorUid: number | null;
   autor: string;
+  /** Correo de la sesión: la autorización tiene que haberla subido quien guarda. */
+  email: string;
   rol: string;
   porAlmacen?: boolean;
-}): Promise<{ metodo: FilaMetodo; egresos: EgresoCambiado[] }> {
+}): Promise<{ metodo: FilaMetodo; metodos: FilaMetodo[]; egresos: EgresoCambiado[] }> {
   if (!esMetodoRetiro(datos.metodo)) throw new ErrorMetodo("Elige retiro en sucursal, ruta, encomienda o transporte externo.");
   const metodo = datos.metodo;
-  const anterior = datos.porAlmacen ? (await metodosDePedidos([datos.saleId])).get(datos.saleId) ?? null : null;
+  const ids = [...new Set(datos.saleIds.filter((x) => Number.isInteger(x) && x > 0))];
+  if (!ids.length) throw new ErrorMetodo("Elige al menos un pedido.");
+  if (ids.length > MAX_PEDIDOS_GRUPO) throw new ErrorMetodo(`Se pueden juntar hasta ${MAX_PEDIDOS_GRUPO} pedidos.`);
+  if (datos.porAlmacen && ids.length !== 1) throw new ErrorMetodo("Almacén cambia el método de un pedido por vez.");
+
+  const guardados = await metodosDePedidos(ids);
+  const anterior = datos.porAlmacen ? guardados.get(ids[0]) ?? null : null;
   if (datos.porAlmacen && !anterior) {
     throw new ErrorMetodo("El vendedor todavía no indicó el método de retiro: Almacén solo puede cambiarlo.", 409);
   }
 
-  const [venta] =
+  const ventas =
     (await callOdooRPC<any[]>("sale.order", "read", [
-      [datos.saleId],
+      ids,
       ["name", "partner_id", "user_id", "company_id", "amount_untaxed", "currency_id"],
     ])) || [];
+  const venta = new Map(ventas.map((v) => [v.id, v]));
   // 404 y no 403 para un pedido ajeno: no confirmar que existe.
-  if (
-    !venta ||
-    (datos.cids !== null && venta.company_id?.[0] !== datos.cids) ||
-    (datos.vendedorUid !== null && venta.user_id?.[0] !== datos.vendedorUid)
-  ) {
-    throw new ErrorMetodo("Pedido no encontrado", 404);
+  for (const id of ids) {
+    const v = venta.get(id);
+    if (
+      !v ||
+      (datos.cids !== null && v.company_id?.[0] !== datos.cids) ||
+      (datos.vendedorUid !== null && v.user_id?.[0] !== datos.vendedorUid)
+    ) {
+      throw new ErrorMetodo("Pedido no encontrado", 404);
+    }
+  }
+  const primera = venta.get(ids[0])!;
+  const companyId: number | null = primera.company_id?.[0] ?? null;
+  if (ids.length > 1) {
+    if (ventas.some((v) => (v.company_id?.[0] ?? null) !== companyId)) {
+      throw new ErrorMetodo("Solo se pueden juntar pedidos de la misma sucursal.");
+    }
+    // El mismo cliente: la empresa, aunque cada pedido sea de un contacto suyo.
+    const partners = [...new Set(ventas.map((v) => v.partner_id?.[0]).filter(Boolean))] as number[];
+    const empresas = new Set(
+      ((await callOdooRPC<any[]>("res.partner", "read", [partners, ["commercial_partner_id"]])) || []).map(
+        (x: any) => x.commercial_partner_id?.[0] ?? x.id,
+      ),
+    );
+    if (empresas.size !== 1) throw new ErrorMetodo("Solo se pueden juntar pedidos del mismo cliente.");
   }
 
   // Ya en manos de Almacén: el egreso salió con el método que tenía. Solo
   // Almacén lo cambia, y mientras el egreso siga siendo suyo.
   const pickings =
-    (await callOdooRPC<any[]>("stock.picking", "search_read", [[["sale_id", "=", datos.saleId]]], { fields: ["id"], limit: 50 })) || [];
+    (await callOdooRPC<any[]>("stock.picking", "search_read", [[["sale_id", "in", ids]]], {
+      fields: ["id", "sale_id"],
+      limit: 50 * ids.length,
+    })) || [];
   let egresos: { id: number; etapa: Etapa; empaquetado_at: string | null }[] = [];
   if (pickings.length) {
     const r = await query(
-      `SELECT id, etapa, empaquetado_at,
+      `SELECT id, etapa, empaquetado_at, odoo_picking_id,
               (COALESCE(despachado, 1) = 1 AND COALESCE(etapa, '') IN ('por_calificar', 'cerrado')) AS salio
          FROM seguridad_mercancia
         WHERE tipo = 'egreso' AND ${sqlEgresoOcupaOrden()}
@@ -449,7 +606,16 @@ export async function guardarMetodoRetiro(datos: {
     // (antes fallaba abierto y se podía cambiar con el egreso ya en curso).
     const filas = r.rows as any[];
     if (filas.length && !datos.porAlmacen) {
-      throw new ErrorMetodo("Almacén ya está despachando este pedido: el método ya no se puede cambiar.", 409);
+      const pedidoDe = new Map(pickings.map((p) => [p.id, p.sale_id?.[0]]));
+      const ocupados = [
+        ...new Set(filas.map((f) => venta.get(pedidoDe.get(Number(f.odoo_picking_id)))?.name).filter(Boolean)),
+      ];
+      throw new ErrorMetodo(
+        ids.length > 1 && ocupados.length
+          ? `Almacén ya está despachando ${ocupados.join(", ")}: quítalo de la selección, su método ya no se puede cambiar.`
+          : "Almacén ya está despachando este pedido: el método ya no se puede cambiar.",
+        409,
+      );
     }
     // Almacén: una orden del pedido que ya salió no se toca; el cambio es
     // para las que faltan.
@@ -466,9 +632,7 @@ export async function guardarMetodoRetiro(datos: {
   if (metodo === "ruta") {
     // La ruta tiene que ser de la sede del pedido: una de Venezuela en un
     // pedido de Panamá (o al revés) no existe para Almacén de esa sede.
-    const ruta = (await listarRutasConSede()).find(
-      (r) => r.id === datos.rutaId && esDeLaSede(r.cids, venta.company_id?.[0]),
-    );
+    const ruta = (await listarRutasConSede()).find((r) => r.id === datos.rutaId && esDeLaSede(r.cids, companyId));
     if (!ruta) throw new ErrorMetodo("Elige la ruta.");
     rutaId = ruta.id;
     rutaNombre = ruta.nombre;
@@ -482,60 +646,102 @@ export async function guardarMetodoRetiro(datos: {
     if (!agencia) throw new ErrorMetodo("Indica la compañía de transporte.");
   }
 
-  // Ruta gratis o con flete (Valencia y Panamá): con montoRutaGratis y con el
-  // estado del cliente. Hasta que Almacén registre el egreso se sigue
-  // recalculando con lo que diga Odoo (aplicarEvaluacion).
-  const d = (await datosDePedidos([datos.saleId])).get(datos.saleId);
-  const monto = d ? montoRutaGratis(d) : { monto: Number(venta.amount_untaxed) || 0, fuente: "pedido" as const };
-  const montoBase = monto.monto;
+  // Transporte externo: la autorización del cliente es obligatoria. Una nueva
+  // tiene que ser de quien guarda (o ya de uno de estos pedidos): con el id
+  // de la foto de otro no se la puede ver nadie más.
+  const autorizacion = new Map<number, number | null>();
+  if (metodo === "transporte") {
+    const nueva = datos.autorizacionId && datos.autorizacionId > 0 ? datos.autorizacionId : null;
+    if (nueva && !(await autorizacionUsable(nueva, datos.email, ids))) {
+      throw new ErrorMetodo("No se encontró la foto de la autorización: vuelve a adjuntarla.");
+    }
+    for (const id of ids) {
+      const actual = guardados.get(id);
+      const valor = nueva ?? (actual?.metodo === "transporte" ? actual.autorizacion_id ?? null : null);
+      if (!valor) {
+        throw new ErrorMetodo("Adjunta la foto de la autorización del cliente para el transporte externo (nítida, que se lea).");
+      }
+      autorizacion.set(id, valor);
+    }
+  }
+
+  // Ruta gratis o con flete (Valencia y Panamá): con la suma de los pedidos
+  // (montoDelGrupo) y con el estado del cliente. Hasta que Almacén registre el
+  // egreso se sigue recalculando con lo que diga Odoo (evaluarConGrupos).
+  const datosOdoo = await datosDePedidos(ids);
+  const ds: DatosPedido[] = ids.map(
+    (id) =>
+      datosOdoo.get(id) ?? {
+        company_id: companyId,
+        moneda: venta.get(id)!.currency_id?.[1] || "",
+        base_pedido: Number(venta.get(id)!.amount_untaxed) || 0,
+        facturado: null,
+        por_facturar: true,
+        con_nota_credito: false,
+        estado_cliente: null,
+      },
+  );
+  const suma = montoDelGrupo(ds);
   const rutaGratis =
     metodo === "ruta"
       ? evaluarRutaGratis({
-          companyId: venta.company_id?.[0],
+          companyId,
           rutaNombre,
-          monto: montoBase,
-          moneda: monto.fuente === "facturado" ? "USD" : venta.currency_id?.[1],
-          estadoCliente: d?.estado_cliente,
+          monto: suma.monto,
+          moneda: suma.moneda,
+          estadoCliente: ds.find((x) => x.estado_cliente)?.estado_cliente,
         }).gratis
       : null;
 
+  // El vendedor arma un grupo nuevo con lo que eligió (y un pedido guardado
+  // solo sale del grupo en que estaba). Almacén no toca el grupo.
+  const grupo = ids.length > 1 ? randomUUID() : null;
   await asegurarTablaMetodoRetiro();
-  await query(
-    `INSERT INTO ventas_metodo_retiro
-       (odoo_sale_id, pedido, company_id, cliente, vendedor_uid, vendedor_nombre, metodo, ruta_id, ruta_nombre,
-        agencia, nota, registrado_por, registrado_rol, ruta_gratis, monto_base)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE metodo = VALUES(metodo), ruta_id = VALUES(ruta_id), ruta_nombre = VALUES(ruta_nombre),
-       ruta_gratis = VALUES(ruta_gratis), monto_base = VALUES(monto_base),
-       monto_facturado = NULL, ruta_gratis_final = NULL, alerta = NULL, recalculado_at = NULL,
-       agencia = VALUES(agencia), nota = VALUES(nota), registrado_por = VALUES(registrado_por),
-       registrado_rol = VALUES(registrado_rol), cliente = VALUES(cliente), pedido = VALUES(pedido)`,
-    [
-      datos.saleId,
-      String(venta.name || "").slice(0, 64),
-      venta.company_id?.[0] ?? null,
-      String(venta.partner_id?.[1] || "").slice(0, 255),
-      venta.user_id?.[0] ?? null,
-      String(venta.user_id?.[1] || "").slice(0, 200),
-      metodo,
-      rutaId,
-      rutaNombre,
-      agencia,
-      (datos.nota || "").trim().slice(0, 500) || null,
-      datos.autor.slice(0, 200),
-      datos.rol.slice(0, 50),
-      rutaGratis,
-      montoBase,
-    ],
-  );
-  const fila = aplicarEvaluacion((await metodosDePedidos([datos.saleId])).get(datos.saleId)!, d);
-  if (!egresos.length) return { metodo: fila, egresos: [] };
+  for (const id of ids) {
+    const v = venta.get(id)!;
+    await query(
+      `INSERT INTO ventas_metodo_retiro
+         (odoo_sale_id, pedido, company_id, cliente, vendedor_uid, vendedor_nombre, metodo, ruta_id, ruta_nombre,
+          agencia, nota, registrado_por, registrado_rol, ruta_gratis, monto_base, grupo, autorizacion_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE metodo = VALUES(metodo), ruta_id = VALUES(ruta_id), ruta_nombre = VALUES(ruta_nombre),
+         ruta_gratis = VALUES(ruta_gratis), monto_base = VALUES(monto_base),
+         monto_facturado = NULL, ruta_gratis_final = NULL, alerta = NULL, recalculado_at = NULL,
+         agencia = VALUES(agencia), nota = VALUES(nota), registrado_por = VALUES(registrado_por),
+         registrado_rol = VALUES(registrado_rol), cliente = VALUES(cliente), pedido = VALUES(pedido),
+         autorizacion_id = VALUES(autorizacion_id)${datos.porAlmacen ? "" : ", grupo = VALUES(grupo)"}`,
+      [
+        id,
+        String(v.name || "").slice(0, 64),
+        v.company_id?.[0] ?? null,
+        String(v.partner_id?.[1] || "").slice(0, 255),
+        v.user_id?.[0] ?? null,
+        String(v.user_id?.[1] || "").slice(0, 200),
+        metodo,
+        rutaId,
+        rutaNombre,
+        agencia,
+        (datos.nota || "").trim().slice(0, 500) || null,
+        datos.autor.slice(0, 200),
+        datos.rol.slice(0, 50),
+        rutaGratis,
+        suma.monto,
+        grupo,
+        autorizacion.get(id) ?? null,
+      ],
+    );
+  }
+  const evaluados = await evaluarConGrupos(await metodosDePedidos(ids), datosOdoo);
+  const metodos = ids.map((id) => evaluados.get(id)).filter(Boolean) as FilaMetodo[];
+  const fila = metodos[0];
+  if (!egresos.length) return { metodo: fila, metodos, egresos: [] };
 
   // Con el egreso ya registrado, la ruta gratis se fija ahora (como al
   // registrarlo) y el egreso toma el nuevo tipo de entrega.
   await fijarRutaGratisFinal(fila);
   const cambiados = await cambiarEgresos(egresos, fila, anterior, datos.autor);
-  return { metodo: (await metodosEvaluados([datos.saleId])).get(datos.saleId) || fila, egresos: cambiados };
+  const final = (await metodosEvaluados([ids[0]])).get(ids[0]) || fila;
+  return { metodo: final, metodos: [final], egresos: cambiados };
 }
 
 /**

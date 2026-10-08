@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   borradorDe,
-  cuerpoBorrador,
+  cuerpoConAutorizacion,
   errorBorrador,
   MetodoRetiroCampos,
   type Borrador,
@@ -71,10 +71,12 @@ export function CambiarMetodoRetiro({
     setGuardando(true);
     setError("");
     try {
+      // Transporte externo: la foto nueva de la autorización se sube primero.
+      const cuerpo = await cuerpoConAutorizacion(borrador, t("error_guardar"));
       const r = await fetch("/api/seguridad/mercancia/metodo-retiro", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ odoo_picking_id: pickingId, ...cuerpoBorrador(borrador) }),
+        body: JSON.stringify({ odoo_picking_id: pickingId, ...cuerpo }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.success) throw new Error(j.error || t("error_guardar"));
