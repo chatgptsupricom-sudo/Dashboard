@@ -74,6 +74,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_diario", // Reporte Diario de Ventas
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
       "metas_marca", // Metas de venta por marca y cumplimiento (Ventas > Metas por Marca)
+      "stock_marca", // Stock vs vendido por marca, % vendido (Ventas > Stock por Marca)
       "sorteo_caracas", // Ruleta del sorteo de clientes, sede configurable (Ventas > Sorteo de clientes)
       "opiniones", // Opiniones de clientes (encuesta pública de ventas y RMA)
       "cuentas_por_cobrar", // Cuentas por Cobrar
