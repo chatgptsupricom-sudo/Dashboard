@@ -1,0 +1,200 @@
+import { db, query } from "@/lib/db";
+
+/**
+ * Qué vendedores reciben los leads de cada estado de Venezuela.
+ *
+ * El reparto lo hace n8n ("Leads - Form Pagina Web" y "Registro de Leads DB")
+ * con dos procedimientos de la MySQL: `asignar_vendedor_rotacion(estado)` lee
+ * la tabla `rotacion` y `asignar_vendedor_rotacion_carcar(estado)` lee
+ * `rotacion_caracas_y_carabobo` (Caracas y Carabobo, que además pesan por
+ * `efectividad_cierre`). Una fila = un vendedor en la rotación de un estado;
+ * `asignacion` cuenta cuántos leads le tocaron. El procedimiento toma, entre
+ * las filas del estado cuyo vendedor existe y está activo, la de menor
+ * `asignacion` y le suma 1. Dos trampas que eso deja: un estado sin ningún
+ * vendedor activo devuelve NULL (el lead queda sin vendedor), y una fila con
+ * `asignacion` NULL va primero siempre y NULL + 1 sigue siendo NULL, así que se
+ * lleva todos los leads del estado. Estas tablas no las crea el
+ * panel: aquí solo se agregan, cambian y quitan filas, y cada cambio queda en
+ * `audit_logs` (Auditoría del SuperAdmin) además de en system_audit_log.
+ *
+ * Panamá no usa esta rotación.
+ */
+
+export const TABLA_GENERAL = "rotacion";
+export const TABLA_CARCAR = "rotacion_caracas_y_carabobo";
+export type Tabla = typeof TABLA_GENERAL | typeof TABLA_CARCAR;
+
+/** Estados como los guardan las tablas: minúsculas y sin acentos. */
+export const ESTADOS = [
+  "amazonas",
+  "anzoategui",
+  "apure",
+  "aragua",
+  "barinas",
+  "bolivar",
+  "carabobo",
+  "caracas",
+  "cojedes",
+  "delta amacuro",
+  "falcon",
+  "guarico",
+  "la guaira",
+  "lara",
+  "merida",
+  "miranda",
+  "monagas",
+  "nueva esparta",
+  "portuguesa",
+  "sucre",
+  "tachira",
+  "trujillo",
+  "yaracuy",
+  "zulia",
+];
+
+export const tablaDe = (estado: string): Tabla => (estado === "caracas" || estado === "carabobo" ? TABLA_CARCAR : TABLA_GENERAL);
+
+type Fila = { id: number; estado: string; seller_id: number; asignacion: number | null; efectividad_cierre?: number };
+export type Autor = { id: string; nombre: string; rol: string };
+
+async function nombreVendedor(id: number | null): Promise<string | null> {
+  if (!id) return null;
+  const r = await query("SELECT name FROM sellers WHERE id = ?", [id]);
+  return r.rows[0]?.name ?? `Vendedor #${id} (ya no existe)`;
+}
+
+/**
+ * Cada cambio va a `audit_logs` (acción ROTACION_ESTADO), que la Auditoría del
+ * SuperAdmin ya muestra con el vendedor de antes y el de después.
+ */
+async function auditar(
+  autor: Autor,
+  accion: "agregar" | "cambiar" | "quitar",
+  estado: string,
+  antes: number | null,
+  despues: number | null,
+) {
+  await query(`INSERT INTO audit_logs (user_id, user_name, role, action, changes) VALUES (?, ?, ?, ?, ?)`, [
+    autor.id,
+    autor.nombre,
+    autor.rol,
+    "ROTACION_ESTADO",
+    JSON.stringify({
+      estado,
+      accion,
+      from: { vendedor: (await nombreVendedor(antes)) ?? "—" },
+      to: { vendedor: (await nombreVendedor(despues)) ?? "—" },
+    }),
+  ]);
+}
+
+export async function leerRotacion() {
+  const [general, carcar, vendedores] = await Promise.all([
+    query(`SELECT id, estado, seller_id, asignacion FROM ${TABLA_GENERAL} ORDER BY estado, id`),
+    query(`SELECT id, estado, seller_id, asignacion, efectividad_cierre FROM ${TABLA_CARCAR} ORDER BY estado, id`),
+    query("SELECT id, name, cids, activo FROM sellers WHERE cids IN (9, 10) ORDER BY name"),
+  ]);
+  const porId = new Map((vendedores.rows as any[]).map((v) => [Number(v.id), v]));
+  const filas = [...(general.rows as Fila[]), ...(carcar.rows as Fila[])];
+  const estados = [...new Set([...ESTADOS, ...filas.map((f) => String(f.estado))])].sort().map((estado) => ({
+    estado,
+    tabla: tablaDe(estado),
+    vendedores: filas
+      .filter((f) => f.estado === estado)
+      .map((f) => {
+        const v = porId.get(Number(f.seller_id));
+        return {
+          fila: Number(f.id),
+          seller_id: Number(f.seller_id),
+          nombre: v?.name ?? `Vendedor #${f.seller_id}`,
+          existe: !!v,
+          activo: !!v?.activo,
+          asignacion: f.asignacion == null ? null : Number(f.asignacion),
+          efectividad: f.efectividad_cierre == null ? null : Number(f.efectividad_cierre),
+        };
+      }),
+  }));
+  return {
+    estados,
+    vendedores: (vendedores.rows as any[]).filter((v) => v.activo).map((v) => ({ id: Number(v.id), nombre: v.name, cids: Number(v.cids) })),
+  };
+}
+
+async function vendedorValido(id: number) {
+  const r = await query("SELECT id, activo FROM sellers WHERE id = ? AND cids IN (9, 10)", [id]);
+  return r.rows[0]?.activo ? true : false;
+}
+
+async function filaDe(fila: number): Promise<(Fila & { tabla: Tabla }) | null> {
+  for (const tabla of [TABLA_GENERAL, TABLA_CARCAR] as Tabla[]) {
+    const r = await query(`SELECT id, estado, seller_id, asignacion FROM ${tabla} WHERE id = ?`, [fila]);
+    if (r.rows[0]) return { ...(r.rows[0] as Fila), tabla };
+  }
+  return null;
+}
+
+/**
+ * Suma un vendedor a la rotación de un estado. Arranca con el menor contador
+ * del estado: si arrancara en 0 y la rotación da el lead al de menor
+ * `asignacion`, se llevaría todos los leads hasta alcanzar a los demás.
+ */
+export async function agregar(estado: string, sellerId: number, autor: Autor): Promise<string | null> {
+  if (!ESTADOS.includes(estado)) return "Estado no válido.";
+  if (!(await vendedorValido(sellerId))) return "Ese vendedor no está activo en Valencia o Caracas.";
+  const tabla = tablaDe(estado);
+  const r = await query(
+    `SELECT COUNT(*) AS n, SUM(seller_id = ?) AS ya, MIN(COALESCE(asignacion, 0)) AS minimo FROM ${tabla} WHERE estado = ?`,
+    [sellerId, estado],
+  );
+  const { ya, minimo } = r.rows[0] as any;
+  if (Number(ya) > 0) return "Ese vendedor ya recibe los leads de ese estado.";
+  await query(`INSERT INTO ${tabla} (estado, seller_id, asignacion) VALUES (?, ?, ?)`, [estado, sellerId, Number(minimo) || 0]);
+  await auditar(autor, "agregar", estado, null, sellerId);
+  return null;
+}
+
+/**
+ * Pone otro vendedor en el lugar de uno: conserva el contador, salvo que esté
+ * vacío (NULL), que pasa al menor del estado.
+ */
+export async function cambiar(fila: number, sellerId: number, autor: Autor): Promise<string | null> {
+  const f = await filaDe(fila);
+  if (!f) return "Esa asignación ya no existe. Recarga la página.";
+  if (Number(f.seller_id) === sellerId) return null;
+  if (!(await vendedorValido(sellerId))) return "Ese vendedor no está activo en Valencia o Caracas.";
+  const dup = await query(`SELECT COUNT(*) AS n FROM ${f.tabla} WHERE estado = ? AND seller_id = ?`, [f.estado, sellerId]);
+  if (Number((dup.rows[0] as any).n) > 0) return "Ese vendedor ya recibe los leads de ese estado.";
+  await query(
+    `UPDATE ${f.tabla} SET seller_id = ?, asignacion = COALESCE(asignacion,
+       (SELECT m FROM (SELECT MIN(asignacion) AS m FROM ${f.tabla} WHERE estado = ?) x), 0)
+     WHERE id = ?`,
+    [sellerId, f.estado, fila],
+  );
+  await auditar(autor, "cambiar", f.estado, Number(f.seller_id), sellerId);
+  return null;
+}
+
+/** Vendedores activos (y que existen) del estado, sin contar una fila. */
+async function activosSin(tabla: Tabla, estado: string, fila: number): Promise<number> {
+  const r = await query(
+    `SELECT COUNT(*) AS n FROM ${tabla} r JOIN sellers s ON s.id = r.seller_id WHERE r.estado = ? AND s.activo = 1 AND r.id <> ?`,
+    [estado, fila],
+  );
+  return Number((r.rows[0] as any).n);
+}
+
+/**
+ * Saca a un vendedor de la rotación de un estado. No deja el estado sin
+ * vendedor activo (sus leads quedarían sin asignar), salvo que ya no lo tuviera.
+ */
+export async function quitar(fila: number, autor: Autor): Promise<string | null> {
+  const f = await filaDe(fila);
+  if (!f) return "Esa asignación ya no existe. Recarga la página.";
+  const quedan = await activosSin(f.tabla, f.estado, fila);
+  const esteActivo = await vendedorValido(Number(f.seller_id));
+  if (quedan === 0 && esteActivo)
+    return "Es el único vendedor activo de ese estado: sus leads quedarían sin asignar. Agrega a otro antes de quitarlo, o usa Cambiar.";
+  await query(`DELETE FROM ${f.tabla} WHERE id = ?`, [fila]);
+  await auditar(autor, "quitar", f.estado, Number(f.seller_id), null);
+  return null;
+}

@@ -50,6 +50,7 @@ const METODO_COLOR: Record<string, "default" | "secondary" | "destructive" | "ou
   PUT: "secondary",
   PATCH: "secondary",
   REASSIGN: "outline",
+  ROTACION_ESTADO: "outline",
 };
 
 // Solo muestra los campos que de verdad cambiaron entre antes y despues —
