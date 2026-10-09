@@ -10,6 +10,8 @@ interface Partner {
   vat: string;
 }
 
+const TITULO_GENERICO = "A quien pueda interesar";
+
 const MONTHS_ES = [
   "Enero",
   "Febrero",
@@ -168,6 +170,11 @@ export default function ReferenciaComercialPage() {
   const [firstInvoiceDate, setFirstInvoiceDate] = useState<string | null>(null);
   const [fuenteFecha, setFuenteFecha] = useState<"odoo" | "smartbit" | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  // Título de la carta: el genérico, o a quién va dirigida si el cliente la
+  // pide para alguien en particular (un banco, un proveedor). Vacío = genérico.
+  const [destinatarioPersonalizado, setDestinatarioPersonalizado] = useState(false);
+  const [destinatario, setDestinatario] = useState("");
+  const titulo = (destinatarioPersonalizado && destinatario.trim()) || TITULO_GENERICO;
   const letterRef = useRef<HTMLDivElement>(null);
   const today = new Date();
   // Solo el superadmin elige membrete; el resto queda fijo en su sede.
@@ -329,7 +336,7 @@ svg { display: block; }
           margin: "25px 0 30px",
         }}
       >
-        A quien pueda interesar
+        {titulo}
       </div>
 
       {/* ========== CUERPO TEXTO ========== */}
@@ -544,6 +551,39 @@ svg { display: block; }
                       : "Sin facturas registradas"
                     : ""}
             </p>
+          </div>
+          <div className="md:col-span-3">
+            <label htmlFor="destinatario-tipo" className="block text-sm font-medium text-slate-700 mb-2">
+              Dirigida a
+            </label>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <select
+                id="destinatario-tipo"
+                value={destinatarioPersonalizado ? "otro" : "generico"}
+                onChange={(e) => setDestinatarioPersonalizado(e.target.value === "otro")}
+                className="sm:w-64 border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white text-slate-800 focus:border-blue-400 focus:outline-none"
+              >
+                <option value="generico">{TITULO_GENERICO}</option>
+                <option value="otro">Otro destinatario</option>
+              </select>
+              {destinatarioPersonalizado && (
+                <input
+                  type="text"
+                  value={destinatario}
+                  onChange={(e) => setDestinatario(e.target.value)}
+                  maxLength={120}
+                  placeholder="Ej.: Banco Nacional de Crédito"
+                  aria-label="Destinatario de la carta"
+                  autoFocus
+                  className="flex-1 border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 focus:border-blue-400 focus:outline-none"
+                />
+              )}
+            </div>
+            {destinatarioPersonalizado && !destinatario.trim() && (
+              <p className="text-xs text-slate-400 mt-1.5">
+                Mientras esté vacío, la carta dice &quot;{TITULO_GENERICO}&quot;.
+              </p>
+            )}
           </div>
         </div>
       </div>
