@@ -131,6 +131,9 @@ export async function GET(request: NextRequest) {
         transactionType: r.transaction_type || "",
         // Se llenan abajo desde account.move.
         amountTotal: 0,
+        amountUntaxed: 0,
+        amountTax: 0,
+        paymentState: "",
         paymentTerm: "",
       };
     });
@@ -142,11 +145,19 @@ export async function GET(request: NextRequest) {
         const moves = await callOdooRPC<any[]>(
           "account.move", "search_read",
           [[["id", "in", moveIds]]],
-          { fields: ["id", "amount_total_signed", "invoice_payment_term_id"], limit: moveIds.length },
+          {
+            fields: [
+              "id", "amount_total_signed", "amount_untaxed_signed", "amount_tax_signed",
+              "payment_state", "invoice_payment_term_id",
+            ],
+            limit: moveIds.length,
+          },
         );
         const moveTotals: Record<number, number> = {};
+        const moveDe: Record<number, any> = {};
         const plazoDe: Record<number, number> = {};
         (moves || []).forEach((m: any) => {
+          moveDe[m.id] = m;
           // Con signo: una nota de crédito resta.
           moveTotals[m.id] = m.amount_total_signed || 0;
           if (Array.isArray(m.invoice_payment_term_id)) plazoDe[m.id] = m.invoice_payment_term_id[0];
@@ -157,6 +168,10 @@ export async function GET(request: NextRequest) {
           r.amountTotal = r.moveId && moveTotals[r.moveId]
             ? Math.round(moveTotals[r.moveId] * 100) / 100
             : 0;
+          const m = moveDe[r.moveId];
+          r.amountUntaxed = Math.round((m?.amount_untaxed_signed || 0) * 100) / 100;
+          r.amountTax = Math.round((m?.amount_tax_signed || 0) * 100) / 100;
+          r.paymentState = m?.payment_state || "";
           r.paymentTerm = plazos.get(plazoDe[r.moveId]) || "";
         });
       } catch {
@@ -219,7 +234,7 @@ async function facturasPorFecha(o: {
       fields: [
         "id", "name", "partner_id", "company_id", "invoice_user_id", "move_type",
         "invoice_date", "invoice_date_due", "amount_total_signed",
-        "amount_residual_signed", "payment_state", "invoice_payment_term_id",
+        "amount_untaxed_signed", "amount_tax_signed", "amount_residual_signed", "payment_state", "invoice_payment_term_id",
       ],
       limit: o.limit,
       offset: o.offset,
@@ -259,6 +274,8 @@ async function facturasPorFecha(o: {
       paymentState: m.payment_state || "",
       transactionType: m.move_type === "out_refund" ? "Nota de crédito" : "Factura",
       amountTotal: r2(m.amount_total_signed),
+      amountUntaxed: r2(m.amount_untaxed_signed),
+      amountTax: r2(m.amount_tax_signed),
       paymentTerm: Array.isArray(m.invoice_payment_term_id)
         ? plazos.get(m.invoice_payment_term_id[0]) || m.invoice_payment_term_id[1]
         : "",
