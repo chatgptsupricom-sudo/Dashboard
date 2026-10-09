@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { rolVista } from "@/lib/manuales/permisos";
 import {
   RESPONSABLE,
   resultadoEgreso,
@@ -72,7 +71,7 @@ export default function MercanciaLista({ tipo }: { tipo: "ingreso" | "egreso" })
   const locale = (params?.locale as string) || "es";
   const base = `/${locale}/seguridad/mercancia/${tipo}`;
   const { user } = useAuthStore();
-  const rol = rolVista(user?.role);
+  const rol = (user?.role || "").toLowerCase().trim();
 
   const [items, setItems] = useState<Movimiento[]>([]);
   const [cargando, setCargando] = useState(true);

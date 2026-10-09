@@ -16,17 +16,10 @@ import { requireRoles } from "@/lib/auth/roles";
  * La verificación en sí está en `lib/auth/roles.ts`, que es la misma que usan
  * las rutas de otros roles (superadmin sigue entrando siempre).
  */
-/**
- * Procesos lee estas pantallas para las capturas de los manuales: entra solo
- * en los GET. Nunca en lo que escribe (etapas, firmas, validar en Odoo).
- */
-const conLecturaDeProcesos = (request: NextRequest, roles: string[]) =>
-  request.method === "GET" ? [...roles, "procesos"] : roles;
-
 export async function requireSeguridad(
   request: NextRequest,
 ): Promise<{ payload?: any; error?: NextResponse }> {
-  return requireRoles(request, conLecturaDeProcesos(request, ["seguridad"]));
+  return requireRoles(request, ["seguridad"]);
 }
 
 /**
@@ -42,7 +35,7 @@ export async function requireSeguridad(
 export async function requireAlmacenOSeguridad(
   request: NextRequest,
 ): Promise<{ payload?: any; error?: NextResponse }> {
-  return requireRoles(request, conLecturaDeProcesos(request, ["seguridad", "almacen"]));
+  return requireRoles(request, ["seguridad", "almacen"]);
 }
 
 /**
@@ -56,7 +49,7 @@ export async function requireAlmacenOSeguridad(
 export async function requireAlmacen(
   request: NextRequest,
 ): Promise<{ payload?: any; error?: NextResponse }> {
-  return requireRoles(request, conLecturaDeProcesos(request, ["almacen"]));
+  return requireRoles(request, ["almacen"]);
 }
 
 /**

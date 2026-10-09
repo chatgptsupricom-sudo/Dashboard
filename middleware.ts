@@ -179,10 +179,7 @@ export default async function middleware(request: NextRequest) {
       const isProcesos = userRole === "procesos";
 
       // 1. Lógica para Vendedores
-      // Procesos mira (sin escribir: las APIs solo le abren los GET) Método de
-      // retiro y el módulo de Almacén/Seguridad, para las capturas de los manuales.
-      const procesosMira = isProcesos && pathname.includes("/vendedores/metodo-retiro");
-      if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin && !procesosMira) {
+      if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
@@ -341,7 +338,6 @@ export default async function middleware(request: NextRequest) {
         pathname.includes("/seguridad") &&
         !isSeguridad &&
         !isAlmacen &&
-        !isProcesos &&
         !isSuperAdmin &&
         !(isRma && esIngresoDetalleRma)
       ) {

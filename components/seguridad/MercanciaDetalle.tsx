@@ -5,7 +5,6 @@ import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock, Loader2, Package } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { rolVista } from "@/lib/manuales/permisos";
 import { StarRating, StarRatingDisplay } from "@/components/seguridad/StarRating";
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
@@ -93,7 +92,7 @@ export default function MercanciaDetalle({
   // toque no deja dos notas.
   const [calificando, setCalificando] = useState<string | null>(null);
 
-  const rol = rolVista(user?.role);
+  const rol = (user?.role || "").toLowerCase().trim();
   // Almacen preparo el registro (issue #43): ve el estado, pero no verifica
   // en el porton ni firma ni califica — eso es exclusivo de Seguridad.
   const esAlmacen = rol === "almacen";
