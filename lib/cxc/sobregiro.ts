@@ -68,10 +68,16 @@ async function grupos(domain: any[], fields: string[], cid: number): Promise<any
   return r;
 }
 
+/**
+ * search_read y no read: hay contactos que el usuario de la API no puede leer
+ * con ninguna sede activa (oct-2026: 3 de Panamá con saldo en la sede) y
+ * `read` tumba la consulta entera por uno solo. search_read los salta; quien
+ * llama los completa con el nombre que trae el libro.
+ */
 async function leerClientes(ids: number[], cid: number): Promise<any[]> {
   const out: any[] = [];
   for (let i = 0; i < ids.length; i += 500) {
-    const page = await callOdooRPCEstricto<any[]>("res.partner", "read", [ids.slice(i, i + 500)], {
+    const page = await callOdooRPCEstricto<any[]>("res.partner", "search_read", [[["id", "in", ids.slice(i, i + 500)]]], {
       fields: ["id", "name", "vat", "credit_limit", "user_id", "property_payment_term_id"],
       context: { allowed_company_ids: [cid], active_test: false },
     });
@@ -102,9 +108,12 @@ async function sobregiroDeSede(cid: number): Promise<ClienteSobregiro[]> {
   ]);
 
   const usado = new Map<number, number>();
+  const nombreEnLibro = new Map<number, string>();
   for (const g of saldos) {
     const id = idDe(g.partner_id);
-    if (id) usado.set(id, Number(g.amount_residual) || 0);
+    if (!id) continue;
+    usado.set(id, Number(g.amount_residual) || 0);
+    nombreEnLibro.set(id, nombreDe(g.partner_id));
   }
   const vencido = new Map<number, { monto: number; desde: string | null }>();
   for (const g of vencidos) {
@@ -117,7 +126,13 @@ async function sobregiroDeSede(cid: number): Promise<ClienteSobregiro[]> {
     ...(conLimite || []),
     ...[...usado.entries()].filter(([, v]) => v >= 0.01).map(([id]) => id),
   ]));
-  const partners = (await leerClientes(ids, cid)).filter((p) => !esInterno(p.name || "") && !esRelacionada(p.name || ""));
+  const leidos = await leerClientes(ids, cid);
+  // Los que Odoo no deja leer: sin límite conocido, con el nombre del libro.
+  const vistos = new Set(leidos.map((p) => p.id));
+  const restringidos = ids
+    .filter((id) => !vistos.has(id))
+    .map((id) => ({ id, name: nombreEnLibro.get(id) || `Contacto ${id}`, vat: "", credit_limit: 0, user_id: false, property_payment_term_id: false }));
+  const partners = [...leidos, ...restringidos].filter((p) => !esInterno(p.name || "") && !esRelacionada(p.name || ""));
 
   const plazos = await nombresPlazos(
     Array.from(new Set(partners.map((p) => idDe(p.property_payment_term_id)).filter((id): id is number => Boolean(id)))),
