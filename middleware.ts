@@ -371,6 +371,11 @@ export default async function middleware(request: NextRequest) {
           new URL(`/${locale}/seguridad`, request.url),
         );
       }
+      // RMA tiene su propio dashboard en /rma (el item "Dashboard" de su
+      // sidebar ya apunta ahi); el general le mostraba KPIs de ventas en 0.
+      if (esDashboardComun && isRma) {
+        return NextResponse.redirect(new URL(`/${locale}/rma`, request.url));
+      }
       // El Diseñador tiene su propio dashboard en /disenador/dashboard: el
       // general no es su inicio (no hay loop: el regex es de /dashboard exacto).
       if (esDashboardComun && isProcesos) {
