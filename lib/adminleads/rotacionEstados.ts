@@ -15,7 +15,7 @@ import { db, query } from "@/lib/db";
  * `asignacion` NULL va primero siempre y NULL + 1 sigue siendo NULL, así que se
  * lleva todos los leads del estado. Estas tablas no las crea el
  * panel: aquí solo se agregan, cambian y quitan filas, y cada cambio queda en
- * `rotacion_auditoria` (se crea sola) además de en system_audit_log.
+ * `audit_logs` (Auditoría del SuperAdmin) además de en system_audit_log.
  *
  * Panamá no usa esta rotación.
  */
@@ -54,29 +54,8 @@ export const ESTADOS = [
 
 export const tablaDe = (estado: string): Tabla => (estado === "caracas" || estado === "carabobo" ? TABLA_CARCAR : TABLA_GENERAL);
 
-let auditoriaLista = false;
-async function ensureAuditoria() {
-  if (auditoriaLista) return;
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS rotacion_auditoria (
-      id BIGINT AUTO_INCREMENT PRIMARY KEY,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      user_email VARCHAR(190) NULL,
-      user_name VARCHAR(190) NULL,
-      accion ENUM('agregar','cambiar','quitar') NOT NULL,
-      estado VARCHAR(50) NOT NULL,
-      seller_antes INT NULL,
-      seller_despues INT NULL,
-      nombre_antes VARCHAR(190) NULL,
-      nombre_despues VARCHAR(190) NULL,
-      KEY idx_fecha (created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-  auditoriaLista = true;
-}
-
 type Fila = { id: number; estado: string; seller_id: number; asignacion: number | null; efectividad_cierre?: number };
-export type Autor = { email: string; nombre: string };
+export type Autor = { id: string; nombre: string; rol: string };
 
 async function nombreVendedor(id: number | null): Promise<string | null> {
   if (!id) return null;
@@ -84,6 +63,10 @@ async function nombreVendedor(id: number | null): Promise<string | null> {
   return r.rows[0]?.name ?? `Vendedor #${id} (ya no existe)`;
 }
 
+/**
+ * Cada cambio va a `audit_logs` (acción ROTACION_ESTADO), que la Auditoría del
+ * SuperAdmin ya muestra con el vendedor de antes y el de después.
+ */
 async function auditar(
   autor: Autor,
   accion: "agregar" | "cambiar" | "quitar",
@@ -91,12 +74,18 @@ async function auditar(
   antes: number | null,
   despues: number | null,
 ) {
-  await ensureAuditoria();
-  await query(
-    `INSERT INTO rotacion_auditoria (user_email, user_name, accion, estado, seller_antes, seller_despues, nombre_antes, nombre_despues)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [autor.email, autor.nombre, accion, estado, antes, despues, await nombreVendedor(antes), await nombreVendedor(despues)],
-  );
+  await query(`INSERT INTO audit_logs (user_id, user_name, role, action, changes) VALUES (?, ?, ?, ?, ?)`, [
+    autor.id,
+    autor.nombre,
+    autor.rol,
+    "ROTACION_ESTADO",
+    JSON.stringify({
+      estado,
+      accion,
+      from: { vendedor: (await nombreVendedor(antes)) ?? "—" },
+      to: { vendedor: (await nombreVendedor(despues)) ?? "—" },
+    }),
+  ]);
 }
 
 export async function leerRotacion() {
@@ -129,15 +118,6 @@ export async function leerRotacion() {
     estados,
     vendedores: (vendedores.rows as any[]).filter((v) => v.activo).map((v) => ({ id: Number(v.id), nombre: v.name, cids: Number(v.cids) })),
   };
-}
-
-export async function leerAuditoria(limite = 100) {
-  await ensureAuditoria();
-  const r = await query(
-    `SELECT id, created_at, user_email, user_name, accion, estado, nombre_antes, nombre_despues
-     FROM rotacion_auditoria ORDER BY id DESC LIMIT ${Math.min(Math.max(1, Math.floor(limite)), 500)}`,
-  );
-  return r.rows;
 }
 
 async function vendedorValido(id: number) {

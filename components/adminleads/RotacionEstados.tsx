@@ -1,10 +1,10 @@
 "use client";
 
-import { AlertTriangle, History, Loader2, MapPin, Pencil, Plus, Search, X } from "lucide-react";
+import { AlertTriangle, Loader2, MapPin, Pencil, Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 // Quién recibe los leads de cada estado (/api/adminleads/rotacion-estados).
-// Cada cambio queda en la auditoría de abajo.
+// Cada cambio queda en la Auditoría del SuperAdmin (audit_logs, ROTACION_ESTADO).
 
 type VendedorFila = {
   fila: number;
@@ -16,17 +16,6 @@ type VendedorFila = {
 };
 type Estado = { estado: string; tabla: string; vendedores: VendedorFila[] };
 type Vendedor = { id: number; nombre: string; cids: number };
-type Cambio = {
-  id: number;
-  created_at: string;
-  user_email: string;
-  user_name: string | null;
-  accion: "agregar" | "cambiar" | "quitar";
-  estado: string;
-  nombre_antes: string | null;
-  nombre_despues: string | null;
-};
-
 const NOMBRES: Record<string, string> = {
   anzoategui: "Anzoátegui",
   bolivar: "Bolívar",
@@ -41,7 +30,6 @@ const SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas" };
 export default function RotacionEstados() {
   const [estados, setEstados] = useState<Estado[] | null>(null);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
-  const [auditoria, setAuditoria] = useState<Cambio[]>([]);
   const [filtro, setFiltro] = useState("");
   const [editando, setEditando] = useState<number | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
@@ -54,7 +42,6 @@ export default function RotacionEstados() {
         if (!r.ok) throw new Error(j?.error);
         setEstados(j.estados || []);
         setVendedores(j.vendedores || []);
-        setAuditoria(j.auditoria || []);
       })
       .catch((e) => setError(e?.message || "No se pudo cargar la rotación por estados."));
 
@@ -261,36 +248,6 @@ export default function RotacionEstados() {
           );
         })
       )}
-
-      <div className="border-t border-zinc-100 mt-2">
-        <div className="px-6 pt-5 pb-2 flex items-center gap-2">
-          <History className="w-4 h-4 text-zinc-400" />
-          <h3 className="text-xs font-bold text-zinc-700">Auditoría de cambios</h3>
-          <span className="text-[11px] text-zinc-400">· últimos {auditoria.length}</span>
-        </div>
-        {auditoria.length === 0 ? (
-          <p className="px-6 pb-5 text-xs text-zinc-400">Todavía no hay cambios registrados.</p>
-        ) : (
-          <ul className="px-6 pb-5 max-h-72 overflow-y-auto divide-y divide-zinc-50">
-            {auditoria.map((c) => (
-              <li key={c.id} className="py-2 text-xs text-zinc-600 flex flex-col sm:flex-row sm:gap-3">
-                <span className="text-zinc-400 shrink-0 sm:w-36">
-                  {new Date(c.created_at).toLocaleString("es-VE", { dateStyle: "medium", timeStyle: "short" })}
-                </span>
-                <span>
-                  <b className="text-zinc-800">{c.user_name || c.user_email}</b>{" "}
-                  {c.accion === "agregar"
-                    ? `agregó a ${c.nombre_despues} en`
-                    : c.accion === "quitar"
-                      ? `quitó a ${c.nombre_antes} de`
-                      : `cambió a ${c.nombre_antes} por ${c.nombre_despues} en`}{" "}
-                  <b className="text-zinc-800">{nombreEstado(c.estado)}</b>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }

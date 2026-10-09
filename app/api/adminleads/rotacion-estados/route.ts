@@ -1,5 +1,5 @@
 import { requireRoles } from "@/lib/auth/roles";
-import { agregar, cambiar, leerAuditoria, leerRotacion, quitar } from "@/lib/adminleads/rotacionEstados";
+import { agregar, cambiar, leerRotacion, quitar } from "@/lib/adminleads/rotacionEstados";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -7,17 +7,20 @@ export const runtime = "nodejs";
 // Qué vendedores reciben los leads de cada estado (lib/adminleads/rotacionEstados.ts).
 // AdminLeads de Valencia/Caracas y SuperAdmin; Panamá no usa esta rotación.
 //
-//   GET                                -> { estados, vendedores, auditoria }
+//   GET                                -> { estados, vendedores }
 //   POST   { estado, seller_id }       -> suma un vendedor al estado
 //   PATCH  { fila, seller_id }         -> pone otro vendedor en esa fila
 //   DELETE { fila }                    -> saca al vendedor de esa fila
+//
+// Cada cambio queda en audit_logs (ROTACION_ESTADO): lo ve el SuperAdmin en Auditoría.
 
 async function guardia(request: NextRequest) {
   const auth = await requireRoles(request, ["adminleads"]);
   if (auth.error) return { error: auth.error };
   if (Number(auth.payload?.cids) === 7)
     return { error: NextResponse.json({ error: "Panamá no usa la rotación por estados." }, { status: 403 }) };
-  return { autor: { email: String(auth.payload?.email ?? ""), nombre: String(auth.payload?.name ?? "") } };
+  const p = auth.payload as any;
+  return { autor: { id: String(p?.sub ?? p?.uid ?? "0"), nombre: String(p?.name ?? p?.email ?? ""), rol: String(p?.role ?? "") } };
 }
 
 const responder = (error: string | null) =>
@@ -27,8 +30,7 @@ export async function GET(request: NextRequest) {
   const g = await guardia(request);
   if (g.error) return g.error;
   try {
-    const [rotacion, auditoria] = await Promise.all([leerRotacion(), leerAuditoria(100)]);
-    return NextResponse.json({ ...rotacion, auditoria });
+    return NextResponse.json(await leerRotacion());
   } catch (e: any) {
     console.error("[rotacion-estados] GET:", e?.message);
     return NextResponse.json({ error: "No se pudo leer la rotación por estados." }, { status: 500 });

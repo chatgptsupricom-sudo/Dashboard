@@ -37,6 +37,8 @@ const ACTION_TABLE: Record<string, { table: string; recordId: (changes: any, lea
   CREATE_ACTIVITY: { table: "activities", recordId: () => null },
   ASSIGN_TASK: { table: "activities", recordId: (c) => (c?.target_user != null ? String(c.target_user) : null) },
   UPDATE_MASSIVE_MOQ_COST: { table: "moqs", recordId: () => null },
+  // AdminLeads › Configuración › Estados por vendedor (lib/adminleads/rotacionEstados.ts).
+  ROTACION_ESTADO: { table: "rotacion", recordId: (c) => (c?.estado ? String(c.estado) : null) },
 };
 
 function tablasParaAcciones(acciones: string[]): string[] {
