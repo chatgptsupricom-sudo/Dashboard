@@ -31,7 +31,6 @@ export default function RotacionEstados() {
   const [estados, setEstados] = useState<Estado[] | null>(null);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [filtro, setFiltro] = useState("");
-  const [editando, setEditando] = useState<number | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -60,7 +59,6 @@ export default function RotacionEstados() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "No se pudo guardar. Reintenta.");
-      setEditando(null);
       await cargar();
     } catch (e: any) {
       setError(e.message);
@@ -151,76 +149,73 @@ export default function RotacionEstados() {
                           <AlertTriangle className="w-3.5 h-3.5" /> Sin vendedor activo: sus leads entran sin vendedor
                         </span>
                       )}
-                      {e.vendedores.map((v) =>
-                        editando === v.fila ? (
-                          <select
-                            key={v.fila}
-                            autoFocus
-                            defaultValue=""
-                            disabled={ocupado === `f${v.fila}`}
-                            onBlur={() => setEditando(null)}
-                            onChange={(ev) =>
-                              ev.target.value && enviar(`f${v.fila}`, "PATCH", { fila: v.fila, seller_id: Number(ev.target.value) })
-                            }
-                            className="h-8 rounded-full border border-emerald-300 bg-white px-3 text-xs outline-none"
-                          >
-                            <option value="" disabled>
-                              Poner en lugar de {v.nombre}…
-                            </option>
-                            {opciones(e.vendedores.map((x) => x.seller_id))}
-                          </select>
-                        ) : (
-                          <span
-                            key={v.fila}
-                            className={`group inline-flex items-center gap-1.5 h-8 pl-3 pr-1 rounded-full border text-xs font-medium ${
-                              acapara(v)
-                                ? "border-red-200 bg-red-50 text-red-800"
-                                : !v.existe || !v.activo
-                                  ? "border-zinc-200 bg-white text-zinc-400 line-through decoration-zinc-300"
-                                  : "border-zinc-200 bg-zinc-50 text-zinc-700"
-                            }`}
-                            title={
-                              acapara(v)
-                                ? "Contador vacío: este vendedor se lleva todos los leads del estado. Usa Cambiar para corregirlo."
-                                : !v.existe || !v.activo
-                                  ? "La rotación lo salta: no recibe leads"
-                                  : `${v.asignacion} leads asignados por esta rotación`
-                            }
-                          >
-                            {!v.existe ? `${v.nombre} · ya no existe` : v.activo ? v.nombre : `${v.nombre} · inactivo`}
-                            <span className={acapara(v) ? "font-semibold" : "text-zinc-400 no-underline"}>
-                              {acapara(v) ? "se lleva todos" : (v.asignacion ?? 0)}
-                            </span>
-                            {ocupado === `f${v.fila}` ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin mx-1" />
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditando(v.fila)}
-                                  title="Cambiar por otro vendedor"
-                                  aria-label={`Cambiar a ${v.nombre} en ${nombreEstado(e.estado)}`}
-                                  className="h-6 w-6 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-white"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    confirm(`¿Quitar a ${v.nombre} de ${nombreEstado(e.estado)}? Dejará de recibir sus leads.`) &&
-                                    enviar(`f${v.fila}`, "DELETE", { fila: v.fila })
-                                  }
-                                  title="Quitar de este estado"
-                                  aria-label={`Quitar a ${v.nombre} de ${nombreEstado(e.estado)}`}
-                                  className="h-6 w-6 rounded-full flex items-center justify-center text-zinc-400 hover:text-red-600 hover:bg-white"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
+                      {e.vendedores.map((v) => (
+                        <span
+                          key={v.fila}
+                          className={`group inline-flex items-center gap-1.5 h-8 pl-3 pr-1 rounded-full border text-xs font-medium ${
+                            acapara(v)
+                              ? "border-red-200 bg-red-50 text-red-800"
+                              : !v.existe || !v.activo
+                                ? "border-zinc-200 bg-white text-zinc-400 line-through decoration-zinc-300"
+                                : "border-zinc-200 bg-zinc-50 text-zinc-700"
+                          }`}
+                          title={
+                            acapara(v)
+                              ? "Contador vacío: este vendedor se lleva todos los leads del estado. Usa Cambiar para corregirlo."
+                              : !v.existe || !v.activo
+                                ? "La rotación lo salta: no recibe leads"
+                                : `${v.asignacion} leads asignados por esta rotación`
+                          }
+                        >
+                          {!v.existe ? `${v.nombre} · ya no existe` : v.activo ? v.nombre : `${v.nombre} · inactivo`}
+                          <span className={acapara(v) ? "font-semibold" : "text-zinc-400 no-underline"}>
+                            {acapara(v) ? "se lleva todos" : (v.asignacion ?? 0)}
                           </span>
-                        ),
-                      )}
+                          {ocupado === `f${v.fila}` ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin mx-1" />
+                          ) : (
+                            <>
+                              {/* Cambiar: el lápiz es una lista de vendedores (se abre directo, igual que Agregar). */}
+                              <label
+                                title="Cambiar por otro vendedor"
+                                className="relative h-6 w-6 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-white cursor-pointer no-underline"
+                              >
+                                <Pencil className="w-3 h-3 pointer-events-none" />
+                                <select
+                                  value=""
+                                  aria-label={`Cambiar a ${v.nombre} en ${nombreEstado(e.estado)}`}
+                                  onChange={(ev) => {
+                                    const nuevo = vendedores.find((x) => x.id === Number(ev.target.value));
+                                    if (
+                                      nuevo &&
+                                      confirm(`¿Poner a ${nuevo.nombre} en lugar de ${v.nombre} en ${nombreEstado(e.estado)}?`)
+                                    )
+                                      enviar(`f${v.fila}`, "PATCH", { fila: v.fila, seller_id: nuevo.id });
+                                  }}
+                                  className="absolute inset-0 opacity-0 cursor-pointer"
+                                >
+                                  <option value="" disabled>
+                                    Poner en lugar de {v.nombre}…
+                                  </option>
+                                  {opciones(e.vendedores.map((x) => x.seller_id))}
+                                </select>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  confirm(`¿Quitar a ${v.nombre} de ${nombreEstado(e.estado)}? Dejará de recibir sus leads.`) &&
+                                  enviar(`f${v.fila}`, "DELETE", { fila: v.fila })
+                                }
+                                title="Quitar de este estado"
+                                aria-label={`Quitar a ${v.nombre} de ${nombreEstado(e.estado)}`}
+                                className="h-6 w-6 rounded-full flex items-center justify-center text-zinc-400 hover:text-red-600 hover:bg-white"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </span>
+                      ))}
                       <label className="relative inline-flex items-center">
                         {ocupado === `e${e.estado}` ? (
                           <Loader2 className="w-4 h-4 animate-spin text-emerald-600 mx-2" />
