@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { service_name, cost_type, monthly_cost, currency } = body;
+    const { service_name, cost_type, monthly_cost, currency, billing_period } = body;
 
     if (!service_name || !cost_type) {
       return NextResponse.json(
@@ -106,6 +106,10 @@ export async function POST(request: NextRequest) {
        ON DUPLICATE KEY UPDATE cost_type = VALUES(cost_type), monthly_cost = VALUES(monthly_cost), currency = VALUES(currency)`,
       [service_name, cost_type, parseFloat(monthly_cost) || 0, cur],
     );
+    // Aparte del INSERT: sin la columna el servicio igual se crea, como mensual.
+    if (cost_type === "subscription" && billing_period === "annual" && (await asegurarPeriodo())) {
+      await query("UPDATE service_costs SET billing_period = 'annual' WHERE service_name = ?", [service_name]);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {

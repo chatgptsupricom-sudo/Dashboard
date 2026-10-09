@@ -52,6 +52,7 @@ export default function ConfiguracionPage() {
   const [editServiceCost, setEditServiceCost] = useState("");
   const [editServiceCurrency, setEditServiceCurrency] = useState("USD");
   const [editServiceDate, setEditServiceDate] = useState("");
+  const [editServicePeriodo, setEditServicePeriodo] = useState("monthly");
   const [savingService, setSavingService] = useState(false);
 
   const [showAddSvc, setShowAddSvc] = useState(false);
@@ -59,6 +60,7 @@ export default function ConfiguracionPage() {
   const [newSvcType, setNewSvcType] = useState<"subscription" | "topup">("subscription");
   const [newSvcCost, setNewSvcCost] = useState("");
   const [newSvcCurrency, setNewSvcCurrency] = useState("USD");
+  const [newSvcPeriodo, setNewSvcPeriodo] = useState("monthly");
   const [creatingSvc, setCreatingSvc] = useState(false);
 
   const fetchSellers = () => {
@@ -101,7 +103,7 @@ export default function ConfiguracionPage() {
 
   const handleUpdateService = async (svc: any) => {
     setSavingService(true);
-    await fetch("/api/adminleads/service-costs", {
+    const res = await fetch("/api/adminleads/service-costs", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -109,8 +111,16 @@ export default function ConfiguracionPage() {
         monthly_cost: parseFloat(editServiceCost) || 0,
         currency: editServiceCurrency,
         payment_date: editServiceDate || null,
+        // El periodo solo aplica a las suscripciones, no a las recargas.
+        ...(svc.cost_type === "subscription" ? { billing_period: editServicePeriodo } : {}),
       }),
     });
+    if (!res.ok) {
+      const j = await res.json().catch(() => null);
+      alert("No se pudo guardar: " + (j?.error || `HTTP ${res.status}`));
+      setSavingService(false);
+      return;
+    }
     setEditingService(null);
     fetchServices();
     setSavingService(false);
@@ -136,12 +146,14 @@ export default function ConfiguracionPage() {
         cost_type: newSvcType,
         monthly_cost: parseFloat(newSvcCost) || 0,
         currency: newSvcCurrency,
+        billing_period: newSvcType === "subscription" ? newSvcPeriodo : "monthly",
       }),
     });
     setNewSvcName("");
     setNewSvcType("subscription");
     setNewSvcCost("");
     setNewSvcCurrency("USD");
+    setNewSvcPeriodo("monthly");
     setShowAddSvc(false);
     fetchServices();
     setCreatingSvc(false);
@@ -635,7 +647,7 @@ export default function ConfiguracionPage() {
                 <div>
                   <h2 className="text-sm font-bold text-zinc-800">Servicios</h2>
                   <p className="text-xs text-zinc-400">
-                    Costos fijos mensuales y fechas de pago
+                    Costos fijos (mensuales o anuales) y fechas de pago
                   </p>
                 </div>
                 <button
@@ -649,7 +661,7 @@ export default function ConfiguracionPage() {
 
               {showAddSvc && (
                 <div className="px-6 py-4 border-b border-zinc-50 bg-blue-50/30">
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                     <input
                       type="text"
                       placeholder="Nombre del servicio"
@@ -662,8 +674,18 @@ export default function ConfiguracionPage() {
                       onChange={(e) => setNewSvcType(e.target.value as "subscription" | "topup")}
                       className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
                     >
-                      <option value="subscription">Mensual Fijo</option>
+                      <option value="subscription">Costo fijo</option>
                       <option value="topup">Recarga / Prepago</option>
+                    </select>
+                    <select
+                      aria-label="Periodo"
+                      value={newSvcPeriodo}
+                      onChange={(e) => setNewSvcPeriodo(e.target.value)}
+                      disabled={newSvcType !== "subscription"}
+                      className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-40"
+                    >
+                      <option value="monthly">Mensual</option>
+                      <option value="annual">Anual</option>
                     </select>
                     <select
                       value={newSvcCurrency}
@@ -675,7 +697,7 @@ export default function ConfiguracionPage() {
                     </select>
                     <input
                       type="number"
-                      placeholder="Costo mensual"
+                      placeholder={newSvcPeriodo === "annual" && newSvcType === "subscription" ? "Costo anual" : "Costo mensual"}
                       value={newSvcCost}
                       onChange={(e) => setNewSvcCost(e.target.value)}
                       className="px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
@@ -719,12 +741,27 @@ export default function ConfiguracionPage() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-zinc-800">{svc.service_name}</p>
                           <p className="text-[10px] text-zinc-400">
-                            {svc.cost_type === "subscription" ? "Mensual fijo" : "Recarga / Prepago"}
+                            {svc.cost_type !== "subscription"
+                              ? "Recarga / Prepago"
+                              : svc.billing_period === "annual"
+                                ? "Anual fijo"
+                                : "Mensual fijo"}
                           </p>
                         </div>
 
                         {isEditing ? (
                           <div className="flex items-center gap-2">
+                            {svc.cost_type === "subscription" && (
+                              <select
+                                aria-label="Periodo"
+                                value={editServicePeriodo}
+                                onChange={(e) => setEditServicePeriodo(e.target.value)}
+                                className="px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              >
+                                <option value="monthly">Mensual</option>
+                                <option value="annual">Anual</option>
+                              </select>
+                            )}
                             <select
                               value={editServiceCurrency}
                               onChange={(e) => setEditServiceCurrency(e.target.value)}
@@ -777,6 +814,7 @@ export default function ConfiguracionPage() {
                                 setEditServiceCost(String(svc.monthly_cost || 0));
                                 setEditServiceCurrency(svc.currency || "USD");
                                 setEditServiceDate(svc.payment_date || "");
+                                setEditServicePeriodo(svc.billing_period === "annual" ? "annual" : "monthly");
                               }}
                               className="text-zinc-300 hover:text-blue-500 transition-colors"
                               title="Editar"

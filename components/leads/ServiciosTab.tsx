@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle, Circle, DollarSign, Loader2, Pencil, Plus } from "lucide-react";
+import { CheckCircle, Circle, DollarSign, Loader2, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 interface ServiceItem {
@@ -66,13 +66,6 @@ export default function ServiciosTab() {
   const [txNotes, setTxNotes] = useState("");
   const [savingTx, setSavingTx] = useState(false);
 
-  // Configuración de una suscripción: monto y si se paga por mes o por año.
-  const [editando, setEditando] = useState<number | null>(null);
-  const [editMonto, setEditMonto] = useState("");
-  const [editPeriodo, setEditPeriodo] = useState<"monthly" | "annual">("monthly");
-  const [guardando, setGuardando] = useState(false);
-  const [errorEdit, setErrorEdit] = useState<string | null>(null);
-
   const fetchServices = useCallback(() => {
     setLoadingServices(true);
     fetch("/api/adminleads/service-costs")
@@ -123,39 +116,6 @@ export default function ServiciosTab() {
     fetchServices();
   };
 
-  const abrirEdicion = (svc: ServiceItem) => {
-    setErrorEdit(null);
-    setEditMonto(String(parseFloat(String(svc.monthly_cost)) || 0));
-    setEditPeriodo(svc.billing_period === "annual" ? "annual" : "monthly");
-    setEditando(editando === svc.id ? null : svc.id);
-  };
-
-  const guardarEdicion = async (svc: ServiceItem) => {
-    setGuardando(true);
-    setErrorEdit(null);
-    try {
-      const res = await fetch("/api/adminleads/service-costs", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: svc.id,
-          monthly_cost: parseFloat(editMonto) || 0,
-          billing_period: editPeriodo,
-        }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        throw new Error(j?.error || `HTTP ${res.status}`);
-      }
-      setEditando(null);
-      fetchServices();
-    } catch (e: any) {
-      setErrorEdit(e?.message || "No se pudo guardar");
-    } finally {
-      setGuardando(false);
-    }
-  };
-
   return (
     <div>
       <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-4">
@@ -192,16 +152,6 @@ export default function ServiciosTab() {
                           {paymentLabel[status]}
                         </span>
                       )}
-                      {!isTopup && (
-                        <button
-                          onClick={() => abrirEdicion(svc)}
-                          className="text-zinc-300 hover:text-blue-600 transition-colors"
-                          title="Configurar monto y periodo"
-                          aria-label={`Configurar ${svc.service_name}`}
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                      )}
                       {!isTopup ? (
                         <button
                           onClick={() => handleTogglePaid(svc)}
@@ -237,40 +187,6 @@ export default function ServiciosTab() {
                         : "Mensual"}
                     {svc.payment_date && ` | Vence: ${new Date(svc.payment_date + "T00:00:00").toLocaleDateString("es-VE")}`}
                   </div>
-
-                  {!isTopup && editando === svc.id && (
-                    <div className="mt-2 pt-2 border-t border-zinc-100 space-y-1.5">
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="Monto"
-                          aria-label="Monto"
-                          value={editMonto}
-                          onChange={(e) => setEditMonto(e.target.value)}
-                          className={INPUT}
-                        />
-                        <select
-                          aria-label="Periodo"
-                          value={editPeriodo}
-                          onChange={(e) => setEditPeriodo(e.target.value as "monthly" | "annual")}
-                          className={`${INPUT} bg-white`}
-                        >
-                          <option value="monthly">Mensual</option>
-                          <option value="annual">Anual</option>
-                        </select>
-                      </div>
-                      {errorEdit && <p className="text-[9px] text-red-600">{errorEdit}</p>}
-                      <button
-                        onClick={() => guardarEdicion(svc)}
-                        disabled={guardando}
-                        className="w-full px-2 py-1 text-[10px] font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                      >
-                        {guardando ? "..." : "Guardar"}
-                      </button>
-                    </div>
-                  )}
 
                   {isTopup && showAddTx === svc.service_name && (
                     <div className="mt-2 pt-2 border-t border-zinc-100 space-y-1.5">
