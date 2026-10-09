@@ -40,7 +40,10 @@ export async function GET(request: NextRequest) {
         sc.monthly_cost,
         ${periodo} AS billing_period,
         sc.currency,
-        sc.payment_date,
+        -- Como texto YYYY-MM-DD: el driver devuelve DATE como objeto Date, que
+        -- en JSON sale "2027-10-09T04:00:00.000Z" y las pantallas le pegan
+        -- "T00:00:00" detrás ("Invalid Date").
+        DATE_FORMAT(sc.payment_date, '%Y-%m-%d') AS payment_date,
         sc.is_paid,
         sc.created_at,
         IFNULL(SUM(st.amount_usd), 0) AS total_transactions,
