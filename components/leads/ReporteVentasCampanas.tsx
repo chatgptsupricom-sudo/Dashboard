@@ -9,6 +9,7 @@
 // van con isAnimationActive={false}.
 
 import { Download, Printer, X } from "lucide-react";
+import { canalSumaVentas } from "@/lib/canales";
 import {
   Bar,
   BarChart,
@@ -316,7 +317,7 @@ export default function ReporteVentasCampanas({
                     <td className={`${TD} text-right`}>{fmtNum(c.ventas)}</td>
                     <td className={`${TD} text-right font-bold`}>{fmtUsd(c.monto)}</td>
                     <td className={`${TD} text-right`}>
-                      {totales.monto > 0
+                      {totales.monto > 0 && canalSumaVentas(c.canal)
                         ? fmtPct((c.monto * 100) / totales.monto)
                         : "—"}
                     </td>

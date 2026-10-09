@@ -202,7 +202,7 @@
 //     );
 //   }
 // }
-import { canalNormalizadoSql, SIN_CANAL } from "@/lib/canales";
+import { canalNormalizadoSql, canalSumaVentasSql, SIN_CANAL } from "@/lib/canales";
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
@@ -268,6 +268,10 @@ export async function GET(request: NextRequest) {
       ? `${ES_VENTA} AND fecha_venta IS NOT NULL AND fecha_venta BETWEEN ? AND ?`
       : ES_VENTA;
 
+    // Los cierres de "Pagina Web" se ven en el panel pero no suman al conteo
+    // de ventas ni al monto (ver canalSumaVentas). La Efectividad si los cuenta.
+    const ventaQueSuma = `${ventaEnPeriodo} AND ${canalSumaVentasSql("canal_origen")}`;
+
     if (conFechas) {
       conditions.push(`((${entradaEnPeriodo}) OR (${ventaEnPeriodo}))`);
       params.push(...rangoParams, ...rangoParams);
@@ -281,11 +285,11 @@ export async function GET(request: NextRequest) {
       `
       SELECT
         SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END) as total_leads,
-        IFNULL(SUM(CASE WHEN ${ventaEnPeriodo} THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
+        IFNULL(SUM(CASE WHEN ${ventaQueSuma} THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
         SUM(CASE WHEN ${entradaEnPeriodo} AND ${ES_VENTA} THEN 1 ELSE 0 END) as ventas_del_mes,
         (SUM(CASE WHEN ${entradaEnPeriodo} AND ${ES_VENTA} THEN 1 ELSE 0 END) /
          NULLIF(SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END), 0)) * 100 as tasa_efectividad,
-        SUM(CASE WHEN ${ventaEnPeriodo} THEN 1 ELSE 0 END) as total_ventas_filtradas,
+        SUM(CASE WHEN ${ventaQueSuma} THEN 1 ELSE 0 END) as total_ventas_filtradas,
         IFNULL(AVG(tiempo_primer_contacto_minutos), 0) as avg_tiempo_contacto,
         IFNULL(AVG(CASE WHEN fecha_venta IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, COALESCE(fecha_ingreso, created_at), fecha_venta) ELSE NULL END), 0) as avg_tiempo_cierre,
         (SUM(CASE WHEN reactivacion = 1 THEN 1 ELSE 0 END) /
@@ -358,6 +362,7 @@ export async function GET(request: NextRequest) {
     const ventaEnPeriodoL = conFechas
       ? `${ES_VENTA_L} AND l.fecha_venta IS NOT NULL AND l.fecha_venta BETWEEN '${fechaInicio} 00:00:00' AND '${fechaFin} 23:59:59'`
       : ES_VENTA_L;
+    const ventaQueSumaL = `${ventaEnPeriodoL} AND ${canalSumaVentasSql("l.canal_origen")}`;
 
     const dateJoinCond = [
       conFechas ? `AND ((${entradaEnPeriodoL}) OR (${ventaEnPeriodoL}))` : "",
@@ -368,9 +373,9 @@ export async function GET(request: NextRequest) {
         s.id, s.name,
         SUM(CASE WHEN ${entradaEnPeriodoL} THEN 1 ELSE 0 END) as leads,
         SUM(CASE WHEN ${entradaEnPeriodoL} AND l.status != 'CERRADO' THEN 1 ELSE 0 END) as activos,
-        SUM(CASE WHEN ${ventaEnPeriodoL} THEN 1 ELSE 0 END) as ganados,
+        SUM(CASE WHEN ${ventaQueSumaL} THEN 1 ELSE 0 END) as ganados,
         SUM(CASE WHEN ${entradaEnPeriodoL} AND l.status = 'CERRADO' AND l.motivo_cierre = 'ABANDONO' THEN 1 ELSE 0 END) as perdidos,
-        IFNULL(SUM(CASE WHEN ${ventaEnPeriodoL} THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo,
+        IFNULL(SUM(CASE WHEN ${ventaQueSumaL} THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo,
         IFNULL((SUM(CASE WHEN ${entradaEnPeriodoL} AND ${ES_VENTA_L} THEN 1 ELSE 0 END) /
                 NULLIF(SUM(CASE WHEN ${entradaEnPeriodoL} THEN 1 ELSE 0 END), 0)) * 100, 0) as tasa_conversion
       FROM sellers s
@@ -386,6 +391,7 @@ export async function GET(request: NextRequest) {
       INNER JOIN leads l ON s.id = l.seller_id
       WHERE l.status = 'CERRADO'
       AND l.motivo_cierre IN ('VENTA', 'GANADO')
+      AND ${canalSumaVentasSql("l.canal_origen")}
       AND s.activo = 1
       ${sede ? `AND s.cids = ${parseInt(sede)}` : ""}
       ${conFechas ? `AND l.fecha_venta IS NOT NULL AND l.fecha_venta BETWEEN '${fechaInicio} 00:00:00' AND '${fechaFin} 23:59:59'` : ""}
