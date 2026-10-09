@@ -39,7 +39,8 @@ function alcance(payload: any): { error?: NextResponse; cids: number | null; ven
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES);
+  // Procesos solo lee la lista (capturas de los manuales); el PUT sigue cerrado.
+  const auth = await requireRoles(request, [...ROLES, "procesos"]);
   if (auth.error) return auth.error;
   const a = alcance(auth.payload);
   if (a.error) return a.error;

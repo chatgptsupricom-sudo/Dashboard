@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Circle, Package, ShieldCheck, X } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { rolVista } from "@/lib/manuales/permisos";
 import type { AvisoMercancia } from "@/lib/seguridad/eventos";
 import { useMercanciaEnVivo } from "@/lib/seguridad/useMercanciaEnVivo";
 
@@ -113,7 +114,7 @@ export default function AvisosMercancia({
 }) {
   const tm = useTranslations("seguridad.mercancia.aviso");
   const { user } = useAuthStore();
-  const rol = (user?.role || "").toLowerCase().trim();
+  const rol = rolVista(user?.role);
   const params = useParams();
   const locale = (params?.locale as string) || "es";
   const [avisos, setAvisos] = useState<Aviso[]>([]);

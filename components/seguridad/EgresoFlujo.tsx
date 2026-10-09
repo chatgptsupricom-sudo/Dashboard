@@ -29,6 +29,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { rolVista } from "@/lib/manuales/permisos";
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
 import NotaPedido from "@/components/seguridad/NotaPedido";
@@ -222,7 +223,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const params = useParams();
   const locale = (params?.locale as string) || "es";
   const { user } = useAuthStore();
-  const rol = (user?.role || "").toLowerCase().trim();
+  const rol = rolVista(user?.role);
   // Choferes y unidades son de Almacen: solo Almacen ve "Gestionar".
   const gestionaPersonal = rol === "almacen" || rol === "superadmin";
 

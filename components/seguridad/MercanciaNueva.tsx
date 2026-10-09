@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Package, Plus, Search, X, XCircle } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { rolVista } from "@/lib/manuales/permisos";
 import { type TipoEntrega } from "@/lib/seguridad/egresoFlujo";
 import { describirMetodo, tipoEntregaDeMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
 import { VerAutorizacion } from "@/components/ventas/AutorizacionTransporte";
@@ -117,7 +118,7 @@ export default function MercanciaNueva({
     })();
   }, []);
 
-  const rol = (user?.role || "").toLowerCase().trim();
+  const rol = rolVista(user?.role);
   // Almacen solo prepara egresos — el ingreso (mercancia que entra por
   // compra) sigue siendo tarea de Seguridad. El backend ya lo rechaza con
   // 403; aqui se bloquea antes para no dejar llenar un formulario que
