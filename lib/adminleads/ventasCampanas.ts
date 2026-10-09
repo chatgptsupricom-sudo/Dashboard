@@ -14,7 +14,7 @@
 //     COALESCE(fecha_venta, fecha_ingreso, created_at).
 
 import { query } from "@/lib/db";
-import { canalNormalizadoSql } from "@/lib/canales";
+import { canalNormalizadoSql, canalSumaVentas } from "@/lib/canales";
 
 export type VentaCerrada = {
   id: string;
@@ -233,7 +233,9 @@ export async function calcularVentasCampanas({
     fecha: fechaISO(f.fecha_venta),
   }));
 
-  const montoTotal = r2(ventas.reduce((s, v) => s + v.monto, 0));
+  // Las ventas de "Pagina Web" salen en las tablas pero no suman al total.
+  const queSuman = ventas.filter((v) => canalSumaVentas(v.canal));
+  const montoTotal = r2(queSuman.reduce((s, v) => s + v.monto, 0));
   const ingresadosTotal = resumen.reduce((s, c) => s + c.leadsIngresados, 0);
   const convertidosTotal = resumen.reduce((s, c) => s + c.leadsConvertidos, 0);
 
@@ -242,10 +244,10 @@ export async function calcularVentasCampanas({
     resumen,
     ventas,
     totales: {
-      ventas: ventas.length,
+      ventas: queSuman.length,
       monto: montoTotal,
-      campanas: resumen.filter((c) => c.ventasPeriodo > 0).length,
-      ticketPromedio: ventas.length > 0 ? r2(montoTotal / ventas.length) : null,
+      campanas: resumen.filter((c) => c.ventasPeriodo > 0 && canalSumaVentas(c.canal)).length,
+      ticketPromedio: queSuman.length > 0 ? r2(montoTotal / queSuman.length) : null,
       leadsIngresados: ingresadosTotal,
       leadsConvertidos: convertidosTotal,
       conversionPct: pct(convertidosTotal, ingresadosTotal),

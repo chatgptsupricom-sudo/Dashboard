@@ -6,6 +6,7 @@
 import { useDroppable } from "@dnd-kit/core";
 import { FolderOpen, TrendingUp } from "lucide-react";
 import React from "react";
+import { canalSumaVentas } from "@/lib/canales";
 import { Column, Lead } from "@/lib/leads/leadTypes";
 import { LeadCard } from "./LeadCard";
 
@@ -43,8 +44,10 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   });
 
   // Calculate total value of leads in this column
+  // Los leads de "Pagina Web" se ven en la columna pero no suman al total.
   const totalValue = leads.reduce(
-    (sum, lead) => sum + (lead.valorEstimado || 0),
+    (sum, lead) =>
+      sum + (canalSumaVentas(lead.canalOrigen) ? lead.valorEstimado || 0 : 0),
     0,
   );
 
