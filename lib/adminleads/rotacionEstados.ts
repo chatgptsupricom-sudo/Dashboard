@@ -8,7 +8,12 @@ import { db, query } from "@/lib/db";
  * la tabla `rotacion` y `asignar_vendedor_rotacion_carcar(estado)` lee
  * `rotacion_caracas_y_carabobo` (Caracas y Carabobo, que además pesan por
  * `efectividad_cierre`). Una fila = un vendedor en la rotación de un estado;
- * `asignacion` cuenta cuántos leads le tocaron. Estas tablas no las crea el
+ * `asignacion` cuenta cuántos leads le tocaron. El procedimiento toma, entre
+ * las filas del estado cuyo vendedor existe y está activo, la de menor
+ * `asignacion` y le suma 1. Dos trampas que eso deja: un estado sin ningún
+ * vendedor activo devuelve NULL (el lead queda sin vendedor), y una fila con
+ * `asignacion` NULL va primero siempre y NULL + 1 sigue siendo NULL, así que se
+ * lleva todos los leads del estado. Estas tablas no las crea el
  * panel: aquí solo se agregan, cambian y quitan filas, y cada cambio queda en
  * `rotacion_auditoria` (se crea sola) además de en system_audit_log.
  *
@@ -168,7 +173,10 @@ export async function agregar(estado: string, sellerId: number, autor: Autor): P
   return null;
 }
 
-/** Pone otro vendedor en el lugar de uno (conserva su contador). */
+/**
+ * Pone otro vendedor en el lugar de uno: conserva el contador, salvo que esté
+ * vacío (NULL), que pasa al menor del estado.
+ */
 export async function cambiar(fila: number, sellerId: number, autor: Autor): Promise<string | null> {
   const f = await filaDe(fila);
   if (!f) return "Esa asignación ya no existe. Recarga la página.";
@@ -176,18 +184,36 @@ export async function cambiar(fila: number, sellerId: number, autor: Autor): Pro
   if (!(await vendedorValido(sellerId))) return "Ese vendedor no está activo en Valencia o Caracas.";
   const dup = await query(`SELECT COUNT(*) AS n FROM ${f.tabla} WHERE estado = ? AND seller_id = ?`, [f.estado, sellerId]);
   if (Number((dup.rows[0] as any).n) > 0) return "Ese vendedor ya recibe los leads de ese estado.";
-  await query(`UPDATE ${f.tabla} SET seller_id = ? WHERE id = ?`, [sellerId, fila]);
+  await query(
+    `UPDATE ${f.tabla} SET seller_id = ?, asignacion = COALESCE(asignacion,
+       (SELECT m FROM (SELECT MIN(asignacion) AS m FROM ${f.tabla} WHERE estado = ?) x), 0)
+     WHERE id = ?`,
+    [sellerId, f.estado, fila],
+  );
   await auditar(autor, "cambiar", f.estado, Number(f.seller_id), sellerId);
   return null;
 }
 
-/** Saca a un vendedor de la rotación de un estado. Un estado no puede quedar sin nadie. */
+/** Vendedores activos (y que existen) del estado, sin contar una fila. */
+async function activosSin(tabla: Tabla, estado: string, fila: number): Promise<number> {
+  const r = await query(
+    `SELECT COUNT(*) AS n FROM ${tabla} r JOIN sellers s ON s.id = r.seller_id WHERE r.estado = ? AND s.activo = 1 AND r.id <> ?`,
+    [estado, fila],
+  );
+  return Number((r.rows[0] as any).n);
+}
+
+/**
+ * Saca a un vendedor de la rotación de un estado. No deja el estado sin
+ * vendedor activo (sus leads quedarían sin asignar), salvo que ya no lo tuviera.
+ */
 export async function quitar(fila: number, autor: Autor): Promise<string | null> {
   const f = await filaDe(fila);
   if (!f) return "Esa asignación ya no existe. Recarga la página.";
-  const r = await query(`SELECT COUNT(*) AS n FROM ${f.tabla} WHERE estado = ?`, [f.estado]);
-  if (Number((r.rows[0] as any).n) <= 1)
-    return "Es el único vendedor de ese estado: los leads quedarían sin asignar. Agrega a otro antes de quitarlo, o usa Cambiar.";
+  const quedan = await activosSin(f.tabla, f.estado, fila);
+  const esteActivo = await vendedorValido(Number(f.seller_id));
+  if (quedan === 0 && esteActivo)
+    return "Es el único vendedor activo de ese estado: sus leads quedarían sin asignar. Agrega a otro antes de quitarlo, o usa Cambiar.";
   await query(`DELETE FROM ${f.tabla} WHERE id = ?`, [fila]);
   await auditar(autor, "quitar", f.estado, Number(f.seller_id), null);
   return null;

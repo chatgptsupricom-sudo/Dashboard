@@ -94,7 +94,12 @@ export default function RotacionEstados() {
     { titulo: "Caracas y Carabobo", nota: "Rotación propia: pesa también la efectividad de cierre", carcar: true },
     { titulo: "Resto del país", nota: "", carcar: false },
   ];
-  const problemas = (estados || []).filter((e) => e.vendedores.length === 0 || e.vendedores.some((v) => !v.existe || !v.activo)).length;
+  // La rotación salta a los vendedores inactivos o borrados; si no queda
+  // ninguno activo, el lead entra sin vendedor. Un contador vacío (NULL) va
+  // siempre primero y no sube: ese vendedor se lleva todos los leads.
+  const sinActivo = (e: Estado) => !e.vendedores.some((v) => v.existe && v.activo);
+  const acapara = (v: VendedorFila) => v.existe && v.activo && v.asignacion == null;
+  const problemas = (estados || []).filter((e) => sinActivo(e) || e.vendedores.some(acapara)).length;
 
   const opciones = (excluir: number[]) =>
     vendedores
@@ -154,9 +159,9 @@ export default function RotacionEstados() {
                   <div key={e.estado} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-6 py-3">
                     <p className="sm:w-36 shrink-0 text-sm font-semibold text-zinc-800">{nombreEstado(e.estado)}</p>
                     <div className="flex flex-wrap items-center gap-1.5 flex-1">
-                      {e.vendedores.length === 0 && (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
-                          <AlertTriangle className="w-3.5 h-3.5" /> Sin vendedor: sus leads no se asignan
+                      {sinActivo(e) && (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 px-2.5 py-1 rounded-full">
+                          <AlertTriangle className="w-3.5 h-3.5" /> Sin vendedor activo: sus leads entran sin vendedor
                         </span>
                       )}
                       {e.vendedores.map((v) =>
@@ -181,14 +186,24 @@ export default function RotacionEstados() {
                           <span
                             key={v.fila}
                             className={`group inline-flex items-center gap-1.5 h-8 pl-3 pr-1 rounded-full border text-xs font-medium ${
-                              !v.existe || !v.activo
-                                ? "border-amber-200 bg-amber-50 text-amber-800"
-                                : "border-zinc-200 bg-zinc-50 text-zinc-700"
+                              acapara(v)
+                                ? "border-red-200 bg-red-50 text-red-800"
+                                : !v.existe || !v.activo
+                                  ? "border-zinc-200 bg-white text-zinc-400 line-through decoration-zinc-300"
+                                  : "border-zinc-200 bg-zinc-50 text-zinc-700"
                             }`}
-                            title={`${v.asignacion ?? 0} leads asignados por esta rotación`}
+                            title={
+                              acapara(v)
+                                ? "Contador vacío: este vendedor se lleva todos los leads del estado. Usa Cambiar para corregirlo."
+                                : !v.existe || !v.activo
+                                  ? "La rotación lo salta: no recibe leads"
+                                  : `${v.asignacion} leads asignados por esta rotación`
+                            }
                           >
                             {!v.existe ? `${v.nombre} · ya no existe` : v.activo ? v.nombre : `${v.nombre} · inactivo`}
-                            <span className="text-zinc-400">{v.asignacion ?? 0}</span>
+                            <span className={acapara(v) ? "font-semibold" : "text-zinc-400 no-underline"}>
+                              {acapara(v) ? "se lleva todos" : (v.asignacion ?? 0)}
+                            </span>
                             {ocupado === `f${v.fila}` ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin mx-1" />
                             ) : (
