@@ -115,7 +115,8 @@ export default function ConfiguracionPage() {
       body: JSON.stringify({
         id: svc.id,
         service_name: editServiceName.trim(),
-        monthly_cost: parseFloat(editServiceCost) || 0,
+        // Por recargas no hay costo fijo; el que tenía se conserva sin usar.
+        ...(editServicePeriodo === "topup" ? {} : { monthly_cost: parseFloat(editServiceCost) || 0 }),
         currency: editServiceCurrency,
         // Por recargas no hay vencimiento: la API limpia la fecha.
         payment_date: editServicePeriodo === "topup" ? null : editServiceDate || null,
@@ -736,17 +737,23 @@ export default function ConfiguracionPage() {
                         key={svc.id}
                         className="flex items-center gap-4 px-6 py-4 hover:bg-zinc-50 transition-colors group"
                       >
-                        <button
-                          onClick={() => handleTogglePaidService(svc)}
-                          className="shrink-0"
-                          title={svc.is_paid ? "Marcar como no pagado" : "Marcar como pagado"}
-                        >
-                          {svc.is_paid ? (
-                            <CheckCircle className="w-5 h-5 text-emerald-500" />
-                          ) : (
-                            <Circle className="w-5 h-5 text-zinc-300 hover:text-emerald-400" />
-                          )}
-                        </button>
+                        {svc.cost_type === "subscription" ? (
+                          <button
+                            onClick={() => handleTogglePaidService(svc)}
+                            className="shrink-0"
+                            title={svc.is_paid ? "Marcar como no pagado" : "Marcar como pagado"}
+                          >
+                            {svc.is_paid ? (
+                              <CheckCircle className="w-5 h-5 text-emerald-500" />
+                            ) : (
+                              <Circle className="w-5 h-5 text-zinc-300 hover:text-emerald-400" />
+                            )}
+                          </button>
+                        ) : (
+                          // Por recargas no se marca pagado: cada recarga se
+                          // registra en la pestaña Servicios del panel.
+                          <span className="w-5 shrink-0" />
+                        )}
 
                         <div className="flex-1 min-w-0">
                           {isEditing ? (
@@ -763,7 +770,7 @@ export default function ConfiguracionPage() {
                           )}
                           <p className="text-[10px] text-zinc-400">
                             {svc.cost_type !== "subscription"
-                              ? "Recarga / Prepago"
+                              ? `Recarga / Prepago · ${svc.transaction_count || 0} este mes`
                               : svc.billing_period === "annual"
                                 ? "Anual fijo"
                                 : "Mensual fijo"}
@@ -790,13 +797,16 @@ export default function ConfiguracionPage() {
                               <option value="USD">$ USD</option>
                               <option value="EUR">EUR</option>
                             </select>
-                            <input
-                              type="number"
-                              value={editServiceCost}
-                              onChange={(e) => setEditServiceCost(e.target.value)}
-                              className="w-24 px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
-                              placeholder="Costo"
-                            />
+                            {editServicePeriodo !== "topup" && (
+                              <input
+                                type="number"
+                                aria-label="Costo"
+                                value={editServiceCost}
+                                onChange={(e) => setEditServiceCost(e.target.value)}
+                                className="w-24 px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                placeholder="Costo"
+                              />
+                            )}
                             {editServicePeriodo !== "topup" && (
                               <input
                                 type="date"
@@ -823,7 +833,10 @@ export default function ConfiguracionPage() {
                         ) : (
                           <div className="flex items-center gap-3">
                             <span className="text-sm font-bold text-zinc-800">
-                              {svc.currency === "EUR" ? "\u20AC" : "$"}{parseFloat(svc.monthly_cost || 0).toFixed(2)}
+                              {svc.currency === "EUR" ? "\u20AC" : "$"}
+                              {parseFloat(
+                                (svc.cost_type === "subscription" ? svc.monthly_cost : svc.total_transactions) || 0,
+                              ).toFixed(2)}
                               <span className="text-[10px] font-normal text-zinc-400 ml-1">{svc.currency || "USD"}</span>
                             </span>
                             {svc.payment_date && (
