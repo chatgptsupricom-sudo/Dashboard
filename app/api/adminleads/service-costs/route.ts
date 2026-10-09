@@ -168,7 +168,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Standard update
-    const { id, cost_type, monthly_cost, billing_period, currency, payment_date, is_paid } = body;
+    const { id, service_name, cost_type, monthly_cost, billing_period, currency, payment_date, is_paid } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id es requerido" }, { status: 400 });
@@ -176,6 +176,39 @@ export async function PUT(request: NextRequest) {
 
     const fields: string[] = [];
     const params: any[] = [];
+
+    // Cambio de nombre. Las recargas (service_transactions) se enlazan por
+    // nombre, así que se renombran junto con el servicio más abajo.
+    let renombrar: { de: string; a: string } | null = null;
+    if (service_name !== undefined) {
+      const nombre = String(service_name).trim();
+      if (!nombre || nombre.length > 100) {
+        return NextResponse.json(
+          { error: "El nombre es obligatorio (máximo 100 caracteres)" },
+          { status: 400 },
+        );
+      }
+      const actual: any = await query("SELECT service_name FROM service_costs WHERE id = ?", [parseInt(id)]);
+      const anterior = actual.rows?.[0]?.service_name;
+      if (anterior === undefined) {
+        return NextResponse.json({ error: "Servicio no encontrado" }, { status: 404 });
+      }
+      if (nombre !== anterior) {
+        const otro: any = await query(
+          "SELECT id FROM service_costs WHERE service_name = ? AND id <> ?",
+          [nombre, parseInt(id)],
+        );
+        if (otro.rows?.length) {
+          return NextResponse.json(
+            { error: `Ya existe un servicio llamado "${nombre}"` },
+            { status: 409 },
+          );
+        }
+        fields.push("service_name = ?");
+        params.push(nombre);
+        renombrar = { de: anterior, a: nombre };
+      }
+    }
 
     if (cost_type !== undefined) {
       if (!["subscription", "topup"].includes(cost_type)) {
@@ -211,7 +244,10 @@ export async function PUT(request: NextRequest) {
       fields.push("currency = ?");
       params.push(["USD", "EUR"].includes(currency) ? currency : "USD");
     }
-    if (payment_date !== undefined) {
+    if (cost_type === "topup") {
+      // Un servicio por recargas no tiene vencimiento.
+      fields.push("payment_date = NULL");
+    } else if (payment_date !== undefined) {
       fields.push("payment_date = ?");
       params.push(payment_date || null);
     }
@@ -226,6 +262,12 @@ export async function PUT(request: NextRequest) {
 
     params.push(parseInt(id));
     await query(`UPDATE service_costs SET ${fields.join(", ")} WHERE id = ?`, params);
+    if (renombrar) {
+      await query("UPDATE service_transactions SET service_name = ? WHERE service_name = ?", [
+        renombrar.a,
+        renombrar.de,
+      ]);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {

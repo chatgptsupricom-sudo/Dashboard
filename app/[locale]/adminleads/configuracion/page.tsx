@@ -50,6 +50,7 @@ export default function ConfiguracionPage() {
   const [services, setServices] = useState<any[]>([]);
   const [editingService, setEditingService] = useState<number | null>(null);
   const [editServiceCost, setEditServiceCost] = useState("");
+  const [editServiceName, setEditServiceName] = useState("");
   const [editServiceCurrency, setEditServiceCurrency] = useState("USD");
   const [editServiceDate, setEditServiceDate] = useState("");
   // "monthly" | "annual" (costo fijo) o "topup" (por recargas).
@@ -103,15 +104,21 @@ export default function ConfiguracionPage() {
   };
 
   const handleUpdateService = async (svc: any) => {
+    if (!editServiceName.trim()) {
+      alert("El nombre no puede quedar vacío.");
+      return;
+    }
     setSavingService(true);
     const res = await fetch("/api/adminleads/service-costs", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         id: svc.id,
+        service_name: editServiceName.trim(),
         monthly_cost: parseFloat(editServiceCost) || 0,
         currency: editServiceCurrency,
-        payment_date: editServiceDate || null,
+        // Por recargas no hay vencimiento: la API limpia la fecha.
+        payment_date: editServicePeriodo === "topup" ? null : editServiceDate || null,
         // Por recargas no tiene periodo; un costo fijo es mensual o anual.
         ...(editServicePeriodo === "topup"
           ? { cost_type: "topup" }
@@ -742,7 +749,18 @@ export default function ConfiguracionPage() {
                         </button>
 
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-zinc-800">{svc.service_name}</p>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              aria-label="Nombre del servicio"
+                              maxLength={100}
+                              value={editServiceName}
+                              onChange={(e) => setEditServiceName(e.target.value)}
+                              className="w-full max-w-[220px] px-2 py-1 text-sm font-semibold text-zinc-800 border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            />
+                          ) : (
+                            <p className="text-sm font-semibold text-zinc-800">{svc.service_name}</p>
+                          )}
                           <p className="text-[10px] text-zinc-400">
                             {svc.cost_type !== "subscription"
                               ? "Recarga / Prepago"
@@ -779,12 +797,15 @@ export default function ConfiguracionPage() {
                               className="w-24 px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
                               placeholder="Costo"
                             />
-                            <input
-                              type="date"
-                              value={editServiceDate}
-                              onChange={(e) => setEditServiceDate(e.target.value)}
-                              className="px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
-                            />
+                            {editServicePeriodo !== "topup" && (
+                              <input
+                                type="date"
+                                aria-label="Fecha de vencimiento"
+                                value={editServiceDate}
+                                onChange={(e) => setEditServiceDate(e.target.value)}
+                                className="px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              />
+                            )}
                             <button
                               onClick={() => handleUpdateService(svc)}
                               disabled={savingService}
@@ -813,6 +834,7 @@ export default function ConfiguracionPage() {
                             <button
                               onClick={() => {
                                 setEditingService(svc.id);
+                                setEditServiceName(svc.service_name || "");
                                 setEditServiceCost(String(svc.monthly_cost || 0));
                                 setEditServiceCurrency(svc.currency || "USD");
                                 setEditServiceDate(svc.payment_date || "");
