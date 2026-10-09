@@ -9,6 +9,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  ArrowLeft,
   Building2,
   ChevronLeft,
   ChevronRight,
@@ -73,16 +74,17 @@ const RANGOS: { label: string; rango: () => [string, string] }[] = [
   },
 ];
 
+const ESTADOS_PAGO: Record<string, { label: string; cls: string }> = {
+  paid: { label: "Pagada", cls: "bg-emerald-100 text-emerald-700" },
+  partial: { label: "Parcial", cls: "bg-amber-100 text-amber-700" },
+  not_paid: { label: "No pagada", cls: "bg-red-100 text-red-700" },
+  in_payment: { label: "En pago", cls: "bg-emerald-100 text-emerald-700" },
+  reversed: { label: "Revertida", cls: "bg-slate-100 text-slate-600" },
+  invoicing_app_payment: { label: "Pago", cls: "bg-blue-100 text-blue-700" },
+};
+
 function PaymentBadge({ state }: { state: string }) {
-  const map: Record<string, { label: string; cls: string }> = {
-    paid: { label: "Pagada", cls: "bg-emerald-100 text-emerald-700" },
-    partial: { label: "Parcial", cls: "bg-amber-100 text-amber-700" },
-    not_paid: { label: "No pagada", cls: "bg-red-100 text-red-700" },
-    in_payment: { label: "En pago", cls: "bg-emerald-100 text-emerald-700" },
-    reversed: { label: "Revertida", cls: "bg-slate-100 text-slate-600" },
-    invoicing_app_payment: { label: "Pago", cls: "bg-blue-100 text-blue-700" },
-  };
-  const info = map[state] || { label: state, cls: "bg-slate-100 text-slate-600" };
+  const info = ESTADOS_PAGO[state] || { label: state, cls: "bg-slate-100 text-slate-600" };
   return (
     <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${info.cls}`}>
       {info.label}
@@ -367,12 +369,15 @@ export default function BuscarFacturasPage() {
         .map((inv: any) => ({
           "Número de factura": inv.name || `#${inv.id}`,
           Fecha: formatDDMMYYYY(inv.invoiceDate),
+          Vence: formatDDMMYYYY(inv.invoiceDateDue),
           Cliente: inv.partnerName,
           // Vacías en facturas sin IVA, igual que en la tabla.
           "Base imponible": inv.amountTax ? inv.amountUntaxed : "",
           IVA: inv.amountTax ? inv.amountTax : "",
           "Monto total": inv.amountTotal,
           "Término de pago": inv.paymentTerm || "—",
+          Estado: ESTADOS_PAGO[inv.paymentState]?.label || inv.paymentState || "—",
+          "Días de retraso": inv.agingDays > 0 ? inv.agingDays : "Al día",
         }));
       const rango = desde || hasta ? `_${desde || "inicio"}_a_${hasta || "hoy"}` : "";
       descargarExcel(`Facturas${rango}`, [{ nombre: "Facturas", filas }]);
@@ -452,28 +457,33 @@ export default function BuscarFacturasPage() {
               </button>
             );
           })}
-          {(desde || hasta || desdeB || hastaB) && (
-            <button
-              onClick={() => {
-                setDesdeB("");
-                setHastaB("");
-                setDesde("");
-                setHasta("");
-                setPage(1);
-              }}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-800"
-            >
-              Quitar fechas
-            </button>
-          )}
         </div>
-        <button
-          onClick={aplicarFechas}
-          disabled={!sinAplicar}
-          className="ml-auto px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
-        >
-          Aplicar
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {/* Limpia todo: fechas (aplicadas o no) y el texto buscado. */}
+          <button
+            onClick={() => {
+              setDesdeB("");
+              setHastaB("");
+              setDesde("");
+              setHasta("");
+              setQuery("");
+              setPage(1);
+            }}
+            disabled={!(desde || hasta || desdeB || hastaB || query)}
+            title="Limpiar filtros"
+            aria-label="Limpiar filtros"
+            className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <button
+            onClick={aplicarFechas}
+            disabled={!sinAplicar}
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+          >
+            Aplicar
+          </button>
+        </div>
         <p className="basis-full text-xs text-slate-500">
           {sinAplicar
             ? "Pulsa Aplicar para filtrar con estas fechas."
