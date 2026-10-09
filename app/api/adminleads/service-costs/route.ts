@@ -168,7 +168,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Standard update
-    const { id, monthly_cost, billing_period, currency, payment_date, is_paid } = body;
+    const { id, cost_type, monthly_cost, billing_period, currency, payment_date, is_paid } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id es requerido" }, { status: 400 });
@@ -177,6 +177,16 @@ export async function PUT(request: NextRequest) {
     const fields: string[] = [];
     const params: any[] = [];
 
+    if (cost_type !== undefined) {
+      if (!["subscription", "topup"].includes(cost_type)) {
+        return NextResponse.json(
+          { error: "cost_type debe ser 'subscription' o 'topup'" },
+          { status: 400 },
+        );
+      }
+      fields.push("cost_type = ?");
+      params.push(cost_type);
+    }
     if (monthly_cost !== undefined) {
       fields.push("monthly_cost = ?");
       params.push(parseFloat(monthly_cost) || 0);

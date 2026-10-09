@@ -52,6 +52,7 @@ export default function ConfiguracionPage() {
   const [editServiceCost, setEditServiceCost] = useState("");
   const [editServiceCurrency, setEditServiceCurrency] = useState("USD");
   const [editServiceDate, setEditServiceDate] = useState("");
+  // "monthly" | "annual" (costo fijo) o "topup" (por recargas).
   const [editServicePeriodo, setEditServicePeriodo] = useState("monthly");
   const [savingService, setSavingService] = useState(false);
 
@@ -111,8 +112,10 @@ export default function ConfiguracionPage() {
         monthly_cost: parseFloat(editServiceCost) || 0,
         currency: editServiceCurrency,
         payment_date: editServiceDate || null,
-        // El periodo solo aplica a las suscripciones, no a las recargas.
-        ...(svc.cost_type === "subscription" ? { billing_period: editServicePeriodo } : {}),
+        // Por recargas no tiene periodo; un costo fijo es mensual o anual.
+        ...(editServicePeriodo === "topup"
+          ? { cost_type: "topup" }
+          : { cost_type: "subscription", billing_period: editServicePeriodo }),
       }),
     });
     if (!res.ok) {
@@ -751,17 +754,16 @@ export default function ConfiguracionPage() {
 
                         {isEditing ? (
                           <div className="flex items-center gap-2">
-                            {svc.cost_type === "subscription" && (
-                              <select
-                                aria-label="Periodo"
-                                value={editServicePeriodo}
-                                onChange={(e) => setEditServicePeriodo(e.target.value)}
-                                className="px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
-                              >
-                                <option value="monthly">Mensual</option>
-                                <option value="annual">Anual</option>
-                              </select>
-                            )}
+                            <select
+                              aria-label="Tipo de cobro"
+                              value={editServicePeriodo}
+                              onChange={(e) => setEditServicePeriodo(e.target.value)}
+                              className="px-2 py-1.5 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            >
+                              <option value="monthly">Mensual</option>
+                              <option value="annual">Anual</option>
+                              <option value="topup">Por recargas</option>
+                            </select>
                             <select
                               value={editServiceCurrency}
                               onChange={(e) => setEditServiceCurrency(e.target.value)}
@@ -814,7 +816,13 @@ export default function ConfiguracionPage() {
                                 setEditServiceCost(String(svc.monthly_cost || 0));
                                 setEditServiceCurrency(svc.currency || "USD");
                                 setEditServiceDate(svc.payment_date || "");
-                                setEditServicePeriodo(svc.billing_period === "annual" ? "annual" : "monthly");
+                                setEditServicePeriodo(
+                                  svc.cost_type !== "subscription"
+                                    ? "topup"
+                                    : svc.billing_period === "annual"
+                                      ? "annual"
+                                      : "monthly",
+                                );
                               }}
                               className="text-zinc-300 hover:text-blue-500 transition-colors"
                               title="Editar"
