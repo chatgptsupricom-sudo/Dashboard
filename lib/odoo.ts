@@ -76,6 +76,24 @@ const ODOO_UID = Number(process.env.ODOO_UID) || 388;
 //       },
 //       id: Date.now(),
 //     };
+/**
+ * Idioma con el que se lee y escribe en Odoo cuando la llamada no dice otro.
+ * Sin `context.lang`, la API usa en_US, y en los campos traducibles (nombre
+ * de producto, plazo de pago, unidad de medida…) esa versión es una copia
+ * vieja: la gente corrige en Odoo en español y solo cambia la es_VE. Así
+ * PBB201 salía "ALTAVOZ PORTATIL…" en el panel mientras Odoo decía "POWER
+ * BANK" (oct-2026: 354 productos con el nombre distinto). Leyendo en es_VE,
+ * el panel muestra lo mismo que se ve en Odoo. Panamá no se separa: donde
+ * existe la es_PA es igual a la es_VE.
+ */
+const ODOO_LANG = "es_VE";
+
+function conIdioma(kwargs: Record<string, any>): Record<string, any> {
+  const context = kwargs?.context ?? {};
+  if (context.lang) return kwargs;
+  return { ...kwargs, context: { ...context, lang: ODOO_LANG } };
+}
+
 // En lib/odoo.ts
 async function callOdooRPCInternal<T>(
   model: string,
@@ -85,6 +103,7 @@ async function callOdooRPCInternal<T>(
   httpsAgent: https.Agent | undefined,
   estricto = false,
 ): Promise<T | null> {
+  kwargs = conIdioma(kwargs);
   try {
     const payload = {
       jsonrpc: "2.0",

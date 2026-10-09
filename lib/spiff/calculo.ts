@@ -201,6 +201,20 @@ export async function calcularSpiff(
         { fields: ["id", "name", "x_studio_marca"], context: { active_test: false } },
       )) || [])
     : [];
+  // Las reglas viejas sin product_id comparan por nombre, y ese nombre se
+  // guardó cuando el panel leía Odoo en en_US (hoy lee en es_VE, ver
+  // lib/odoo.ts): se acepta cualquiera de los dos para que no dejen de pagar.
+  const hayReglasPorNombre = reglas.some((r) => r.tipo === "producto" && !r.product_id);
+  const nombresEn = new Map<number, string>();
+  if (hayReglasPorNombre && productIds.length) {
+    const enIngles = (await callOdooRPC<any[]>(
+      "product.product",
+      "read",
+      [productIds],
+      { fields: ["id", "name"], context: { active_test: false, lang: "en_US" } },
+    )) || [];
+    enIngles.forEach((p: any) => nombresEn.set(p.id, normalizar(p.name || "")));
+  }
   const infoProducto = new Map<number, { nombre: string; marca: string }>();
   productos.forEach((p: any) => {
     const m = p.x_studio_marca;
@@ -226,7 +240,10 @@ export async function calcularSpiff(
       if (r.fecha_fin && fecha > r.fecha_fin) continue;
       if (normalizar(prod.marca) !== normalizar(r.brand_name)) continue;
       if (r.tipo === "producto") {
-        const coincide = r.product_id ? r.product_id === pid : normalizar(prod.nombre) === normalizar(r.product_name || "");
+        const buscado = normalizar(r.product_name || "");
+        const coincide = r.product_id
+          ? r.product_id === pid
+          : normalizar(prod.nombre) === buscado || nombresEn.get(pid) === buscado;
         if (!coincide) continue;
       }
       if (!vendido.has(v.nombre)) vendido.set(v.nombre, new Map());

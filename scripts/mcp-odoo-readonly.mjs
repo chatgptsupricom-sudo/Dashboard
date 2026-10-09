@@ -52,6 +52,9 @@ async function odoo(model, method, args, kwargs = {}) {
       `Faltan ODOO_DB / ODOO_API_KEY. Ponlos en .env.local del proyecto${envCargado ? ` (leído: ${envCargado})` : " (no se encontró ninguno)"}.`,
     );
   }
+  // Mismo idioma que el panel (lib/odoo.ts): sin lang, Odoo devuelve la copia
+  // en_US de los nombres traducibles, que suele estar vieja.
+  if (!kwargs.context?.lang) kwargs = { ...kwargs, context: { ...kwargs.context, lang: "es_VE" } };
   const res = await fetch(`${ODOO_URL}/jsonrpc`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
