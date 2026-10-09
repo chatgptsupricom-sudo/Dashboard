@@ -291,6 +291,7 @@ function InvoiceDetailView({ invoiceId }: { invoiceId: number }) {
 export default function BuscarFacturasPage() {
   const { user } = useAuthStore();
   const userCids = user?.cids;
+  const esSuperadmin = String(user?.role || "").toLowerCase().trim() === "superadmin";
   const [query, setQuery] = useState("");
   const [empresa, setEmpresa] = useState("");
   const [data, setData] = useState<any>(null);
@@ -367,6 +368,9 @@ export default function BuscarFacturasPage() {
           "Número de factura": inv.name || `#${inv.id}`,
           Fecha: formatDDMMYYYY(inv.invoiceDate),
           Cliente: inv.partnerName,
+          // Vacías en facturas sin IVA, igual que en la tabla.
+          "Base imponible": inv.amountTax ? inv.amountUntaxed : "",
+          IVA: inv.amountTax ? inv.amountTax : "",
           "Monto total": inv.amountTotal,
           "Término de pago": inv.paymentTerm || "—",
         }));
@@ -568,7 +572,10 @@ export default function BuscarFacturasPage() {
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-100 text-center">
-                    {["Factura", "Cliente", "Empresa", "Vendedor", "Fecha", "Vence", "Término", "Saldo", "Estado", "Días", ""].map(
+                    {[
+                      "Factura", "Cliente", ...(esSuperadmin ? ["Empresa"] : []), "Vendedor", "Fecha", "Vence",
+                      "Término", "Base imponible", "IVA", "Total", "Estado", "Días", "",
+                    ].map(
                       (h) => (
                         <th
                           key={h}
@@ -611,9 +618,11 @@ export default function BuscarFacturasPage() {
                       <td className="px-3 py-3 font-semibold text-slate-800 max-w-[150px] truncate">
                         {inv.partnerName}
                       </td>
-                      <td className="px-3 py-3 text-slate-500">
-                        {inv.companyName}
-                      </td>
+                      {esSuperadmin && (
+                        <td className="px-3 py-3 text-slate-500">
+                          {inv.companyName}
+                        </td>
+                      )}
                       <td className="px-3 py-3 text-slate-600 max-w-[120px] truncate">
                         {inv.invoiceUserName}
                       </td>
@@ -626,8 +635,15 @@ export default function BuscarFacturasPage() {
                       <td className="px-3 py-3 text-slate-600">
                         {inv.paymentTerm || "—"}
                       </td>
+                      {/* Base e IVA solo en facturas con IVA (fiscales). */}
+                      <td className="px-3 py-3 text-slate-600">
+                        {inv.amountTax ? formatCurrency(Math.abs(inv.amountUntaxed)) : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-slate-600">
+                        {inv.amountTax ? formatCurrency(Math.abs(inv.amountTax)) : "—"}
+                      </td>
                       <td className="px-3 py-3 font-bold text-slate-900">
-                        {formatCurrency(Math.abs(inv.amountResidual))}
+                        {formatCurrency(Math.abs(inv.amountTotal))}
                       </td>
                       <td className="px-3 py-3">
                         <PaymentBadge state={inv.paymentState} />
