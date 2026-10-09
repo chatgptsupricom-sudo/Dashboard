@@ -248,7 +248,7 @@ export function LoginForm() {
         router.push(`/${locale}/gerente_venta`);
       } else if (role.includes("gerente de operaciones")) {
         router.push(`/${locale}/gerente_operaciones`);
-      } else if (role === "Recursos Humanos") {
+      } else if (role === "recursos humanos") {
         // Redirección para el nuevo rol de Recursos Humanos
         router.push(`/${locale}/recursos_humanos`);
       } else if (role === "compras") {
@@ -259,6 +259,8 @@ export function LoginForm() {
         router.push(`/${locale}/gerente_venta`);
       } else if (role === "administración") {
         router.push(`/${locale}/dashboard`);
+      } else if (role === "rma") {
+        router.push(`/${locale}/rma`);
       } else if (role === "seguridad") {
         router.push(`/${locale}/seguridad`);
       } else if (role === "diseñador") {
