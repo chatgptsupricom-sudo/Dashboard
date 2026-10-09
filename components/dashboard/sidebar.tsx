@@ -67,6 +67,7 @@ import {
   Truck,
   UserCheck,
   Hourglass,
+  Gauge,
   Ban,
   Users,
   Wrench,
@@ -275,6 +276,7 @@ export function Sidebar({
     { id: "cxc_clasificacion_clientes", label: "Clasificación de Clientes", icon: UserCheck, slug: "/cuentas-por-cobrar/clasificacion-clientes", absoluteHref: true },
     { id: "cxc_tiempo_cobro", label: "Tiempo de Cobro", icon: Hourglass, slug: "/cuentas-por-cobrar/tiempo-cobro", absoluteHref: true },
     { id: "cxc_incobrables", label: "Incobrables", icon: Ban, slug: "/cuentas-por-cobrar/incobrables", absoluteHref: true },
+    { id: "cxc_sobregiro", label: "Sobregiro", icon: Gauge, slug: "/cuentas-por-cobrar/sobregiro", absoluteHref: true },
     { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
     { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
     { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
@@ -435,7 +437,7 @@ export function Sidebar({
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas", "metas_marca", "stock_marca"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
-  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables"];
+  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables", "cxc_sobregiro"];
   const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
   const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
   // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
@@ -1387,6 +1389,11 @@ export function Sidebar({
                           label: "Incobrables",
                           href: `/${locale}/cuentas-por-cobrar/incobrables`,
                           permission: "cxc_incobrables",
+                        },
+                        {
+                          label: "Sobregiro",
+                          href: `/${locale}/cuentas-por-cobrar/sobregiro`,
+                          permission: "cxc_sobregiro",
                         },
                         {
                           label: "Stoplight Report",
