@@ -2,17 +2,43 @@ import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 
+let hayPeriodo = false;
+
+/**
+ * Agrega service_costs.billing_period si falta (DDL de referencia en
+ * sql/alter_service_costs_add_billing_period.sql). Solo se recuerda el sí: si
+ * el ALTER falla, se vuelve a intentar en la próxima llamada.
+ */
+async function asegurarPeriodo(): Promise<boolean> {
+  if (hayPeriodo) return true;
+  try {
+    const r: any = await query("SHOW COLUMNS FROM service_costs LIKE 'billing_period'");
+    if (!(r.rows as any[]).length) {
+      await query(
+        "ALTER TABLE service_costs ADD COLUMN billing_period ENUM('monthly','annual') NOT NULL DEFAULT 'monthly' AFTER monthly_cost",
+      );
+    }
+    hayPeriodo = true;
+  } catch (e) {
+    console.error("service_costs.billing_period:", e);
+  }
+  return hayPeriodo;
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["adminleads"]);
   if (auth.error) return auth.error;
 
   try {
+    // Sin la columna, todo se trata como mensual.
+    const periodo = (await asegurarPeriodo()) ? "sc.billing_period" : "'monthly'";
     const services: any = await query(`
       SELECT
         sc.id,
         sc.service_name,
         sc.cost_type,
         sc.monthly_cost,
+        ${periodo} AS billing_period,
         sc.currency,
         sc.payment_date,
         sc.is_paid,
@@ -24,13 +50,15 @@ export async function GET(request: NextRequest) {
         ON st.service_name = sc.service_name
         AND st.transaction_date >= DATE_FORMAT(NOW(), '%Y-%m-01')
         AND st.transaction_date <= LAST_DAY(NOW())
-      GROUP BY sc.id, sc.service_name, sc.cost_type, sc.monthly_cost, sc.currency, sc.payment_date, sc.is_paid, sc.created_at
+      GROUP BY sc.id, sc.service_name, sc.cost_type, sc.monthly_cost, billing_period, sc.currency, sc.payment_date, sc.is_paid, sc.created_at
       ORDER BY sc.service_name
     `);
 
     const totalCost = (services.rows || []).reduce((sum: number, s: any) => {
       if (s.cost_type === "subscription") {
-        return sum + (parseFloat(s.monthly_cost) || 0);
+        // Una suscripción anual pesa 1/12 de su monto en el costo del mes.
+        const monto = parseFloat(s.monthly_cost) || 0;
+        return sum + (s.billing_period === "annual" ? monto / 12 : monto);
       }
       return sum + (parseFloat(s.total_transactions) || 0);
     }, 0);
@@ -133,7 +161,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Standard update
-    const { id, monthly_cost, currency, payment_date, is_paid } = body;
+    const { id, monthly_cost, billing_period, currency, payment_date, is_paid } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id es requerido" }, { status: 400 });
@@ -145,6 +173,22 @@ export async function PUT(request: NextRequest) {
     if (monthly_cost !== undefined) {
       fields.push("monthly_cost = ?");
       params.push(parseFloat(monthly_cost) || 0);
+    }
+    if (billing_period !== undefined) {
+      if (!["monthly", "annual"].includes(billing_period)) {
+        return NextResponse.json(
+          { error: "billing_period debe ser 'monthly' o 'annual'" },
+          { status: 400 },
+        );
+      }
+      if (!(await asegurarPeriodo())) {
+        return NextResponse.json(
+          { error: "Falta la columna billing_period: correr sql/alter_service_costs_add_billing_period.sql" },
+          { status: 500 },
+        );
+      }
+      fields.push("billing_period = ?");
+      params.push(billing_period);
     }
     if (currency !== undefined) {
       fields.push("currency = ?");

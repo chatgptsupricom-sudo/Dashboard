@@ -661,6 +661,7 @@ import {
   Users,
 } from "lucide-react";
 import CampaignMetricsTab from "@/components/leads/CampaignMetricsTab";
+import ServiciosTab from "@/components/leads/ServiciosTab";
 import { useEffect, useState } from "react";
 import {
   Bar,
@@ -701,7 +702,7 @@ export default function MetricsDashboardPage() {
   const [preset, setPreset] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
-  const [activeTab, setActiveTab] = useState<"general" | "campanas">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "campanas" | "servicios">("general");
   const [canal, setCanal] = useState("");
   // La lista de canales llega en la respuesta de stats y no se pierde cuando el
   // filtro deja un solo canal en los datos.
@@ -908,6 +909,16 @@ export default function MetricsDashboardPage() {
           }`}
         >
           Campañas Meta
+        </button>
+        <button
+          onClick={() => setActiveTab("servicios")}
+          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+            activeTab === "servicios"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50"
+          }`}
+        >
+          Servicios
         </button>
       </div>
 
@@ -1261,6 +1272,8 @@ export default function MetricsDashboardPage() {
           fechaFin={fechaFin}
         />
       )}
+
+      {activeTab === "servicios" && <ServiciosTab />}
     </div>
   );
 }
