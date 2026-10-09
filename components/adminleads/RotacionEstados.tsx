@@ -1,7 +1,18 @@
 "use client";
 
-import { AlertTriangle, Loader2, MapPin, Pencil, Plus, Search, X } from "lucide-react";
+import { AlertTriangle, CircleHelp, Loader2, MapPin, Pencil, Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 
 // Quién recibe los leads de cada estado (/api/adminleads/rotacion-estados).
 // Cada cambio queda en la Auditoría del SuperAdmin (audit_logs, ROTACION_ESTADO).
@@ -27,13 +38,61 @@ const NOMBRES: Record<string, string> = {
 const nombreEstado = (e: string) => NOMBRES[e] ?? e.replace(/\b\w/g, (c) => c.toUpperCase());
 const SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas" };
 
+// Recorrido de la primera visita en cada sesión (data-tour = elemento que resalta).
+const PASOS: PasoRecorrido[] = [
+  {
+    titulo: "Estados por vendedor",
+    texto:
+      "Aquí decides qué vendedor recibe los leads nuevos de cada estado. Si un estado tiene varios vendedores, se turnan: cada lead nuevo va al que lleva menos.",
+  },
+  {
+    selector: '[data-tour="buscar"]',
+    titulo: "Buscar",
+    texto: "Escribe un estado o el nombre de un vendedor (por ejemplo, Danyely) para ver solo lo suyo.",
+  },
+  {
+    selector: '[data-tour="vendedor"]',
+    titulo: "Cada burbuja es un vendedor",
+    texto: "El número es cuántos leads le ha dado la rotación en ese estado. Tachado: inactivo o borrado; la rotación lo salta.",
+  },
+  {
+    selector: '[data-tour="cambiar"]',
+    titulo: "Cambiar",
+    texto: "El lápiz pone a otro vendedor en su lugar. El nuevo hereda su conteo, así entra al turno sin adelantarse ni quedarse atrás.",
+  },
+  {
+    selector: '[data-tour="quitar"]',
+    titulo: "Quitar",
+    texto: "Saca al vendedor de ese estado. El panel no deja un estado sin vendedor activo: agrega a otro antes, o usa Cambiar.",
+  },
+  {
+    selector: '[data-tour="agregar"]',
+    titulo: "Agregar",
+    texto: "Suma otro vendedor al estado. Entra con el conteo más bajo del estado para que no se lleve todos los leads de golpe.",
+  },
+  {
+    selector: '[data-tour="revisar"]',
+    titulo: "Lo que hay que revisar",
+    texto:
+      "En rojo: estados sin vendedor activo (sus leads entran sin vendedor) o un vendedor con el conteo vacío, que se lleva todos los leads del estado.",
+  },
+  {
+    titulo: "Todo queda registrado",
+    texto:
+      "Cada cambio queda con tu nombre, la fecha y el vendedor de antes y después en la auditoría del panel. Puedes volver a ver este recorrido con «¿Cómo funciona?».",
+  },
+];
+
+type Confirmacion = { titulo: string; texto: string; boton: string; peligro?: boolean; accion: () => void };
+
 export default function RotacionEstados() {
   const [estados, setEstados] = useState<Estado[] | null>(null);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [filtro, setFiltro] = useState("");
-  const [editando, setEditando] = useState<number | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [confirmacion, setConfirmacion] = useState<Confirmacion | null>(null);
+  const recorrido = useRecorrido("tour-rotacion-estados-v1", !!estados);
 
   const cargar = () =>
     fetch("/api/adminleads/rotacion-estados")
@@ -60,7 +119,6 @@ export default function RotacionEstados() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "No se pudo guardar. Reintenta.");
-      setEditando(null);
       await cargar();
     } catch (e: any) {
       setError(e.message);
@@ -109,15 +167,27 @@ export default function RotacionEstados() {
             Quién recibe los leads nuevos de cada estado. Si hay varios, se turnan.
           </p>
         </div>
-        {problemas > 0 && (
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
-            <AlertTriangle className="w-3.5 h-3.5" /> {problemas} {problemas === 1 ? "estado para revisar" : "estados para revisar"}
-          </span>
-        )}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {problemas > 0 && (
+            <span
+              data-tour="revisar"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" /> {problemas} {problemas === 1 ? "estado para revisar" : "estados para revisar"}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={recorrido.abrir}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-500 hover:text-emerald-700 px-2 py-1 rounded-full hover:bg-emerald-50"
+          >
+            <CircleHelp className="w-3.5 h-3.5" /> ¿Cómo funciona?
+          </button>
+        </div>
       </div>
 
       <div className="px-6 pt-4">
-        <label className="relative block">
+        <label className="relative block" data-tour="buscar">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-300" />
           <input
             value={filtro}
@@ -151,77 +221,86 @@ export default function RotacionEstados() {
                           <AlertTriangle className="w-3.5 h-3.5" /> Sin vendedor activo: sus leads entran sin vendedor
                         </span>
                       )}
-                      {e.vendedores.map((v) =>
-                        editando === v.fila ? (
-                          <select
-                            key={v.fila}
-                            autoFocus
-                            defaultValue=""
-                            disabled={ocupado === `f${v.fila}`}
-                            onBlur={() => setEditando(null)}
-                            onChange={(ev) =>
-                              ev.target.value && enviar(`f${v.fila}`, "PATCH", { fila: v.fila, seller_id: Number(ev.target.value) })
-                            }
-                            className="h-8 rounded-full border border-emerald-300 bg-white px-3 text-xs outline-none"
-                          >
-                            <option value="" disabled>
-                              Poner en lugar de {v.nombre}…
-                            </option>
-                            {opciones(e.vendedores.map((x) => x.seller_id))}
-                          </select>
-                        ) : (
-                          <span
-                            key={v.fila}
-                            className={`group inline-flex items-center gap-1.5 h-8 pl-3 pr-1 rounded-full border text-xs font-medium ${
-                              acapara(v)
-                                ? "border-red-200 bg-red-50 text-red-800"
-                                : !v.existe || !v.activo
-                                  ? "border-zinc-200 bg-white text-zinc-400 line-through decoration-zinc-300"
-                                  : "border-zinc-200 bg-zinc-50 text-zinc-700"
-                            }`}
-                            title={
-                              acapara(v)
-                                ? "Contador vacío: este vendedor se lleva todos los leads del estado. Usa Cambiar para corregirlo."
-                                : !v.existe || !v.activo
-                                  ? "La rotación lo salta: no recibe leads"
-                                  : `${v.asignacion} leads asignados por esta rotación`
-                            }
-                          >
-                            {!v.existe ? `${v.nombre} · ya no existe` : v.activo ? v.nombre : `${v.nombre} · inactivo`}
-                            <span className={acapara(v) ? "font-semibold" : "text-zinc-400 no-underline"}>
-                              {acapara(v) ? "se lleva todos" : (v.asignacion ?? 0)}
-                            </span>
-                            {ocupado === `f${v.fila}` ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin mx-1" />
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditando(v.fila)}
-                                  title="Cambiar por otro vendedor"
-                                  aria-label={`Cambiar a ${v.nombre} en ${nombreEstado(e.estado)}`}
-                                  className="h-6 w-6 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-white"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    confirm(`¿Quitar a ${v.nombre} de ${nombreEstado(e.estado)}? Dejará de recibir sus leads.`) &&
-                                    enviar(`f${v.fila}`, "DELETE", { fila: v.fila })
-                                  }
-                                  title="Quitar de este estado"
-                                  aria-label={`Quitar a ${v.nombre} de ${nombreEstado(e.estado)}`}
-                                  className="h-6 w-6 rounded-full flex items-center justify-center text-zinc-400 hover:text-red-600 hover:bg-white"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
+                      {e.vendedores.map((v) => (
+                        <span
+                          key={v.fila}
+                          data-tour="vendedor"
+                          className={`group inline-flex items-center gap-1.5 h-8 pl-3 pr-1 rounded-full border text-xs font-medium ${
+                            acapara(v)
+                              ? "border-red-200 bg-red-50 text-red-800"
+                              : !v.existe || !v.activo
+                                ? "border-zinc-200 bg-white text-zinc-400 line-through decoration-zinc-300"
+                                : "border-zinc-200 bg-zinc-50 text-zinc-700"
+                          }`}
+                          title={
+                            acapara(v)
+                              ? "Contador vacío: este vendedor se lleva todos los leads del estado. Usa Cambiar para corregirlo."
+                              : !v.existe || !v.activo
+                                ? "La rotación lo salta: no recibe leads"
+                                : `${v.asignacion} leads asignados por esta rotación`
+                          }
+                        >
+                          {!v.existe ? `${v.nombre} · ya no existe` : v.activo ? v.nombre : `${v.nombre} · inactivo`}
+                          <span className={acapara(v) ? "font-semibold" : "text-zinc-400 no-underline"}>
+                            {acapara(v) ? "se lleva todos" : (v.asignacion ?? 0)}
                           </span>
-                        ),
-                      )}
-                      <label className="relative inline-flex items-center">
+                          {ocupado === `f${v.fila}` ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin mx-1" />
+                          ) : (
+                            <>
+                              {/* Cambiar: el lápiz es una lista de vendedores (se abre directo, igual que Agregar). */}
+                              <label
+                                data-tour="cambiar"
+                                title="Cambiar por otro vendedor"
+                                className="relative h-6 w-6 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-white cursor-pointer no-underline"
+                              >
+                                <Pencil className="w-3 h-3 pointer-events-none" />
+                                <select
+                                  value=""
+                                  aria-label={`Cambiar a ${v.nombre} en ${nombreEstado(e.estado)}`}
+                                  onChange={(ev) => {
+                                    const nuevo = vendedores.find((x) => x.id === Number(ev.target.value));
+                                    if (nuevo)
+                                      setConfirmacion({
+                                        titulo: `¿Cambiar vendedor en ${nombreEstado(e.estado)}?`,
+                                        texto: `${nuevo.nombre} recibirá los leads nuevos de ${nombreEstado(e.estado)} en lugar de ${v.nombre}${
+                                          v.asignacion != null ? `, con su mismo conteo (${v.asignacion})` : ""
+                                        }. Los leads que ${v.nombre} ya tiene no cambian.`,
+                                        boton: "Cambiar",
+                                        accion: () => enviar(`f${v.fila}`, "PATCH", { fila: v.fila, seller_id: nuevo.id }),
+                                      });
+                                  }}
+                                  className="absolute inset-0 opacity-0 cursor-pointer"
+                                >
+                                  <option value="" disabled>
+                                    Poner en lugar de {v.nombre}…
+                                  </option>
+                                  {opciones(e.vendedores.map((x) => x.seller_id))}
+                                </select>
+                              </label>
+                              <button
+                                type="button"
+                                data-tour="quitar"
+                                onClick={() =>
+                                  setConfirmacion({
+                                    titulo: `¿Quitar a ${v.nombre} de ${nombreEstado(e.estado)}?`,
+                                    texto: `Dejará de recibir los leads nuevos de ${nombreEstado(e.estado)}. Los leads que ya tiene no cambian. Puedes volver a agregarlo cuando quieras.`,
+                                    boton: "Quitar",
+                                    peligro: true,
+                                    accion: () => enviar(`f${v.fila}`, "DELETE", { fila: v.fila }),
+                                  })
+                                }
+                                title="Quitar de este estado"
+                                aria-label={`Quitar a ${v.nombre} de ${nombreEstado(e.estado)}`}
+                                className="h-6 w-6 rounded-full flex items-center justify-center text-zinc-400 hover:text-red-600 hover:bg-white"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </span>
+                      ))}
+                      <label className="relative inline-flex items-center" data-tour="agregar">
                         {ocupado === `e${e.estado}` ? (
                           <Loader2 className="w-4 h-4 animate-spin text-emerald-600 mx-2" />
                         ) : (
@@ -248,6 +327,33 @@ export default function RotacionEstados() {
           );
         })
       )}
+
+      <AlertDialog open={!!confirmacion} onOpenChange={(v) => !v && setConfirmacion(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmacion?.titulo}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmacion?.texto}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                confirmacion?.accion();
+                setConfirmacion(null);
+              }}
+              className={confirmacion?.peligro ? "bg-red-600 hover:bg-red-700 text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white"}
+            >
+              {confirmacion?.boton}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <RecorridoGuiado
+        pasos={PASOS.filter((p) => p.selector !== '[data-tour="revisar"]' || problemas > 0)}
+        abierto={recorrido.abierto}
+        onCerrar={recorrido.cerrar}
+      />
     </div>
   );
 }
