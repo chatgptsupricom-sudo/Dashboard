@@ -1,4 +1,4 @@
-import { canalNormalizadoSql, SIN_CANAL } from "@/lib/canales";
+import { canalNormalizadoSql, canalSumaVentasSql, SIN_CANAL } from "@/lib/canales";
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
@@ -59,6 +59,10 @@ export async function GET(request: NextRequest) {
       ? `${ES_VENTA} AND fecha_venta IS NOT NULL AND fecha_venta BETWEEN ? AND ?`
       : ES_VENTA;
 
+    // Igual que las tarjetas: "Pagina Web" no suma a ventas ni a monto.
+    const ventaQueSuma = `${ventaEnPeriodo} AND ${canalSumaVentasSql("canal_origen")}`;
+    const ventaQueSumaL = `l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') AND ${canalSumaVentasSql("l.canal_origen")}`;
+
     if (conFechas) {
       conditions.push(`((${entradaEnPeriodo}) OR (${ventaEnPeriodo}))`);
       params.push(...rangoParams, ...rangoParams);
@@ -69,10 +73,10 @@ export async function GET(request: NextRequest) {
     const statsResult: any = await query(`
       SELECT
         SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END) as total_leads,
-        IFNULL(SUM(CASE WHEN ${ventaEnPeriodo} THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
+        IFNULL(SUM(CASE WHEN ${ventaQueSuma} THEN monto_cerrado_usd ELSE 0 END), 0) as monto_total,
         (SUM(CASE WHEN ${entradaEnPeriodo} AND ${ES_VENTA} THEN 1 ELSE 0 END) /
          NULLIF(SUM(CASE WHEN ${entradaEnPeriodo} THEN 1 ELSE 0 END), 0)) * 100 as tasa_efectividad,
-        SUM(CASE WHEN ${ventaEnPeriodo} THEN 1 ELSE 0 END) as total_ventas,
+        SUM(CASE WHEN ${ventaQueSuma} THEN 1 ELSE 0 END) as total_ventas,
         IFNULL(AVG(tiempo_primer_contacto_minutos), 0) as avg_tiempo_contacto,
         IFNULL(AVG(CASE WHEN fecha_venta IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, COALESCE(fecha_ingreso, created_at), fecha_venta) ELSE NULL END), 0) as avg_tiempo_cierre,
         (SUM(CASE WHEN reactivacion = 1 THEN 1 ELSE 0 END) /
@@ -103,9 +107,9 @@ export async function GET(request: NextRequest) {
       SELECT
         s.name,
         COUNT(CASE WHEN l.status != 'CERRADO' THEN 1 END) as activos,
-        COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN 1 END) as ganados,
+        COUNT(CASE WHEN ${ventaQueSumaL} THEN 1 END) as ganados,
         COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre = 'ABANDONO' THEN 1 END) as perdidos,
-        IFNULL(SUM(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo,
+        IFNULL(SUM(CASE WHEN ${ventaQueSumaL} THEN l.monto_cerrado_usd ELSE 0 END), 0) as recaudo,
         IFNULL((COUNT(CASE WHEN l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO') THEN 1 END) / NULLIF(COUNT(*), 0)) * 100, 0) as tasa_conversion
       FROM sellers s
       LEFT JOIN leads l ON s.id = l.seller_id ${sellerId ? `AND l.seller_id = ${parseInt(sellerId)}` : ""} ${dateJoinCond}

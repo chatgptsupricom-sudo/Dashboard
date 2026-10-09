@@ -1,6 +1,6 @@
 "use client";
 
-import { normalizarCanal } from "@/lib/canales";
+import { canalSumaVentas, normalizarCanal } from "@/lib/canales";
 import { Archive, FileBarChart, Pencil, RotateCcw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -148,12 +148,14 @@ export default function AdminCierresPage() {
     [leads],
   );
 
+  // Los cierres de "Pagina Web" se listan pero no suman al total.
   const totalVentas = closedLeads
     .filter(
       (l) =>
-        l.motivo_cierre === "GANADO" ||
-        l.motivo_cierre === "VENTA" ||
-        l.motivo_cierre === "YA_ES_CLIENTE",
+        canalSumaVentas(l.canal_origen) &&
+        (l.motivo_cierre === "GANADO" ||
+          l.motivo_cierre === "VENTA" ||
+          l.motivo_cierre === "YA_ES_CLIENTE"),
     )
     .reduce((s, l) => s + parseFloat(l.monto_cerrado_usd || 0), 0);
 
@@ -185,7 +187,10 @@ export default function AdminCierresPage() {
           >
             <FileBarChart className="w-3.5 h-3.5" /> Reporte por campaña
           </button>
-          <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl">
+          <span
+            className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl"
+            title="No incluye los cierres del canal Pagina Web"
+          >
             Total facturado: ${totalVentas.toLocaleString()}
           </span>
         </div>

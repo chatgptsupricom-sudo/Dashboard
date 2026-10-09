@@ -67,5 +67,23 @@ export function canalNormalizadoSql(col: string): string {
       END`;
 }
 
+/**
+ * Canales cuyos cierres se ven en el panel pero NO suman al total de lo
+ * cerrado ni de lo vendido (conteo de ventas y monto). La Efectividad los
+ * sigue contando. Claves en minusculas y sin espacios, como las de ALIAS_CANAL.
+ */
+const CLAVES_NO_SUMAN = ["paginaweb", "páginaweb"];
+
+/** false si el cierre de este canal no debe sumar a lo cerrado/vendido. */
+export function canalSumaVentas(raw: unknown): boolean {
+  const clave = String(raw ?? "").trim().toLowerCase().replace(/\s+/g, "");
+  return !CLAVES_NO_SUMAN.includes(clave);
+}
+
+/** Lo mismo como condicion SQL. `col` es un nombre de columna del codigo. */
+export function canalSumaVentasSql(col: string): string {
+  return `(${col} IS NULL OR REPLACE(LOWER(TRIM(${col})), ' ', '') NOT IN (${CLAVES_NO_SUMAN.map(lit).join(", ")}))`;
+}
+
 /** Canales que el informe mensual considera parte de Meta, ya normalizados. */
 export const CANALES_META = ["Facebook Ads", "Instagram", "Meta Ads"];
