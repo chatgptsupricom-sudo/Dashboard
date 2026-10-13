@@ -65,7 +65,9 @@ async function procesar(caseId: number, cambio: CambioRma, origenPeticion: strin
   }
 
   // Estado de cada producto del envío (sin diagnóstico ni notas).
-  let productos: { producto: string; serial: string | null; estado: string }[] = [];
+  // `estado_clave` es el valor de la base: la plantilla de n8n lo usa para la
+  // barra de etapas y el color de cada producto.
+  let productos: { producto: string; serial: string | null; estado: string; estado_clave: string }[] = [];
   try {
     const p = await query(
       `SELECT model, hardware, serial, status FROM rma_case_items WHERE case_id = ? ORDER BY orden, id`,
@@ -75,12 +77,18 @@ async function procesar(caseId: number, cambio: CambioRma, origenPeticion: strin
       producto: x.model || x.hardware || "",
       serial: x.serial || null,
       estado: ESTADOS[x.status] || x.status,
+      estado_clave: x.status,
     }));
   } catch {
     // Sin la tabla de productos, el del caso.
   }
   if (!productos.length) {
-    productos = [{ producto: caso.model || caso.hardware || "", serial: null, estado: ESTADOS[caso.status] || caso.status }];
+    productos = [{
+      producto: caso.model || caso.hardware || "",
+      serial: null,
+      estado: ESTADOS[caso.status] || caso.status,
+      estado_clave: caso.status,
+    }];
   }
 
   const link = `${origenPortal(origenPeticion)}/es/servicio-tecnico/${slug}/consultar?token=${caso.tracking_token}`;
@@ -97,10 +105,12 @@ async function procesar(caseId: number, cambio: CambioRma, origenPeticion: strin
         nombre_cliente: caso.client_name || "",
         case_number: caso.case_number,
         estado_envio: ESTADOS[caso.status] || caso.status,
+        estado_clave: caso.status,
         cambio: {
           ...cambio,
           estado_anterior: cambio.estado_anterior ? ESTADOS[cambio.estado_anterior] || cambio.estado_anterior : null,
           estado_nuevo: ESTADOS[cambio.estado_nuevo] || cambio.estado_nuevo,
+          estado_nuevo_clave: cambio.estado_nuevo,
         },
         productos,
         link_consulta: link,
