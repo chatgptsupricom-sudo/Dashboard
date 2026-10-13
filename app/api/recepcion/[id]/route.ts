@@ -11,6 +11,7 @@ import {
   puedeComo,
   requireRecepcion,
 } from "@/lib/recepcion/servidor";
+import { ErrorRecepcion, guardarOcElegida, validarOcElegida } from "@/lib/recepcion/odoo";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +88,13 @@ export async function PATCH(
       );
     }
     const { cab, items, contenedores } = validado;
+    let oc;
+    try {
+      oc = await validarOcElegida(cab.cids, body?.odoo_purchase_order_id);
+    } catch (e: any) {
+      if (e instanceof ErrorRecepcion) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
 
     const res = await query(
       `UPDATE recepcion_packing
@@ -116,6 +124,7 @@ export async function PATCH(
     // garantiza — pasa a descargando con la primera llegada).
     await query("DELETE FROM recepcion_packing_contenedores WHERE recepcion_id = ?", [r.id]);
     await insertarContenedores(r.id!, contenedores);
+    await guardarOcElegida(r.id!, oc);
 
     emitirRecepcion({ accion: "editado", id: r.id!, cids: cab.cids, referencia: cab.referencia });
     // Si cambio de sucursal, la anterior tambien tiene que enterarse.

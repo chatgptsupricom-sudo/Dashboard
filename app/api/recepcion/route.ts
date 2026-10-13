@@ -5,6 +5,8 @@ import {
   validarCabeceraEItems,
 } from "@/lib/recepcion/validacion";
 import { emitirRecepcion, puedeComo, requireRecepcion } from "@/lib/recepcion/servidor";
+import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
+import { ErrorRecepcion, guardarOcElegida, validarOcElegida } from "@/lib/recepcion/odoo";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -31,8 +33,15 @@ export async function GET(request: NextRequest) {
       params.push(cids);
     }
 
+    let conOdoo = true;
+    try {
+      await asegurarColumnasOdoo();
+    } catch {
+      conOdoo = false;
+    }
     const res = await query(
       `SELECT r.id, r.cids, r.proveedor, r.referencia, r.contenedor, r.oc_referencia,
+              ${conOdoo ? "r.origen, r.odoo_estado, r.odoo_oc_nombre," : ""}
               r.fecha_estimada, r.etapa, r.resultado, r.precinto_coincide,
               r.creado_por, r.created_at, r.llegada_at, r.cerrado_at,
               (SELECT COUNT(*) FROM recepcion_packing_items i WHERE i.recepcion_id = r.id) AS total_items,
@@ -88,6 +97,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validado.error }, { status: 400 });
     }
     const { cab, items, contenedores } = validado;
+    // La OC de Odoo donde se carga lo contado al cerrar (opcional).
+    let oc;
+    try {
+      oc = await validarOcElegida(cab.cids, body?.odoo_purchase_order_id);
+    } catch (e: any) {
+      if (e instanceof ErrorRecepcion) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
 
     const res = await query(
       `INSERT INTO recepcion_packing
@@ -110,6 +127,7 @@ export async function POST(request: NextRequest) {
     const id = Number((res.rows as any)?.insertId);
     await insertarItems(id, items);
     await insertarContenedores(id, contenedores);
+    if (oc) await guardarOcElegida(id, oc);
 
     emitirRecepcion({
       accion: "creado",
