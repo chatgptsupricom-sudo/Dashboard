@@ -17,8 +17,8 @@ import { NOMBRES_SUCURSAL, SLUGS_SUCURSAL } from "@/lib/servicio-tecnico/sucursa
  *                                           y a los Super Admin  rma_plazo_taller
  *   resumen diario (8:00)                 → al RMA de la sede    rma_plazos_resumen
  *
- * Todo va al webhook de n8n de RMA ("RMA - Correos al cliente") con
- * `company_id`: n8n lo manda desde la cuenta SMTP de RMA de esa sede, y el
+ * Todo va al webhook de n8n de RMA ("RMA - Notification") con
+ * `company_id`: n8n lo manda por Gmail desde la cuenta de RMA de esa sede, y el
  * buzón de RMA de cada sede (destinatario de los avisos internos, `para:
  * "rma_sede"`) también se define allá.
  *
