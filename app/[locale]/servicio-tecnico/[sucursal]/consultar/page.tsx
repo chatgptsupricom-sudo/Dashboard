@@ -54,6 +54,9 @@ const STATUS_LABELS: Record<string, string> = {
   no_procesado: "status_no_procesado",
   reingresado: "status_reingresado",
   nc_revision: "status_nc_revision",
+  por_llegar: "status_por_llegar",
+  en_diagnostico: "status_en_diagnostico",
+  en_reparacion: "status_en_reparacion",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -63,6 +66,9 @@ const STATUS_COLORS: Record<string, string> = {
   no_procesado: "bg-red-100 text-red-700 border-red-200",
   reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
   nc_revision: "bg-blue-100 text-blue-700 border-blue-200",
+  por_llegar: "bg-violet-100 text-violet-700 border-violet-200",
+  en_diagnostico: "bg-sky-100 text-sky-700 border-sky-200",
+  en_reparacion: "bg-amber-100 text-amber-800 border-amber-200",
 };
 
 export default function ConsultarPage() {

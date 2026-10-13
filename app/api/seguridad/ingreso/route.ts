@@ -10,6 +10,8 @@ import {
   type ProductoIngreso,
 } from "@/lib/seguridad/productosEnvio";
 import { leerProductos } from "@/lib/rma/items";
+import { registrarLlegada } from "@/lib/rma/flujo";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import { siguienteGuia } from "@/lib/seguridad/guia";
 import { decodificarFirmaPng } from "@/lib/seguridad/firmas";
 
@@ -293,6 +295,10 @@ export async function POST(request: NextRequest) {
     const facturaNumero = Number(caso.producto_externo) === 1 ? null : caso.invoice_number || null;
     const descripcionFalla = truncate(caso.reported_fault, MAX.descripcion_falla);
 
+    // Número de guía: lo asigna el sistema (el siguiente de la sucursal), ya
+    // no se escribe a mano. Se ignora el que mande el cliente.
+    const guia = await siguienteGuia(cids);
+
     await asegurarColumnasGarantiaNullables();
     // Crea las columnas recibido_seguridad_nombre / recibido_rma_nombre si esta
     // base todavía no las tiene (#50).
@@ -321,9 +327,7 @@ export async function POST(request: NextRequest) {
         recibidoRma,
         truncate(body.foto_estado_url, MAX.foto_estado_url),
         idempotencyKey,
-        // Número de guía: lo asigna el sistema (el siguiente de la sucursal),
-        // ya no se escribe a mano. Se ignora el que mande el cliente.
-        await siguienteGuia(cids),
+        guia,
         cids,
       ],
     );
@@ -350,6 +354,19 @@ export async function POST(request: NextRequest) {
           console.error(`No se pudo guardar la firma ${f.rol} del ingreso ${insertId}:`, e?.message);
         }
       }
+    }
+    // El equipo llegó: lo recibido pasa a diagnóstico y empieza su plazo de
+    // 48 horas hábiles (lib/rma/flujo.ts). Lo que el acta marcó como no
+    // recibido sigue por llegar.
+    if (insertId && rmaCaseId !== null) {
+      await registrarLlegada(rmaCaseId, {
+        changedBy: recibidoRma || recibidoPor || "Seguridad",
+        recibidos: productosIngreso.length
+          ? productosIngreso.filter((f) => f.recibido && f.rma_item_id).map((f) => f.rma_item_id!)
+          : null,
+        guia,
+        origenPeticion: getPublicOrigin(request),
+      });
     }
     return NextResponse.json({ success: true, id: insertId }, { status: 201 });
   } catch (error: any) {

@@ -5,8 +5,18 @@ import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
 import { enviarCorreoActualizacion } from "@/lib/rma/emailActualizacion";
 import { errorEstadoNotaCredito } from "@/lib/rma/notaCredito";
+import { errorEstadoFlujo } from "@/lib/rma/flujo";
 
-const ESTADOS: EstadoProducto[] = ["recibido", "reparado", "nota_credito", "no_procesado", "reingresado"];
+const ESTADOS: EstadoProducto[] = [
+  "por_llegar",
+  "en_diagnostico",
+  "en_reparacion",
+  "recibido",
+  "reparado",
+  "nota_credito",
+  "no_procesado",
+  "reingresado",
+];
 
 // Lo que se edita de un producto. El estado va aparte: deja historial.
 const CAMPOS: Record<string, number> = {
@@ -62,6 +72,8 @@ export async function PUT(
     }
     const errorNota = errorEstadoNotaCredito(producto.status, status);
     if (errorNota) return NextResponse.json({ error: errorNota }, { status: 400 });
+    const errorFlujo = await errorEstadoFlujo(status);
+    if (errorFlujo) return NextResponse.json({ error: errorFlujo }, { status: 400 });
     const cambiaEstado = !!status && status !== producto.status;
     if (cambiaEstado) {
       sets.push("status = ?");

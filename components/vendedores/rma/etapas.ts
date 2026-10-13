@@ -3,7 +3,7 @@
 /** Estados en los que el técnico ya terminó con el equipo. */
 export const ESTADOS_RESUELTOS = ["reparado", "nota_credito", "no_procesado"];
 /** Estados en los que el equipo sigue en el taller. */
-export const ESTADOS_EN_PROCESO = ["recibido", "reingresado", "nc_revision"];
+export const ESTADOS_EN_PROCESO = ["por_llegar", "recibido", "en_diagnostico", "en_reparacion", "reingresado", "nc_revision"];
 
 export type Filtro = "todos" | "en_proceso" | "por_entregar" | "entregados";
 
@@ -38,6 +38,9 @@ export const COLOR_ESTADO: Record<string, string> = {
   no_procesado: "bg-red-100 text-red-700 border-red-200",
   reingresado: "bg-teal-100 text-teal-700 border-teal-200",
   nc_revision: "bg-orange-100 text-orange-700 border-orange-200",
+  por_llegar: "bg-violet-100 text-violet-700 border-violet-200",
+  en_diagnostico: "bg-sky-100 text-sky-700 border-sky-200",
+  en_reparacion: "bg-amber-100 text-amber-800 border-amber-200",
 };
 
 export function fechaHora(v: string | null | undefined, locale: string): string {

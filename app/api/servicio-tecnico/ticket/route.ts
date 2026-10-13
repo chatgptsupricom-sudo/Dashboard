@@ -15,6 +15,7 @@ import {
 import { esSucursalValida } from "@/lib/servicio-tecnico/sucursales";
 import { limpiarNumero } from "@/lib/servicio-tecnico/documento";
 import { crearProductos, productosPublicos } from "@/lib/rma/items";
+import { estadoInicial } from "@/lib/rma/flujo";
 import {
   MAX_REINTENTOS,
   asegurarColumnasPortal,
@@ -370,6 +371,8 @@ export async function POST(request: NextRequest) {
     let caseNumber: string | null = null;
     let trackingToken: string | null = null;
     let lastError: any = null;
+    // El equipo todavía no llegó: "por llegar" hasta que Seguridad lo ingrese.
+    const estado = await estadoInicial(false);
 
     for (let attempt = 1; attempt <= MAX_REINTENTOS; attempt++) {
       try {
@@ -389,7 +392,7 @@ export async function POST(request: NextRequest) {
             reported_fault, status, notes, company_id, created_by,
             origen, tracking_token, odoo_partner_id, odoo_product_id, serial,
             garantia_estado, garantia_meses, garantia_vence, garantia_marca
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', NULL, ?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             caseNumber,
             matched.codigo || null,
@@ -409,6 +412,7 @@ export async function POST(request: NextRequest) {
             // modulo interno para buscar. El serial real va aparte.
             serialFinal,
             fallaCaso,
+            estado,
             // La compania sale de la factura. Antes venia del body con 9 por
             // defecto, asi que un reporte de una factura de Caracas quedaba
             // guardado como Valencia. La columna es NOT NULL con default 9, asi
@@ -441,8 +445,8 @@ export async function POST(request: NextRequest) {
         // al crear el caso, si no aparece sin historial en el panel.
         await conn.execute(
           `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes)
-           VALUES (?, NULL, 'recibido', ?, 'Caso creado desde portal publico')`,
-          [caseId, createdBy],
+           VALUES (?, NULL, ?, ?, 'Caso creado desde portal publico')`,
+          [caseId, estado, createdBy],
         );
 
         // Los productos del envío (issue #331), en el orden en que el cliente
@@ -466,6 +470,7 @@ export async function POST(request: NextRequest) {
             garantia_marca: e.matched.garantia?.marca_resuelta || null,
           })),
           conn,
+          estado,
         );
 
         // Enlazar los adjuntos que ya se subieron con el token temporal de

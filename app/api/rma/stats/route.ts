@@ -17,9 +17,13 @@ import { hayColumnasAprobacion } from "@/lib/rma/notaCredito";
  *  - noProcede: casos "no procesado" (el técnico dice que no se repara).
  *  - ncSolicitadas: solicitudes de nota de crédito enviadas al Super Admin
  *    (lib/rma/notaCredito.ts; el caso no cambia de estado al pedirla).
+ *  - porLlegar / enDiagnostico / enReparacion: las etapas del flujo con
+ *    plazos (lib/rma/plazos.ts). "Recibido" (casos de antes) cuenta como
+ *    diagnóstico.
  *  - topProductos: los productos que más entran a RMA.
  */
-const PENDIENTES = "('recibido','reingresado','nc_revision')";
+// En el taller sin resolver; "por llegar" todavía no entró.
+const PENDIENTES = "('recibido','en_diagnostico','en_reparacion','reingresado','nc_revision')";
 const RESUELTOS = "('reparado','nota_credito','no_procesado')";
 const INICIO_MES = "DATE_FORMAT(CURDATE(), '%Y-%m-01')";
 
@@ -33,6 +37,9 @@ type Metricas = {
   ncSolicitadas: number;
   notaCredito: number;
   reparado: number;
+  porLlegar: number;
+  enDiagnostico: number;
+  enReparacion: number;
 };
 
 const vacio = (): Metricas => ({
@@ -45,6 +52,9 @@ const vacio = (): Metricas => ({
   ncSolicitadas: 0,
   notaCredito: 0,
   reparado: 0,
+  porLlegar: 0,
+  enDiagnostico: 0,
+  enReparacion: 0,
 });
 
 export async function GET(request: NextRequest) {
@@ -72,7 +82,10 @@ export async function GET(request: NextRequest) {
               SUM(c.status IN ${PENDIENTES}) AS pendientes,
               SUM(c.status = 'no_procesado') AS noProcede,
               SUM(c.status = 'nota_credito') AS notaCredito,
-              SUM(c.status = 'reparado') AS reparado
+              SUM(c.status = 'reparado') AS reparado,
+              SUM(c.status = 'por_llegar') AS porLlegar,
+              SUM(c.status IN ('en_diagnostico','recibido','reingresado')) AS enDiagnostico,
+              SUM(c.status = 'en_reparacion') AS enReparacion
          FROM rma_cases c
         WHERE 1=1 ${filtroSede}
         ${externo === "0" ? "" : `GROUP BY ${externo}`}`,

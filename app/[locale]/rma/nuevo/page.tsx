@@ -5,13 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ArrowLeft, Loader2, Save, Search, Wrench, X } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -403,22 +396,11 @@ export default function RmaNuevoPage() {
                 required
               />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label className="text-sm font-medium text-slate-700">{t("status_label")}</Label>
-                <Select value={form.status} onValueChange={(v) => handleChange("status", v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="recibido">{t("status_recibido")}</SelectItem>
-                    <SelectItem value="reparado">{t("status_reparado")}</SelectItem>
-                    <SelectItem value="no_procesado">{t("status_no_procesado")}</SelectItem>
-                    <SelectItem value="reingresado">{t("status_reingresado")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            {/* El estado no se elige: RMA abre el caso con el equipo en la mano y
+                entra a diagnóstico, con su plazo de 48 horas hábiles (lib/rma/plazos.ts). */}
+            <p className="rounded-xl bg-sky-50 border border-sky-100 px-3 py-2 text-xs text-sky-800">
+              {t("nuevo_entra_diagnostico")}
+            </p>
           </CardContent>
         </Card>
 
