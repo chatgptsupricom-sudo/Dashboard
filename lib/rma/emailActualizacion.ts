@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { emailDeContacto, origenPortal, resolverEmailCliente } from "@/lib/rma/emailReparado";
 import { SLUGS_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 import { urlWebhookRma } from "@/lib/rma/webhook";
+import { productosParaCorreo } from "@/lib/rma/items";
 
 /**
  * Aviso al cliente cada vez que RMA cambia el estado de un producto o le
@@ -64,32 +65,13 @@ async function procesar(caseId: number, cambio: CambioRma, origenPeticion: strin
     return;
   }
 
-  // Estado de cada producto del envío (sin diagnóstico ni notas).
-  // `estado_clave` es el valor de la base: la plantilla de n8n lo usa para la
-  // barra de etapas y el color de cada producto.
-  let productos: { producto: string; serial: string | null; estado: string; estado_clave: string }[] = [];
-  try {
-    const p = await query(
-      `SELECT model, hardware, serial, status FROM rma_case_items WHERE case_id = ? ORDER BY orden, id`,
-      [caseId],
-    );
-    productos = (p.rows as any[]).map((x) => ({
-      producto: x.model || x.hardware || "",
-      serial: x.serial || null,
-      estado: ESTADOS[x.status] || x.status,
-      estado_clave: x.status,
-    }));
-  } catch {
-    // Sin la tabla de productos, el del caso.
-  }
-  if (!productos.length) {
-    productos = [{
-      producto: caso.model || caso.hardware || "",
-      serial: null,
-      estado: ESTADOS[caso.status] || caso.status,
-      estado_clave: caso.status,
-    }];
-  }
+  // Cada producto del envío con su estado y la falla reportada (sin
+  // diagnóstico ni notas). `estado_clave` es el valor de la base: la plantilla
+  // de n8n lo usa para la barra de etapas y el color de cada producto.
+  const productos = (await productosParaCorreo(caseId)).map((p) => ({
+    ...p,
+    estado: ESTADOS[p.estado_clave] || p.estado_clave,
+  }));
 
   const link = `${origenPortal(origenPeticion)}/es/servicio-tecnico/${slug}/consultar?token=${caso.tracking_token}`;
 
