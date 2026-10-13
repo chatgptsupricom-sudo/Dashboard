@@ -1,6 +1,7 @@
 "use client";
 
 import { colorEstado, etiquetaEstado } from "@/components/rma/estados";
+import { AlertasPlazos } from "@/components/rma/AlertasPlazos";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +13,9 @@ import {
   FileClock,
   FileText,
   Hourglass,
+  Inbox,
   Loader2,
+  Microscope,
   Plus,
   Trophy,
   Wrench,
@@ -31,6 +34,9 @@ type Metricas = {
   noProcede: number;
   ncSolicitadas: number;
   notaCredito: number;
+  porLlegar: number;
+  enDiagnostico: number;
+  enReparacion: number;
 };
 
 type Filtro = { status?: string; grupo?: string; mes?: "1" };
@@ -234,6 +240,20 @@ export default function RmaDashboardPage() {
             {t("new_case")}
           </Button>
         </Link>
+      </div>
+
+      {/* Plazos vencidos o por vencer: diagnóstico 48 h, salida antes del 7.º día hábil. */}
+      <AlertasPlazos />
+
+      {/* Flujo del taller (lib/rma/plazos.ts) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <KpiCard {...comun} label={t("kpi_por_llegar")} metrica="porLlegar" color="text-violet-600"
+          icon={icono("bg-violet-100", Inbox, "text-violet-500")} filtro={{ status: "por_llegar" }}
+          enlace={`/${locale}/rma/por-llegar`} />
+        <KpiCard {...comun} label={t("kpi_en_diagnostico")} metrica="enDiagnostico" color="text-sky-600"
+          icon={icono("bg-sky-100", Microscope, "text-sky-500")} filtro={{ grupo: "diagnostico" }} />
+        <KpiCard {...comun} label={t("kpi_en_reparacion")} metrica="enReparacion" color="text-amber-700"
+          icon={icono("bg-amber-100", Wrench, "text-amber-600")} filtro={{ status: "en_reparacion" }} />
       </div>
 
       {/* Este mes */}

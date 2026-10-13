@@ -13,6 +13,7 @@ import {
 } from "@/lib/rma/items";
 import { enviarCorreoActualizacion } from "@/lib/rma/emailActualizacion";
 import { errorEstadoNotaCredito } from "@/lib/rma/notaCredito";
+import { errorEstadoFlujo } from "@/lib/rma/flujo";
 
 export async function GET(
   request: NextRequest,
@@ -205,6 +206,8 @@ export async function PUT(
     // no se pone a mano, y mientras espera la decisión el estado no se toca.
     const errorNota = errorEstadoNotaCredito(oldStatus, status);
     if (errorNota) return NextResponse.json({ error: errorNota }, { status: 400 });
+    const errorFlujo = await errorEstadoFlujo(status);
+    if (errorFlujo) return NextResponse.json({ error: errorFlujo }, { status: 400 });
 
     // Con varios productos, cada uno tiene su estado y el del caso se calcula
     // (PUT /api/rma/[id]/items/[itemId]). Cambiarlo acá lo dejaría

@@ -1,6 +1,9 @@
 "use client";
 
 import { AlertaIngresosPendientes } from "@/components/rma/AlertaIngresosPendientes";
+import { AlertasPlazos } from "@/components/rma/AlertasPlazos";
+import { PlazoBadge } from "@/components/rma/PlazoBadge";
+import type { Plazo } from "@/lib/rma/plazos";
 import { colorEstado, ESTADOS_RMA, etiquetaEstado } from "@/components/rma/estados";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +29,7 @@ export type Procedencia = "supricom" | "externo";
 /** Filtros que llegan desde las tarjetas del Dashboard (?grupo=, ?mes=1). */
 const GRUPOS: Record<string, string> = {
   pendientes: "Pendientes",
+  diagnostico: "En diagnóstico",
   completados_mes: "Completados este mes",
 };
 
@@ -60,10 +64,22 @@ export function InventarioCasos({ procedencia }: { procedencia: Procedencia }) {
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Semáforo de plazos de los casos que siguen sin salir (lib/rma/plazos.ts).
+  const [plazos, setPlazos] = useState<Record<number, Plazo>>({});
 
   useEffect(() => {
     fetchCases();
   }, [page, statusFilter, origenFilter, grupo, soloMes]);
+
+  useEffect(() => {
+    fetch("/api/rma/plazos")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j?.success) return;
+        setPlazos(Object.fromEntries((j.casos as { id: number; plazo: Plazo }[]).map((c) => [c.id, c.plazo])));
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchCases = async () => {
     try {
@@ -153,6 +169,7 @@ export function InventarioCasos({ procedencia }: { procedencia: Procedencia }) {
       </div>
 
       <AlertaIngresosPendientes />
+      <AlertasPlazos />
 
       {filtroTablero && (
         <div className="flex items-center gap-2">
@@ -269,9 +286,12 @@ export function InventarioCasos({ procedencia }: { procedencia: Procedencia }) {
                       </td>
                       <td className="p-4 text-slate-500 font-mono text-xs">{c.serial_quantity || "—"}</td>
                       <td className="p-4">
-                        <Badge className={`${colorEstado[c.status] || ""} border text-[11px]`}>
-                          {etiquetaEstado[c.status] || c.status}
-                        </Badge>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge className={`${colorEstado[c.status] || ""} border text-[11px]`}>
+                            {etiquetaEstado[c.status] || c.status}
+                          </Badge>
+                          <PlazoBadge plazo={plazos[c.id]} />
+                        </div>
                       </td>
                       <td className="p-4 text-slate-500">{new Date(c.created_at).toLocaleDateString("es-VE")}</td>
                       <td className="p-4">

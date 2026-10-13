@@ -95,6 +95,9 @@ const statusLabels: Record<string, string> = {
   no_procesado: "No Procesado",
   reingresado: "Reingresado",
   nc_revision: "NC en revisión",
+  por_llegar: "Por llegar",
+  en_diagnostico: "En diagnóstico",
+  en_reparacion: "En reparación",
 };
 
 const statusColors: Record<string, string> = {
@@ -104,6 +107,9 @@ const statusColors: Record<string, string> = {
   no_procesado: "bg-red-100 text-red-700 border-red-200",
   reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
   nc_revision: "bg-orange-100 text-orange-700 border-orange-200",
+  por_llegar: "bg-violet-100 text-violet-700 border-violet-200",
+  en_diagnostico: "bg-sky-100 text-sky-700 border-sky-200",
+  en_reparacion: "bg-amber-100 text-amber-800 border-amber-200",
 };
 
 export default function IngresoDetailPage() {

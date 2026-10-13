@@ -304,7 +304,7 @@ export function DetalleCasoRma() {
 
   const c = datos.case;
   const externo = Number(c.producto_externo) === 1;
-  const recibido = datos.ingresos.length > 0 || c.origen !== "portal" || c.status !== "recibido" || datos.history.some((h) => h.from_status);
+  const recibido = datos.ingresos.length > 0 || c.origen !== "portal" || !["recibido", "por_llegar"].includes(c.status) || datos.history.some((h) => h.from_status);
   const paso = pasoDelCaso(c, recibido);
   const resueltoEn = [...datos.history].reverse().find((h) => ESTADOS_RESUELTOS.includes(h.to_status))?.created_at;
   const pasos = [
@@ -477,7 +477,7 @@ export function DetalleCasoRma() {
           {/* Recepción en Seguridad */}
           <Tarjeta titulo={t("recepcion")} icono={Shield}>
             {datos.ingresos.length === 0 ? (
-              <p className="text-sm text-slate-500">{c.origen === "portal" && c.status === "recibido" ? t("sin_recepcion_portal") : t("sin_recepcion")}</p>
+              <p className="text-sm text-slate-500">{c.origen === "portal" && ["recibido", "por_llegar"].includes(c.status) ? t("sin_recepcion_portal") : t("sin_recepcion")}</p>
             ) : (
               <div className="space-y-3">
                 {datos.ingresos.map((i) => (

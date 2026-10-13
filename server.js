@@ -254,6 +254,40 @@ app.prepare().then(() => {
   );
 
   // ==========================================
+  // PLAZOS DEL TALLER DE RMA POR CORREO (lib/rma/alertasCorreo.ts)
+  // ==========================================
+
+  // Cada hora de 8:00 a 18:00, lo que vencio y no se aviso (equipo que no
+  // llega -> cliente; diagnostico de 48 h -> RMA de la sede; 7.o dia habil ->
+  // RMA de la sede y Super Admin). A las 8:00 ademas, el resumen de cada sede
+  // a su RMA. De lunes a viernes, como los plazos; lo que vence de noche o en
+  // fin de semana sale a las 8:00 del dia habil siguiente.
+  const avisarPlazosRma = async (query) => {
+    try {
+      const response = await fetch(
+        `http://localhost:${PORT}/api/cron/alertas-plazos-rma?${query}`,
+        { headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` } },
+      );
+      const data = await response.json();
+      if (response.ok) console.log("Plazos de RMA:", data);
+      else console.error("Fallo el aviso de plazos de RMA:", data);
+    } catch (error) {
+      console.error("Error de red al avisar plazos de RMA:", error.message);
+    }
+  };
+  cron.schedule("0 8-18 * * 1-5", () => avisarPlazosRma("modo=avisos"), {
+    scheduled: true,
+    timezone: "America/Caracas",
+  });
+  cron.schedule("5 8 * * 1-5", () => avisarPlazosRma("modo=resumen"), {
+    scheduled: true,
+    timezone: "America/Caracas",
+  });
+  console.log(
+    "> Cron programado: plazos de RMA por correo, L-V cada hora 8-18 (avisos) y 8:05 (resumen) (America/Caracas)",
+  );
+
+  // ==========================================
   // CIERRE AUTOMATICO DEL REPORTE DE VENTAS TRIMESTRAL
   // (sedes/marcas segun REPORTES_COMERCIALES_CRON, default 7:EZVIZ = Panama)
   // ==========================================
