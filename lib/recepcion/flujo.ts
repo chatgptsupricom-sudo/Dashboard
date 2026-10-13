@@ -160,6 +160,8 @@ export type ItemConteo = {
   golpeado: boolean;
   /** Tipos de dano marcados con su cantidad. */
   danos?: Dano[];
+  /** Por que llego asi la caja: obligatorio si tiene algun dano. */
+  golpeado_nota?: string | null;
 };
 
 /**
@@ -168,7 +170,7 @@ export type ItemConteo = {
  * Se cierra solo si:
  *  - todos los renglones estan contados (null es "no lo conte", no cero);
  *  - todo renglon con diferencia (falta o sobra) tiene motivo;
- *  - todo renglon golpeado tiene al menos una foto;
+ *  - todo renglon golpeado tiene al menos una foto y el motivo;
  *  - cada tipo de dano marcado dice cuantas unidades, y no mas de las
  *    recibidas.
  * La foto del contenedor al terminar se valida aparte (es de la recepcion,
@@ -181,6 +183,7 @@ export function evaluarConteo(
   sinContar: number;
   sinMotivo: number;
   golpesSinFoto: number;
+  golpesSinMotivo: number;
   danosSinCantidad: number;
   danosDeMas: number;
   faltantes: number;
@@ -191,6 +194,7 @@ export function evaluarConteo(
   let sinContar = 0;
   let sinMotivo = 0;
   let golpesSinFoto = 0;
+  let golpesSinMotivo = 0;
   let danosSinCantidad = 0;
   let danosDeMas = 0;
   let faltantes = 0;
@@ -208,6 +212,7 @@ export function evaluarConteo(
     if (i.golpeado) {
       golpeados++;
       if (!fotosGolpePorItem.has(i.id)) golpesSinFoto++;
+      if (!i.golpeado_nota?.trim()) golpesSinMotivo++;
     }
     for (const d of i.danos || []) {
       if (d.cantidad === null) danosSinCantidad++;
@@ -218,6 +223,7 @@ export function evaluarConteo(
     sinContar,
     sinMotivo,
     golpesSinFoto,
+    golpesSinMotivo,
     danosSinCantidad,
     danosDeMas,
     faltantes,
@@ -227,6 +233,7 @@ export function evaluarConteo(
       sinContar === 0 &&
       sinMotivo === 0 &&
       golpesSinFoto === 0 &&
+      golpesSinMotivo === 0 &&
       danosSinCantidad === 0 &&
       danosDeMas === 0,
   };
@@ -403,6 +410,29 @@ export function leerPrecintos(json: unknown, unico?: string | null): string[] {
   }
   return unico ? limpiarPrecintos([unico]) : [];
 }
+
+/**
+ * De donde sale lo que se espera recibir:
+ *  - packing_list: Compras lo carga y la mercancia llega en contenedores
+ *    (Valencia, Panama).
+ *  - factura: la mercancia viene de otra sede, que se la vendio (Valencia ->
+ *    Caracas). Almacen arranca la recepcion con el numero de esa factura; no
+ *    hay contenedores: nace descargando.
+ * En los dos casos, al cerrar, lo contado se carga en la recepcion de la OC
+ * de Odoo (lib/recepcion/odoo.ts).
+ */
+export const ORIGENES = ["packing_list", "factura"] as const;
+export type Origen = (typeof ORIGENES)[number];
+
+/**
+ * Como quedo la carga en Odoo al cerrar:
+ *  - null: todavia no se intento (abierta) o es de antes de esto.
+ *  - cargando: en curso.
+ *  - cargado: recepcion y traslado a Existencias validados.
+ *  - error: no se pudo; se reintenta desde el detalle.
+ *  - sin_oc: no tiene OC de Odoo: no hay donde cargarla.
+ */
+export type EstadoOdoo = "cargando" | "cargado" | "error" | "sin_oc";
 
 export const SUCURSALES: Array<{ cids: number; nombre: string }> = [
   { cids: 9, nombre: "Valencia" },

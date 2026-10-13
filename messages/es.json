@@ -3551,7 +3551,7 @@
     "cancelar_correccion": "Cancelar",
     "precinto_corregido": "Precintos corregidos. Quedó registrado quién lo hizo y por qué.",
     "correccion_linea": "Corregido por {por} el {fecha}: {antes} → {despues}. Motivo: {motivo}",
-    "golpeado_nota": "¿Qué tiene? (opcional)",
+    "golpeado_nota": "Motivo: ¿qué le pasó? (obligatorio)",
     "guardar_avance": "Guardar avance",
     "avance_guardado": "Avance guardado",
     "cierre": "Cierre del packing list",
@@ -3629,6 +3629,59 @@
         "danado": "Con daño",
         "sin_contar": "Sin contar"
       }
+    },
+    "oc_odoo": "OC de Odoo",
+    "oc_odoo_cargando": "Cargando OC de Odoo…",
+    "oc_odoo_ninguna": "Sin OC de Odoo (no se carga en Odoo al cerrar)",
+    "oc_odoo_parcial": "recibida a medias",
+    "oc_odoo_ayuda": "Al cerrar la recepción, lo contado y los seriales se cargan en la recepción de esta OC y pasan a Existencias.",
+    "golpeado_motivo": "Motivo",
+    "falta_motivo_golpe": "el motivo de {count} caja(s) en mal estado",
+    "factura": {
+      "nuevo": "Recibir con factura",
+      "etiqueta": "Factura",
+      "titulo": "Recibir con factura",
+      "sub": "Mercancía que vendió otra sede",
+      "numero": "Nº de factura",
+      "buscar": "Buscar",
+      "ayuda": "Escribe el número de la factura con la que llegó la mercancía (la que emitió la otra sede). El panel trae sus productos y la OC de Odoo que la espera.",
+      "ver_existente": "Ver la recepción",
+      "factura": "Factura",
+      "de": "Viene de",
+      "fecha": "Fecha",
+      "total": "Total",
+      "sin_oc": "{sede} no tiene en Odoo una OC pendiente con estos productos. Pídele a Compras que la cree y confirme, y vuelve a buscar.",
+      "por_factura_proveedor": "Su factura de proveedor es esta",
+      "mismo_total": "Mismo total",
+      "cobertura": "Espera el {pct}% de los productos",
+      "oc_ayuda": "Al cerrar, lo contado se carga en la recepción de esta OC.",
+      "empezar": "Empezar a recibir"
+    },
+    "odoo": {
+      "titulo": "Carga en Odoo",
+      "paso": "Cargado en Odoo",
+      "al_cerrar": "Al cerrar, lo contado y los seriales se cargan en Odoo (OC {oc}): recepción y traslado a Existencias.",
+      "al_cerrar_sin_oc": "No tiene OC de Odoo: al cerrar no se carga en Odoo (se puede elegir después).",
+      "estado": {
+        "cargando": "Cargando en Odoo…",
+        "cargado": "Cargado en Odoo (OC {oc})",
+        "error": "No se pudo cargar en Odoo",
+        "sin_oc": "Sin OC de Odoo: no se cargó"
+      },
+      "estado_corto": {
+        "cargando": "Cargando en Odoo",
+        "cargado": "En Odoo",
+        "error": "Error en Odoo",
+        "sin_oc": "Sin OC"
+      },
+      "recepcion_validada": "Recepción {nombre} validada",
+      "traslado_validado": "Traslado a Existencias {nombre} validado",
+      "pendiente": "lo que falta quedó en {nombre}",
+      "sin_producto": "No se encontraron en Odoo (no se cargaron):",
+      "en_entrada": "Quedaron en Entrada (no había traslado a Existencias): {lista}",
+      "misma_oc": "OC {oc}",
+      "elegir_oc": "Elige la OC de Odoo",
+      "reintentar": "Cargar en Odoo"
     }
   },
   "llegadas": {

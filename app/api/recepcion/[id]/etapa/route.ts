@@ -6,6 +6,7 @@ import {
   limpiarDanos,
   limpiarPrecintos,
 } from "@/lib/recepcion/flujo";
+import { cargarEnOdoo, ocPendiente } from "@/lib/recepcion/odoo";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -31,7 +32,15 @@ export const dynamic = "force-dynamic";
  * Del packing list entero (el conteo es uno solo):
  *  guardar_conteo     guarda el avance, no avanza
  *  cerrar             descargando -> cerrado: todos los contenedores cerrados
- *                     y el conteo completo
+ *                     y el conteo completo. Al cerrar se carga lo contado en
+ *                     Odoo (recepcion de la OC + traslado a Existencias,
+ *                     lib/recepcion/odoo.ts); si Odoo falla, la recepcion
+ *                     queda cerrada igual y con el error a la vista.
+ *
+ * Despues de cerrar (Almacen o Compras):
+ *  cargar_odoo        { purchase_order_id? } reintenta la carga en Odoo; con
+ *                     la OC, para una recepcion que no tenia (o tenia otra y
+ *                     no se llego a cargar nada)
  *
  * Cada avance se escribe con `WHERE etapa = <la esperada>`: si dos personas
  * pulsan a la vez, la segunda recibe 409 en vez de repetir el paso.
@@ -59,9 +68,6 @@ export async function POST(
   try {
     const { sesion, error } = await requireRecepcion(request);
     if (error) return error;
-    if (!puedeComo(sesion!, "almacen")) {
-      return NextResponse.json({ error: "La recepcion la hace Almacen" }, { status: 403 });
-    }
 
     const id = parseInt((await params).id, 10);
     if (isNaN(id)) return NextResponse.json({ error: "id invalido" }, { status: 400 });
@@ -78,6 +84,47 @@ export async function POST(
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     }
     const rec = datos.recepcion;
+
+    // Reintentar la carga en Odoo de una recepcion ya cerrada: Almacen o Compras.
+    if (body?.accion === "cargar_odoo") {
+      if (rec.etapa !== "cerrado") {
+        return NextResponse.json({ error: "Se carga en Odoo al cerrar la recepcion" }, { status: 409 });
+      }
+      if (rec.odoo_estado === "cargado") return conflicto();
+      const poId = Number(body?.purchase_order_id);
+      if (Number.isInteger(poId) && poId > 0 && poId !== Number(rec.odoo_purchase_order_id)) {
+        // Cambiar la OC solo si no se llego a cargar nada en la otra.
+        const cargadas = (() => {
+          try {
+            return JSON.parse(rec.odoo_resultado || "{}").recepciones?.length || 0;
+          } catch {
+            return 0;
+          }
+        })();
+        if (cargadas > 0) {
+          return NextResponse.json(
+            { error: "Ya se cargo una parte en la OC anterior: no se puede cambiar" },
+            { status: 409 },
+          );
+        }
+        const oc = await ocPendiente(Number(rec.cids), poId);
+        if (!oc) {
+          return NextResponse.json({ error: "Esa OC no es de la sucursal o ya no espera mercancia" }, { status: 400 });
+        }
+        await query("UPDATE recepcion_packing SET odoo_purchase_order_id = ?, odoo_oc_nombre = ? WHERE id = ?", [
+          oc.id,
+          oc.nombre,
+          id,
+        ]);
+      }
+      await cargarEnOdoo(id, sesion!.nombre);
+      emitirRecepcion({ accion: "editado", id, cids: Number(rec.cids), referencia: rec.referencia });
+      return NextResponse.json({ success: true, ...(await cargarRecepcion(id)) });
+    }
+
+    if (!puedeComo(sesion!, "almacen")) {
+      return NextResponse.json({ error: "La recepcion la hace Almacen" }, { status: 403 });
+    }
     if (rec.etapa === "cerrado") return conflicto();
 
     // Contenedor sobre el que se actua (acciones de contenedor).
@@ -250,6 +297,7 @@ export async function POST(
             motivo_diferencia: i.motivo_diferencia,
             golpeado: Number(i.golpeado) === 1,
             danos: i.danos || [],
+            golpeado_nota: i.golpeado_nota,
           })),
           fotosGolpe,
         );
@@ -263,6 +311,7 @@ export async function POST(
         if (ev.sinContar) faltan.push(`${ev.sinContar} renglon(es) sin contar`);
         if (ev.sinMotivo) faltan.push(`el motivo en ${ev.sinMotivo} renglon(es) con diferencia`);
         if (ev.golpesSinFoto) faltan.push(`la foto de ${ev.golpesSinFoto} caja(s) en mal estado`);
+        if (ev.golpesSinMotivo) faltan.push(`el motivo de ${ev.golpesSinMotivo} caja(s) en mal estado`);
         if (ev.danosSinCantidad) {
           faltan.push(`cuantas unidades en ${ev.danosSinCantidad} dano(s) marcado(s) (danada, humeda o abierta)`);
         }
@@ -304,6 +353,13 @@ export async function POST(
           proveedor: rec.proveedor,
           resultado,
         });
+        // Lo contado entra a Odoo de una vez. Si falla, queda el error en la
+        // recepcion y se reintenta desde el detalle: el cierre ya quedo.
+        try {
+          await cargarEnOdoo(id, sesion!.nombre);
+        } catch (e: any) {
+          console.error(`[recepcion ${id}] no se pudo cargar en Odoo:`, e?.message);
+        }
         break;
       }
 

@@ -17,6 +17,7 @@ import {
   FileSpreadsheet,
   FileText,
   Loader2,
+  RefreshCw,
   Pencil,
   Plus,
   Save,
@@ -81,7 +82,31 @@ type Recepcion = {
   cerrado_por: string | null;
   resultado: "conforme" | "con_novedades" | null;
   notas_cierre: string | null;
+  /** packing_list (Compras, contenedores) o factura (mercancia de otra sede). */
+  origen?: "packing_list" | "factura";
+  /** Carga en Odoo al cerrar (lib/recepcion/odoo.ts). */
+  odoo_purchase_order_id?: number | null;
+  odoo_oc_nombre?: string | null;
+  odoo_estado?: "cargando" | "cargado" | "error" | "sin_oc" | null;
+  odoo_error?: string | null;
+  odoo_resultado?: string | null;
+  odoo_cargado_at?: string | null;
 };
+
+type ResultadoOdoo = {
+  recepciones?: Array<{ id: number; nombre: string; pendiente: string | null }>;
+  traslados?: Array<{ id: number; nombre: string; pendiente: string | null }>;
+  sin_producto?: string[];
+  en_entrada?: string[];
+};
+
+function leerResultadoOdoo(json: string | null | undefined): ResultadoOdoo {
+  try {
+    return json ? JSON.parse(json) : {};
+  } catch {
+    return {};
+  }
+}
 
 type Item = {
   id: number;
@@ -160,6 +185,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Hora de referencia para el tiempo que lleva abierto (se mueve cada minuto).
   const [ahora, setAhora] = useState(() => new Date());
   const [correccion, setCorreccion] = useState({ precintos: "", motivo: "" });
+  // Carga en Odoo: OC elegida para una recepcion que no tenia, y la lista.
+  const [ocElegida, setOcElegida] = useState<number | "">("");
+  const [ocsOdoo, setOcsOdoo] = useState<Array<{ id: number; nombre: string; proveedor: string }> | null>(null);
 
   const abierto = rec !== null && rec.etapa !== "cerrado";
   useEffect(() => {
@@ -439,15 +467,31 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       motivo_diferencia: conteo[i.id]?.motivo || null,
       golpeado: (conteo[i.id]?.danos?.length ?? 0) > 0,
       danos: danosANumero(conteo[i.id]?.danos),
+      golpeado_nota: conteo[i.id]?.nota || null,
     })),
     fotosGolpe,
   );
+  const porFactura = rec.origen === "factura";
+  const resultadoOdoo = leerResultadoOdoo(rec.odoo_resultado);
+  // La OC se puede elegir (o cambiar) mientras no se haya cargado nada en Odoo.
+  const puedeElegirOc =
+    rec.etapa === "cerrado" &&
+    (rec.odoo_estado === "sin_oc" || (rec.odoo_estado === "error" && !(resultadoOdoo.recepciones || []).length));
+  const cargarOcs = async () => {
+    if (ocsOdoo) return;
+    try {
+      const res = await fetch(`/api/recepcion/odoo/ocs?cids=${rec.cids}`);
+      setOcsOdoo(res.ok ? (await res.json()).ocs || [] : []);
+    } catch {
+      setOcsOdoo([]);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
       <PageHeader
-        icon={Container}
-        titulo={rec.referencia}
+        icon={porFactura ? FileText : Container}
+        titulo={porFactura ? `${t("factura.etiqueta")} ${rec.referencia}` : rec.referencia}
         subtitulo={[rec.proveedor, sucursal].filter(Boolean).join(" · ")}
         volverA={base}
         accion={
@@ -496,7 +540,12 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 <Dato etiqueta={t("proveedor")} valor={rec.proveedor} />
                 <Dato etiqueta={t("fecha_estimada")} valor={rec.fecha_estimada ? fechaCorta(rec.fecha_estimada) : null} />
                 <Dato etiqueta={t("oc")} valor={rec.oc_referencia} />
-                <Dato etiqueta={t("contenedores")} valor={String(contenedores.length)} />
+                {porFactura ? (
+                  <Dato etiqueta={t("factura.factura")} valor={rec.referencia} />
+                ) : (
+                  <Dato etiqueta={t("contenedores")} valor={String(contenedores.length)} />
+                )}
+                <Dato etiqueta={t("oc_odoo")} valor={rec.odoo_oc_nombre} />
               </dl>
               {rec.observaciones && (
                 <p className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600 whitespace-pre-line">
@@ -524,7 +573,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
               )}
             </Card>
 
-            {/* Contenedores: cada uno con su llegada y su cierre */}
+            {/* Contenedores: cada uno con su llegada y su cierre. Una recepcion
+                con factura no tiene: nace descargando. */}
+            {contenedores.length > 0 && (
             <Card className="space-y-3">
               <SectionTitle>
                 {t("contenedores")} · {t("contenedores_recibidos", { llegados, total: contenedores.length })}
@@ -836,6 +887,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 );
               })}
             </Card>
+            )}
 
             {/* Conteo contra el packing list (uno solo para todos los contenedores) */}
             <Card className={contando ? "border-violet-200" : ""}>
@@ -1158,10 +1210,17 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                                 value={c.nota}
                                 onChange={(e) => set({ nota: e.target.value.slice(0, 300) })}
                                 placeholder={t("golpeado_nota")}
-                                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none"
+                                aria-label={t("golpeado_nota")}
+                                className={`w-full h-10 px-3 rounded-lg border text-sm focus:outline-none ${
+                                  c.nota.trim() ? "border-slate-200" : "border-red-300 bg-red-50"
+                                }`}
                               />
                             ) : (
-                              c.nota && <p className="text-xs text-amber-800">{c.nota}</p>
+                              c.nota && (
+                                <p className="text-xs text-amber-800">
+                                  <span className="font-semibold">{t("golpeado_motivo")}:</span> {c.nota}
+                                </p>
+                              )
                             )}
                             <FotoCaptura
                               recepcionId={rec.id}
@@ -1227,6 +1286,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           {ev.sinContar > 0 && <li>{t("falta_contar", { count: ev.sinContar })}</li>}
                           {ev.sinMotivo > 0 && <li>{t("falta_motivo", { count: ev.sinMotivo })}</li>}
                           {ev.golpesSinFoto > 0 && <li>{t("falta_foto_golpe", { count: ev.golpesSinFoto })}</li>}
+                          {ev.golpesSinMotivo > 0 && (
+                            <li>{t("falta_motivo_golpe", { count: ev.golpesSinMotivo })}</li>
+                          )}
                           {ev.danosSinCantidad > 0 && (
                             <li>{t("falta_cantidad_dano", { count: ev.danosSinCantidad })}</li>
                           )}
@@ -1234,6 +1296,11 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         </ul>
                       </div>
                     )}
+                    <p className="text-xs text-slate-500">
+                      {rec.odoo_oc_nombre
+                        ? t("odoo.al_cerrar", { oc: rec.odoo_oc_nombre })
+                        : t("odoo.al_cerrar_sin_oc")}
+                    </p>
                     <BotonPrimario
                       onClick={() => void accionar("cerrar", { items: cuerpoConteo(), notas_cierre: notas })}
                       disabled={enviando || !ev.listo || abiertos.length > 0}
@@ -1245,6 +1312,100 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                   </>
                 ) : (
                   rec.notas_cierre && <p className="text-sm text-slate-600 whitespace-pre-line">{rec.notas_cierre}</p>
+                )}
+              </Card>
+            )}
+
+            {/* Carga en Odoo: recepcion de la OC + traslado a Existencias */}
+            {rec.etapa === "cerrado" && (
+              <Card className="space-y-3">
+                <SectionTitle>{t("odoo.titulo")}</SectionTitle>
+                <div className="flex items-start gap-2">
+                  {rec.odoo_estado === "cargado" ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  ) : rec.odoo_estado === "cargando" ? (
+                    <Loader2 className="w-5 h-5 text-slate-400 animate-spin shrink-0" />
+                  ) : (
+                    <AlertTriangle
+                      className={`w-5 h-5 shrink-0 ${rec.odoo_estado === "error" ? "text-red-600" : "text-amber-600"}`}
+                    />
+                  )}
+                  <div className="min-w-0 text-sm">
+                    <p className="font-semibold text-slate-900">
+                      {t(`odoo.estado.${rec.odoo_estado || "sin_oc"}`, { oc: rec.odoo_oc_nombre || "" })}
+                    </p>
+                    {rec.odoo_estado === "cargado" && rec.odoo_cargado_at && (
+                      <p className="text-xs text-slate-500">{hora(rec.odoo_cargado_at)}</p>
+                    )}
+                    {rec.odoo_estado === "error" && rec.odoo_error && (
+                      <p className="mt-1 text-xs text-red-700 whitespace-pre-line break-words">{rec.odoo_error}</p>
+                    )}
+                  </div>
+                </div>
+
+                {((resultadoOdoo.recepciones || []).length > 0 || (resultadoOdoo.traslados || []).length > 0) && (
+                  <ul className="text-xs text-slate-600 space-y-0.5">
+                    {(resultadoOdoo.recepciones || []).map((r) => (
+                      <li key={`in-${r.id}`}>
+                        {t("odoo.recepcion_validada", { nombre: r.nombre })}
+                        {r.pendiente && <span className="text-amber-700"> · {t("odoo.pendiente", { nombre: r.pendiente })}</span>}
+                      </li>
+                    ))}
+                    {(resultadoOdoo.traslados || []).map((r) => (
+                      <li key={`int-${r.id}`}>
+                        {t("odoo.traslado_validado", { nombre: r.nombre })}
+                        {r.pendiente && <span className="text-amber-700"> · {t("odoo.pendiente", { nombre: r.pendiente })}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {(resultadoOdoo.sin_producto || []).length > 0 && (
+                  <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <p className="font-semibold">{t("odoo.sin_producto")}</p>
+                    <ul className="list-disc list-inside">
+                      {resultadoOdoo.sin_producto!.map((x) => (
+                        <li key={x}>{x}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(resultadoOdoo.en_entrada || []).length > 0 && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {t("odoo.en_entrada", { lista: resultadoOdoo.en_entrada!.join(", ") })}
+                  </p>
+                )}
+
+                {(rec.odoo_estado === "error" || rec.odoo_estado === "sin_oc") && (
+                  <div className="space-y-2">
+                    {puedeElegirOc && (
+                      <select
+                        value={ocElegida}
+                        onFocus={() => void cargarOcs()}
+                        onChange={(e) => setOcElegida(e.target.value ? Number(e.target.value) : "")}
+                        className={inputClases}
+                        aria-label={t("oc_odoo")}
+                      >
+                        <option value="">
+                          {rec.odoo_oc_nombre ? t("odoo.misma_oc", { oc: rec.odoo_oc_nombre }) : t("odoo.elegir_oc")}
+                        </option>
+                        {(ocsOdoo || []).map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.nombre} — {o.proveedor}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <BotonSecundario
+                      onClick={() =>
+                        void accionar("cargar_odoo", ocElegida ? { purchase_order_id: ocElegida } : {}, false)
+                      }
+                      disabled={enviando || (rec.odoo_estado === "sin_oc" && !ocElegida)}
+                      icon={enviando ? Loader2 : RefreshCw}
+                      className="w-full"
+                    >
+                      {t("odoo.reintentar")}
+                    </BotonSecundario>
+                  </div>
                 )}
               </Card>
             )}
@@ -1300,6 +1461,12 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 actual={rec.etapa === "descargando" && abiertos.length === 0}
                 titulo={rec.resultado ? `${t("cerrado_por")} · ${t(`resultado.${rec.resultado}`)}` : t("etapa.cerrado")}
                 detalle={[rec.cerrado_por, hora(rec.cerrado_at)].filter(Boolean).join(" · ")}
+              />
+              <Paso
+                hecho={rec.odoo_estado === "cargado"}
+                actual={rec.etapa === "cerrado" && rec.odoo_estado !== "cargado"}
+                titulo={t("odoo.paso")}
+                detalle={rec.odoo_estado === "cargado" ? hora(rec.odoo_cargado_at ?? null) : rec.odoo_oc_nombre || null}
               />
             </ol>
           </Card>
@@ -1357,7 +1524,8 @@ function Estado({
       </span>
       <div className="min-w-0">
         <p className="text-sm font-semibold text-slate-900">
-          {t(`etapa.${rec.etapa}`)} · {t("contenedores_recibidos", { llegados, total })}
+          {t(`etapa.${rec.etapa}`)}
+          {total > 0 && <> · {t("contenedores_recibidos", { llegados, total })}</>}
         </p>
         <p className="text-sm text-slate-600">
           {trabajando ? t("le_toca_almacen") : t("esperando_almacen")} · {t(`paso.${rec.etapa}`)}

@@ -3562,7 +3562,7 @@
     "cancelar_correccion": "Cancel",
     "precinto_corregido": "Seals corrected. Who did it and why was recorded.",
     "correccion_linea": "Corrected by {por} on {fecha}: {antes} → {despues}. Reason: {motivo}",
-    "golpeado_nota": "What's wrong? (optional)",
+    "golpeado_nota": "Reason: what happened? (required)",
     "guardar_avance": "Save progress",
     "avance_guardado": "Progress saved",
     "cierre": "Closing the packing list",
@@ -3640,6 +3640,59 @@
         "danado": "Damaged",
         "sin_contar": "Not counted"
       }
+    },
+    "oc_odoo": "Odoo PO",
+    "oc_odoo_cargando": "Loading Odoo POs…",
+    "oc_odoo_ninguna": "No Odoo PO (not loaded into Odoo on close)",
+    "oc_odoo_parcial": "partially received",
+    "oc_odoo_ayuda": "When the reception is closed, the counted quantities and serials are loaded into this PO's receipt and moved to Stock.",
+    "golpeado_motivo": "Reason",
+    "falta_motivo_golpe": "the reason for {count} box(es) in bad condition",
+    "factura": {
+      "nuevo": "Receive with invoice",
+      "etiqueta": "Invoice",
+      "titulo": "Receive with invoice",
+      "sub": "Goods sold by another branch",
+      "numero": "Invoice no.",
+      "buscar": "Search",
+      "ayuda": "Type the number of the invoice the goods came with (issued by the other branch). The panel brings its products and the Odoo PO waiting for them.",
+      "ver_existente": "Open the reception",
+      "factura": "Invoice",
+      "de": "Comes from",
+      "fecha": "Date",
+      "total": "Total",
+      "sin_oc": "{sede} has no pending Odoo PO with these products. Ask Purchasing to create and confirm it, then search again.",
+      "por_factura_proveedor": "Its vendor bill is this one",
+      "mismo_total": "Same total",
+      "cobertura": "Expects {pct}% of the products",
+      "oc_ayuda": "On close, the counted goods are loaded into this PO's receipt.",
+      "empezar": "Start receiving"
+    },
+    "odoo": {
+      "titulo": "Odoo load",
+      "paso": "Loaded into Odoo",
+      "al_cerrar": "On close, the counted goods and serials are loaded into Odoo (PO {oc}): receipt and transfer to Stock.",
+      "al_cerrar_sin_oc": "No Odoo PO: it won't be loaded into Odoo on close (you can pick one later).",
+      "estado": {
+        "cargando": "Loading into Odoo…",
+        "cargado": "Loaded into Odoo (PO {oc})",
+        "error": "Could not load into Odoo",
+        "sin_oc": "No Odoo PO: not loaded"
+      },
+      "estado_corto": {
+        "cargando": "Loading into Odoo",
+        "cargado": "In Odoo",
+        "error": "Odoo error",
+        "sin_oc": "No PO"
+      },
+      "recepcion_validada": "Receipt {nombre} validated",
+      "traslado_validado": "Transfer to Stock {nombre} validated",
+      "pendiente": "the rest is in {nombre}",
+      "sin_producto": "Not found in Odoo (not loaded):",
+      "en_entrada": "Left in Input (no transfer to Stock): {lista}",
+      "misma_oc": "PO {oc}",
+      "elegir_oc": "Pick the Odoo PO",
+      "reintentar": "Load into Odoo"
     }
   },
   "llegadas": {
