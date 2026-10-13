@@ -2,6 +2,8 @@
 
 import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // SuperAdmin: conversaciones del Agente IA de los demás usuarios
 // (/api/superadmin/agenteia/supervision). Usuarios → sus conversaciones → los
@@ -100,7 +102,7 @@ export default function PanelSupervision({ onPendientes }: { onPendientes?: (n: 
   );
 
   return (
-    <div className="max-h-[60vh] overflow-y-auto agente-scroll -mx-1 px-1 space-y-3">
+    <div className="space-y-3">
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {/* 3. Mensajes de una conversación */}
@@ -115,14 +117,21 @@ export default function PanelSupervision({ onPendientes }: { onPendientes?: (n: 
             {mensajes?.map((m, i) => (
               <div
                 key={i}
-                className={`rounded-lg px-3 py-2 text-[13px] ${
+                className={`rounded-lg px-4 py-3 text-sm ${
                   m.role === "user" ? "bg-blue-50 border border-blue-100" : "bg-slate-50 border border-slate-100"
                 }`}
               >
                 <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   {m.role === "user" ? usuario.nombre || usuario.email : "Agente IA"}
                 </p>
-                <p className="whitespace-pre-wrap break-words text-slate-800">{limpio(m.content)}</p>
+                {m.role === "user" ? (
+                  <p className="whitespace-pre-wrap break-words text-slate-800">{m.content}</p>
+                ) : (
+                  // Las respuestas del agente vienen en markdown (tablas, títulos).
+                  <div className="agente-md overflow-x-auto text-[14px] leading-6 text-slate-800 break-words">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{limpio(m.content)}</ReactMarkdown>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -196,7 +196,7 @@ function PanelRoles() {
         El SuperAdmin lo ve todo. Los demás roles no tienen el SQL directo de Odoo, y solo consultan tablas del panel si
         ven todas las sedes y no están limitados a lo suyo.
       </p>
-      <div className="max-h-[55vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
+      <div className="-mx-1 px-1 divide-y divide-slate-100">
         {!roles && !error && (
           <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
             <Loader2 size={14} className="animate-spin" /> Cargando roles…
@@ -345,7 +345,7 @@ function PanelConsumo() {
           </button>
         ))}
       </div>
-      <div className="max-h-[45vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
+      <div className="-mx-1 px-1 divide-y divide-slate-100">
         {detalle === "usuarios" ? (
           datos.usuarios.length === 0 ? (
             <p className="py-6 text-sm text-slate-500">Todavía no hay consumo registrado este mes.</p>
@@ -476,7 +476,9 @@ function DialogoConfiguracion({
 
   return (
     <Dialog open={abierto} onOpenChange={(v) => !v && onCerrar()}>
-      <DialogContent className="sm:max-w-2xl">
+      {/* Pantalla completa: cinco pestañas y tablas anchas no caben en un diálogo. */}
+      <DialogContent className="block h-dvh w-screen max-w-none sm:max-w-none translate-x-0 translate-y-0 top-0 left-0 rounded-none border-0 overflow-y-auto agente-scroll p-5 sm:px-10 sm:py-8">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
         <DialogHeader>
           <DialogTitle>Configuración del Agente IA</DialogTitle>
           <DialogDescription>
@@ -486,7 +488,7 @@ function DialogoConfiguracion({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex gap-1 p-1 rounded-lg bg-slate-100 w-fit text-[13px] font-medium" role="tablist">
+        <div className="flex flex-wrap gap-1 p-1 rounded-lg bg-slate-100 w-fit max-w-full text-sm font-medium" role="tablist">
           {(
             [
               ["acceso", "Acceso"],
@@ -502,7 +504,7 @@ function DialogoConfiguracion({
               role="tab"
               aria-selected={vista === id}
               onClick={() => setVista(id)}
-              className={`h-7 px-3 rounded-md transition-colors ${
+              className={`h-8 px-3.5 rounded-md whitespace-nowrap transition-colors ${
                 vista === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
               }`}
             >
@@ -530,7 +532,7 @@ function DialogoConfiguracion({
               </label>
               {usuarios && <span className="text-xs text-slate-500 shrink-0">{conAcceso} con acceso</span>}
             </div>
-            <div className="max-h-[55vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
+            <div className="-mx-1 px-1 divide-y divide-slate-100">
               {!usuarios && !error && (
                 <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
                   <Loader2 size={14} className="animate-spin" /> Cargando usuarios…
@@ -591,7 +593,7 @@ function DialogoConfiguracion({
         ) : vista === "conversaciones" ? (
           <PanelSupervision onPendientes={onAlertas} />
         ) : (
-          <div className="max-h-[60vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
+          <div className="-mx-1 px-1 divide-y divide-slate-100">
             {!cambios && !error && (
               <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
                 <Loader2 size={14} className="animate-spin" /> Cargando historial…
@@ -626,6 +628,7 @@ function DialogoConfiguracion({
           </div>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
+      </div>
       </DialogContent>
     </Dialog>
   );
