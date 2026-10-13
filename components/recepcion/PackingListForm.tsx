@@ -29,6 +29,8 @@ import {
 
 type Renglon = { codigo: string; producto: string; cantidad_esperada: string; cajas_esperadas: string };
 type Orden = { id: number; order_number: string; supplier_name: string };
+/** OC de Odoo que espera mercancia (lib/recepcion/odoo.ts). */
+type OcOdoo = { id: number; nombre: string; proveedor: string; parcial: boolean };
 
 const vacio = (): Renglon => ({ codigo: "", producto: "", cantidad_esperada: "", cajas_esperadas: "" });
 
@@ -56,6 +58,9 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
   const [fecha, setFecha] = useState(hoyMas(7));
   const [ordenId, setOrdenId] = useState<number | "">("");
   const [ocRef, setOcRef] = useState("");
+  // OC de Odoo donde se carga lo contado al cerrar.
+  const [ocOdoo, setOcOdoo] = useState<number | "">("");
+  const [ocsOdoo, setOcsOdoo] = useState<OcOdoo[] | null>(null);
   const [observaciones, setObservaciones] = useState("");
   const [renglones, setRenglones] = useState<Renglon[]>([vacio()]);
   const [archivos, setArchivos] = useState<File[]>([]);
@@ -92,6 +97,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
         setFecha(r.fecha_estimada ? String(r.fecha_estimada).slice(0, 10) : "");
         setOrdenId(r.purchase_order_id || "");
         setOcRef(r.oc_referencia || "");
+        setOcOdoo(r.odoo_purchase_order_id ? Number(r.odoo_purchase_order_id) : "");
         setObservaciones(r.observaciones || "");
         setRenglones(
           (j.items || []).map((i: any) => ({
@@ -118,6 +124,19 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
         setOrdenes(res.ok ? (await res.json()).ordenes || [] : []);
       } catch {
         setOrdenes([]);
+      }
+    })();
+  }, [cids]);
+
+  // OC de Odoo de la sucursal que esperan mercancia.
+  useEffect(() => {
+    setOcsOdoo(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/recepcion/odoo/ocs?cids=${cids}`);
+        setOcsOdoo(res.ok ? (await res.json()).ocs || [] : []);
+      } catch {
+        setOcsOdoo([]);
       }
     })();
   }, [cids]);
@@ -281,6 +300,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           fecha_estimada: fecha || null,
           purchase_order_id: ordenId || null,
           oc_referencia: ocRef || null,
+          odoo_purchase_order_id: ocOdoo || null,
           observaciones,
           items: limpios.map((r) => ({
             codigo: r.codigo,
@@ -352,6 +372,28 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
               <label className={labelClases}>{t("referencia")} *</label>
               <input value={referencia} onChange={(e) => setReferencia(e.target.value.slice(0, 100))} className={inputClases} />
             </div>
+          </div>
+          <div>
+            <label className={labelClases}>{t("oc_odoo")}</label>
+            <select
+              value={ocOdoo}
+              onChange={(e) => setOcOdoo(e.target.value ? Number(e.target.value) : "")}
+              className={inputClases}
+              disabled={ocsOdoo === null}
+            >
+              <option value="">{ocsOdoo === null ? t("oc_odoo_cargando") : t("oc_odoo_ninguna")}</option>
+              {/* La elegida antes puede ya no estar pendiente: se deja a la vista. */}
+              {ocOdoo !== "" && ocsOdoo && !ocsOdoo.some((o) => o.id === ocOdoo) && (
+                <option value={ocOdoo}>#{ocOdoo}</option>
+              )}
+              {(ocsOdoo || []).map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.nombre} — {o.proveedor}
+                  {o.parcial ? ` (${t("oc_odoo_parcial")})` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">{t("oc_odoo_ayuda")}</p>
           </div>
           <div>
             <label className={labelClases}>{t("observaciones")}</label>

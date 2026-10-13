@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { alinearPrecintos, leerCorrecciones, leerDanos, leerPrecintos } from "@/lib/recepcion/flujo";
 import { completarLlevaSerial, leerSeriales } from "@/lib/recepcion/seriales";
+import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -55,6 +56,13 @@ export function puedeComo(sesion: Sesion, rol: "compras" | "almacen"): boolean {
 
 /** Recepcion con renglones, contenedores y la lista de archivos (sin el binario). */
 export async function cargarRecepcion(id: number) {
+  // Columnas de la carga en Odoo (origen, OC, estado): se agregan solas. Si
+  // no se pueden agregar, la recepcion se muestra igual (sin lo de Odoo).
+  try {
+    await asegurarColumnasOdoo();
+  } catch (e: any) {
+    console.error("[recepcion] no se pudieron agregar las columnas de Odoo:", e?.message);
+  }
   const r = await query("SELECT * FROM recepcion_packing WHERE id = ?", [id]);
   if (r.rows.length === 0) return null;
   const [items, contenedores, archivos, seriales] = await Promise.all([

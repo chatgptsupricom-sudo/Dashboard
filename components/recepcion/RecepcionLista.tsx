@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Container,
+  FileText,
   PackageOpen,
   Plus,
   Timer,
@@ -19,7 +20,7 @@ import { fechaCorta } from "@/lib/fecha";
 import { SUCURSALES, duracion, formatearDuracion, type Etapa } from "@/lib/recepcion/flujo";
 import type { AvisoRecepcion } from "@/lib/recepcion/servidor";
 import { useRecepcionEnVivo } from "@/lib/recepcion/useRecepcionEnVivo";
-import { PageHeader, EmptyState, BotonPrimario } from "@/components/seguridad/mercancia-ui";
+import { PageHeader, EmptyState, BotonPrimario, BotonSecundario } from "@/components/seguridad/mercancia-ui";
 
 /**
  * Listado de packing lists, compartido por Compras (/compras/packing-list)
@@ -47,6 +48,10 @@ type Fila = {
   cerrado_at: string | null;
   /** Primera foto del contenedor al llegar: desde ahi corre el tiempo. */
   inicio_at: string | null;
+  /** packing_list (Compras) o factura (mercancia de otra sede). */
+  origen?: "packing_list" | "factura";
+  /** Como quedo la carga en Odoo al cerrar. */
+  odoo_estado?: "cargando" | "cargado" | "error" | "sin_oc" | null;
 };
 
 type Filtro = Etapa | "todos";
@@ -56,6 +61,9 @@ export default function RecepcionLista({ base }: { base: string }) {
   const { user } = useAuthStore();
   const rol = (user?.role || "").toLowerCase().trim();
   const esCompras = rol === "compras" || rol === "superadmin";
+  const esAlmacen = rol === "almacen" || rol === "superadmin";
+  // La recepcion con factura vive en la seccion de Almacen.
+  const locale = base.split("/")[1] || "es";
 
   const [filas, setFilas] = useState<Fila[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -124,10 +132,24 @@ export default function RecepcionLista({ base }: { base: string }) {
         titulo={esCompras && rol !== "superadmin" ? t("titulo_compras") : t("titulo")}
         subtitulo={esCompras ? t("sub_compras") : t("sub_almacen")}
         accion={
-          esCompras ? (
-            <BotonPrimario href={`${base}/nuevo`} icon={Plus}>
-              <span className="hidden sm:inline">{t("nuevo")}</span>
-            </BotonPrimario>
+          esCompras || esAlmacen ? (
+            <div className="flex gap-2">
+              {/* Con los dos botones (superadmin), el de Compras es el principal. */}
+              {esAlmacen &&
+                (() => {
+                  const Boton = esCompras ? BotonSecundario : BotonPrimario;
+                  return (
+                    <Boton href={`/${locale}/seguridad/mercancia/recepcion/factura`} icon={FileText}>
+                      <span className="hidden sm:inline">{t("factura.nuevo")}</span>
+                    </Boton>
+                  );
+                })()}
+              {esCompras && (
+                <BotonPrimario href={`${base}/nuevo`} icon={Plus}>
+                  <span className="hidden sm:inline">{t("nuevo")}</span>
+                </BotonPrimario>
+              )}
+            </div>
           ) : undefined
         }
       />
@@ -229,6 +251,24 @@ export default function RecepcionLista({ base }: { base: string }) {
                     {f.etapa === "descargando" && (
                       <span className="text-[11px] text-slate-500 tabular-nums">
                         {t("contados", { contados: f.items_contados, total: f.total_items })}
+                      </span>
+                    )}
+                    {f.origen === "factura" && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                        {t("factura.etiqueta")}
+                      </span>
+                    )}
+                    {f.etapa === "cerrado" && f.odoo_estado && (
+                      <span
+                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                          f.odoo_estado === "cargado"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : f.odoo_estado === "error"
+                              ? "bg-red-50 text-red-700"
+                              : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {t(`odoo.estado_corto.${f.odoo_estado}`)}
                       </span>
                     )}
                     {(() => {
