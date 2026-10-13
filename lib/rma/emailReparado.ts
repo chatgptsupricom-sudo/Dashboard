@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { SLUGS_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 import { urlWebhookRma } from "@/lib/rma/webhook";
+import { productosParaCorreo } from "@/lib/rma/items";
 
 /**
  * Aviso de "tu equipo esta reparado" (issue #119), con el link a la pagina
@@ -107,10 +108,18 @@ async function procesar(caso: CasoParaCorreo, origenPeticion: string): Promise<v
         case_number: caso.case_number,
         link_entrega: link,
         // Para que la plantilla de n8n pueda listar qué pasó con cada uno.
-        productos: caso.productos ?? [],
+        // Con la falla reportada de cada uno; `estado` va con la clave de la
+        // base, que la plantilla traduce.
+        productos: await productosDelReparado(caso),
       },
     }),
   });
+}
+
+/** Los productos para el correo de "reparado": de la base; si no hay, los que mandó quien llama. */
+async function productosDelReparado(caso: CasoParaCorreo) {
+  const productos = (await productosParaCorreo(caso.id)).map((p) => ({ ...p, estado: p.estado_clave }));
+  return productos.length ? productos : caso.productos ?? [];
 }
 
 /**

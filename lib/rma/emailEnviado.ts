@@ -1,6 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { emailDeContacto } from "@/lib/rma/emailReparado";
-import { nombreDelEnvio } from "@/lib/rma/items";
+import { nombreDelEnvio, productosParaCorreo } from "@/lib/rma/items";
 import { urlWebhookRma } from "@/lib/rma/webhook";
 
 /**
@@ -64,6 +64,8 @@ async function procesar(caso: CasoParaCorreoEnvio, guiaUrl: string): Promise<voi
         producto: await nombreDelEnvio(caso.id, caso.model || caso.hardware || ""),
         case_number: caso.case_number,
         agencia: caso.entrega_agencia || "",
+        // Lo que va en el envío, con la falla que se reportó de cada uno.
+        productos: await productosParaCorreo(caso.id),
         // n8n tiene que buscar esta URL (publica, sin sesion) para poder
         // adjuntar la imagen al correo -- el webhook no manda el archivo
         // en si, mismo criterio que el link_entrega de emailReparado.ts.

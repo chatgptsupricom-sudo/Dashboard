@@ -179,6 +179,59 @@ export async function productosPublicos(
   }
 }
 
+export type ProductoCorreo = {
+  producto: string;
+  serial: string | null;
+  estado_clave: string;
+  /** La falla que se escribió al abrir el ticket (el cliente en el portal, o RMA). */
+  falla: string | null;
+};
+
+/** Tope de la falla en el correo: el texto completo está en el caso. */
+const MAX_FALLA_CORREO = 400;
+
+/**
+ * Productos del envío para los correos al cliente (lib/rma/email*.ts y los
+ * avisos de plazos): nombre, serial, estado y la falla reportada. Sin el
+ * diagnóstico ni las notas del técnico, que son internos. Sin la tabla de
+ * productos, los datos del caso. No falla: ante un error, [].
+ */
+export async function productosParaCorreo(caseId: number): Promise<ProductoCorreo[]> {
+  const falla = (v: unknown) => {
+    const t = String(v ?? "").trim();
+    if (!t) return null;
+    return t.length > MAX_FALLA_CORREO ? `${t.slice(0, MAX_FALLA_CORREO).trimEnd()}…` : t;
+  };
+  try {
+    const productos = await leerProductos(caseId);
+    if (productos.length) {
+      return productos.map((p) => ({
+        producto: p.model || p.hardware || "",
+        serial: p.serial || null,
+        estado_clave: p.status,
+        falla: falla(p.reported_fault),
+      }));
+    }
+    const r = await query(
+      `SELECT model, hardware, serial_quantity, status, reported_fault FROM rma_cases WHERE id = ?`,
+      [caseId],
+    );
+    const c = (r.rows as any[])[0];
+    if (!c) return [];
+    return [
+      {
+        producto: c.model || c.hardware || "",
+        serial: c.serial_quantity || null,
+        estado_clave: c.status,
+        falla: falla(c.reported_fault),
+      },
+    ];
+  } catch (e: any) {
+    console.error(`[rma_case_items] no se pudieron leer los productos del caso ${caseId} para el correo:`, e?.message);
+    return [];
+  }
+}
+
 /** Campos del caso que son en realidad del producto, con su columna en items. */
 const CAMPOS_ESPEJO: Record<string, string> = {
   product_code: "product_code",
