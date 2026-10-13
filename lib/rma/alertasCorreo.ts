@@ -4,6 +4,7 @@ import { casosConPlazo, type CasoConPlazo } from "@/lib/rma/plazosCasos";
 import { PLAZOS, type Plazo } from "@/lib/rma/plazos";
 import { etiquetaEstado } from "@/components/rma/estados";
 import { emailDeContacto, origenPortal, resolverEmailCliente } from "@/lib/rma/emailReparado";
+import { productosParaCorreo } from "@/lib/rma/items";
 import { NOMBRES_SUCURSAL, SLUGS_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 
 /**
@@ -177,6 +178,8 @@ async function envioCliente(c: CasoConPlazo, vence: string, base: string): Promi
         producto: c.producto,
         dias: c.plazo.porLlegar?.dias ?? PLAZOS.porLlegar.limite,
         estado_clave: c.status,
+        // Lo que reportó, con su falla: el cliente reconoce el ticket.
+        productos: await productosParaCorreo(c.id),
         sede: NOMBRES_SUCURSAL[c.company_id!] || "",
         link_consulta: portal ? `${portal}/es/servicio-tecnico/${slug}/consultar?token=${extra.tracking_token}` : "",
       },
