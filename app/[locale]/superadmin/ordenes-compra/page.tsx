@@ -4,8 +4,10 @@ import { ClipboardCheck } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { OrdenesLista } from "@/components/compras/OrdenesLista";
+import { OrdenesOdooLista } from "@/components/compras/OrdenesOdooLista";
 import { OrdenesToolbar, type ChipOption } from "@/components/compras/OrdenesToolbar";
 import { type OrdenEstado, type OrdenResumen } from "@/lib/compras/ordenes-types";
+import { cn } from "@/lib/utils";
 
 // "pendientes" es el alias de status=enviada que el superadmin ve al entrar.
 const PESTANAS = ["pendientes", "aprobada", "rechazada", "todas"] as const;
@@ -17,6 +19,10 @@ const PESTANA_LABEL: Record<Pestana, string> = {
   rechazada: "Rechazadas",
   todas: "Todas",
 };
+
+// "odoo": todas las purchase.order de Odoo (solicitudes y órdenes), se hayan
+// hecho en el panel o no. "panel": las del panel que esperan aprobación.
+type Vista = "odoo" | "panel";
 
 function coincide(o: OrdenResumen, p: Pestana): boolean {
   if (p === "todas") return true;
@@ -33,6 +39,7 @@ export default function OrdenesCompraSuperadminPage() {
   const [loading, setLoading] = useState(true);
   const [pestana, setPestana] = useState<Pestana>("pendientes");
   const [q, setQ] = useState("");
+  const [vista, setVista] = useState<Vista>("odoo");
 
   useEffect(() => {
     let vivo = true;
@@ -76,30 +83,65 @@ export default function OrdenesCompraSuperadminPage() {
             Órdenes de compra
           </h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            Aprueba o rechaza las órdenes que compras envió.
+            {vista === "odoo"
+              ? "Solicitudes de cotización y órdenes de compra de Odoo, de las tres sedes."
+              : "Aprueba o rechaza las órdenes que compras envió."}
           </p>
         </div>
       </div>
 
-      <OrdenesToolbar
-        options={chips}
-        value={pestana}
-        onValue={(v) => setPestana(v as Pestana)}
-        q={q}
-        onQ={setQ}
-      />
+      <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+        {(
+          [
+            ["odoo", "Todas en Odoo", null],
+            ["panel", "Aprobación del panel", chips[0].count],
+          ] as const
+        ).map(([v, label, pendientes]) => (
+          <button
+            key={v}
+            onClick={() => setVista(v)}
+            className={cn(
+              "rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors",
+              vista === v
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100"
+                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300",
+            )}
+          >
+            {label}
+            {!!pendientes && (
+              <span className="ml-1.5 rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] tabular-nums text-white">
+                {pendientes}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
 
-      <OrdenesLista
-        ordenes={filtradas}
-        loading={loading}
-        hrefBase={base}
-        variant="aprobacion"
-        emptyText={
-          pestana === "pendientes"
-            ? "No hay órdenes pendientes de aprobación."
-            : "Ninguna orden coincide con el filtro."
-        }
-      />
+      {vista === "odoo" ? (
+        <OrdenesOdooLista hrefPanel={base} />
+      ) : (
+        <>
+          <OrdenesToolbar
+            options={chips}
+            value={pestana}
+            onValue={(v) => setPestana(v as Pestana)}
+            q={q}
+            onQ={setQ}
+          />
+
+          <OrdenesLista
+            ordenes={filtradas}
+            loading={loading}
+            hrefBase={base}
+            variant="aprobacion"
+            emptyText={
+              pestana === "pendientes"
+                ? "No hay órdenes pendientes de aprobación."
+                : "Ninguna orden coincide con el filtro."
+            }
+          />
+        </>
+      )}
     </div>
   );
 }
