@@ -3692,7 +3692,13 @@
       "en_entrada": "Left in Input (no transfer to Stock): {lista}",
       "misma_oc": "PO {oc}",
       "elegir_oc": "Pick the Odoo PO",
-      "reintentar": "Load into Odoo"
+      "reintentar": "Load into Odoo",
+      "bloqueo": {
+        "recibido_en_odoo": "In Odoo, the PO received goods that the panel did not load ({detalle}). If it is these same goods, they are already loaded and must not be loaded again.",
+        "packing_list_repetido": "This packing list was already loaded into Odoo in another reception ({detalle}).",
+        "revisado": "I checked in Odoo: these are not the same goods. Load anyway.",
+        "solo_superadmin": "Check it in Odoo. If these are other goods, only the SuperAdmin can load them."
+      }
     }
   },
   "llegadas": {

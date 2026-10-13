@@ -36,6 +36,23 @@ export { asegurarColumnasOdoo };
  *
  * Las escrituras en Odoo quedan a nombre del usuario de ODOO_API_KEY: por eso
  * cada recepcion validada lleva una nota en su chatter con quien cerro.
+ *
+ * NUNCA se carga dos veces lo mismo. Lo cuidan:
+ *  - `odoo_estado = 'cargado'`: una recepcion cargada no se vuelve a cargar.
+ *  - El candado `cargando` (uno a la vez por recepcion).
+ *  - `odoo_resultado.cargado`: lo ya cargado por producto; un reintento solo
+ *    carga lo que falta.
+ *  - `odoo_resultado.intento`: antes de validar un picking se anota cual es y
+ *    que lleva. Si se corta despues de que Odoo valido (red, caida, error al
+ *    guardar), el siguiente intento ve el picking Hecho y lo da por cargado en
+ *    vez de volver a cargarlo.
+ *  - Recepciones hechas a mano en Odoo: si la OC recibio algo que el panel no
+ *    hizo desde que empezo esta recepcion (`odoo_recepciones_previas`), se
+ *    frena: puede ser esta misma mercancia.
+ *  - La misma factura no se recibe dos veces, ni el mismo packing list
+ *    (referencia) en la misma sede.
+ * Los dos ultimos frenos los puede saltar solo el SuperAdmin, despues de
+ * revisar en Odoo que no es la misma mercancia.
  */
 
 const SEDES = SUCURSALES.map((s) => s.cids);
@@ -120,14 +137,45 @@ export async function validarOcElegida(cids: number, valor: unknown): Promise<Oc
   return oc;
 }
 
-/** Guarda la OC elegida (o la quita). */
+/** Recepciones (IN) ya validadas de la OC, con su nombre. */
+async function recepcionesHechas(poId: number): Promise<Array<{ id: number; nombre: string }>> {
+  const r = await odoo<any[]>(
+    "stock.picking",
+    "search_read",
+    [[["purchase_id", "=", poId], ["picking_type_code", "=", "incoming"], ["state", "=", "done"]]],
+    { fields: ["name"], limit: 2000 },
+  );
+  return (r || []).map((p) => ({ id: p.id, nombre: String(p.name) }));
+}
+
+/**
+ * Guarda la OC elegida (o la quita) y la foto de lo que esa OC ya tenia
+ * recibido en Odoo: lo que se reciba a mano despues no se vuelve a cargar.
+ */
 export async function guardarOcElegida(id: number, oc: OcPendiente | null): Promise<void> {
   await asegurarColumnasOdoo();
-  await query("UPDATE recepcion_packing SET odoo_purchase_order_id = ?, odoo_oc_nombre = ? WHERE id = ?", [
-    oc?.id ?? null,
-    oc?.nombre ?? null,
-    id,
-  ]);
+  const previas = oc ? (await recepcionesHechas(oc.id)).map((p) => p.id) : null;
+  await query(
+    "UPDATE recepcion_packing SET odoo_purchase_order_id = ?, odoo_oc_nombre = ?, odoo_recepciones_previas = ? WHERE id = ?",
+    [oc?.id ?? null, oc?.nombre ?? null, previas ? JSON.stringify(previas) : null, id],
+  );
+}
+
+const normalizarReferencia = (v: unknown) => String(v ?? "").trim().toUpperCase().replace(/\s+/g, " ");
+
+/**
+ * Otro packing list de la sede con la misma referencia: cargarlo dos veces
+ * cargaria la misma mercancia dos veces en Odoo.
+ */
+export async function packingListRepetido(cids: number, referencia: string, excluirId?: number): Promise<number | null> {
+  await asegurarColumnasOdoo();
+  const r = await query(
+    `SELECT id FROM recepcion_packing
+      WHERE cids = ? AND origen = 'packing_list' AND UPPER(TRIM(referencia)) = ? AND id <> ?
+      ORDER BY id LIMIT 1`,
+    [cids, normalizarReferencia(referencia), excluirId ?? 0],
+  );
+  return (r.rows as any[])[0]?.id ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +428,22 @@ export async function crearRecepcionFactura(opts: {
     ],
   );
   const id = Number((res.rows as any)?.insertId);
+  // Dos personas con la misma factura a la vez: se queda la primera.
+  const primera = await query(
+    "SELECT MIN(id) AS id FROM recepcion_packing WHERE origen = 'factura' AND factura_odoo_id = ? AND cids = ?",
+    [datos.factura.id, opts.cids],
+  );
+  const primeraId = Number((primera.rows as any[])[0]?.id);
+  if (primeraId && primeraId !== id) {
+    await query("DELETE FROM recepcion_packing WHERE id = ?", [id]);
+    const e = new ErrorRecepcion(`La factura ${datos.factura.nombre} ya se esta recibiendo`, 409);
+    (e as any).id = primeraId;
+    throw e;
+  }
+  await query("UPDATE recepcion_packing SET odoo_recepciones_previas = ? WHERE id = ?", [
+    JSON.stringify((await recepcionesHechas(oc.id)).map((p) => p.id)),
+    id,
+  ]);
   const valores: any[] = [];
   const marcas = lineas
     .map((l) => {
@@ -410,9 +474,25 @@ export type ResultadoOdoo = {
   sin_producto: string[];
   /** Productos que quedaron en Entrada (no habia traslado a donde sumarlos). */
   en_entrada: string[];
+  /**
+   * El picking que se esta por validar y lo que lleva, anotado ANTES de
+   * validar. Si quedo aca, el intento anterior se corto: se mira en Odoo si
+   * llego a validarse.
+   */
+  intento?: { tipo: "in" | "int"; picking_id: number; asignado: Record<string, { cantidad: number; seriales: string[] }> } | null;
+  /** Por que se freno la carga (para que el SuperAdmin decida). */
+  bloqueo?: { tipo: "recibido_en_odoo" | "packing_list_repetido"; detalle: string[] } | null;
 };
 
-const resultadoVacio = (): ResultadoOdoo => ({ recepciones: [], traslados: [], cargado: {}, sin_producto: [], en_entrada: [] });
+const resultadoVacio = (): ResultadoOdoo => ({
+  recepciones: [],
+  traslados: [],
+  cargado: {},
+  sin_producto: [],
+  en_entrada: [],
+  intento: null,
+  bloqueo: null,
+});
 
 function leerResultado(json: unknown): ResultadoOdoo {
   try {
@@ -450,6 +530,90 @@ async function notaChatter(pickingId: number, texto: string) {
   } catch (e: any) {
     console.error(`[recepcion/odoo] no se pudo dejar la nota en el picking ${pickingId}:`, e?.message);
   }
+}
+
+/** El picking anotado en `intento` quedo validado: pasa a lo cargado. */
+function confirmarIntento(resultado: ResultadoOdoo, picking: { id: number; nombre: string; pendiente: string | null }) {
+  const intento = resultado.intento;
+  if (!intento || intento.picking_id !== picking.id) return;
+  if (intento.tipo === "in") {
+    if (!resultado.recepciones.some((r) => r.id === picking.id)) resultado.recepciones.push(picking);
+    for (const [k, a] of Object.entries(intento.asignado)) {
+      const ya = resultado.cargado[k] || { cantidad: 0, seriales: [] };
+      resultado.cargado[k] = { cantidad: r3(ya.cantidad + a.cantidad), seriales: [...ya.seriales, ...a.seriales] };
+    }
+  } else if (!resultado.traslados.some((r) => r.id === picking.id)) {
+    resultado.traslados.push(picking);
+  }
+  resultado.intento = null;
+}
+
+/**
+ * Un intento anterior se corto con un picking anotado: si Odoo lo llego a
+ * validar, cuenta como cargado; si no, se descarta (sus lineas se vuelven a
+ * escribir).
+ */
+async function resolverIntento(id: number, resultado: ResultadoOdoo): Promise<void> {
+  const intento = resultado.intento;
+  if (!intento) return;
+  const [p] = await odoo<any[]>("stock.picking", "read", [[intento.picking_id], ["name", "state"]]);
+  if (p?.state === "done") {
+    const [pend] = await odoo<any[]>("stock.picking", "search_read", [[["backorder_id", "=", intento.picking_id]]], {
+      fields: ["name"],
+      limit: 1,
+    });
+    confirmarIntento(resultado, { id: intento.picking_id, nombre: String(p.name), pendiente: pend?.name ?? null });
+  } else {
+    resultado.intento = null;
+  }
+  await guardarResultado(id, resultado);
+}
+
+/**
+ * Frenos antes de cargar: la OC recibio en Odoo algo que no hizo el panel
+ * desde que empezo esta recepcion (puede ser esta misma mercancia recibida a
+ * mano), o el mismo packing list ya se cargo en otra recepcion. Devuelve el
+ * motivo, o null si se puede cargar.
+ */
+async function frenos(rec: any, poId: number, resultado: ResultadoOdoo): Promise<ResultadoOdoo["bloqueo"]> {
+  if (rec.origen !== "factura") {
+    const otro = await query(
+      `SELECT id FROM recepcion_packing
+        WHERE cids = ? AND origen = 'packing_list' AND UPPER(TRIM(referencia)) = ? AND id <> ?
+          AND (odoo_estado IN ('cargado', 'cargando') OR odoo_resultado LIKE '%"recepciones":[{%')
+        LIMIT 1`,
+      [rec.cids, normalizarReferencia(rec.referencia), rec.id],
+    );
+    const otroId = (otro.rows as any[])[0]?.id;
+    if (otroId) return { tipo: "packing_list_repetido", detalle: [`#${otroId}`] };
+  }
+
+  // Lo que hizo el panel con esta OC (esta recepcion y las demas).
+  const delPanel = new Set<number>(resultado.recepciones.map((r) => r.id));
+  const otras = await query(
+    "SELECT odoo_resultado FROM recepcion_packing WHERE odoo_purchase_order_id = ? AND id <> ? AND odoo_resultado IS NOT NULL",
+    [poId, rec.id],
+  );
+  for (const o of otras.rows as any[]) {
+    const r = leerResultado(o.odoo_resultado);
+    r.recepciones.forEach((x) => delPanel.add(x.id));
+    if (r.intento?.tipo === "in") delPanel.add(r.intento.picking_id);
+  }
+
+  let previas: number[] | null = null;
+  try {
+    const v = rec.odoo_recepciones_previas ? JSON.parse(rec.odoo_recepciones_previas) : null;
+    previas = Array.isArray(v) ? v.map(Number) : null;
+  } catch {
+    previas = null;
+  }
+  const hechas = await recepcionesHechas(poId);
+  // Sin foto (recepciones de antes de esto, o la OC se eligio despues de
+  // cerrar): cualquier recepcion hecha que no sea del panel frena; el
+  // SuperAdmin revisa y decide.
+  const ajenas = hechas.filter((p) => !delPanel.has(p.id) && !(previas || []).includes(p.id));
+  if (ajenas.length) return { tipo: "recibido_en_odoo", detalle: ajenas.map((p) => p.nombre) };
+  return null;
 }
 
 type Recibido = { productId: number; nombre: string; cantidad: number; seriales: string[] };
@@ -639,22 +803,24 @@ async function cargarRecepciones(
     if (marcados.length) await odoo("stock.move", "write", [marcados, { picked: true }]);
     if (sinMarcar.length) await odoo("stock.move", "write", [sinMarcar, { picked: false }]);
 
-    const v = await validar(p.id);
-    resultado.recepciones.push({ id: p.id, nombre: v.nombre, pendiente: v.pendiente });
-    // Lo cargado se anota al momento: si algo falla despues, el reintento no
-    // vuelve a cargarlo.
+    // Lo que lleva este picking, anotado ANTES de validar: si algo se corta
+    // despues de que Odoo valido, el reintento lo da por cargado.
+    const asignado: Record<string, { cantidad: number; seriales: string[] }> = {};
+    const sumar = (pid: number, cantidad: number, seriales: string[]) => {
+      const k = String(pid);
+      const ya = asignado[k] || { cantidad: 0, seriales: [] };
+      asignado[k] = { cantidad: r3(ya.cantidad + cantidad), seriales: [...ya.seriales, ...seriales] };
+    };
     for (const m of propios) {
       const a = porMove.get(m.id);
-      if (!a) continue;
-      const k = String(m2o(m.product_id));
-      const ya = resultado.cargado[k] || { cantidad: 0, seriales: [] };
-      resultado.cargado[k] = { cantidad: r3(ya.cantidad + a.cantidad), seriales: [...ya.seriales, ...a.seriales] };
+      if (a) sumar(m2o(m.product_id), a.cantidad, a.seriales);
     }
-    for (const nv of nuevosAca) {
-      const k = String(nv.productId);
-      const ya = resultado.cargado[k] || { cantidad: 0, seriales: [] };
-      resultado.cargado[k] = { cantidad: r3(ya.cantidad + nv.cantidad), seriales: [...ya.seriales, ...nv.seriales] };
-    }
+    for (const nv of nuevosAca) sumar(nv.productId, nv.cantidad, nv.seriales);
+    resultado.intento = { tipo: "in", picking_id: p.id, asignado };
+    await guardarResultado(Number(rec.id), resultado);
+
+    const v = await validar(p.id);
+    confirmarIntento(resultado, { id: p.id, nombre: v.nombre, pendiente: v.pendiente });
     await guardarResultado(Number(rec.id), resultado);
     await notaChatter(p.id, `Recibido desde el panel (recepcion #${rec.id}, ${rec.referencia}). Cerro: ${quien}.`);
   }
@@ -763,8 +929,10 @@ async function cargarTraslados(rec: any, resultado: ResultadoOdoo, quien: string
     const otros = propios.filter((m) => !marcados.includes(m.id)).map((m) => m.id);
     if (otros.length) await odoo("stock.move", "write", [otros, { picked: false }]);
 
+    resultado.intento = { tipo: "int", picking_id: pickingId, asignado: {} };
+    await guardarResultado(Number(rec.id), resultado);
     const v = await validar(pickingId);
-    resultado.traslados.push({ id: pickingId, nombre: v.nombre, pendiente: v.pendiente });
+    confirmarIntento(resultado, { id: pickingId, nombre: v.nombre, pendiente: v.pendiente });
     await guardarResultado(Number(rec.id), resultado);
     await notaChatter(pickingId, `Cargado a Existencias desde el panel (recepcion #${rec.id}, ${rec.referencia}). Cerro: ${quien}.`);
   }
@@ -783,7 +951,11 @@ async function cargarTraslados(rec: any, resultado: ResultadoOdoo, quien: string
  * traslado a Existencias. No lanza: lo que pase queda en la recepcion
  * (`odoo_estado`, `odoo_error`, `odoo_resultado`) y se ve en el detalle.
  */
-export async function cargarEnOdoo(id: number, quien: string): Promise<{ estado: EstadoOdoo; error?: string }> {
+export async function cargarEnOdoo(
+  id: number,
+  quien: string,
+  opts: { saltarFrenos?: boolean } = {},
+): Promise<{ estado: EstadoOdoo; error?: string }> {
   await asegurarColumnasOdoo();
   const datos = await cargarRecepcion(id);
   if (!datos) return { estado: "error", error: "No encontrada" };
@@ -812,7 +984,7 @@ export async function cargarEnOdoo(id: number, quien: string): Promise<{ estado:
         SET odoo_estado = 'cargando', odoo_intento_at = NOW(), odoo_error = NULL, odoo_purchase_order_id = ?
       WHERE id = ? AND etapa = 'cerrado'
         AND (odoo_estado IS NULL OR odoo_estado IN ('error', 'sin_oc')
-             OR (odoo_estado = 'cargando' AND odoo_intento_at < NOW() - INTERVAL 15 MINUTE))`,
+             OR (odoo_estado = 'cargando' AND odoo_intento_at < NOW() - INTERVAL 60 MINUTE))`,
     [poId, id],
   );
   if (Number((lock.rows as any)?.affectedRows || 0) !== 1) {
@@ -821,6 +993,39 @@ export async function cargarEnOdoo(id: number, quien: string): Promise<{ estado:
 
   const resultado = leerResultado(rec.odoo_resultado);
   try {
+    // Primero, si un intento anterior se corto a mitad de una validacion.
+    await resolverIntento(id, resultado);
+
+    const freno = await frenos(rec, poId, resultado);
+    if (freno && !opts.saltarFrenos) {
+      resultado.bloqueo = freno;
+      throw new Error(
+        freno.tipo === "packing_list_repetido"
+          ? `Este packing list ya se cargo en Odoo en la recepcion ${freno.detalle.join(", ")}: no se carga dos veces.`
+          : `La OC recibio en Odoo mercancia que no cargo el panel desde que empezo esta recepcion (${freno.detalle.join(", ")}). ` +
+              "Si es esta misma mercancia, ya esta cargada y no se debe cargar otra vez. Revisalo en Odoo; si es otra, el SuperAdmin puede cargar igual.",
+      );
+    }
+    if (freno && opts.saltarFrenos) {
+      // El SuperAdmin reviso: esas recepciones no son de esta mercancia.
+      if (freno.tipo === "recibido_en_odoo") {
+        const hechas = await recepcionesHechas(poId);
+        let previas: number[] = [];
+        try {
+          previas = JSON.parse(rec.odoo_recepciones_previas || "[]").map(Number);
+        } catch {
+          previas = [];
+        }
+        const nuevas = hechas.filter((p) => freno.detalle.includes(p.nombre)).map((p) => p.id);
+        await query("UPDATE recepcion_packing SET odoo_recepciones_previas = ? WHERE id = ?", [
+          JSON.stringify([...new Set([...previas, ...nuevas])]),
+          id,
+        ]);
+      }
+      console.warn(`[recepcion/odoo] recepcion ${id}: ${quien} salto el freno ${freno.tipo} (${freno.detalle.join(", ")})`);
+    }
+    resultado.bloqueo = null;
+
     if (!rec.odoo_oc_nombre) {
       const [po] = await odoo<any[]>("purchase.order", "read", [[poId], ["name"]]);
       rec.odoo_oc_nombre = po?.name ?? null;

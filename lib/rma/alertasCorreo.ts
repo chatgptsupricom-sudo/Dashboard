@@ -121,13 +121,24 @@ async function superAdmins(): Promise<{ email: string; name: string | null }[]> 
   return (r.rows as any[]).filter((u) => u.email).map((u) => ({ email: String(u.email), name: u.name ?? null }));
 }
 
+/** Cuánto del plazo que aprieta ya se consumió, 0-100 (la barra del correo). */
+export function progresoPlazo(p: Plazo): number {
+  const pct = (v: number, limite: number) => Math.max(0, Math.min(100, Math.round((v / limite) * 100)));
+  if (p.porLlegar) return pct(p.porLlegar.dias, PLAZOS.porLlegar.limite);
+  if (p.diagnostico && p.diagnostico.nivel === p.nivel) return pct(p.diagnostico.horas, PLAZOS.diagnostico.limite);
+  if (p.taller) return pct(p.taller.dia, PLAZOS.taller.limite);
+  return 0;
+}
+
 const filaCaso = (c: CasoConPlazo, base: string) => ({
   case_number: c.case_number,
   cliente: c.client_name,
   producto: c.producto,
   estado: etiquetaEstado[c.status] || c.status,
+  estado_clave: c.status,
   nivel: c.plazo.nivel,
   plazo: textoPlazo(c.plazo),
+  progreso: progresoPlazo(c.plazo),
   link: `${base}/es/rma/casos/${c.id}`,
 });
 
@@ -165,6 +176,7 @@ async function envioCliente(c: CasoConPlazo, vence: string, base: string): Promi
         case_number: c.case_number,
         producto: c.producto,
         dias: c.plazo.porLlegar?.dias ?? PLAZOS.porLlegar.limite,
+        estado_clave: c.status,
         sede: NOMBRES_SUCURSAL[c.company_id!] || "",
         link_consulta: portal ? `${portal}/es/servicio-tecnico/${slug}/consultar?token=${extra.tracking_token}` : "",
       },

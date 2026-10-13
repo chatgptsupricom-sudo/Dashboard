@@ -31,7 +31,9 @@ ALTER TABLE supricom_panel.recepcion_packing
   ADD COLUMN odoo_error TEXT DEFAULT NULL,
   ADD COLUMN odoo_resultado TEXT DEFAULT NULL,
   ADD COLUMN odoo_intento_at TIMESTAMP NULL DEFAULT NULL,
-  ADD COLUMN odoo_cargado_at TIMESTAMP NULL DEFAULT NULL;
+  ADD COLUMN odoo_cargado_at TIMESTAMP NULL DEFAULT NULL,
+  -- IN de la OC ya hechas al empezar: lo recibido a mano despues frena la carga.
+  ADD COLUMN odoo_recepciones_previas TEXT DEFAULT NULL;
 
 ALTER TABLE supricom_panel.recepcion_packing_items
   ADD COLUMN odoo_product_id INT DEFAULT NULL;

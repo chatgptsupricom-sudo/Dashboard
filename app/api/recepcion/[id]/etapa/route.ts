@@ -38,9 +38,12 @@ export const dynamic = "force-dynamic";
  *                     queda cerrada igual y con el error a la vista.
  *
  * Despues de cerrar (Almacen o Compras):
- *  cargar_odoo        { purchase_order_id? } reintenta la carga en Odoo; con
- *                     la OC, para una recepcion que no tenia (o tenia otra y
- *                     no se llego a cargar nada)
+ *  cargar_odoo        { purchase_order_id?, saltar_frenos? } reintenta la
+ *                     carga en Odoo; con la OC, para una recepcion que no
+ *                     tenia (o tenia otra y no se llego a cargar nada).
+ *                     `saltar_frenos` solo lo usa el SuperAdmin, despues de
+ *                     revisar en Odoo que lo recibido a mano no es esta
+ *                     misma mercancia.
  *
  * Cada avance se escribe con `WHERE etapa = <la esperada>`: si dos personas
  * pulsan a la vez, la segunda recibe 409 en vez de repetir el paso.
@@ -93,31 +96,42 @@ export async function POST(
       if (rec.odoo_estado === "cargado") return conflicto();
       const poId = Number(body?.purchase_order_id);
       if (Number.isInteger(poId) && poId > 0 && poId !== Number(rec.odoo_purchase_order_id)) {
-        // Cambiar la OC solo si no se llego a cargar nada en la otra.
-        const cargadas = (() => {
+        // Cambiar la OC solo si no se llego a cargar nada en la otra. Y si la
+        // carga esta frenada (puede que ya se haya recibido a mano), solo el
+        // SuperAdmin: cambiar de OC no puede servir para cargarla dos veces.
+        const anterior = (() => {
           try {
-            return JSON.parse(rec.odoo_resultado || "{}").recepciones?.length || 0;
+            return JSON.parse(rec.odoo_resultado || "{}");
           } catch {
-            return 0;
+            return {};
           }
         })();
-        if (cargadas > 0) {
+        if ((anterior.recepciones?.length || 0) > 0 || anterior.intento) {
           return NextResponse.json(
             { error: "Ya se cargo una parte en la OC anterior: no se puede cambiar" },
             { status: 409 },
+          );
+        }
+        if (anterior.bloqueo && sesion!.rol !== "superadmin") {
+          return NextResponse.json(
+            { error: "La carga esta frenada: solo el SuperAdmin puede cambiar la OC" },
+            { status: 403 },
           );
         }
         const oc = await ocPendiente(Number(rec.cids), poId);
         if (!oc) {
           return NextResponse.json({ error: "Esa OC no es de la sucursal o ya no espera mercancia" }, { status: 400 });
         }
-        await query("UPDATE recepcion_packing SET odoo_purchase_order_id = ?, odoo_oc_nombre = ? WHERE id = ?", [
-          oc.id,
-          oc.nombre,
-          id,
-        ]);
+        // Sin foto de lo que la OC ya tenia recibido: cualquier recepcion
+        // hecha a mano frena la carga hasta que el SuperAdmin la revise.
+        await query(
+          "UPDATE recepcion_packing SET odoo_purchase_order_id = ?, odoo_oc_nombre = ?, odoo_recepciones_previas = NULL WHERE id = ?",
+          [oc.id, oc.nombre, id],
+        );
       }
-      await cargarEnOdoo(id, sesion!.nombre);
+      await cargarEnOdoo(id, sesion!.nombre, {
+        saltarFrenos: body?.saltar_frenos === true && sesion!.rol === "superadmin",
+      });
       emitirRecepcion({ accion: "editado", id, cids: Number(rec.cids), referencia: rec.referencia });
       return NextResponse.json({ success: true, ...(await cargarRecepcion(id)) });
     }
