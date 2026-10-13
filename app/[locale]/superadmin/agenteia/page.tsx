@@ -44,6 +44,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import PanelSupervision from "@/components/agenteia/PanelSupervision";
 import remarkGfm from "remark-gfm";
 
 interface AttachedFile {
@@ -408,8 +409,19 @@ function PanelConsumo() {
 
 // SuperAdmin: Configuración del agente (la tuerca). Quién lo usa, por correo,
 // y la bitácora de cambios hechos en Odoo (/api/superadmin/agenteia/acceso y /cambios).
-function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
-  const [vista, setVista] = useState<"acceso" | "roles" | "cambios" | "consumo">("acceso");
+function DialogoConfiguracion({
+  abierto,
+  onCerrar,
+  alertas,
+  onAlertas,
+}: {
+  abierto: boolean;
+  onCerrar: () => void;
+  // Alertas de uso sin ver (Conversaciones): el número del badge.
+  alertas: number;
+  onAlertas: (n: number) => void;
+}) {
+  const [vista, setVista] = useState<"acceso" | "roles" | "cambios" | "consumo" | "conversaciones">("acceso");
   const [usuarios, setUsuarios] = useState<UsuarioAcceso[] | null>(null);
   const [cambios, setCambios] = useState<CambioOdoo[] | null>(null);
   const [filtro, setFiltro] = useState("");
@@ -481,6 +493,7 @@ function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerra
               ["roles", "Qué ve cada rol"],
               ["cambios", "Historial de cambios"],
               ["consumo", "Consumo"],
+              ["conversaciones", "Conversaciones de otros usuarios"],
             ] as const
           ).map(([id, etiqueta]) => (
             <button
@@ -494,6 +507,11 @@ function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerra
               }`}
             >
               {etiqueta}
+              {id === "conversaciones" && alertas > 0 && (
+                <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-px text-[11px] font-semibold text-white">
+                  {alertas}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -570,6 +588,8 @@ function DialogoConfiguracion({ abierto, onCerrar }: { abierto: boolean; onCerra
           <PanelRoles />
         ) : vista === "consumo" ? (
           <PanelConsumo />
+        ) : vista === "conversaciones" ? (
+          <PanelSupervision onPendientes={onAlertas} />
         ) : (
           <div className="max-h-[60vh] overflow-y-auto agente-scroll -mx-1 px-1 divide-y divide-slate-100">
             {!cambios && !error && (
@@ -959,6 +979,15 @@ export default function AgenteIAPage() {
   // ¿Puede usar el agente y es SuperAdmin? (null = cargando)
   const [acceso, setAcceso] = useState<{ puede: boolean; superadmin: boolean; editor: boolean } | null>(null);
   const [configuracion, setConfiguracion] = useState(false);
+  // SuperAdmin: alertas de uso del agente que todavía no abrió.
+  const [alertasUso, setAlertasUso] = useState(0);
+  useEffect(() => {
+    if (!acceso?.superadmin) return;
+    fetch("/api/superadmin/agenteia/supervision")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setAlertasUso(Number(j?.pendientes) || 0))
+      .catch(() => {});
+  }, [acceso?.superadmin]);
   useEffect(() => {
     fetch("/api/agenteia/acceso")
       .then((r) => r.json())
@@ -1879,11 +1908,20 @@ export default function AgenteIAPage() {
               <button
                 type="button"
                 onClick={() => setConfiguracion(true)}
-                title="Configuración: quién usa el agente e historial de cambios"
+                title={
+                  alertasUso > 0
+                    ? `Configuración: ${alertasUso} ${alertasUso === 1 ? "alerta de uso" : "alertas de uso"} sin revisar`
+                    : "Configuración: quién usa el agente e historial de cambios"
+                }
                 aria-label="Configuración"
-                className="flex items-center justify-center size-8 rounded-lg text-slate-600 hover:bg-slate-200/60 transition-colors"
+                className="relative flex items-center justify-center size-8 rounded-lg text-slate-600 hover:bg-slate-200/60 transition-colors"
               >
                 <Settings size={16} />
+                {alertasUso > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-4 rounded-full bg-amber-500 px-1 text-center text-[10px] font-bold leading-4 text-white">
+                    {alertasUso}
+                  </span>
+                )}
               </button>
             )}
             <button
@@ -2216,7 +2254,12 @@ export default function AgenteIAPage() {
         </div>
       </div>
 
-      {acceso?.superadmin && <DialogoConfiguracion abierto={configuracion} onCerrar={() => setConfiguracion(false)} />}
+      {acceso?.superadmin && <DialogoConfiguracion
+          abierto={configuracion}
+          onCerrar={() => setConfiguracion(false)}
+          alertas={alertasUso}
+          onAlertas={setAlertasUso}
+        />}
 
       {/* ── PANEL LATERAL: vista previa del archivo abierto ─────────────────── */}
       {archivoAbierto && (

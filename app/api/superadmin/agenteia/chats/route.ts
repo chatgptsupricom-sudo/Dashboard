@@ -1,4 +1,5 @@
-import { requireAgente } from "@/lib/agenteia/acceso";
+import { esSuperadmin, requireAgente } from "@/lib/agenteia/acceso";
+import { anotarUsuario, revisarChat } from "@/lib/agenteia/supervision";
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -42,7 +43,7 @@ async function sesion(request: NextRequest) {
   const uid = String(auth.payload?.uid ?? auth.payload?.email ?? "");
   if (!uid) return { error: NextResponse.json({ error: "Sesión sin usuario." }, { status: 401 }) };
   await ensureTabla();
-  return { uid };
+  return { uid, payload: auth.payload };
 }
 
 export async function GET(request: NextRequest) {
@@ -81,6 +82,13 @@ export async function PUT(request: NextRequest) {
      ON DUPLICATE KEY UPDATE titulo = VALUES(titulo), mensajes = VALUES(mensajes)`,
     [s.uid, body.id, titulo, mensajes, creado],
   );
+
+  // Supervisión (lib/agenteia/supervision.ts): se anota de quién es el uid y,
+  // si no es SuperAdmin, se revisan sus mensajes nuevos. Sin esperar: no debe
+  // demorar ni romper el guardado.
+  anotarUsuario(s.uid, s.payload).catch((e) => console.error("[agenteia] anotarUsuario:", e?.message));
+  if (!esSuperadmin(s.payload?.role)) void revisarChat(s.uid, body.id, titulo, body.messages);
+
   return NextResponse.json({ ok: true });
 }
 
