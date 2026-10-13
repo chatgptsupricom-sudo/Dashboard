@@ -20,6 +20,7 @@ export type CasoParaCorreoEnvio = {
   hardware: string | null;
   client_name: string | null;
   client_email: string | null;
+  company_id?: number | null;
   entrega_agencia: string | null;
 };
 
@@ -54,6 +55,8 @@ async function procesar(caso: CasoParaCorreoEnvio, guiaUrl: string): Promise<voi
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       evento: "rma_producto_enviado",
+      // Sede del caso: n8n manda el correo desde la cuenta RMA de esa sede.
+      company_id: caso.company_id ?? null,
       correo: {
         destinatario: email,
         nombre_cliente: caso.client_name || "",

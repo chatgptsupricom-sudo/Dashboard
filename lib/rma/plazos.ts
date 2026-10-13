@@ -58,7 +58,7 @@ export type Plazo = {
   etapa: Etapa;
   /** El peor de los plazos que corren. */
   nivel: Nivel;
-  porLlegar?: { desde: string; dias: number; nivel: Nivel };
+  porLlegar?: { desde: string; dias: number; vence: string; nivel: Nivel };
   diagnostico?: { desde: string; horas: number; vence: string; nivel: Nivel };
   taller?: { desde: string; dia: number; saleAntesDe: string; nivel: Nivel };
 };
@@ -192,7 +192,16 @@ export function calcularPlazo(c: DatosPlazo, ahora = new Date()): Plazo | null {
     if (!desde) return null;
     const dias = Math.floor(horasHabiles(desde, ahora) / 24);
     const nivel = nivelDe(dias, PLAZOS.porLlegar);
-    return { etapa, nivel, porLlegar: { desde: desde.toISOString(), dias, nivel } };
+    return {
+      etapa,
+      nivel,
+      porLlegar: {
+        desde: desde.toISOString(),
+        dias,
+        vence: sumarHorasHabiles(desde, PLAZOS.porLlegar.limite * 24).toISOString(),
+        nivel,
+      },
+    };
   }
 
   const taller = enTallerDesde(c);

@@ -143,6 +143,7 @@ export async function POST(
           client_name: caso.client_name,
           client_email: caso.client_email,
           entrega_agencia: caso.entrega_agencia,
+          company_id: caso.company_id,
         },
         guiaUrl,
       );

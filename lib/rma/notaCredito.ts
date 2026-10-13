@@ -259,6 +259,7 @@ async function procesarAviso(notaId: number, origenPeticion: string): Promise<vo
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         evento: "rma_nc_solicitada",
+        company_id: nota.company_id ?? null,
         correo: {
           destinatario: admin.email,
           nombre_cliente: admin.name || "",
