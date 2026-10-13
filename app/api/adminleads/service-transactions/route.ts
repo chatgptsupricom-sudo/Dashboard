@@ -31,7 +31,8 @@ export async function GET(request: NextRequest) {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const result: any = await query(
-      `SELECT id, service_name, amount_usd, transaction_date, notes, created_at
+      `SELECT id, service_name, amount_usd,
+              DATE_FORMAT(transaction_date, '%Y-%m-%d') AS transaction_date, notes, created_at
        FROM service_transactions
        ${where}
        ORDER BY transaction_date DESC

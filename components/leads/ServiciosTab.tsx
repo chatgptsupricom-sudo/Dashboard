@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle, Circle, DollarSign, Loader2, Plus } from "lucide-react";
+import { CheckCircle, Circle, DollarSign, Loader2, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 interface ServiceItem {
@@ -65,6 +65,8 @@ export default function ServiciosTab() {
   const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
   const [txNotes, setTxNotes] = useState("");
   const [savingTx, setSavingTx] = useState(false);
+  // Recargas del mes del servicio abierto, para poder borrar una mal cargada.
+  const [recargas, setRecargas] = useState<any[]>([]);
 
   const fetchServices = useCallback(() => {
     setLoadingServices(true);
@@ -79,6 +81,29 @@ export default function ServiciosTab() {
   }, []);
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
+
+  // Mismo mes que suma la tarjeta (el mes en curso).
+  const fetchRecargas = useCallback((serviceName: string) => {
+    const hoy = new Date();
+    const inicio = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-01`;
+    const params = new URLSearchParams({ service_name: serviceName, fecha_inicio: inicio });
+    fetch(`/api/adminleads/service-transactions?${params}`)
+      .then((r) => r.json())
+      .then((r) => setRecargas(r.transactions || []))
+      .catch((e) => console.error("Error loading recargas:", e));
+  }, []);
+
+  useEffect(() => {
+    setRecargas([]);
+    if (showAddTx) fetchRecargas(showAddTx);
+  }, [showAddTx, fetchRecargas]);
+
+  const handleDeleteTx = async (tx: any) => {
+    if (!confirm(`¿Borrar la recarga de $${parseFloat(tx.amount_usd).toFixed(2)}?`)) return;
+    await fetch(`/api/adminleads/service-transactions?id=${tx.id}`, { method: "DELETE" });
+    fetchRecargas(tx.service_name);
+    fetchServices();
+  };
 
   const handleAddTx = async (serviceName: string) => {
     if (!txAmount || parseFloat(txAmount) <= 0) return;
@@ -219,6 +244,27 @@ export default function ServiciosTab() {
                       >
                         {savingTx ? "..." : "Registrar"}
                       </button>
+                      {recargas.length > 0 && (
+                        <ul className="pt-1 space-y-1">
+                          {recargas.map((tx) => (
+                            <li key={tx.id} className="flex items-center gap-1.5 text-[10px] text-zinc-600">
+                              <span className="font-mono text-zinc-400">
+                                {String(tx.transaction_date).slice(0, 10).split("-").reverse().join("-")}
+                              </span>
+                              <span className="font-bold">${parseFloat(tx.amount_usd).toFixed(2)}</span>
+                              <span className="truncate flex-1 text-zinc-400">{tx.notes || ""}</span>
+                              <button
+                                onClick={() => handleDeleteTx(tx)}
+                                className="text-zinc-300 hover:text-red-500 transition-colors"
+                                title="Borrar recarga"
+                                aria-label="Borrar recarga"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   )}
                 </CardContent>
