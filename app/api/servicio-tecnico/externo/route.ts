@@ -1,5 +1,6 @@
 import { getConnection, query } from "@/lib/db";
 import { crearProductos } from "@/lib/rma/items";
+import { estadoInicial } from "@/lib/rma/flujo";
 import { verificarCaptcha } from "@/lib/servicio-tecnico/captcha";
 import {
   MAX_REINTENTOS,
@@ -214,6 +215,8 @@ export async function POST(request: NextRequest) {
     let trackingToken: string | null = null;
     let lastError: any = null;
     const createdBy = `${nombre.slice(0, 180)} (portal)`;
+    // El equipo todavía no llegó: "por llegar" hasta que Seguridad lo ingrese.
+    const estado = await estadoInicial(false);
 
     for (let attempt = 1; attempt <= MAX_REINTENTOS; attempt++) {
       try {
@@ -227,7 +230,7 @@ export async function POST(request: NextRequest) {
             reported_fault, status, notes, company_id, created_by,
             origen, tracking_token, serial, garantia_estado,
             producto_externo, client_document, contacto_email, client_email
-          ) VALUES (?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?, 'recibido', NULL, ?, ?, 'portal', ?, ?, ?, 1, ?, ?, ?)`,
+          ) VALUES (?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, 'portal', ?, ?, ?, 1, ?, ?, ?)`,
           [
             caseNumber,
             // Misma convención que el resto del módulo: hardware es la
@@ -239,6 +242,7 @@ export async function POST(request: NextRequest) {
             telefono,
             primero.serial,
             fallaCaso,
+            estado,
             // La sucursal de la URL: no hay factura de la que sacarla.
             cid,
             createdBy,
@@ -259,8 +263,8 @@ export async function POST(request: NextRequest) {
 
         await conn.execute(
           `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes)
-           VALUES (?, NULL, 'recibido', ?, 'Caso creado desde portal publico: equipo no comprado en Supricom (servicio con costo)')`,
-          [caseId, createdBy],
+           VALUES (?, NULL, ?, ?, 'Caso creado desde portal publico: equipo no comprado en Supricom (servicio con costo)')`,
+          [caseId, estado, createdBy],
         );
 
         const idsProductos = await crearProductos(
@@ -275,6 +279,7 @@ export async function POST(request: NextRequest) {
             garantia_estado: GARANTIA_EXTERNO,
           })),
           conn,
+          estado,
         );
 
         await enlazarAdjuntos(

@@ -25,7 +25,12 @@ export type EstadoProducto =
   | "no_procesado"
   | "reingresado"
   // Nota de crédito solicitada, esperando al Super Admin (sql/rma_nota_credito_aprobacion.sql).
-  | "nc_revision";
+  | "nc_revision"
+  // Flujo con plazos (sql/rma_estados_plazos.sql, lib/rma/flujo.ts). "recibido"
+  // queda para los casos de antes.
+  | "por_llegar"
+  | "en_diagnostico"
+  | "en_reparacion";
 
 export type ProductoEnvio = {
   id: number;
@@ -117,6 +122,7 @@ export async function crearProductos(
   caseId: number,
   productos: ProductoNuevo[],
   conn?: Ejecutor,
+  estado: EstadoProducto = "recibido",
 ): Promise<number[]> {
   const ids: number[] = [];
   if (!productos.length || !(await hayTablaProductos())) return ids;
@@ -128,7 +134,7 @@ export async function crearProductos(
            case_id, orden, product_code, hardware, brand, model, serial,
            odoo_product_id, reported_fault, status,
            garantia_estado, garantia_meses, garantia_vence, garantia_marca
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           caseId,
           p.orden ?? i + 1,
@@ -139,6 +145,7 @@ export async function crearProductos(
           p.serial ?? null,
           p.odoo_product_id ?? null,
           p.reported_fault ?? null,
+          estado,
           p.garantia_estado ?? null,
           p.garantia_meses ?? null,
           p.garantia_vence ?? null,
@@ -251,21 +258,42 @@ export async function limpiarDespachoProductos(caseId: number): Promise<void> {
 }
 
 /**
- * Estados en los que el producto sigue en el taller sin resolver: esperando a
- * RMA, o a que el Super Admin decida la nota de crédito.
+ * Estados en los que el producto sigue sin resolver: por llegar, en el taller
+ * esperando a RMA, o esperando que el Super Admin decida la nota de crédito.
  */
-const PENDIENTES: EstadoProducto[] = ["recibido", "reingresado", "nc_revision"];
+const PENDIENTES: EstadoProducto[] = [
+  "por_llegar",
+  "recibido",
+  "en_diagnostico",
+  "en_reparacion",
+  "reingresado",
+  "nc_revision",
+];
 
 export function productoPendiente(estado: EstadoProducto): boolean {
   return PENDIENTES.includes(estado);
 }
 
 /**
+ * Mientras quede algo por atender, el envío está en la etapa más atrasada de
+ * lo que ya llegó: reingresado, recibido/en diagnóstico, en reparación, NC en
+ * revisión. "Por llegar" solo si es lo único que falta (un producto que no
+ * vino en el ingreso no frena el plazo de los que sí).
+ */
+const ORDEN_PENDIENTES: EstadoProducto[] = [
+  "reingresado",
+  "recibido",
+  "en_diagnostico",
+  "en_reparacion",
+  "nc_revision",
+  "por_llegar",
+];
+
+/**
  * Estado general del envío a partir de sus productos, para la lista, los
  * filtros y la consulta del cliente:
- *  - mientras quede alguno por atender, "reingresado" si alguno volvió,
- *    "recibido" si queda alguno por revisar, y "nc_revision" si lo único que
- *    falta es la decisión de notas de crédito;
+ *  - mientras quede alguno por atender, el primero de ORDEN_PENDIENTES que
+ *    tenga alguno;
  *  - cuando todos terminaron, "reparado" si se reparó al menos uno (hay algo
  *    que devolverle al cliente arreglado), si no "nota_credito" si hubo
  *    alguna, y si no "no_procesado".
@@ -273,8 +301,7 @@ export function productoPendiente(estado: EstadoProducto): boolean {
 export function estadoDelEnvio(estados: EstadoProducto[]): EstadoProducto {
   if (!estados.length) return "recibido";
   if (estados.some(productoPendiente)) {
-    if (estados.includes("reingresado")) return "reingresado";
-    return estados.includes("recibido") ? "recibido" : "nc_revision";
+    return ORDEN_PENDIENTES.find((e) => estados.includes(e)) ?? "recibido";
   }
   if (estados.includes("reparado")) return "reparado";
   if (estados.includes("nota_credito")) return "nota_credito";

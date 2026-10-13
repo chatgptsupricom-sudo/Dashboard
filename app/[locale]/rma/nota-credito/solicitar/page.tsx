@@ -1,6 +1,6 @@
 "use client";
 
-import { colorEstado, etiquetaEstado } from "@/components/rma/estados";
+import { colorEstado, ESTADOS_SOLICITAN_NC, etiquetaEstado } from "@/components/rma/estados";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 /** Estados desde los que se puede pedir (lib/rma/notaCredito.ts, sePuedeSolicitar). */
-const SOLICITABLE = ["recibido", "reingresado"];
+const SOLICITABLE = ESTADOS_SOLICITAN_NC;
 const MAX_IMAGENES = 10;
 const MAX_BYTES = 3 * 1024 * 1024;
 

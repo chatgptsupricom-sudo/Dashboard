@@ -19,7 +19,7 @@ import { urlWebhookRma } from "@/lib/rma/webhook";
 export type EstadoNota = "pendiente" | "aprobada" | "rechazada";
 
 /** Estados desde los que se puede pedir una nota de crédito: el equipo sigue en el taller. */
-const SOLICITABLE: EstadoProducto[] = ["recibido", "reingresado"];
+const SOLICITABLE: EstadoProducto[] = ["recibido", "en_diagnostico", "en_reparacion", "reingresado"];
 
 export function sePuedeSolicitar(estado: string): boolean {
   return SOLICITABLE.includes(estado as EstadoProducto);
@@ -116,7 +116,7 @@ export async function solicitarNotaCredito(datos: {
 
   const estado = producto && productos.length > 1 ? producto.status : caso.status;
   if (!sePuedeSolicitar(estado)) {
-    throw new ErrorNota("Solo se pide nota de crédito de un equipo que sigue en revisión (recibido o reingresado).");
+    throw new ErrorNota("Solo se pide nota de crédito de un equipo que sigue en revisión (en diagnóstico, en reparación o reingresado).");
   }
 
   const itemId = conItem && producto ? producto.id : null;
@@ -259,6 +259,7 @@ async function procesarAviso(notaId: number, origenPeticion: string): Promise<vo
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         evento: "rma_nc_solicitada",
+        company_id: nota.company_id ?? null,
         correo: {
           destinatario: admin.email,
           nombre_cliente: admin.name || "",

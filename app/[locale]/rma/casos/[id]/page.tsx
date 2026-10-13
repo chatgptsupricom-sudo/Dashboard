@@ -46,24 +46,11 @@ import AdjuntosGaleria from "@/components/rma/AdjuntosGaleria";
 import ProductosEnvio, { type ProductoEnvio } from "@/components/rma/ProductosEnvio";
 import ActasPorFirmar from "@/components/seguridad/ActasPorFirmar";
 import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
+import { colorEstado, ESTADOS_ELEGIBLES, ESTADOS_SOLICITAN_NC, etiquetaEstado } from "@/components/rma/estados";
+import { PlazoCaso } from "@/components/rma/PlazoCaso";
 
-const statusColors: Record<string, string> = {
-  recibido: "bg-blue-100 text-blue-700 border-blue-200",
-  reparado: "bg-green-100 text-green-700 border-green-200",
-  nota_credito: "bg-purple-100 text-purple-700 border-purple-200",
-  no_procesado: "bg-red-100 text-red-700 border-red-200",
-  reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
-  nc_revision: "bg-orange-100 text-orange-700 border-orange-200",
-};
-
-const statusLabels: Record<string, string> = {
-  recibido: "Recibido",
-  reparado: "Reparado",
-  nota_credito: "Nota de Crédito",
-  no_procesado: "No Procesado",
-  reingresado: "Reingresado",
-  nc_revision: "NC en revisión",
-};
+const statusColors = colorEstado;
+const statusLabels = etiquetaEstado;
 
 // Metodo de entrega que el cliente eligio en el portal publico (issue
 // #121/#122/#123/#124) -- solo aplica a casos reparados via el portal, no
@@ -360,12 +347,12 @@ export default function RmaCasoDetailPage() {
                   <div>
                     <Label className="mb-2 block">{t("new_status")}</Label>
                     <div className="flex flex-wrap gap-2">
-                      {Object.entries(statusLabels)
-                        .filter(([key]) => key !== caseData.status && key !== "nc_revision")
+                      {ESTADOS_ELEGIBLES.map((key) => [key, statusLabels[key]] as const)
+                        .filter(([key]) => key !== caseData.status)
                         // Un equipo que Supricom no vendió no tiene nada que acreditar.
                         .filter(([key]) => !(esExterno && key === "nota_credito"))
                         // Solo se pide de un equipo que sigue en revisión.
-                        .filter(([key]) => key !== "nota_credito" || ["recibido", "reingresado"].includes(caseData.status))
+                        .filter(([key]) => key !== "nota_credito" || ESTADOS_SOLICITAN_NC.includes(caseData.status))
                         .map(([key, label]) => (
                         <Button
                           key={key}
@@ -424,6 +411,12 @@ export default function RmaCasoDetailPage() {
           </Dialog>
         </div>
       </div>
+
+      {/* Plazos del taller: 48 h de diagnóstico y salida antes del 7.º día hábil. */}
+      <PlazoCaso
+        caseId={caseData.id}
+        version={`${caseData.status}|${caseData.despachado_at || ""}|${items.map((i) => i.status).join(",")}`}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Info principal */}

@@ -32,6 +32,9 @@ const ESTADOS: Record<string, string> = {
   reingresado: "Reingresado",
   // Para el cliente sigue en revisión: la solicitud de nota de crédito es interna.
   nc_revision: "En revisión",
+  por_llegar: "Reporte recibido — esperando tu equipo",
+  en_diagnostico: "Recibimos tu equipo — en diagnóstico",
+  en_reparacion: "En reparación",
 };
 
 export function enviarCorreoActualizacion(caseId: number, cambio: CambioRma, origenPeticion: string): void {
@@ -87,6 +90,8 @@ async function procesar(caseId: number, cambio: CambioRma, origenPeticion: strin
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       evento: "rma_actualizacion",
+      // Sede del caso: n8n manda el correo desde la cuenta RMA de esa sede.
+      company_id: caso.company_id ?? null,
       correo: {
         destinatario: email,
         nombre_cliente: caso.client_name || "",

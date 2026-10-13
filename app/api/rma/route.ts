@@ -3,6 +3,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { crearProductos, hayTablaProductos } from "@/lib/rma/items";
+import { estadoInicial } from "@/lib/rma/flujo";
 import { filtroProcedencia, hayColumnaExterno, leerProcedencia } from "@/lib/rma/procedencia";
 
 export async function GET(request: NextRequest) {
@@ -59,7 +60,11 @@ export async function GET(request: NextRequest) {
     // Grupos de las tarjetas del Dashboard de RMA (app/api/rma/stats).
     const grupo = searchParams.get("grupo") || "";
     if (grupo === "pendientes") {
-      where += " AND c.status IN ('recibido','reingresado','nc_revision')";
+      // En el taller sin resolver; "por llegar" todavía no entró.
+      where += " AND c.status IN ('recibido','en_diagnostico','en_reparacion','reingresado','nc_revision')";
+    } else if (grupo === "diagnostico") {
+      // "Recibido" (casos de antes) y "reingresado" también esperan diagnóstico.
+      where += " AND c.status IN ('en_diagnostico','recibido','reingresado')";
     } else if (grupo === "completados_mes") {
       where += ` AND c.status IN ('reparado','nota_credito','no_procesado') AND EXISTS (
                    SELECT 1 FROM rma_history h
@@ -143,13 +148,17 @@ export async function POST(request: NextRequest) {
     }
     const case_number = String(nextNum).padStart(4, "0");
 
+    // RMA abre el caso con el equipo en la mano: entra directo a diagnóstico.
+    // El de prueba del portal (origen 'portal') espera el equipo como uno real.
+    const estado = await estadoInicial(origenFinal !== "portal");
+
     const columnasOrigen = origenFinal ? ", origen, tracking_token" : "";
     const placeholdersOrigen = origenFinal ? ", ?, ?" : "";
     const valoresOrigen = origenFinal ? [origenFinal, trackingToken] : [];
 
     const result = await query(
       `INSERT INTO rma_cases (case_number, product_code, hardware, brand, model, invoice_number, client_name, client_phone, serial_quantity, reported_fault, status, notes, company_id, created_by${columnasOrigen})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', ?, ?, ?${placeholdersOrigen})`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${placeholdersOrigen})`,
       [
         case_number,
         product_code || null,
@@ -161,6 +170,7 @@ export async function POST(request: NextRequest) {
         client_phone || null,
         serial_quantity || null,
         reported_fault,
+        estado,
         notes || null,
         company_id || null,
         created_by,
@@ -172,8 +182,8 @@ export async function POST(request: NextRequest) {
 
     await query(
       `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes)
-       VALUES (?, NULL, 'recibido', ?, 'Caso creado')`,
-      [caseId, created_by]
+       VALUES (?, NULL, ?, ?, 'Caso creado')`,
+      [caseId, estado, created_by]
     );
 
     // El producto del envío (issue #331): el caso interno trae uno solo.
@@ -186,7 +196,7 @@ export async function POST(request: NextRequest) {
         serial: serial_quantity || null,
         reported_fault,
       },
-    ]);
+    ], undefined, estado);
 
     return NextResponse.json({ success: true, id: caseId, case_number, tracking_token: trackingToken }, { status: 201 });
   } catch (error: any) {

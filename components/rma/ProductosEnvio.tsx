@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import AdjuntosGaleria from "@/components/rma/AdjuntosGaleria";
+import { colorEstado, ESTADOS_ELEGIBLES, ESTADOS_SOLICITAN_NC, etiquetaEstado } from "@/components/rma/estados";
 import { CheckCircle2, Loader2, PackageCheck, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -30,26 +31,11 @@ import { useState } from "react";
  * que ve un caso de un producto, que sigue con su pantalla de siempre.
  */
 
-export const statusColors: Record<string, string> = {
-  recibido: "bg-blue-100 text-blue-700 border-blue-200",
-  reparado: "bg-green-100 text-green-700 border-green-200",
-  nota_credito: "bg-purple-100 text-purple-700 border-purple-200",
-  no_procesado: "bg-red-100 text-red-700 border-red-200",
-  reingresado: "bg-cyan-100 text-cyan-700 border-cyan-200",
-  nc_revision: "bg-orange-100 text-orange-700 border-orange-200",
-};
+export const statusColors = colorEstado;
+export const statusLabels = etiquetaEstado;
 
-export const statusLabels: Record<string, string> = {
-  recibido: "Recibido",
-  reparado: "Reparado",
-  nota_credito: "Nota de Crédito",
-  no_procesado: "No Procesado",
-  reingresado: "Reingresado",
-  nc_revision: "NC en revisión",
-};
-
-// nc_revision: nota de crédito esperando al Super Admin, el equipo sigue en el taller.
-const PENDIENTES = ["recibido", "reingresado", "nc_revision"];
+// Sin resolver: por llegar, en el taller, o la nota de crédito esperando al Super Admin.
+const PENDIENTES = ["por_llegar", "recibido", "en_diagnostico", "en_reparacion", "reingresado", "nc_revision"];
 
 const garantiaColores: Record<string, string> = {
   en_garantia: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -394,11 +380,11 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              {Object.entries(statusLabels)
-                .filter(([k]) => k !== estadoDe?.status && k !== "nc_revision")
+              {ESTADOS_ELEGIBLES.map((k) => [k, statusLabels[k]] as const)
+                .filter(([k]) => k !== estadoDe?.status)
                 .filter(([k]) => !(sinNotaCredito && k === "nota_credito"))
                 // Solo se pide de un equipo que sigue en revisión.
-                .filter(([k]) => k !== "nota_credito" || ["recibido", "reingresado"].includes(estadoDe?.status || ""))
+                .filter(([k]) => k !== "nota_credito" || ESTADOS_SOLICITAN_NC.includes(estadoDe?.status || ""))
                 .map(([k, label]) => (
                   <Button
                     key={k}

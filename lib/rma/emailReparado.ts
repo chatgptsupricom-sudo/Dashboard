@@ -95,6 +95,8 @@ async function procesar(caso: CasoParaCorreo, origenPeticion: string): Promise<v
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       evento: "rma_equipo_reparado",
+      // Sede del caso: n8n manda el correo desde la cuenta RMA de esa sede.
+      company_id: caso.company_id ?? null,
       correo: {
         destinatario: email,
         nombre_cliente: caso.client_name || "",
