@@ -10,6 +10,7 @@ import { query } from "@/lib/db";
  *   recepcion_packing.factura_odoo_id        factura de la otra sede (origen factura)
  *   recepcion_packing.odoo_purchase_order_id OC de Odoo donde se carga lo contado
  *   recepcion_packing.odoo_estado            cargando | cargado | error | sin_oc
+ *   recepcion_packing.odoo_recepciones_previas  IN de la OC hechas antes de empezar
  *   recepcion_packing_items.odoo_product_id  producto de Odoo del renglon
  */
 
@@ -23,6 +24,10 @@ const COLUMNAS_RECEPCION: Array<[string, string]> = [
   ["odoo_resultado", "TEXT DEFAULT NULL"],
   ["odoo_intento_at", "TIMESTAMP NULL DEFAULT NULL"],
   ["odoo_cargado_at", "TIMESTAMP NULL DEFAULT NULL"],
+  // Recepciones (IN) que la OC ya tenia hechas cuando empezo esta recepcion:
+  // lo que aparezca despues y no lo haya hecho el panel puede ser esta misma
+  // mercancia recibida a mano, y no se carga dos veces.
+  ["odoo_recepciones_previas", "TEXT DEFAULT NULL"],
 ];
 
 let columnasListas: Promise<void> | null = null;

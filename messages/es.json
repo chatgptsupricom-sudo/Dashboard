@@ -3681,7 +3681,13 @@
       "en_entrada": "Quedaron en Entrada (no había traslado a Existencias): {lista}",
       "misma_oc": "OC {oc}",
       "elegir_oc": "Elige la OC de Odoo",
-      "reintentar": "Cargar en Odoo"
+      "reintentar": "Cargar en Odoo",
+      "bloqueo": {
+        "recibido_en_odoo": "En Odoo, la OC recibió mercancía que no cargó el panel ({detalle}). Si es esta misma mercancía, ya está cargada y no se debe cargar otra vez.",
+        "packing_list_repetido": "Este packing list ya se cargó en Odoo en otra recepción ({detalle}).",
+        "revisado": "Ya revisé en Odoo: no es esta mercancía. Cargar igual.",
+        "solo_superadmin": "Revísalo en Odoo. Si no es esta mercancía, solo el SuperAdmin puede cargarla."
+      }
     }
   },
   "llegadas": {

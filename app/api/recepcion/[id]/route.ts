@@ -11,7 +11,7 @@ import {
   puedeComo,
   requireRecepcion,
 } from "@/lib/recepcion/servidor";
-import { ErrorRecepcion, guardarOcElegida, validarOcElegida } from "@/lib/recepcion/odoo";
+import { ErrorRecepcion, guardarOcElegida, packingListRepetido, validarOcElegida } from "@/lib/recepcion/odoo";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -88,6 +88,13 @@ export async function PATCH(
       );
     }
     const { cab, items, contenedores } = validado;
+    const repetido = await packingListRepetido(cab.cids, cab.referencia, r.id!);
+    if (repetido) {
+      return NextResponse.json(
+        { error: `El packing list ${cab.referencia} ya esta cargado en esa sucursal (#${repetido})` },
+        { status: 409 },
+      );
+    }
     let oc;
     try {
       oc = await validarOcElegida(cab.cids, body?.odoo_purchase_order_id);

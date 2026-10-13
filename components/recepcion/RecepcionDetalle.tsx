@@ -98,6 +98,10 @@ type ResultadoOdoo = {
   traslados?: Array<{ id: number; nombre: string; pendiente: string | null }>;
   sin_producto?: string[];
   en_entrada?: string[];
+  /** Validacion que se corto a medias (el siguiente intento la resuelve). */
+  intento?: { picking_id: number } | null;
+  /** Por que se freno la carga: lo puede saltar solo el SuperAdmin, tras revisar en Odoo. */
+  bloqueo?: { tipo: "recibido_en_odoo" | "packing_list_repetido"; detalle: string[] } | null;
 };
 
 function leerResultadoOdoo(json: string | null | undefined): ResultadoOdoo {
@@ -187,6 +191,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   const [correccion, setCorreccion] = useState({ precintos: "", motivo: "" });
   // Carga en Odoo: OC elegida para una recepcion que no tenia, y la lista.
   const [ocElegida, setOcElegida] = useState<number | "">("");
+  // El SuperAdmin confirma que reviso en Odoo que no es la misma mercancia.
+  const [revisadoEnOdoo, setRevisadoEnOdoo] = useState(false);
   const [ocsOdoo, setOcsOdoo] = useState<Array<{ id: number; nombre: string; proveedor: string }> | null>(null);
 
   const abierto = rec !== null && rec.etapa !== "cerrado";
@@ -474,9 +480,13 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   const porFactura = rec.origen === "factura";
   const resultadoOdoo = leerResultadoOdoo(rec.odoo_resultado);
   // La OC se puede elegir (o cambiar) mientras no se haya cargado nada en Odoo.
+  // Con la carga frenada, solo el SuperAdmin: cambiar de OC no puede servir
+  // para cargar dos veces lo mismo.
   const puedeElegirOc =
     rec.etapa === "cerrado" &&
-    (rec.odoo_estado === "sin_oc" || (rec.odoo_estado === "error" && !(resultadoOdoo.recepciones || []).length));
+    (!resultadoOdoo.bloqueo || rol === "superadmin") &&
+    (rec.odoo_estado === "sin_oc" ||
+      (rec.odoo_estado === "error" && !(resultadoOdoo.recepciones || []).length && !resultadoOdoo.intento));
   const cargarOcs = async () => {
     if (ocsOdoo) return;
     try {
@@ -1395,11 +1405,40 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         ))}
                       </select>
                     )}
+                    {resultadoOdoo.bloqueo && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-2">
+                        <p>{t(`odoo.bloqueo.${resultadoOdoo.bloqueo.tipo}`, { detalle: resultadoOdoo.bloqueo.detalle.join(", ") })}</p>
+                        {rol === "superadmin" ? (
+                          <label className="flex items-start gap-2 font-medium">
+                            <input
+                              type="checkbox"
+                              checked={revisadoEnOdoo}
+                              onChange={(e) => setRevisadoEnOdoo(e.target.checked)}
+                              className="mt-0.5 w-4 h-4 rounded border-amber-300"
+                            />
+                            {t("odoo.bloqueo.revisado")}
+                          </label>
+                        ) : (
+                          <p className="font-medium">{t("odoo.bloqueo.solo_superadmin")}</p>
+                        )}
+                      </div>
+                    )}
                     <BotonSecundario
                       onClick={() =>
-                        void accionar("cargar_odoo", ocElegida ? { purchase_order_id: ocElegida } : {}, false)
+                        void accionar(
+                          "cargar_odoo",
+                          {
+                            ...(ocElegida ? { purchase_order_id: ocElegida } : {}),
+                            ...(resultadoOdoo.bloqueo && revisadoEnOdoo ? { saltar_frenos: true } : {}),
+                          },
+                          false,
+                        )
                       }
-                      disabled={enviando || (rec.odoo_estado === "sin_oc" && !ocElegida)}
+                      disabled={
+                        enviando ||
+                        (rec.odoo_estado === "sin_oc" && !ocElegida) ||
+                        (!!resultadoOdoo.bloqueo && !ocElegida && !(rol === "superadmin" && revisadoEnOdoo))
+                      }
                       icon={enviando ? Loader2 : RefreshCw}
                       className="w-full"
                     >

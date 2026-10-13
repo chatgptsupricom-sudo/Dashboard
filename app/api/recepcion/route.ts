@@ -6,7 +6,7 @@ import {
 } from "@/lib/recepcion/validacion";
 import { emitirRecepcion, puedeComo, requireRecepcion } from "@/lib/recepcion/servidor";
 import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
-import { ErrorRecepcion, guardarOcElegida, validarOcElegida } from "@/lib/recepcion/odoo";
+import { ErrorRecepcion, guardarOcElegida, packingListRepetido, validarOcElegida } from "@/lib/recepcion/odoo";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -97,6 +97,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validado.error }, { status: 400 });
     }
     const { cab, items, contenedores } = validado;
+    // El mismo packing list dos veces cargaria la misma mercancia dos veces en Odoo.
+    const repetido = await packingListRepetido(cab.cids, cab.referencia);
+    if (repetido) {
+      return NextResponse.json(
+        { error: `El packing list ${cab.referencia} ya esta cargado en esa sucursal (#${repetido})`, id: repetido },
+        { status: 409 },
+      );
+    }
     // La OC de Odoo donde se carga lo contado al cerrar (opcional).
     let oc;
     try {
