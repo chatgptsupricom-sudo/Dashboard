@@ -135,7 +135,10 @@ export default async function middleware(request: NextRequest) {
     // Manuales de procedimiento (por ahora, solo el rol Procesos).
     pathname.includes("/manuales") ||
     // Organigrama con las actividades de cada cargo (SuperAdmin y Procesos).
-    pathname.includes("/organigrama");
+    pathname.includes("/organigrama") ||
+    // Notas de crédito: entra quien sea responsable de un paso, por correo
+    // (lib/notas-credito/acceso.ts); aquí solo se exige la sesión.
+    pathname.includes("/notas-credito");
 
   if (isProtectedPath) {
     if (!token) {
