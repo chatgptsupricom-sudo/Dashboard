@@ -1,6 +1,14 @@
 "use client";
 
 import { CustomSelect } from "@/components/superadmin/CustomSelect";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Title } from "@tremor/react";
 import { motion } from "framer-motion";
 import {
@@ -8,8 +16,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Pencil,
   Search,
   ShieldCheck,
+  UserMinus,
   UserPlus,
   X,
 } from "lucide-react";
@@ -46,6 +56,11 @@ export default function UserManagement() {
   const [selectedCids, setSelectedCids] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [assignError, setAssignError] = useState("");
+
+  // Quitar rol (confirmación por fila)
+  const [toRemove, setToRemove] = useState<any | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState("");
   const safeCids =
     selectedCids !== undefined && selectedCids !== "" ? selectedCids : null;
 
@@ -122,9 +137,67 @@ export default function UserManagement() {
       .then((data) => {
         if (data.users) setUsers(data.users);
         if (data.availableRoles) setDbRoles(data.availableRoles);
+        if (data.availableUsers) setOdooUsersClean(data.availableUsers);
       })
       .catch(() => setUsers([]))
       .finally(() => setLoading(false));
+  };
+
+  // Opción del selector de usuario del modal a partir de un usuario de Odoo
+  const toUserOption = (u: any) => ({
+    key: u.id,
+    label: u.name,
+    email: u.email,
+    // Muestra el rol actual (si ya tiene uno) para que se pueda distinguir
+    // "asignar de cero" de "reasignar" en la misma lista. Ojo: es solo texto
+    // para mostrar — el email real que se envía al guardar viene del campo
+    // `email` de arriba, no de este subLabel.
+    subLabel: u.currentRoleName ? `${u.email} — ${u.currentRoleName}` : u.email,
+    cids: Array.isArray(u.company_ids) ? u.company_ids.join(",") : "",
+    currentRoleId: u.currentRoleId || "",
+    currentCids: u.currentCids || "",
+  });
+
+  const selectUserOption = (opt: any) => {
+    setSelectedUser(opt);
+    setAssignError("");
+    // Si ya tiene rol/cids guardados en el panel, se usan esos como punto
+    // de partida (más confiables que el company_ids de Odoo, que es solo
+    // una sugerencia inicial para gente sin rol todavía).
+    setSelectedRole(opt.currentRoleId || "");
+    const cidsInicial = opt.currentRoleId ? opt.currentCids : opt.cids;
+    setSelectedCids(cidsInicial || "");
+    setSelectedCity(cidsInicial || "");
+  };
+
+  // Lápiz de la fila: abre el modal con ese usuario ya elegido (dar o cambiar rol)
+  const handleEditRow = (user: any) => {
+    const odooUser = odooUsersClean.find((u) => u.id === user.id);
+    if (!odooUser) return;
+    selectUserOption(toUserOption(odooUser));
+    setIsOpen(true);
+  };
+
+  const handleRemoveRole = async () => {
+    if (!toRemove) return;
+    setRemoving(true);
+    setRemoveError("");
+    try {
+      const res = await fetch(`/api/superadmin/users?id=${toRemove.id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setToRemove(null);
+        fetchData();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        setRemoveError(errorData?.error || t("modal.error_generic"));
+      }
+    } catch {
+      setRemoveError(t("modal.error_network"));
+    } finally {
+      setRemoving(false);
+    }
   };
 
   // Función para abrir el modal y cargar usuarios de Odoo
@@ -132,6 +205,10 @@ export default function UserManagement() {
     setIsOpen(true);
     setLoadingModal(true);
     setAssignError("");
+    setSelectedUser(null);
+    setSelectedRole("");
+    setSelectedCids("");
+    setSelectedCity("");
     try {
       const res = await fetch("/api/superadmin/users");
       const data = await res.json();
@@ -346,6 +423,7 @@ export default function UserManagement() {
                   {t("columns.last_session")}
                 </th>
                 <th className="px-6 py-5 text-center">{t("columns.status")}</th>
+                <th className="px-6 py-5 text-center">{t("columns.actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -401,6 +479,45 @@ export default function UserManagement() {
                       >
                         {getStatusLabel(user.odooStatus)}
                       </span>
+                    </div>
+                  </td>
+
+                  {/* ACCIONES: dar/cambiar rol y quitar rol */}
+                  <td className="px-6 py-4">
+                    <div className="flex justify-center gap-1.5">
+                      <button
+                        onClick={() => handleEditRow(user)}
+                        disabled={!odooUsersClean.some((u) => u.id === user.id)}
+                        title={
+                          user.panelRoleName === "Sin Acceso"
+                            ? t("row_actions.give_role")
+                            : t("row_actions.change_role")
+                        }
+                        aria-label={
+                          user.panelRoleName === "Sin Acceso"
+                            ? t("row_actions.give_role")
+                            : t("row_actions.change_role")
+                        }
+                        className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        {user.panelRoleName === "Sin Acceso" ? (
+                          <UserPlus size={15} />
+                        ) : (
+                          <Pencil size={15} />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setRemoveError("");
+                          setToRemove(user);
+                        }}
+                        disabled={user.panelRoleName === "Sin Acceso"}
+                        title={t("row_actions.remove_role")}
+                        aria-label={t("row_actions.remove_role")}
+                        className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        <UserMinus size={15} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -500,41 +617,8 @@ export default function UserManagement() {
                     label={t("modal.select_user")}
                     placeholder={t("modal.select_user")}
                     value={selectedUser}
-                    options={odooUsersClean.map((u) => ({
-                      key: u.id,
-                      label: u.name,
-                      email: u.email,
-                      // Muestra el rol actual (si ya tiene uno) para que se
-                      // pueda distinguir "asignar de cero" de "reasignar" en
-                      // la misma lista — antes esta lista solo traía a
-                      // quienes NO tenían rol, así que reasignar a alguien
-                      // ya asignado no aparecía como opción. Ojo: es solo
-                      // texto para mostrar — el email real que se envía al
-                      // guardar viene del campo `email` de arriba, no de
-                      // este subLabel.
-                      subLabel: u.currentRoleName
-                        ? `${u.email} — ${u.currentRoleName}`
-                        : u.email,
-                      cids: Array.isArray(u.company_ids)
-                        ? u.company_ids.join(",")
-                        : "",
-                      currentRoleId: u.currentRoleId || "",
-                      currentCids: u.currentCids || "",
-                    }))}
-                    onSelect={(opt: any) => {
-                      setSelectedUser(opt);
-                      setAssignError("");
-                      // Si ya tiene rol/cids guardados en el panel, se usan
-                      // esos como punto de partida (más confiables que el
-                      // company_ids de Odoo, que es solo una sugerencia
-                      // inicial para gente sin rol todavía).
-                      setSelectedRole(opt.currentRoleId || "");
-                      const cidsInicial = opt.currentRoleId
-                        ? opt.currentCids
-                        : opt.cids;
-                      setSelectedCids(cidsInicial || "");
-                      setSelectedCity(cidsInicial || "");
-                    }}
+                    options={odooUsersClean.map(toUserOption)}
+                    onSelect={selectUserOption}
                     searchable={true}
                   />
 
@@ -616,6 +700,53 @@ export default function UserManagement() {
           </div>,
           document.body,
         )}
+
+      {/* CONFIRMAR QUITAR ROL */}
+      <AlertDialog
+        open={!!toRemove}
+        onOpenChange={(open) => {
+          if (!open && !removing) setToRemove(null);
+        }}
+      >
+        <AlertDialogContent className="rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("row_actions.remove_title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {toRemove &&
+                t("row_actions.remove_description", {
+                  name: toRemove.name,
+                  role: toRemove.panelRole,
+                })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {removeError && (
+            <p className="text-xs font-bold text-red-600">{removeError}</p>
+          )}
+          <AlertDialogFooter>
+            <button
+              disabled={removing}
+              onClick={() => setToRemove(null)}
+              className="px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:bg-slate-200/40 transition-colors"
+            >
+              {t("modal.cancel")}
+            </button>
+            <button
+              disabled={removing}
+              onClick={handleRemoveRole}
+              className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-md disabled:opacity-40 flex items-center justify-center gap-1.5"
+            >
+              {removing ? (
+                <Loader2 className="animate-spin" size={12} />
+              ) : (
+                <UserMinus size={12} />
+              )}
+              {removing
+                ? t("row_actions.removing")
+                : t("row_actions.remove_confirm")}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

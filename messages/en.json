@@ -91,7 +91,8 @@
       "panel_role": "Panel Role",
       "odoo_role": "Odoo Role",
       "last_session": "Last Session",
-      "status": "Status"
+      "status": "Status",
+      "actions": "Actions"
     },
     "all_locations": "All Locations",
     "valencia": "Valencia",
@@ -117,6 +118,15 @@
     "no_records": "No records",
     "no_results": "No results",
     "showing_users": "Showing {count} of {total} users",
+    "row_actions": {
+      "give_role": "Assign role",
+      "change_role": "Change role",
+      "remove_role": "Remove role",
+      "remove_title": "Remove panel role",
+      "remove_description": "{name} will lose the {role} role and won't be able to log into the panel. Any open session is closed.",
+      "remove_confirm": "Remove role",
+      "removing": "Removing..."
+    },
     "modal": {
       "title": "Panel Privileges",
       "select_user": "Select Odoo account...",
