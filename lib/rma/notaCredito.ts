@@ -1,15 +1,15 @@
 import { query } from "@/lib/db";
 import { leerProductos, type EstadoProducto, type ProductoEnvio } from "@/lib/rma/items";
 import { urlWebhookRma } from "@/lib/rma/webhook";
-import { ensureTablas } from "@/lib/notas-credito/datos";
+import { ensureTablas, sedeConFlujo } from "@/lib/notas-credito/datos";
 import { crearDesdeRma } from "@/lib/notas-credito/solicitudes";
-import { tieneFlujo } from "@/lib/notas-credito/tipos";
 
 /**
  * Solicitudes de nota de crédito de RMA (sql/rma_nota_credito_aprobacion.sql).
  *
  * RMA la pide desde su sección Nota de Crédito (caso, producto y por qué).
- * En las sedes con flujo (lib/notas-credito/tipos.ts, hoy Valencia) además
+ * En las sedes con el flujo activo (sus tres pasos con responsables,
+ * lib/notas-credito/) además
  * nace la solicitud del flujo: el equipo pasa a "NC en revisión" y la
  * preaprueba, aprueba y hace quien corresponda (lib/notas-credito/). En las
  * demás sigue siendo SOLO la solicitud: le llega al Super Admin (panel +
@@ -155,7 +155,7 @@ export async function solicitarNotaCredito(datos: {
   // Sede con flujo: la solicitud sigue por preaprobación y el equipo pasa a
   // "NC en revisión" (eso ya deja su historial).
   const companyId = Number(caso.company_id) || 9;
-  if (tieneFlujo(companyId)) {
+  if (await sedeConFlujo(companyId)) {
     try {
       await crearDesdeRma({
         rmaNotaId: id,

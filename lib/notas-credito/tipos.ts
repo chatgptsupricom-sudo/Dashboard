@@ -2,15 +2,17 @@
  * Notas de crédito con aprobación en cadena (lo que se puede importar desde
  * el cliente: sin base ni Odoo). La lógica está en lib/notas-credito/*.
  *
- * Valencia (9):
+ * Mismo flujo en Valencia, Caracas y Panamá; lo que cambia por sede son los
+ * responsables de cada paso (usuarios de users_config, uno o varios):
  *   - Equipo de RMA que no se puede reparar: RMA la solicita → la preaprueba
- *     Rangel (un filtro, para que a Gabriel no le lleguen todas) → la aprueba
- *     Gabriel Camacho → le llega a Victor como orden de crédito y la hace.
- *   - Cualquier otra: la crea Rangel y va directo a Gabriel → Victor.
- *   Si Rangel o Gabriel la rechazan, no procede.
+ *     "preaprueba" (un filtro, para que a quien aprueba no le lleguen todas) →
+ *     la aprueba "aprueba" → le llega a "procesa" como orden de crédito.
+ *   - Cualquier otra: la crea "preaprueba" y va directo a "aprueba" → "procesa".
+ *   Si la rechazan en preaprobación o aprobación, no procede.
  *
- * Caracas y Panamá todavía no tienen flujo: las solicitudes de RMA de esas
- * sedes le siguen llegando solo al Super Admin, como antes.
+ * Una sede tiene el flujo activo cuando los tres pasos tienen al menos una
+ * persona (flujoCompleto). Mientras no, sus solicitudes de RMA le siguen
+ * llegando solo al Super Admin, como antes.
  */
 
 export type EstadoNC = "por_preaprobar" | "por_aprobar" | "aprobada" | "procesada" | "rechazada";
@@ -35,14 +37,16 @@ export const DESCRIPCION_PASO: Record<PasoNC, string> = {
   procesa: "Recibe la orden de crédito aprobada y la hace, en el panel o en Odoo.",
 };
 
-/** Sedes con el flujo definido. Para sumar Caracas, se agrega aquí (y sus responsables en la pantalla). */
-export const SEDES_CON_FLUJO = [9];
-
+export const SEDES = [9, 10, 7];
 export const NOMBRE_SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 
-export function tieneFlujo(companyId: number | null | undefined): boolean {
-  return SEDES_CON_FLUJO.includes(Number(companyId));
+/** El flujo de una sede está activo si cada paso tiene al menos un responsable. */
+export function flujoCompleto(pasos: Partial<Record<PasoNC, string[]>> | null | undefined): boolean {
+  return !!pasos && PASOS.every((p) => (pasos[p]?.length ?? 0) > 0);
 }
+
+/** Usuario del panel (users_config) que se puede elegir como responsable. */
+export type UsuarioPanel = { email: string; nombre: string; rol: string; cids: number | null; activo: boolean };
 
 export function estadoInicial(origen: OrigenNC): EstadoNC {
   return origen === "rma" ? "por_preaprobar" : "por_aprobar";
