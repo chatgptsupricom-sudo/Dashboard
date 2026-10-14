@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 type Pasos = Record<PasoNC, string[]>;
 type Datos = { aprobadores: Record<number, Pasos>; usuarios: UsuarioPanel[] };
 
-const vacio = (): Pasos => ({ preaprueba: [], aprueba: [], procesa: [] });
+const vacio = (): Pasos => ({ rma: [], preaprueba: [], aprueba: [], procesa: [] });
 const iguales = (a: Pasos, b: Pasos) => PASOS.every((p) => [...a[p]].sort().join() === [...b[p]].sort().join());
 
 /** Uno o varios usuarios del panel (users_config) para un paso. */
@@ -28,10 +28,12 @@ function SelectorUsuarios({
   elegidos,
   usuarios,
   onCambio,
+  opcional = false,
 }: {
   elegidos: string[];
   usuarios: UsuarioPanel[];
   onCambio: (correos: string[]) => void;
+  opcional?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
   const porCorreo = useMemo(() => new Map(usuarios.map((u) => [u.email, u])), [usuarios]);
@@ -56,7 +58,12 @@ function SelectorUsuarios({
             </span>
           );
         })}
-        {!elegidos.length && <span className="text-xs text-rose-600">Nadie: el flujo de esta sede no está activo.</span>}
+        {!elegidos.length &&
+          (opcional ? (
+            <span className="text-xs text-slate-400">Nadie: los avisos van solo a quien hizo la solicitud.</span>
+          ) : (
+            <span className="text-xs text-rose-600">Nadie: el flujo de esta sede no está activo.</span>
+          ))}
       </div>
       <Popover open={abierto} onOpenChange={setAbierto}>
         <PopoverTrigger asChild>
@@ -170,16 +177,17 @@ export function Responsables() {
                 <Badge className="border border-emerald-200 bg-emerald-50 text-emerald-700">Flujo activo</Badge>
               ) : (
                 <Badge className="border border-slate-200 bg-slate-50 text-slate-500">
-                  Sin flujo: falta gente en algún paso (RMA le pide al Super Admin)
+                  Sin flujo: falta gente en preaprueba, aprueba o hace la nota (RMA le pide al Super Admin)
                 </Badge>
               )}
             </div>
-            <div className="grid gap-5 md:grid-cols-3">
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
               {PASOS.map((p) => (
                 <div key={p} className="space-y-1.5">
                   <p className="text-sm font-semibold text-slate-800">{ETIQUETA_PASO[p]}</p>
                   <p className="text-xs text-slate-500">{DESCRIPCION_PASO[p]}</p>
                   <SelectorUsuarios
+                    opcional={p === "rma"}
                     elegidos={actual[p]}
                     usuarios={datos.usuarios}
                     onCambio={(correos) => setBorrador((b) => ({ ...b, [sede]: { ...actual, [p]: correos } }))}
