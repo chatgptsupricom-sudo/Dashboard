@@ -17,10 +17,17 @@ import {
   type SolicitudNC,
 } from "@/lib/notas-credito/tipos";
 import { FileCheck2, FileText, Loader2, Plus } from "lucide-react";
+import type { AnteriorNC } from "@/lib/notas-credito/anteriores";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Pestana = "mias" | "abiertas" | "todas" | "responsables";
+
+const ESTADO_ANTERIOR: Record<string, { t: string; c: string }> = {
+  pendiente: { t: "Pendiente, fuera del flujo", c: "bg-amber-100 text-amber-800 border-amber-200" },
+  aprobada: { t: "Registrada antes del flujo", c: "bg-slate-100 text-slate-600 border-slate-200" },
+  rechazada: { t: "Rechazada (antes del flujo)", c: "bg-rose-100 text-rose-800 border-rose-200" },
+};
 
 const fecha = (v: string | null) =>
   v ? new Date(v).toLocaleDateString("es-VE", { day: "2-digit", month: "short", year: "numeric", timeZone: "America/Caracas" }) : "";
@@ -41,6 +48,9 @@ export function NotasCredito() {
   const [error, setError] = useState("");
   const [pestana, setPestana] = useState<Pestana>("mias");
   const [nueva, setNueva] = useState(false);
+  const [anteriores, setAnteriores] = useState<AnteriorNC[]>([]);
+  const [pasando, setPasando] = useState<number | null>(null);
+  const [avisoAnterior, setAvisoAnterior] = useState<{ id: number; ok: boolean; texto: string } | null>(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -48,6 +58,7 @@ export function NotasCredito() {
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "No se pudo cargar");
       setNotas(j.notas || []);
+      setAnteriores(j.anteriores || []);
       setPasos(j.pasos || {});
       setSuperadmin(!!j.superadmin);
       setError("");
@@ -85,9 +96,43 @@ export function NotasCredito() {
 
   const abrir = (id: number | null) => router.replace(id ? `?id=${id}` : "?", { scroll: false });
 
+  // Solicitudes de RMA fuera del flujo (anteriores, o de sedes sin flujo activo).
+  const anterioresVisibles =
+    pestana === "mias"
+      ? anteriores.filter((a) => a.puede_pasar)
+      : pestana === "abiertas"
+        ? anteriores.filter((a) => a.estado === "pendiente")
+        : anteriores;
+  const nPendientesAnteriores = anteriores.filter((a) => a.estado === "pendiente").length;
+
+  const pasarAlFlujo = async (a: AnteriorNC) => {
+    setPasando(a.rma_nota_id);
+    setAvisoAnterior(null);
+    try {
+      const r = await fetch("/api/notas-credito/anteriores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rma_nota_id: a.rma_nota_id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || "No se pudo pasar al flujo");
+      await cargar();
+      abrir(j.id);
+    } catch (e: any) {
+      setAvisoAnterior({ id: a.rma_nota_id, ok: false, texto: e?.message || "No se pudo pasar al flujo" });
+    } finally {
+      setPasando(null);
+    }
+  };
+
   const pestanas: { id: Pestana; t: string; n?: number; ver: boolean }[] = [
-    { id: "mias", t: "Por hacer", n: mias.length, ver: tieneAlgunPaso },
-    { id: "abiertas", t: "En curso", n: notas.filter((n) => ESTADOS_ABIERTOS.includes(n.estado)).length, ver: true },
+    { id: "mias", t: "Por hacer", n: mias.length + anteriores.filter((a) => a.puede_pasar).length, ver: tieneAlgunPaso },
+    {
+      id: "abiertas",
+      t: "En curso",
+      n: notas.filter((n) => ESTADOS_ABIERTOS.includes(n.estado)).length + nPendientesAnteriores,
+      ver: true,
+    },
     { id: "todas", t: "Todas", ver: true },
     { id: "responsables", t: "Responsables", ver: superadmin },
   ];
@@ -135,7 +180,7 @@ export function NotasCredito() {
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
         </div>
-      ) : visibles.length === 0 ? (
+      ) : visibles.length === 0 && anterioresVisibles.length === 0 ? (
         <Card className="rounded-3xl border-none shadow-sm">
           <CardContent className="py-12 text-center text-slate-400">
             <FileText className="mx-auto mb-3 h-12 w-12 opacity-50" />
@@ -175,6 +220,59 @@ export function NotasCredito() {
               </Card>
             </button>
           ))}
+
+          {anterioresVisibles.length > 0 && (
+            <div className="space-y-3 pt-4">
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">Solicitudes de RMA fuera del flujo</h2>
+                <p className="text-xs text-slate-400">
+                  Las que RMA pidió antes del flujo o en una sede sin sus responsables completos. Las pendientes se pasan al flujo para
+                  que sigan preaprobación y aprobación.
+                </p>
+              </div>
+              {anterioresVisibles.map((a) => (
+                <Card key={`rma-${a.rma_nota_id}`} className={`rounded-3xl border-none shadow-sm ${a.puede_pasar ? "ring-2 ring-orange-300" : ""}`}>
+                  <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-slate-900">RMA N.º {a.case_number}</span>
+                        <Badge className={`${ESTADO_ANTERIOR[a.estado]?.c || ""} border text-[11px]`}>
+                          {ESTADO_ANTERIOR[a.estado]?.t || a.estado}
+                        </Badge>
+                        <span className="text-xs text-slate-400">{NOMBRE_SEDE[a.company_id] || a.company_id}</span>
+                      </div>
+                      <p className="truncate text-sm text-slate-700">
+                        {a.cliente || "—"}
+                        {a.factura ? <span className="text-slate-400"> · Factura {a.factura}</span> : null}
+                        {a.producto ? <span className="text-slate-400"> · {a.producto}</span> : null}
+                      </p>
+                      <p className="line-clamp-2 text-sm text-slate-500">{a.motivo}</p>
+                      {avisoAnterior?.id === a.rma_nota_id && (
+                        <p className={`text-sm ${avisoAnterior.ok ? "text-emerald-700" : "text-rose-700"}`}>{avisoAnterior.texto}</p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+                      <p className="text-xs text-slate-400">
+                        {a.creado_por} · {fecha(a.created_at)}
+                      </p>
+                      {a.puede_pasar ? (
+                        <Button size="sm" disabled={pasando === a.rma_nota_id} onClick={() => pasarAlFlujo(a)}>
+                          {pasando === a.rma_nota_id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Pasar al flujo
+                        </Button>
+                      ) : a.estado === "pendiente" ? (
+                        <p className="max-w-[16rem] text-xs text-slate-400 sm:text-right">
+                          {superadmin || (pasos[a.company_id] ?? []).includes("preaprueba")
+                            ? "La sede no tiene el flujo activo: completa sus responsables."
+                            : "La pasa al flujo el SuperAdmin o quien preaprueba."}
+                        </p>
+                      ) : null}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

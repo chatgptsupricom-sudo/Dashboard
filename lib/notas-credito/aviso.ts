@@ -8,9 +8,12 @@ import type { SolicitudNC } from "@/lib/notas-credito/tipos";
  *
  *   preaprobar  → quien preaprueba en la sede (Rangel)              · solicitud de RMA nueva
  *   aprobar     → quien aprueba (Gabriel)                           · preaprobada, o creada directa
- *   procesar    → quien hace la NC (Victor), copia a quien la pidió · aprobada
- *   rechazada   → quien la pidió (copia a quien la preaprobó, si la rechazó Gabriel)
- *   procesada   → quien la pidió                                    · la NC quedó publicada en Odoo
+ *   procesar    → quien hace la NC (Victor) · copia: quien la pidió y RMA de la sede · aprobada
+ *   rechazada   → quien la pidió y RMA de la sede (copia a quien preaprueba, si la rechazó quien aprueba)
+ *   procesada   → quien la pidió y RMA de la sede                  · la NC quedó publicada en Odoo
+ *
+ * "RMA de la sede" es el paso opcional "rma" de nc_aprobadores, solo en las
+ * notas que vienen de RMA.
  *
  * El panel NO manda direcciones ni textos: solo el aviso y el id de la
  * solicitud. n8n lee la solicitud (nc_solicitudes) y los responsables
