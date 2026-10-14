@@ -339,21 +339,29 @@ export type NotaOdooMes = {
 /**
  * Notas de crédito de cliente de Odoo (out_refund) de las sedes en el rango
  * [desde, hasta), por fecha de la NC (las en borrador sin fecha, por la de
- * creación). Para la pestaña "En Odoo": se ven también las hechas sin pasar
- * por el panel.
+ * creación). La lista del panel es la de Odoo: se ven también las hechas sin
+ * pasar por el flujo.
  */
 export async function notasOdooDelRango(sedes: number[], desde: string, hasta: string): Promise<NotaOdooMes[]> {
+  return leerNotasOdoo(sedes, [
+    "|", "&", ["invoice_date", ">=", desde], ["invoice_date", "<", hasta],
+    "&", "&", ["invoice_date", "=", false], ["create_date", ">=", `${desde} 00:00:00`], ["create_date", "<", `${hasta} 00:00:00`],
+  ]);
+}
+
+/** Las NC de cliente en borrador en Odoo, de cualquier fecha: siguen "en curso". */
+export async function notasOdooBorrador(sedes: number[]): Promise<NotaOdooMes[]> {
+  return leerNotasOdoo(sedes, [["state", "=", "draft"]]);
+}
+
+async function leerNotasOdoo(sedes: number[], filtro: any[]): Promise<NotaOdooMes[]> {
   if (!sedes.length) return [];
   const r = await callOdooRPC<any[]>(
     "account.move",
     "search_read",
-    [[
-      ["move_type", "=", "out_refund"], ["company_id", "in", sedes],
-      "|", "&", ["invoice_date", ">=", desde], ["invoice_date", "<", hasta],
-      "&", "&", ["invoice_date", "=", false], ["create_date", ">=", `${desde} 00:00:00`], ["create_date", "<", `${hasta} 00:00:00`],
-    ]],
+    [[["move_type", "=", "out_refund"], ["company_id", "in", sedes], ...filtro]],
     {
-      fields: ["name", "company_id", "invoice_date", "partner_id", "reversed_entry_id", "currency_id", "amount_total", "state", "ref", "nro_ctrl", "create_uid"],
+      fields: ["name", "company_id", "invoice_date", "create_date", "partner_id", "reversed_entry_id", "currency_id", "amount_total", "state", "ref", "nro_ctrl", "create_uid"],
       order: "invoice_date desc, id desc",
       limit: 1000,
     },
@@ -363,7 +371,8 @@ export async function notasOdooDelRango(sedes: number[], desde: string, hasta: s
     id: m.id,
     nombre: m.name && m.name !== "/" ? m.name : "Borrador",
     company_id: m2o(m.company_id)?.[0] ?? 0,
-    fecha: m.invoice_date || null,
+    // Un borrador todavía no tiene fecha de NC: se usa el día en que se creó.
+    fecha: m.invoice_date || (m.create_date ? String(m.create_date).slice(0, 10) : null),
     cliente: m2o(m.partner_id)?.[1] ?? "",
     factura: m2o(m.reversed_entry_id)?.[1] ?? "",
     moneda: m2o(m.currency_id)?.[1] ?? "USD",
