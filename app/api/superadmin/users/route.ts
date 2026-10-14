@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { aprobadores } from "@/lib/notas-credito/datos";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -249,6 +250,77 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("❌ Error final en POST:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * Quitar el rol del panel: borra la fila de users_config, que es lo que el
+ * login exige (sin fila responde 403 "sin acceso"). Si era vendedor, su fila
+ * de sellers queda inactiva en vez de borrarse, porque leads y cuotas viejos
+ * la referencian. La sesión que ya tenga abierta sigue viva hasta que venza
+ * el JWT: el rol va dentro del token y las APIs no lo vuelven a leer.
+ */
+export async function DELETE(request: NextRequest) {
+  const auth = await requireRoles(request, ["superadmin", "gerente de operaciones"]);
+  if (auth.error) return auth.error;
+
+  try {
+    const userId = parseInt(new URL(request.url).searchParams.get("id") || "", 10);
+    if (!userId) {
+      return NextResponse.json({ error: "Parámetros incompletos" }, { status: 400 });
+    }
+
+    if (String(userId) === String(auth.payload!.sub)) {
+      return NextResponse.json(
+        { error: "No puedes quitarte el rol a ti mismo." },
+        { status: 400 },
+      );
+    }
+
+    const actual = await query(
+      `SELECT uc.email, r.name AS role_name FROM users_config uc
+       LEFT JOIN roles r ON uc.role_id = r.id WHERE uc.id = ?`,
+      [userId],
+    );
+    const fila = actual?.rows?.[0];
+    if (!fila) {
+      return NextResponse.json({ error: "Ese usuario no tiene rol en el panel." }, { status: 404 });
+    }
+
+    // Mismo freno que en el POST: un gerente de operaciones no toca a un superadmin.
+    const callerRole = ((auth.payload!.role as string) || "").toLowerCase().trim();
+    const targetRole = ((fila.role_name as string) || "").toLowerCase().trim();
+    if (callerRole !== "superadmin" && targetRole === "superadmin") {
+      return NextResponse.json({ error: "No autorizado para modificar esa cuenta" }, { status: 403 });
+    }
+
+    // Los responsables de notas de crédito tienen que estar en users_config
+    // (el PUT de Responsables lo exige) y n8n les sigue escribiendo mientras
+    // estén en nc_aprobadores: primero se le saca de ahí.
+    const email = ((fila.email as string) || "").toLowerCase().trim();
+    if (email) {
+      const porSede = await aprobadores();
+      const esResponsable = Object.values(porSede).some((pasos) =>
+        Object.values(pasos).some((correos) => correos.includes(email)),
+      );
+      if (esResponsable) {
+        return NextResponse.json(
+          {
+            error:
+              "Es responsable en el flujo de notas de crédito. Sácalo primero de Notas de crédito › Responsables.",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    await query("DELETE FROM users_config WHERE id = ?", [userId]);
+    await query("UPDATE sellers SET activo = 0 WHERE user_id = ?", [userId]);
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("❌ Error en DELETE /api/superadmin/users:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
