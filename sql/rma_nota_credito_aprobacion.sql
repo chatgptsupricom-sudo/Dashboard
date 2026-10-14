@@ -26,7 +26,13 @@
 --      y si una columna ya existe el ALTER entero falla sin cambiar nada):
 --        SHOW COLUMNS FROM supricom_panel.rma_notas_credito LIKE 'estado';
 --      Si devuelve una fila, no corras el paso 3.
---   3. Los dos MODIFY se pueden repetir sin problema.
+--   3. Los dos MODIFY se pueden repetir sin problema. Llevan TODOS los
+--      estados, incluidos los de sql/rma_estados_plazos.sql (por_llegar,
+--      en_diagnostico, en_reparacion): una version anterior de este archivo
+--      los dejaba fuera y, con casos en esos estados, MySQL rechazaba el
+--      ALTER con "#1265 Datos truncados para columna 'status'". Si ya
+--      corriste rma_estados_plazos.sql, los pasos 1 y 2 sobran (ya tienen
+--      'nc_revision'): basta con el paso 3.
 --   4. Si `SHOW TABLES FROM supricom_panel LIKE 'rma_case_items'` no devuelve
 --      nada, salta el ALTER de rma_case_items.
 --
@@ -37,12 +43,14 @@
 
 -- 1. Estado nuevo en el caso.
 ALTER TABLE supricom_panel.rma_cases
-  MODIFY status ENUM('recibido','reparado','nota_credito','no_procesado','reingresado','nc_revision')
+  MODIFY status ENUM('recibido','reparado','nota_credito','no_procesado','reingresado','nc_revision',
+                     'por_llegar','en_diagnostico','en_reparacion')
     NOT NULL DEFAULT 'recibido';
 
 -- 2. Y en cada producto del envio.
 ALTER TABLE supricom_panel.rma_case_items
-  MODIFY status ENUM('recibido','reparado','nota_credito','no_procesado','reingresado','nc_revision')
+  MODIFY status ENUM('recibido','reparado','nota_credito','no_procesado','reingresado','nc_revision',
+                     'por_llegar','en_diagnostico','en_reparacion')
     NOT NULL DEFAULT 'recibido';
 
 -- 3. Solicitud y decision.
