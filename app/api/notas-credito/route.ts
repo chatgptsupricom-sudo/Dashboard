@@ -1,8 +1,9 @@
 import { requireSession } from "@/lib/auth/roles";
 import { accesoNC, requireNC } from "@/lib/notas-credito/acceso";
 import { listarAnteriores } from "@/lib/notas-credito/anteriores";
+import { sedeConFlujo } from "@/lib/notas-credito/datos";
 import { crearDirecta, ErrorNC, listar, sincronizarAprobadas } from "@/lib/notas-credito/solicitudes";
-import { ESTADOS_ABIERTOS, PASO_DEL_ESTADO, type EstadoNC } from "@/lib/notas-credito/tipos";
+import { ESTADOS_ABIERTOS, PASO_DEL_ESTADO, SEDES, type EstadoNC } from "@/lib/notas-credito/tipos";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -54,7 +55,17 @@ export async function GET(request: NextRequest) {
     } catch (e: any) {
       console.error("[notas-credito] solicitudes anteriores:", e?.message);
     }
-    return NextResponse.json({ success: true, notas, anteriores, pasos: acceso!.pasos, superadmin: acceso!.superadmin });
+    // Sedes con el flujo activo (para "Nueva nota de crédito").
+    const activas: number[] = [];
+    for (const s of SEDES) if (await sedeConFlujo(s)) activas.push(s);
+    return NextResponse.json({
+      success: true,
+      notas,
+      anteriores,
+      pasos: acceso!.pasos,
+      superadmin: acceso!.superadmin,
+      sedes_activas: activas,
+    });
   } catch (e: any) {
     console.error("GET /api/notas-credito:", e?.message);
     return NextResponse.json({ error: e?.message || "Error" }, { status: 500 });

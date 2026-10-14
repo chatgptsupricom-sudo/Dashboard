@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 /**
  * GET ?company_id=&q=  facturas de cliente publicadas (número o cliente) para
  * crear una nota de crédito o asignarle la factura. Solo quien preaprueba o
- * hace la NC en esa sede.
+ * hace la NC en esa sede, o el SuperAdmin.
  */
 export async function GET(request: NextRequest) {
   const { acceso, error } = await requireNC(request);
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const companyId = Number(request.nextUrl.searchParams.get("company_id"));
   const q = request.nextUrl.searchParams.get("q") || "";
   const pasos = acceso!.pasos[companyId] ?? [];
-  if (!pasos.includes("preaprueba") && !pasos.includes("procesa")) {
+  if (!acceso!.superadmin && !pasos.includes("preaprueba") && !pasos.includes("procesa")) {
     return NextResponse.json({ error: "No buscas facturas en esta sede." }, { status: 403 });
   }
   try {
