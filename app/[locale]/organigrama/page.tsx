@@ -144,6 +144,22 @@ export default function OrganigramaPage() {
     setZoom(Math.max(ZOOM_MIN, Math.min(1, (c.clientWidth - 8) / natural)));
   }, [zoom]);
 
+  // El lienzo ocupa lo que queda de pantalla y se desplaza por dentro. Sin un
+  // alto fijo crecía con el organigrama: el que bajaba era el panel entero y
+  // la manito solo podía mover a los lados.
+  const [alto, setAlto] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const c = contenedor.current;
+    if (!c) return;
+    const medir = () => {
+      const arriba = c.getBoundingClientRect().top + window.scrollY;
+      setAlto(Math.max(360, window.innerHeight - arriba - 24));
+    };
+    medir();
+    window.addEventListener("resize", medir);
+    return () => window.removeEventListener("resize", medir);
+  }, [hayOrganigrama, error]);
+
   // La primera vez que hay organigrama, se ajusta al ancho de la pantalla.
   useLayoutEffect(() => {
     if (!ajustado.current && nodos.length) {
@@ -425,8 +441,9 @@ export default function OrganigramaPage() {
             }
           }}
           onAuxClick={(e) => e.button === 1 && e.preventDefault()}
+          style={{ height: alto ?? "70vh" }}
           className={cn(
-            "min-h-[60vh] flex-1 overflow-auto rounded-2xl border border-slate-200 bg-slate-50/70",
+            "overflow-auto overscroll-contain rounded-2xl border border-slate-200 bg-slate-50/70",
             arrastrando ? s.arrastrando : (mano || ctrl) && s.modoMano,
           )}
         >
