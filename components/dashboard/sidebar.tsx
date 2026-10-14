@@ -41,6 +41,7 @@ import {
   CreditCard,
   DollarSign,
   FileText,
+  FileCheck2,
   Globe,
   IdCard,
   LayoutDashboard,
@@ -156,6 +157,9 @@ export function Sidebar({
   const [puedeReportesComerciales, setPuedeReportesComerciales] = useState(false);
   // Acceso al Agente IA: lo decide el SuperAdmin por rol (/api/agenteia/acceso).
   const [puedeAgenteIA, setPuedeAgenteIA] = useState(false);
+  // Notas de crédito (lib/notas-credito): quien es responsable de un paso, por
+  // correo, y el SuperAdmin. `pendientes` = las que esperan a la sesión.
+  const [notasCredito, setNotasCredito] = useState({ puede: false, pendientes: 0 });
 
   // Solicitudes de nota de crédito de RMA enviadas al Super Admin (contador
   // del menú RMA).
@@ -179,6 +183,14 @@ export function Sidebar({
     fetch("/api/agenteia/acceso")
       .then((r) => r.json())
       .then((j) => setPuedeAgenteIA(Boolean(j?.puede)))
+      .catch(() => {});
+    fetch("/api/notas-credito?acceso=1")
+      .then((r) => r.json())
+      .then(async (j) => {
+        if (!j?.puede) return;
+        const c = await fetch("/api/notas-credito?conteo=1").then((r) => r.json()).catch(() => ({}));
+        setNotasCredito({ puede: true, pendientes: Number(c?.pendientes) || 0 });
+      })
       .catch(() => {});
   }, [user]);
 
@@ -247,6 +259,9 @@ export function Sidebar({
   if (puedeAgenteIA && !allowedSections.includes("agenteia")) {
     allowedSections.push("agenteia");
   }
+  if (notasCredito.puede && !allowedSections.includes("notas_credito")) {
+    allowedSections.push("notas_credito");
+  }
 
   // Definición del menú base
   const menuItems = [
@@ -263,6 +278,13 @@ export function Sidebar({
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
     // Organigrama con las actividades de cada cargo (SuperAdmin y Procesos).
     { id: "organigrama", label: "Organigrama", icon: Network, slug: "/organigrama", absoluteHref: true },
+    {
+      id: "notas_credito",
+      label: `Notas de crédito${notasCredito.pendientes ? ` (${notasCredito.pendientes})` : ""}`,
+      icon: FileCheck2,
+      slug: "/notas-credito",
+      absoluteHref: true,
+    },
     { id: "integraciondepago", label: t("integracion_pago"), icon: CreditCard, slug: "/integraciondepago" },
     { id: "clientes", label: t("clientes"), icon: UserCheck, slug: "/clientes" },
     { id: "catalogo", label: t("catalogo"), icon: Boxes, slug: "/catalogo" },

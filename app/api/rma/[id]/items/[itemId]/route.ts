@@ -5,6 +5,7 @@ import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
 import { enviarCorreoActualizacion } from "@/lib/rma/emailActualizacion";
 import { errorEstadoNotaCredito } from "@/lib/rma/notaCredito";
+import { errorNotaEnCurso } from "@/lib/notas-credito/rma";
 import { errorEstadoFlujo } from "@/lib/rma/flujo";
 
 const ESTADOS: EstadoProducto[] = [
@@ -70,7 +71,9 @@ export async function PUT(
     if (status !== undefined && !ESTADOS.includes(status)) {
       return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
     }
-    const errorNota = errorEstadoNotaCredito(producto.status, status);
+    const errorNota =
+      errorEstadoNotaCredito(producto.status, status) ||
+      (status && status !== producto.status ? await errorNotaEnCurso(caseId, producto.id, producto.status) : null);
     if (errorNota) return NextResponse.json({ error: errorNota }, { status: 400 });
     const errorFlujo = await errorEstadoFlujo(status);
     if (errorFlujo) return NextResponse.json({ error: errorFlujo }, { status: 400 });

@@ -453,7 +453,7 @@
     "inventario_supricom_desc": "{total} cases of equipment sold by Supricom",
     "inventario_externo": "Third-party RMA inventory",
     "inventario_externo_desc": "{total} cases of equipment not sold by Supricom (quoted service, no warranty)",
-    "nc_seccion_desc": "Request a credit note when the technician finds the equipment can't be repaired or isn't worth repairing. The request goes to the Super Admin.",
+    "nc_seccion_desc": "Request a credit note when the technician finds the equipment can't be repaired or isn't worth repairing. In Valencia it goes through pre-approval and approval before it is issued in Odoo; in the other branches it goes to the Super Admin.",
     "nc_solicitar": "Request credit note",
     "nc_solicitar_desc": "Choose the case and the product, and explain why the credit note applies.",
     "nc_paso_caso": "Case",
