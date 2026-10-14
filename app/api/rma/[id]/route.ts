@@ -13,6 +13,7 @@ import {
 } from "@/lib/rma/items";
 import { enviarCorreoActualizacion } from "@/lib/rma/emailActualizacion";
 import { errorEstadoNotaCredito } from "@/lib/rma/notaCredito";
+import { errorNotaEnCurso } from "@/lib/notas-credito/rma";
 import { errorEstadoFlujo } from "@/lib/rma/flujo";
 
 export async function GET(
@@ -202,9 +203,11 @@ export async function PUT(
       return NextResponse.json({ success: true });
     }
 
-    // La nota de crédito la aprueba el Super Admin (lib/rma/notaCredito.ts):
-    // no se pone a mano, y mientras espera la decisión el estado no se toca.
-    const errorNota = errorEstadoNotaCredito(oldStatus, status);
+    // La nota de crédito no se pone a mano (lib/rma/notaCredito.ts), y
+    // mientras el flujo la decide (lib/notas-credito) el estado no se toca.
+    const errorNota =
+      errorEstadoNotaCredito(oldStatus, status) ||
+      (status && status !== oldStatus ? await errorNotaEnCurso(casoActual.id, null, oldStatus) : null);
     if (errorNota) return NextResponse.json({ error: errorNota }, { status: 400 });
     const errorFlujo = await errorEstadoFlujo(status);
     if (errorFlujo) return NextResponse.json({ error: errorFlujo }, { status: 400 });

@@ -2,6 +2,7 @@
 
 import { colorSolicitud, etiquetaSolicitud, fechaCorta } from "@/components/rma/estados";
 import { Badge } from "@/components/ui/badge";
+import { COLOR_ESTADO, ETIQUETA_ESTADO, formatoMonto, type EstadoNC } from "@/lib/notas-credito/tipos";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ExternalLink, FileText, Loader2 } from "lucide-react";
@@ -12,8 +13,8 @@ import { useTranslations } from "next-intl";
 
 /**
  * Solicitudes de nota de crédito de RMA, las más nuevas primero. Las ve RMA
- * (su sección Nota de Crédito) y el Super Admin, a quien le llegan. Por ahora
- * solo se consultan: el proceso de la nota de crédito se define después.
+ * (su sección Nota de Crédito) y el Super Admin. Las de sedes con flujo
+ * (lib/notas-credito) muestran en qué paso van; se deciden en /notas-credito.
  */
 export function SolicitudesNotaCredito() {
   const t = useTranslations("rma");
@@ -70,9 +71,19 @@ export function SolicitudesNotaCredito() {
                       RMA N.° {n.case_number}
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Link>
-                    <Badge className={`${colorSolicitud[n.estado] || ""} border text-[11px]`}>
-                      {etiquetaSolicitud[n.estado] || n.estado}
-                    </Badge>
+                    {n.flujo_estado ? (
+                      <Badge className={`${COLOR_ESTADO[n.flujo_estado as EstadoNC] || ""} border text-[11px]`}>
+                        NC-{n.flujo_id} · {ETIQUETA_ESTADO[n.flujo_estado as EstadoNC] || n.flujo_estado}
+                      </Badge>
+                    ) : (
+                      <Badge className={`${colorSolicitud[n.estado] || ""} border text-[11px]`}>
+                        {etiquetaSolicitud[n.estado] || n.estado}
+                      </Badge>
+                    )}
+                    {n.flujo_monto != null && (
+                      <span className="text-sm font-semibold text-slate-700">{formatoMonto(Number(n.flujo_monto), n.flujo_moneda)}</span>
+                    )}
+                    {n.flujo_nc_odoo && <span className="text-xs text-emerald-700">{n.flujo_nc_odoo}</span>}
                   </div>
                   <p className="text-sm text-slate-600 mt-0.5">
                     {n.client_name}

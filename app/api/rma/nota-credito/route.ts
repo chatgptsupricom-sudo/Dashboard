@@ -66,8 +66,9 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST: RMA solicita una nota de crédito (caso, producto y motivo). Queda
- * pendiente hasta que el Super Admin la decida (PUT /api/rma/nota-credito/[id]).
+ * POST: RMA solicita una nota de crédito (caso, producto y motivo). En las
+ * sedes con flujo sigue por /api/notas-credito; en las demás le llega al
+ * Super Admin.
  */
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ["rma"]);
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
       images: images.length ? images : null,
       opciones: {
         autor: auth.payload?.name || auth.payload?.email || "RMA",
+        email: auth.payload?.email || "",
         origenPeticion: getPublicOrigin(request),
       },
     });

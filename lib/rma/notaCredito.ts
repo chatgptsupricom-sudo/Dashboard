@@ -1,15 +1,19 @@
 import { query } from "@/lib/db";
 import { leerProductos, type EstadoProducto, type ProductoEnvio } from "@/lib/rma/items";
 import { urlWebhookRma } from "@/lib/rma/webhook";
+import { ensureTablas } from "@/lib/notas-credito/datos";
+import { crearDesdeRma } from "@/lib/notas-credito/solicitudes";
+import { tieneFlujo } from "@/lib/notas-credito/tipos";
 
 /**
  * Solicitudes de nota de crédito de RMA (sql/rma_nota_credito_aprobacion.sql).
  *
- * Por ahora es SOLO la solicitud: RMA la pide desde su sección Nota de
- * Crédito (caso, producto y por qué) y al Super Admin le llega (panel +
- * correo por n8n) para verla. No se aprueba ni se rechaza en el panel, el
- * caso no cambia de estado, no se imprime documento ni se avisa al cliente:
- * el proceso de nota de crédito se define después.
+ * RMA la pide desde su sección Nota de Crédito (caso, producto y por qué).
+ * En las sedes con flujo (lib/notas-credito/tipos.ts, hoy Valencia) además
+ * nace la solicitud del flujo: el equipo pasa a "NC en revisión" y la
+ * preaprueba, aprueba y hace quien corresponda (lib/notas-credito/). En las
+ * demás sigue siendo SOLO la solicitud: le llega al Super Admin (panel +
+ * correo por n8n) para verla, sin aprobación ni cambio de estado.
  *
  * El estado "Nota de Crédito" tampoco se pone a mano (lo impiden los PUT del
  * caso y del producto). "nc_revision" solo lo tienen los casos que se
@@ -32,7 +36,7 @@ export function sePuedeSolicitar(estado: string): boolean {
 export function errorEstadoNotaCredito(actual: string, nuevo: string | undefined | null): string | null {
   if (!nuevo || nuevo === actual) return null;
   if (nuevo === "nota_credito" || nuevo === "nc_revision") {
-    return "La nota de crédito se solicita en la sección Nota de Crédito: le llega al Super Admin.";
+    return "La nota de crédito se solicita en la sección Nota de Crédito.";
   }
   return null;
 }
@@ -75,7 +79,7 @@ export async function hayColumnaItemNota(): Promise<boolean> {
 
 const FALTA_MIGRACION = "Falta correr la migración sql/rma_nota_credito_aprobacion.sql";
 
-type Opciones = { autor: string; origenPeticion: string };
+type Opciones = { autor: string; email?: string; origenPeticion: string };
 
 function nombreProducto(p: { model?: string | null; hardware?: string | null } | null | undefined): string {
   return p?.model || p?.hardware || "";
@@ -127,7 +131,7 @@ export async function solicitarNotaCredito(datos: {
     conItem ? [caso.id, itemId] : [caso.id],
   );
   if ((ya.rows as any[]).length) {
-    throw new ErrorNota("Ese producto ya tiene una solicitud de nota de crédito enviada al Super Admin.", 409);
+    throw new ErrorNota("Ese producto ya tiene una solicitud de nota de crédito en curso.", 409);
   }
   const images = datos.images ? JSON.stringify(datos.images) : null;
   const ins = await query(
@@ -147,6 +151,35 @@ export async function solicitarNotaCredito(datos: {
     ],
   );
   const id = Number((ins.rows as any).insertId);
+
+  // Sede con flujo: la solicitud sigue por preaprobación y el equipo pasa a
+  // "NC en revisión" (eso ya deja su historial).
+  const companyId = Number(caso.company_id) || 9;
+  if (tieneFlujo(companyId)) {
+    try {
+      await crearDesdeRma({
+        rmaNotaId: id,
+        companyId,
+        caseId: caso.id,
+        itemId: productos.length > 1 ? itemId : null,
+        caseNumber: String(caso.case_number ?? ""),
+        producto: nombreProducto(producto ?? caso),
+        serial: producto?.serial ?? caso.serial_quantity ?? null,
+        odooProductId: producto?.odoo_product_id ?? caso.odoo_product_id ?? null,
+        numeroFactura: caso.invoice_number ?? null,
+        clienteRma: caso.client_name ?? null,
+        estadoRma: estado as EstadoProducto,
+        motivo,
+        autor: { nombre: datos.opciones.autor, email: datos.opciones.email ?? "", rol: "rma" },
+        origenPeticion: datos.opciones.origenPeticion,
+      });
+      return { id };
+    } catch (e: any) {
+      // La de rma_notas_credito ya quedó: sin la del flujo, le llega al
+      // Super Admin como antes en vez de perderse.
+      console.error(`[rma/notaCredito] flujo de la solicitud ${id}:`, e?.message);
+    }
+  }
 
   // Queda en el historial del caso, sin cambiarle el estado.
   const nota = `Nota de crédito solicitada al Super Admin: ${motivo}`.slice(0, 1000);
@@ -180,8 +213,11 @@ export async function obtenerNota(id: number): Promise<any | null> {
 export async function listarNotas(estado: EstadoNota | null, limite = 200, id?: number): Promise<any[]> {
   if (!(await hayColumnasAprobacion())) return [];
   const conItem = await hayColumnaItemNota();
+  await ensureTablas();
   const r = await query(
-    `SELECT nc.id, nc.case_id, ${conItem ? "nc.item_id" : "NULL AS item_id"}, nc.estado, nc.motivo, nc.detail,
+    `SELECT f.id AS flujo_id, f.estado AS flujo_estado, f.monto AS flujo_monto, f.moneda AS flujo_moneda,
+            f.odoo_move_nombre AS flujo_nc_odoo,
+            nc.id, nc.case_id, ${conItem ? "nc.item_id" : "NULL AS item_id"}, nc.estado, nc.motivo, nc.detail,
             nc.observations, nc.images, nc.created_by, nc.created_at, nc.decidido_por, nc.decidido_at,
             nc.motivo_rechazo,
             c.case_number, c.client_name, c.invoice_number, c.company_id,
@@ -196,6 +232,7 @@ export async function listarNotas(estado: EstadoNota | null, limite = 200, id?: 
        FROM rma_notas_credito nc
        JOIN rma_cases c ON c.id = nc.case_id
        ${conItem ? "LEFT JOIN rma_case_items i ON i.id = nc.item_id" : ""}
+       LEFT JOIN nc_solicitudes f ON f.rma_nota_id = nc.id
       WHERE 1=1${estado ? " AND nc.estado = ?" : ""}${id ? " AND nc.id = ?" : ""}
       ORDER BY nc.created_at DESC, nc.id DESC
       LIMIT ${Math.max(1, Math.min(500, limite))}`,
@@ -209,7 +246,12 @@ export async function listarNotas(estado: EstadoNota | null, limite = 200, id?: 
 
 export async function contarPendientes(): Promise<number> {
   if (!(await hayColumnasAprobacion())) return 0;
-  const r = await query(`SELECT COUNT(*) AS n FROM rma_notas_credito WHERE estado = 'pendiente'`);
+  // Las que siguen el flujo (lib/notas-credito) no esperan al Super Admin.
+  await ensureTablas();
+  const r = await query(
+    `SELECT COUNT(*) AS n FROM rma_notas_credito nc LEFT JOIN nc_solicitudes f ON f.rma_nota_id = nc.id
+      WHERE nc.estado = 'pendiente' AND f.id IS NULL`,
+  );
   return Number((r.rows as any[])[0]?.n) || 0;
 }
 
