@@ -1,6 +1,7 @@
 "use client";
 
 import { DetalleNota } from "@/components/notas-credito/DetalleNota";
+import { NotasOdoo } from "@/components/notas-credito/NotasOdoo";
 import { NuevaNota } from "@/components/notas-credito/NuevaNota";
 import { Responsables } from "@/components/notas-credito/Responsables";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,7 @@ import {
   formatoMonto,
   NOMBRE_SEDE,
   PASO_DEL_ESTADO,
+  SEDES,
   type PasoNC,
   type SolicitudNC,
 } from "@/lib/notas-credito/tipos";
@@ -21,7 +23,7 @@ import type { AnteriorNC } from "@/lib/notas-credito/anteriores";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type Pestana = "mias" | "abiertas" | "todas" | "responsables";
+type Pestana = "mias" | "abiertas" | "todas" | "odoo" | "responsables";
 
 const ESTADO_ANTERIOR: Record<string, { t: string; c: string }> = {
   pendiente: { t: "Pendiente, fuera del flujo", c: "bg-amber-100 text-amber-800 border-amber-200" },
@@ -134,6 +136,7 @@ export function NotasCredito() {
       ver: true,
     },
     { id: "todas", t: "Todas", ver: true },
+    { id: "odoo", t: "En Odoo", ver: true },
     { id: "responsables", t: "Responsables", ver: superadmin },
   ];
 
@@ -176,6 +179,8 @@ export function NotasCredito() {
 
       {pestana === "responsables" ? (
         <Responsables />
+      ) : pestana === "odoo" ? (
+        <NotasOdoo sedes={superadmin ? SEDES : Object.keys(pasos).map(Number)} onAbrir={(id) => abrir(id)} />
       ) : cargando ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
