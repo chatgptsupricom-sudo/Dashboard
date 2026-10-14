@@ -94,6 +94,7 @@ export const esSuperadmin = (rol: unknown) => String(rol ?? "").toLowerCase().tr
  */
 const INICIALES: Record<number, Record<PasoNC, string[]>> = {
   9: {
+    rma: [],
     preaprueba: ["rangel.hernandez@supricom.com.ve"],
     aprueba: ["gabriel.camacho@supricom.com"],
     procesa: ["contador.vln@supricom.com.ve"],
@@ -114,12 +115,13 @@ export async function aprobadores(): Promise<Aprobadores> {
   for (const f of r.rows as any[]) {
     const sede = Number(f.company_id);
     if (!PASOS.includes(f.paso)) continue;
-    guardados[sede] ??= { preaprueba: [], aprueba: [], procesa: [] };
+    guardados[sede] ??= { rma: [], preaprueba: [], aprueba: [], procesa: [] };
     guardados[sede][f.paso as PasoNC].push(normCorreo(f.email));
   }
   const valor: Aprobadores = {};
   for (const sede of new Set([...Object.keys(INICIALES), ...Object.keys(guardados)].map(Number))) {
     valor[sede] = guardados[sede] ?? {
+      rma: [...(INICIALES[sede]?.rma ?? [])],
       preaprueba: [...(INICIALES[sede]?.preaprueba ?? [])],
       aprueba: [...(INICIALES[sede]?.aprueba ?? [])],
       procesa: [...(INICIALES[sede]?.procesa ?? [])],

@@ -21,17 +21,24 @@ export type OrigenNC = "rma" | "directa";
 /**
  * Pasos del flujo, cada uno con sus responsables por sede (tabla
  * nc_aprobadores). "preaprueba" además crea las notas que no vienen de RMA.
+ * "rma" es Servicio Técnico de la sede: no decide nada, recibe los avisos de
+ * cómo terminan sus solicitudes y ve las notas de su sede. Las solicitudes
+ * las puede hacer cualquiera con rol RMA.
  */
-export type PasoNC = "preaprueba" | "aprueba" | "procesa";
-export const PASOS: PasoNC[] = ["preaprueba", "aprueba", "procesa"];
+export type PasoNC = "rma" | "preaprueba" | "aprueba" | "procesa";
+export const PASOS: PasoNC[] = ["rma", "preaprueba", "aprueba", "procesa"];
+/** Los que deciden: sin alguien en cada uno, la sede no tiene el flujo activo. */
+export const PASOS_DECISION: PasoNC[] = ["preaprueba", "aprueba", "procesa"];
 
 export const ETIQUETA_PASO: Record<PasoNC, string> = {
+  rma: "RMA (solicita)",
   preaprueba: "Preaprueba",
   aprueba: "Aprueba",
   procesa: "Hace la nota de crédito",
 };
 
 export const DESCRIPCION_PASO: Record<PasoNC, string> = {
+  rma: "Servicio Técnico de la sede: recibe los avisos de sus solicitudes (aprobada, rechazada, hecha). Opcional.",
   preaprueba: "Filtra las solicitudes de RMA y crea las notas de crédito que no vienen de RMA.",
   aprueba: "Aprueba o rechaza. Es el único que puede aprobar una nota de crédito.",
   procesa: "Recibe la orden de crédito aprobada y la hace, en el panel o en Odoo.",
@@ -42,7 +49,7 @@ export const NOMBRE_SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas
 
 /** El flujo de una sede está activo si cada paso tiene al menos un responsable. */
 export function flujoCompleto(pasos: Partial<Record<PasoNC, string[]>> | null | undefined): boolean {
-  return !!pasos && PASOS.every((p) => (pasos[p]?.length ?? 0) > 0);
+  return !!pasos && PASOS_DECISION.every((p) => (pasos[p]?.length ?? 0) > 0);
 }
 
 /** Usuario del panel (users_config) que se puede elegir como responsable. */

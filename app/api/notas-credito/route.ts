@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/auth/roles";
 import { accesoNC, requireNC } from "@/lib/notas-credito/acceso";
+import { listarAnteriores } from "@/lib/notas-credito/anteriores";
 import { crearDirecta, ErrorNC, listar, sincronizarAprobadas } from "@/lib/notas-credito/solicitudes";
 import { ESTADOS_ABIERTOS, PASO_DEL_ESTADO, type EstadoNC } from "@/lib/notas-credito/tipos";
 import { getPublicOrigin } from "@/lib/publicOrigin";
@@ -14,6 +15,7 @@ const ESTADOS: EstadoNC[] = ["por_preaprobar", "por_aprobar", "aprobada", "proce
  *   ?acceso=1   si la sesión entra y con qué pasos (sidebar y pantalla). Nunca 403.
  *   ?conteo=1   cuántas esperan a la sesión (contador del sidebar).
  *   (nada)      la lista de sus sedes [&estado=]. Las aprobadas se ponen al día con Odoo.
+ *               `anteriores`: solicitudes de RMA fuera del flujo (lib/notas-credito/anteriores.ts).
  */
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
@@ -46,7 +48,13 @@ export async function GET(request: NextRequest) {
     } catch (e: any) {
       console.error("[notas-credito] sincronizar con Odoo:", e?.message);
     }
-    return NextResponse.json({ success: true, notas, pasos: acceso!.pasos, superadmin: acceso!.superadmin });
+    let anteriores: Awaited<ReturnType<typeof listarAnteriores>> = [];
+    try {
+      anteriores = await listarAnteriores(acceso!.sedes, acceso!.autor, acceso!.superadmin);
+    } catch (e: any) {
+      console.error("[notas-credito] solicitudes anteriores:", e?.message);
+    }
+    return NextResponse.json({ success: true, notas, anteriores, pasos: acceso!.pasos, superadmin: acceso!.superadmin });
   } catch (e: any) {
     console.error("GET /api/notas-credito:", e?.message);
     return NextResponse.json({ error: e?.message || "Error" }, { status: 500 });
