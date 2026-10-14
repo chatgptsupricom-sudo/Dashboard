@@ -1,12 +1,12 @@
 "use client";
 
 import { DetalleNota } from "@/components/notas-credito/DetalleNota";
+import { FILTROS_VACIOS, FiltrosNC, type EstadoFiltro, type Filtros, type OrigenFiltro } from "@/components/notas-credito/FiltrosNC";
 import { NuevaNota } from "@/components/notas-credito/NuevaNota";
 import { Responsables } from "@/components/notas-credito/Responsables";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import type { AnteriorNC } from "@/lib/notas-credito/anteriores";
 import type { NotaOdooMes } from "@/lib/notas-credito/odoo";
 import {
@@ -59,6 +59,43 @@ const mesActual = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "
 /** Para ordenar: YYYY-MM-DD o ISO, lo más nuevo primero. */
 const orden = (v: string) => (v.length === 10 ? `${v}T12:00:00` : v);
 
+/** Estado de una fila para el filtro (une los del panel, los de Odoo y los anteriores). */
+function estadoFila(f: Fila): EstadoFiltro {
+  if (f.tipo === "odoo") return f.odoo.estado === "posted" ? "publicada" : f.odoo.estado === "draft" ? "borrador" : "anulada";
+  if (f.tipo === "ant") return f.ant.estado === "pendiente" ? "fuera_flujo" : f.ant.estado === "rechazada" ? "rechazada" : "anterior";
+  if (f.odoo?.estado === "draft") return "borrador";
+  if (f.odoo?.estado === "cancel") return "anulada";
+  return f.sol.estado === "procesada" ? "publicada" : f.sol.estado;
+}
+
+function origenFila(f: Fila): OrigenFiltro {
+  if (f.tipo === "odoo") return f.odoo.solicitud_id ? "directa" : "odoo";
+  if (f.tipo === "ant") return "rma";
+  return f.sol.origen === "rma" ? "rma" : "directa";
+}
+
+const sinAcentos = (t: string) => t.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+
+/** Todo el texto por el que se puede buscar una fila. */
+function textoFila(f: Fila): string {
+  const partes =
+    f.tipo === "odoo"
+      ? [f.odoo.nombre, f.odoo.cliente, f.odoo.factura, f.odoo.ref, f.odoo.creado_por, f.odoo.solicitud_id ? `NC-${f.odoo.solicitud_id}` : ""]
+      : f.tipo === "ant"
+        ? [f.ant.case_number, `RMA ${f.ant.case_number}`, f.ant.cliente, f.ant.factura, f.ant.producto, f.ant.serial, f.ant.motivo, f.ant.creado_por]
+        : [
+            `NC-${f.sol.id}`, f.sol.case_number ? `RMA ${f.sol.case_number}` : "", f.sol.cliente, f.sol.factura_nombre, f.sol.producto,
+            f.sol.serial, f.sol.motivo, f.sol.creado_por, f.sol.preaprobado_por, f.sol.aprobado_por, f.sol.odoo_move_nombre, f.odoo?.nombre,
+          ];
+  return sinAcentos(partes.filter(Boolean).join(" "));
+}
+
+const ESTADOS_FILTRO: Record<"mias" | "abiertas" | "todas", EstadoFiltro[]> = {
+  mias: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "fuera_flujo"],
+  abiertas: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "fuera_flujo"],
+  todas: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "publicada", "rechazada", "anulada", "fuera_flujo", "anterior"],
+};
+
 /**
  * Pantalla de notas de crédito (/notas-credito). Cada quien ve las de las
  * sedes donde tiene un paso (el SuperAdmin, todas).
@@ -75,6 +112,8 @@ export function NotasCredito() {
   const [borradores, setBorradores] = useState<NotaOdoo[]>([]);
   const [pasos, setPasos] = useState<Record<number, PasoNC[]>>({});
   const [superadmin, setSuperadmin] = useState(false);
+  const [sedesActivas, setSedesActivas] = useState<number[]>([]);
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_VACIOS);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [errorOdoo, setErrorOdoo] = useState("");
@@ -82,10 +121,8 @@ export function NotasCredito() {
   const [nueva, setNueva] = useState(false);
   const [pasando, setPasando] = useState<number | null>(null);
   const [avisoAnterior, setAvisoAnterior] = useState<{ id: number; texto: string } | null>(null);
-  // Todas: mes y sede
+  // Todas: mes
   const [mes, setMes] = useState(mesActual);
-  const [sedeFiltro, setSedeFiltro] = useState(0);
-  const [soloSin, setSoloSin] = useState(false);
   const [odooMes, setOdooMes] = useState<NotaOdoo[]>([]);
   const [cargandoMes, setCargandoMes] = useState(false);
 
@@ -98,6 +135,7 @@ export function NotasCredito() {
       setAnteriores(j.anteriores || []);
       setPasos(j.pasos || {});
       setSuperadmin(!!j.superadmin);
+      setSedesActivas(j.sedes_activas || []);
       setError("");
     } catch (e: any) {
       setError(e?.message || "No se pudo cargar");
@@ -147,9 +185,10 @@ export function NotasCredito() {
 
   const tieneAlgunPaso = Object.keys(pasos).length > 0;
   const sedesVisibles = superadmin ? SEDES : Object.keys(pasos).map(Number);
-  const sedesQueCrean = Object.entries(pasos)
-    .filter(([, p]) => p.includes("preaprueba"))
-    .map(([s]) => Number(s));
+  // Crea quien preaprueba en la sede (o el SuperAdmin), solo en sedes con el flujo activo.
+  const sedesQueCrean = (superadmin ? SEDES : Object.entries(pasos).filter(([, p]) => p.includes("preaprueba")).map(([s]) => Number(s))).filter(
+    (s) => sedesActivas.includes(s),
+  );
 
   useEffect(() => {
     if (!cargando && !tieneAlgunPaso && pestana === "mias") setPestana("abiertas");
@@ -198,13 +237,28 @@ export function NotasCredito() {
     // Solicitudes del mes que no están (o todavía no) entre las NC de Odoo del mes.
     for (const s of notas) if (!enOdoo.has(s.id) && mesDe(s.created_at) === mes) filas.push(filaSol(s));
     for (const a of anteriores) if (mesDe(a.created_at) === mes) filas.push(filaAnt(a));
-    return filas
-      .filter((f) => !sedeFiltro || f.sede === sedeFiltro)
-      .sort((x, y) => orden(y.fecha).localeCompare(orden(x.fecha)));
-  }, [notas, anteriores, odooMes, mes, sedeFiltro]);
+    return filas.sort((x, y) => orden(y.fecha).localeCompare(orden(x.fecha)));
+  }, [notas, anteriores, odooMes, mes]);
+
+  const base: Fila[] = pestana === "mias" ? filasMias : pestana === "abiertas" ? filasEnCurso : pestana === "todas" ? filasTodas : [];
+  const visibles = useMemo(() => {
+    const q = sinAcentos(filtros.q.trim());
+    const palabras = q ? q.split(/\s+/) : [];
+    return base.filter((f) => {
+      if (filtros.sede && f.sede !== filtros.sede) return false;
+      if (filtros.estado && estadoFila(f) !== filtros.estado) return false;
+      if (filtros.origen && origenFila(f) !== filtros.origen) return false;
+      if (palabras.length) {
+        const t = textoFila(f);
+        if (!palabras.every((p) => t.includes(p))) return false;
+      }
+      return true;
+    });
+  }, [base, filtros]);
 
   const sinSolicitud = (f: Fila) => f.tipo === "odoo" && f.odoo.estado !== "cancel" && !f.odoo.solicitud_id;
   const resumen = useMemo(() => {
+    const filasTodas = pestana === "todas" ? visibles : [];
     const vigentes = filasTodas.filter((f) => f.tipo !== "ant" && !(f.tipo === "odoo" && f.odoo.estado === "cancel"));
     const total = new Map<string, number>();
     for (const f of filasTodas) {
@@ -217,10 +271,7 @@ export function NotasCredito() {
       porHacer: vigentes.filter((f) => f.tipo === "sol" && !f.odoo && ESTADOS_ABIERTOS.includes(f.sol.estado)).length,
       total: [...total.entries()],
     };
-  }, [filasTodas]);
-
-  const visibles =
-    pestana === "mias" ? filasMias : pestana === "abiertas" ? filasEnCurso : soloSin ? filasTodas.filter(sinSolicitud) : filasTodas;
+  }, [visibles, pestana]);
 
   const abrir = (id: number | null) => router.replace(id ? `?id=${id}` : "?", { scroll: false });
 
@@ -409,35 +460,20 @@ export function NotasCredito() {
         </div>
       )}
 
+      {pestana !== "responsables" && (
+        <FiltrosNC
+          filtros={filtros}
+          onCambio={setFiltros}
+          sedes={sedesVisibles}
+          estados={ESTADOS_FILTRO[pestana]}
+          total={base.length}
+          coinciden={visibles.length}
+          {...(pestana === "todas" ? { mes, onMes: setMes } : {})}
+        />
+      )}
+
       {pestana === "todas" && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-slate-500">Mes</span>
-              <Input type="month" value={mes} onChange={(e) => setMes(e.target.value)} className="w-44 bg-white" />
-            </label>
-            {sedesVisibles.length > 1 && (
-              <label className="space-y-1">
-                <span className="block text-xs font-medium text-slate-500">Sede</span>
-                <select
-                  className="h-9 rounded-md border bg-white px-3 text-sm"
-                  value={sedeFiltro}
-                  onChange={(e) => setSedeFiltro(Number(e.target.value))}
-                >
-                  <option value={0}>Todas</option>
-                  {sedesVisibles.map((s) => (
-                    <option key={s} value={s}>
-                      {NOMBRE_SEDE[s] || s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <label className="flex h-9 items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={soloSin} onChange={(e) => setSoloSin(e.target.checked)} />
-              Solo las hechas en Odoo sin solicitud
-            </label>
-          </div>
           {!cargandoMes && (
             <div className="grid gap-3 sm:grid-cols-4">
               <div className="rounded-2xl bg-white p-4 shadow-sm">

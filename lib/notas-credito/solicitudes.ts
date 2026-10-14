@@ -183,7 +183,11 @@ export async function crearDesdeRma(datos: {
   return id;
 }
 
-/** Nota de crédito que no viene de RMA: la crea quien preaprueba y va directo a aprobación. */
+/**
+ * Nota de crédito que no viene de RMA: la crea quien preaprueba (o el
+ * SuperAdmin) y va directo a aprobación. Crearla no es aprobarla: igual la
+ * decide quien aprueba.
+ */
 export async function crearDirecta(datos: {
   companyId: number;
   facturaId: number;
@@ -192,8 +196,8 @@ export async function crearDirecta(datos: {
   autor: Autor;
   origenPeticion: string;
 }): Promise<number> {
-  if (!(await tienePaso(datos.autor.email, datos.companyId, "preaprueba"))) {
-    throw new ErrorNC("Solo quien preaprueba en esta sede crea notas de crédito.", 403);
+  if (!esSuperadmin(datos.autor.rol) && !(await tienePaso(datos.autor.email, datos.companyId, "preaprueba"))) {
+    throw new ErrorNC("Solo quien preaprueba en esta sede (o el SuperAdmin) crea notas de crédito.", 403);
   }
   if (!(await sedeConFlujo(datos.companyId))) {
     throw new ErrorNC("A esta sede le falta alguien en aprobar o en hacer la nota: el SuperAdmin lo completa en Responsables.", 409);
