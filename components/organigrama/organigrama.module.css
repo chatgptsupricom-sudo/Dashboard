@@ -113,3 +113,14 @@
   width: 48px;
   border-top: var(--grosor) solid var(--linea);
 }
+
+/* ---- Desplazarse arrastrando (manito, Ctrl o botón central) ---- */
+.modoMano,
+.modoMano * {
+  cursor: grab !important;
+}
+.arrastrando,
+.arrastrando * {
+  cursor: grabbing !important;
+  user-select: none;
+}

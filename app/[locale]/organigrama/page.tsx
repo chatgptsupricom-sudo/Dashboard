@@ -1,13 +1,38 @@
 "use client";
 
-import { Organigrama } from "@/components/organigrama/Organigrama";
+import { Organigrama, type EdicionRapida } from "@/components/organigrama/Organigrama";
+import s from "@/components/organigrama/organigrama.module.css";
 import { PanelCargo } from "@/components/organigrama/PanelCargo";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ETIQUETA_FRECUENCIA, cadenaDeMando, hijosPorPadre, type Nodo } from "@/lib/organigrama/tipos";
-import { Download, Loader2, Maximize2, Minus, Network, Plus, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  ChevronDown,
+  Download,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  Hand,
+  Loader2,
+  Maximize2,
+  Minus,
+  Network,
+  Plus,
+  Search,
+} from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 1.5;
+const limitarZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, +z.toFixed(2)));
+const esperarPintado = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
 export default function OrganigramaPage() {
   const [nodos, setNodos] = useState<Nodo[]>([]);
@@ -17,9 +42,19 @@ export default function OrganigramaPage() {
   const [busqueda, setBusqueda] = useState("");
   const [zoom, setZoom] = useState(1);
   const [creando, setCreando] = useState(false);
+  const [exportando, setExportando] = useState<null | "png" | "pdf">(null);
   const contenedor = useRef<HTMLDivElement>(null);
   const lienzo = useRef<HTMLDivElement>(null);
+  const objetivoExportar = useRef<HTMLDivElement>(null);
   const ajustado = useRef(false);
+
+  // Desplazarse arrastrando: con la manito activada, con Ctrl apretado o con
+  // el botón central del mouse.
+  const [mano, setMano] = useState(false);
+  const [ctrl, setCtrl] = useState(false);
+  const [arrastrando, setArrastrando] = useState(false);
+  const arrastre = useRef<{ x: number; y: number; left: number; top: number; movio: boolean; id: number } | null>(null);
+  const suprimirClic = useRef(false);
 
   const recargar = useCallback(async () => {
     const r = await fetch("/api/organigrama");
@@ -33,6 +68,71 @@ export default function OrganigramaPage() {
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
   }, [recargar]);
+
+  useEffect(() => {
+    const tecla = (e: KeyboardEvent) => setCtrl(e.ctrlKey);
+    const fuera = () => setCtrl(false);
+    window.addEventListener("keydown", tecla);
+    window.addEventListener("keyup", tecla);
+    window.addEventListener("blur", fuera);
+    return () => {
+      window.removeEventListener("keydown", tecla);
+      window.removeEventListener("keyup", tecla);
+      window.removeEventListener("blur", fuera);
+    };
+  }, []);
+
+  // Ctrl + rueda: zoom del organigrama (no de la página).
+  const hayOrganigrama = nodos.length > 0;
+  useEffect(() => {
+    const c = contenedor.current;
+    if (!c) return;
+    const rueda = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom((z) => limitarZoom(z * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+    };
+    c.addEventListener("wheel", rueda, { passive: false });
+    return () => c.removeEventListener("wheel", rueda);
+  }, [hayOrganigrama]);
+
+  const alPresionar = (e: React.PointerEvent<HTMLDivElement>) => {
+    const central = e.button === 1;
+    if (!(central || (e.button === 0 && (mano || e.ctrlKey)))) return;
+    if ((e.target as HTMLElement).closest("input, textarea, select")) return;
+    const c = contenedor.current!;
+    arrastre.current = { x: e.clientX, y: e.clientY, left: c.scrollLeft, top: c.scrollTop, movio: false, id: e.pointerId };
+    // Sin esto el arrastre selecciona texto de los recuadros; el clic igual llega.
+    e.preventDefault();
+  };
+  const alMover = (e: React.PointerEvent<HTMLDivElement>) => {
+    const a = arrastre.current;
+    if (!a || a.id !== e.pointerId) return;
+    const dx = e.clientX - a.x;
+    const dy = e.clientY - a.y;
+    if (!a.movio) {
+      if (Math.hypot(dx, dy) < 4) return;
+      // Recién al moverse se captura el puntero: así un clic sin arrastrar
+      // sigue abriendo el cargo.
+      a.movio = true;
+      setArrastrando(true);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // El puntero ya se soltó: se sigue moviendo igual mientras dure.
+      }
+    }
+    contenedor.current!.scrollLeft = a.left - dx;
+    contenedor.current!.scrollTop = a.top - dy;
+  };
+  const alSoltar = () => {
+    if (arrastre.current?.movio) {
+      suprimirClic.current = true;
+      setTimeout(() => (suprimirClic.current = false), 0);
+    }
+    arrastre.current = null;
+    setArrastrando(false);
+  };
 
   /** Zoom para que el organigrama entero quepa a lo ancho. */
   const ajustar = useCallback(() => {
@@ -72,8 +172,95 @@ export default function OrganigramaPage() {
     }
   };
 
+  /** Edición en el mismo recuadro (doble clic o lápiz). */
+  const editarRapido = async (id: number, cambios: EdicionRapida) => {
+    setError(null);
+    try {
+      const r = await fetch(`/api/organigrama/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cambios),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || "No se pudo guardar");
+      await recargar();
+      return true;
+    } catch (e: any) {
+      setError(e.message);
+      return false;
+    }
+  };
+
+  const nombreArchivo = (ext: string) => `organigrama-supricom-${new Date().toISOString().slice(0, 10)}.${ext}`;
+
+  const bajar = (href: string, nombre: string) => {
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = nombre;
+    a.click();
+  };
+
+  /**
+   * Foto del organigrama tal como está ahora (con los cambios guardados), a
+   * tamaño real y sin los botones de edición. Se saca con zoom 100 % para que
+   * salga nítido aunque en pantalla se vea reducido.
+   */
+  const foto = async (): Promise<string> => {
+    const zoomAntes = zoom;
+    setSeleccion(null);
+    setZoom(1);
+    await esperarPintado();
+    try {
+      const nodo = objetivoExportar.current!;
+      const { toPng } = await import("html-to-image");
+      return await toPng(nodo, {
+        backgroundColor: "#ffffff",
+        pixelRatio: 2,
+        width: nodo.scrollWidth,
+        height: nodo.scrollHeight,
+        filter: (el) => !(el instanceof HTMLElement && el.dataset?.exportar === "no"),
+      });
+    } finally {
+      setZoom(zoomAntes);
+    }
+  };
+
+  const exportar = async (formato: "png" | "pdf") => {
+    setExportando(formato);
+    setError(null);
+    try {
+      const png = await foto();
+      if (formato === "png") {
+        bajar(png, nombreArchivo("png"));
+        return;
+      }
+      // PDF: se imprime la imagen en una página horizontal desde un iframe
+      // oculto; el navegador ofrece "Guardar como PDF".
+      const iframe = document.createElement("iframe");
+      iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+      document.body.appendChild(iframe);
+      const doc = iframe.contentDocument!;
+      doc.open();
+      doc.write(
+        `<!doctype html><html><head><title>${nombreArchivo("pdf").replace(".pdf", "")}</title>` +
+          `<style>@page{size:landscape;margin:8mm}html,body{margin:0}img{display:block;max-width:100%;max-height:100vh;margin:auto}</style>` +
+          `</head><body><img src="${png}"></body></html>`,
+      );
+      doc.close();
+      const img = doc.querySelector("img")!;
+      await (img.complete ? Promise.resolve() : new Promise((r) => (img.onload = r)));
+      iframe.contentWindow!.focus();
+      iframe.contentWindow!.print();
+      setTimeout(() => iframe.remove(), 60_000);
+    } catch (e: any) {
+      setError(`No se pudo generar el archivo: ${e?.message || e}`);
+    } finally {
+      setExportando(null);
+    }
+  };
+
   /** Todas las actividades en un CSV (abre en Excel), en el orden del organigrama. */
-  const exportar = () => {
+  const exportarActividades = () => {
     const mapa = hijosPorPadre(nodos);
     const filas: string[][] = [["Área", "Cargo", "Reporta a", "Personas", "Propósito", "N.º", "Actividad", "Frecuencia", "Detalle"]];
     const recorrer = (padre: number | null) => {
@@ -90,15 +277,14 @@ export default function OrganigramaPage() {
     recorrer(null);
     const csv = filas.map((f) => f.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `organigrama-actividades-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
+    bajar(url, `organigrama-actividades-${new Date().toISOString().slice(0, 10)}.csv`);
     URL.revokeObjectURL(url);
   };
 
   const nodoSeleccionado = seleccion ? nodos.find((n) => n.id === seleccion.id) || null : null;
   const conActividades = nodos.filter((n) => n.actividades.length).length;
+  const boton =
+    "flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-blue-300";
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4 sm:p-6">
@@ -110,7 +296,7 @@ export default function OrganigramaPage() {
           <div>
             <h1 className="text-2xl font-black text-slate-900">Organigrama</h1>
             <p className="text-sm text-slate-500">
-              Haz clic en un cargo para anotar sus actividades o cambiar su lugar
+              Clic: actividades del cargo · Doble clic: editar nombre y personas
               {nodos.length > 0 && (
                 <span className="text-slate-400">
                   {" "}
@@ -131,39 +317,56 @@ export default function OrganigramaPage() {
                 className="w-56 rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-sm"
               />
             </div>
+            <button
+              onClick={() => setMano((m) => !m)}
+              aria-pressed={mano}
+              title="Manito: arrastra para moverte por el organigrama (también Ctrl + arrastrar, o el botón central del mouse)"
+              className={cn(
+                "rounded-xl border p-2",
+                mano ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:text-slate-900",
+              )}
+            >
+              <Hand className="h-4 w-4" />
+            </button>
             <div className="flex items-center rounded-xl border border-slate-200 bg-white">
-              <button
-                onClick={() => setZoom((z) => Math.max(ZOOM_MIN, +(z - 0.1).toFixed(2)))}
-                className="p-2 text-slate-600 hover:text-slate-900"
-                title="Alejar"
-              >
+              <button onClick={() => setZoom((z) => limitarZoom(z - 0.1))} className="p-2 text-slate-600 hover:text-slate-900" title="Alejar (Ctrl + rueda)">
                 <Minus className="h-4 w-4" />
               </button>
-              <button
-                onClick={() => setZoom(1)}
-                className="w-12 text-center text-xs font-semibold text-slate-600"
-                title="Tamaño real"
-              >
+              <button onClick={() => setZoom(1)} className="w-12 text-center text-xs font-semibold text-slate-600" title="Tamaño real">
                 {Math.round(zoom * 100)}%
               </button>
-              <button
-                onClick={() => setZoom((z) => Math.min(ZOOM_MAX, +(z + 0.1).toFixed(2)))}
-                className="p-2 text-slate-600 hover:text-slate-900"
-                title="Acercar"
-              >
+              <button onClick={() => setZoom((z) => limitarZoom(z + 0.1))} className="p-2 text-slate-600 hover:text-slate-900" title="Acercar (Ctrl + rueda)">
                 <Plus className="h-4 w-4" />
               </button>
               <button onClick={ajustar} className="border-l border-slate-200 p-2 text-slate-600 hover:text-slate-900" title="Ajustar al ancho">
                 <Maximize2 className="h-4 w-4" />
               </button>
             </div>
-            <button
-              onClick={exportar}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-blue-300"
-              title="Descargar todas las actividades (Excel/CSV)"
-            >
-              <Download className="h-4 w-4" /> Actividades
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={boton} disabled={!!exportando}>
+                  {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  Descargar
+                  <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel className="text-xs font-normal text-slate-500">
+                  Sale tal como está ahora, con los últimos cambios
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => exportar("png")}>
+                  <FileImage className="h-4 w-4" /> Organigrama en imagen (PNG)
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => exportar("pdf")}>
+                  <FileText className="h-4 w-4" /> Organigrama en PDF
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={exportarActividades}>
+                  <FileSpreadsheet className="h-4 w-4" /> Actividades (Excel / CSV)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <button
               onClick={() => crear({ parentId: null, cargo: "Nuevo cargo", tipo: "direccion", disposicion: "fila" })}
               disabled={creando}
@@ -211,16 +414,39 @@ export default function OrganigramaPage() {
       {nodos.length > 0 && (
         <div
           ref={contenedor}
-          className="min-h-[60vh] flex-1 overflow-auto rounded-2xl border border-slate-200 bg-slate-50/70"
+          onPointerDown={alPresionar}
+          onPointerMove={alMover}
+          onPointerUp={alSoltar}
+          onPointerCancel={alSoltar}
+          onClickCapture={(e) => {
+            if (suprimirClic.current) {
+              e.stopPropagation();
+              e.preventDefault();
+            }
+          }}
+          onAuxClick={(e) => e.button === 1 && e.preventDefault()}
+          className={cn(
+            "min-h-[60vh] flex-1 overflow-auto rounded-2xl border border-slate-200 bg-slate-50/70",
+            arrastrando ? s.arrastrando : (mano || ctrl) && s.modoMano,
+          )}
         >
           <div ref={lienzo} style={{ zoom }} className="w-max min-w-full">
-            <Organigrama
-              nodos={nodos}
-              seleccionado={seleccion?.id ?? null}
-              busqueda={busqueda}
-              onSeleccionar={(id) => setSeleccion({ id })}
-              onAgregarSubordinado={(padre) => crear({ parentId: padre, cargo: "Nuevo cargo" })}
-            />
+            <div ref={objetivoExportar} className="w-max min-w-full bg-transparent">
+              {exportando && (
+                <div className="flex items-baseline justify-between px-8 pt-6">
+                  <p className="text-xl font-black text-[#1e3a5f]">Organigrama SUPRICOM</p>
+                  <p className="text-xs text-slate-500">{new Date().toLocaleDateString("es-VE", { dateStyle: "long" })}</p>
+                </div>
+              )}
+              <Organigrama
+                nodos={nodos}
+                seleccionado={exportando ? null : (seleccion?.id ?? null)}
+                busqueda={exportando ? "" : busqueda}
+                onSeleccionar={(id) => setSeleccion({ id })}
+                onAgregarSubordinado={(padre) => crear({ parentId: padre, cargo: "Nuevo cargo" })}
+                onEditar={editarRapido}
+              />
+            </div>
           </div>
         </div>
       )}
