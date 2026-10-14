@@ -319,3 +319,59 @@ export async function notaEnChatter(moveId: number, texto: string): Promise<void
     console.error(`[notas-credito] chatter de la NC ${moveId}:`, e?.message);
   }
 }
+
+export type NotaOdooMes = {
+  id: number;
+  nombre: string;
+  company_id: number;
+  fecha: string | null;
+  cliente: string;
+  factura: string;
+  moneda: string;
+  total: number;
+  estado: string;
+  ref: string;
+  nro_ctrl: string;
+  creado_por: string;
+  url: string;
+};
+
+/**
+ * Notas de crédito de cliente de Odoo (out_refund) de las sedes en el rango
+ * [desde, hasta), por fecha de la NC (las en borrador sin fecha, por la de
+ * creación). Para la pestaña "En Odoo": se ven también las hechas sin pasar
+ * por el panel.
+ */
+export async function notasOdooDelRango(sedes: number[], desde: string, hasta: string): Promise<NotaOdooMes[]> {
+  if (!sedes.length) return [];
+  const r = await callOdooRPC<any[]>(
+    "account.move",
+    "search_read",
+    [[
+      ["move_type", "=", "out_refund"], ["company_id", "in", sedes],
+      "|", "&", ["invoice_date", ">=", desde], ["invoice_date", "<", hasta],
+      "&", "&", ["invoice_date", "=", false], ["create_date", ">=", `${desde} 00:00:00`], ["create_date", "<", `${hasta} 00:00:00`],
+    ]],
+    {
+      fields: ["name", "company_id", "invoice_date", "partner_id", "reversed_entry_id", "currency_id", "amount_total", "state", "ref", "nro_ctrl", "create_uid"],
+      order: "invoice_date desc, id desc",
+      limit: 1000,
+    },
+  );
+  if (!r) throw new Error("Odoo no respondió la consulta de notas de crédito.");
+  return r.map((m) => ({
+    id: m.id,
+    nombre: m.name && m.name !== "/" ? m.name : "Borrador",
+    company_id: m2o(m.company_id)?.[0] ?? 0,
+    fecha: m.invoice_date || null,
+    cliente: m2o(m.partner_id)?.[1] ?? "",
+    factura: m2o(m.reversed_entry_id)?.[1] ?? "",
+    moneda: m2o(m.currency_id)?.[1] ?? "USD",
+    total: r2(m.amount_total),
+    estado: m.state,
+    ref: m.ref || "",
+    nro_ctrl: m.nro_ctrl || "",
+    creado_por: m2o(m.create_uid)?.[1] ?? "",
+    url: urlOdoo(m.id),
+  }));
+}
