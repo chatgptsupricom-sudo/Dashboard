@@ -164,6 +164,28 @@ export async function guardarAprobadores(companyId: number, pasos: Record<PasoNC
   }
 }
 
+/**
+ * Deja guardados en nc_aprobadores los responsables iniciales de la sede si
+ * todavía no tiene ninguno: n8n lee los destinatarios de esa tabla (lib/notas-credito/aviso.ts)
+ * y no conoce INICIALES.
+ */
+export async function asegurarAprobadoresGuardados(companyId: number): Promise<void> {
+  const iniciales = INICIALES[companyId];
+  if (!iniciales) return;
+  await ensureTablas();
+  const r = await query(`SELECT COUNT(*) AS n FROM nc_aprobadores WHERE company_id = ?`, [companyId]);
+  if (Number((r.rows as any[])[0]?.n)) return;
+  for (const p of PASOS) {
+    for (const email of iniciales[p]) {
+      await query(
+        `INSERT IGNORE INTO nc_aprobadores (company_id, paso, email, updated_by) VALUES (?, ?, ?, 'iniciales')`,
+        [companyId, p, email],
+      );
+    }
+  }
+  cache = null;
+}
+
 /** Pasos que tiene un correo en cada sede: { 9: ["preaprueba"] }. */
 export async function pasosDe(email: unknown): Promise<Record<number, PasoNC[]>> {
   const correo = normCorreo(email);
