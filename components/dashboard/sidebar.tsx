@@ -31,6 +31,7 @@ import {
   BookOpen,
   Boxes,
   BrainCircuit,
+  Network,
   Calendar,
   Camera,
   Car,
@@ -260,6 +261,8 @@ export function Sidebar({
     { id: "inventory", label: t("inventario"), icon: Package, slug: "/inventory" },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
+    // Organigrama con las actividades de cada cargo (SuperAdmin y Procesos).
+    { id: "organigrama", label: "Organigrama", icon: Network, slug: "/organigrama", absoluteHref: true },
     { id: "integraciondepago", label: t("integracion_pago"), icon: CreditCard, slug: "/integraciondepago" },
     { id: "clientes", label: t("clientes"), icon: UserCheck, slug: "/clientes" },
     { id: "catalogo", label: t("catalogo"), icon: Boxes, slug: "/catalogo" },
