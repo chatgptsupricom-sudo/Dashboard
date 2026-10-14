@@ -9,8 +9,8 @@ import { useTranslations } from "next-intl";
 
 /**
  * Sección Nota de Crédito de RMA: solicitar una (caso, producto y por qué) y
- * ver las que ya se pidieron. En Valencia siguen el flujo de aprobación
- * (/notas-credito); en las demás sedes le llegan al Super Admin.
+ * ver las que ya se pidieron. Siguen el flujo de aprobación (/notas-credito)
+ * en las sedes con sus responsables completos; si no, le llegan al Super Admin.
  */
 export default function RmaNotaCreditoPage() {
   const t = useTranslations("rma");

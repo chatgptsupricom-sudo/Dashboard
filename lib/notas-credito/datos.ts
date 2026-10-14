@@ -1,5 +1,5 @@
 import { db, query } from "@/lib/db";
-import { PASOS, type PasoNC } from "@/lib/notas-credito/tipos";
+import { flujoCompleto, PASOS, type PasoNC, type UsuarioPanel } from "@/lib/notas-credito/tipos";
 
 /**
  * Tablas del flujo de notas de crédito. Se crean solas (DDL de referencia en
@@ -129,18 +129,67 @@ export async function aprobadores(): Promise<Aprobadores> {
   return valor;
 }
 
+/** Si la sede tiene el flujo activo: cada paso con al menos un responsable. */
+export async function sedeConFlujo(companyId: number | null | undefined): Promise<boolean> {
+  return flujoCompleto((await aprobadores())[Number(companyId)]);
+}
+
+/** Usuarios del panel con correo, para elegir responsables (los activos primero). */
+export async function usuariosPanel(): Promise<UsuarioPanel[]> {
+  const r = await query(
+    `SELECT LOWER(TRIM(uc.email)) AS email, uc.name, COALESCE(r.display_name, r.name) AS rol, uc.cids,
+            COALESCE(uc.is_active, 1) AS activo
+       FROM users_config uc
+       LEFT JOIN roles r ON r.id = uc.role_id
+      WHERE uc.email LIKE '%_@_%'
+      ORDER BY activo DESC, uc.name`,
+  );
+  const vistos = new Set<string>();
+  const out: UsuarioPanel[] = [];
+  for (const f of r.rows as any[]) {
+    if (vistos.has(f.email)) continue;
+    vistos.add(f.email);
+    out.push({ email: f.email, nombre: f.name || f.email, rol: f.rol || "", cids: f.cids == null ? null : Number(f.cids), activo: Number(f.activo) === 1 });
+  }
+  return out;
+}
+
+export class ErrorAprobadores extends Error {}
+
 /**
- * Reemplaza los responsables de una sede. Se guardan los tres pasos juntos:
- * así una sede que ya se guardó nunca vuelve a INICIALES por quedar un paso
- * vacío. Cada paso necesita al menos un correo.
+ * Reemplaza los responsables de una sede. Solo se aceptan correos de
+ * users_config (se eligen de la lista del panel). Un paso puede quedar vacío
+ * (la sede queda sin flujo y RMA le pide al Super Admin), salvo que la sede
+ * tenga notas de crédito en curso: esas se quedarían sin quién las decida.
+ * Una sede con INICIALES no puede quedar del todo vacía: sin filas volvería a
+ * usar los iniciales.
  */
 export async function guardarAprobadores(companyId: number, pasos: Record<PasoNC, string[]>, por: string): Promise<void> {
   await ensureTablas();
-  const limpios = Object.fromEntries(
-    PASOS.map((p) => [p, [...new Set((pasos[p] ?? []).map(normCorreo).filter((c) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c)))]]),
-  ) as Record<PasoNC, string[]>;
-  for (const p of PASOS) {
-    if (!limpios[p].length) throw new Error(`Falta al menos un correo válido en "${p}".`);
+  const limpios = Object.fromEntries(PASOS.map((p) => [p, [...new Set((pasos[p] ?? []).map(normCorreo).filter(Boolean))]])) as Record<
+    PasoNC,
+    string[]
+  >;
+  const pedidos = [...new Set(PASOS.flatMap((p) => limpios[p]))];
+  if (pedidos.length) {
+    const r = await query(
+      `SELECT DISTINCT LOWER(TRIM(email)) AS email FROM users_config WHERE LOWER(TRIM(email)) IN (${pedidos.map(() => "?").join(",")})`,
+      pedidos,
+    );
+    const existen = new Set((r.rows as any[]).map((f) => f.email));
+    const faltan = pedidos.filter((c) => !existen.has(c));
+    if (faltan.length) throw new ErrorAprobadores(`No son usuarios del panel: ${faltan.join(", ")}.`);
+  } else if (INICIALES[companyId]) {
+    throw new ErrorAprobadores("Esta sede no puede quedar sin ningún responsable.");
+  }
+  if (!flujoCompleto(limpios)) {
+    const abiertas = await query(
+      `SELECT COUNT(*) AS n FROM nc_solicitudes WHERE company_id = ? AND estado IN ('por_preaprobar','por_aprobar','aprobada')`,
+      [companyId],
+    );
+    if (Number((abiertas.rows as any[])[0]?.n)) {
+      throw new ErrorAprobadores("La sede tiene notas de crédito en curso: cada paso necesita al menos una persona.");
+    }
   }
   const conn = await db.getConnection();
   try {

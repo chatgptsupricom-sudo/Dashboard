@@ -435,7 +435,7 @@
     "inventario_supricom_desc": "{total} casos de equipos vendidos por Supricom",
     "inventario_externo": "Inventario RMA Externo",
     "inventario_externo_desc": "{total} casos de equipos no vendidos por Supricom (servicio presupuestado, sin garantía)",
-    "nc_seccion_desc": "Solicita una nota de crédito cuando el técnico diagnostica que el equipo no se puede reparar o que no vale la pena. En Valencia pasa por preaprobación y aprobación antes de hacerse en Odoo; en las demás sedes le llega al Super Admin.",
+    "nc_seccion_desc": "Solicita una nota de crédito cuando el técnico diagnostica que el equipo no se puede reparar o que no vale la pena. Pasa por preaprobación y aprobación antes de hacerse en Odoo (si la sede todavía no tiene sus responsables, le llega al Super Admin).",
     "nc_solicitar": "Solicitar nota de crédito",
     "nc_solicitar_desc": "Elige el caso y el producto, y explica por qué corresponde la nota de crédito.",
     "nc_paso_caso": "Caso",

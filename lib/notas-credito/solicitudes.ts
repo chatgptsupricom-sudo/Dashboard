@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { avisarNC } from "@/lib/notas-credito/aviso";
-import { ensureTablas, esSuperadmin, normCorreo, pasosDe, registrarEvento, tienePaso } from "@/lib/notas-credito/datos";
+import { ensureTablas, esSuperadmin, normCorreo, pasosDe, registrarEvento, sedeConFlujo, tienePaso } from "@/lib/notas-credito/datos";
 import {
   candidatasOdoo,
   crearBorradorOdoo,
@@ -194,6 +194,9 @@ export async function crearDirecta(datos: {
 }): Promise<number> {
   if (!(await tienePaso(datos.autor.email, datos.companyId, "preaprueba"))) {
     throw new ErrorNC("Solo quien preaprueba en esta sede crea notas de crédito.", 403);
+  }
+  if (!(await sedeConFlujo(datos.companyId))) {
+    throw new ErrorNC("A esta sede le falta alguien en aprobar o en hacer la nota: el SuperAdmin lo completa en Responsables.", 409);
   }
   const motivo = datos.motivo.trim();
   if (motivo.length < 10) throw new ErrorNC("Explica el motivo de la nota de crédito (al menos 10 caracteres).");
