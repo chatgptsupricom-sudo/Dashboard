@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { olvidarSesion } from "@/lib/auth/vigencia";
 import { aprobadores } from "@/lib/notas-credito/datos";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -225,6 +226,8 @@ export async function POST(request: NextRequest) {
         [userId, cleanEmail, userName, roleId, safeCids],
       );
     }
+    // Si le cambió el rol o la sede, su sesión abierta deja de valer ya.
+    olvidarSesion(userId);
 
     // 3. GESTIONAR TABLA sellers (VINCULACIÓN) — además de users_config,
     // el rol de vendedor lleva una fila propia en sellers (cuota, activo).
@@ -258,8 +261,8 @@ export async function POST(request: NextRequest) {
  * Quitar el rol del panel: borra la fila de users_config, que es lo que el
  * login exige (sin fila responde 403 "sin acceso"). Si era vendedor, su fila
  * de sellers queda inactiva en vez de borrarse, porque leads y cuotas viejos
- * la referencian. La sesión que ya tenga abierta sigue viva hasta que venza
- * el JWT: el rol va dentro del token y las APIs no lo vuelven a leer.
+ * la referencian. Si tenía la sesión abierta, termina en la siguiente llamada
+ * que haga: los guards comparan el token con users_config (lib/auth/vigencia.ts).
  */
 export async function DELETE(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin", "gerente de operaciones"]);
@@ -317,6 +320,7 @@ export async function DELETE(request: NextRequest) {
 
     await query("DELETE FROM users_config WHERE id = ?", [userId]);
     await query("UPDATE sellers SET activo = 0 WHERE user_id = ?", [userId]);
+    olvidarSesion(userId);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
