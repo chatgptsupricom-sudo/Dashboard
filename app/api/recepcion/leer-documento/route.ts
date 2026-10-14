@@ -1,7 +1,7 @@
 import { requireRoles } from "@/lib/auth/roles";
 import { MAX_PRECINTOS, limpiarPrecintos } from "@/lib/recepcion/flujo";
+import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
 
 /**
  * POST /api/recepcion/leer-documento  (multipart: archivo)
@@ -12,9 +12,13 @@ import OpenAI from "openai";
  *
  * Es una ayuda para no transcribir a mano: lo leido cae en la grilla y
  * Compras lo revisa antes de guardar. Nada se guarda desde esta ruta.
+ *
+ * Lo lee Claude: RECEPCION_IA_MODELO, o el del Agente IA (AGENTE_IA_MODELO), o
+ * claude-opus-5-5. Necesita ANTHROPIC_API_KEY.
  */
 
-const MODELO = process.env.OPENAI_VISION_MODEL || "gpt-4o";
+const MODELO =
+  process.env.RECEPCION_IA_MODELO?.trim() || process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5-5";
 const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_RENGLONES = 300;
 const TIPOS: Record<string, "pdf" | "imagen"> = {
@@ -63,13 +67,13 @@ const ESQUEMA = {
   },
 } as const;
 
-// El cliente se crea al usarlo: asi el build no necesita OPENAI_API_KEY y, si
+// El cliente se crea al usarlo: asi el build no necesita ANTHROPIC_API_KEY y, si
 // falta en runtime, falla solo esta ruta con un error claro.
-let cliente: OpenAI | null = null;
-function getOpenAI(): OpenAI {
-  if (!cliente) cliente = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return cliente;
-}
+let cliente: Anthropic | null = null;
+// Una API key que no pertenece a un workspace exige decir cual usar.
+const WORKSPACE = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+const anthropic = () =>
+  (cliente ??= new Anthropic(WORKSPACE ? { defaultHeaders: { "anthropic-workspace-id": WORKSPACE } } : {}));
 
 const texto = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
 
@@ -77,9 +81,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ["compras"]);
   if (auth.error) return auth.error;
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json(
-      { error: "Falta configurar OPENAI_API_KEY en el servidor" },
+      { error: "Falta configurar ANTHROPIC_API_KEY en el servidor" },
       { status: 503 },
     );
   }
@@ -101,26 +105,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const datos = `data:${archivo.type};base64,${Buffer.from(await archivo.arrayBuffer()).toString("base64")}`;
-    const contenido: any[] = [
-      { type: "input_text", text: "Lee este documento y devuelve sus datos." },
+    const datos = Buffer.from(await archivo.arrayBuffer()).toString("base64");
+    const documento: Anthropic.ContentBlockParam =
       clase === "pdf"
-        ? { type: "input_file", filename: archivo.name || "packing-list.pdf", file_data: datos }
-        : { type: "input_image", image_url: datos },
-    ];
+        ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: datos } }
+        : {
+            type: "image",
+            source: { type: "base64", media_type: archivo.type as "image/jpeg" | "image/png" | "image/webp", data: datos },
+          };
 
-    const respuesta = await getOpenAI().responses.create({
-      model: MODELO,
-      instructions: INSTRUCCIONES,
-      input: [{ role: "user", content: contenido }],
-      text: {
-        format: { type: "json_schema", name: "packing_list", strict: true, schema: ESQUEMA as any },
-      },
-    });
+    // En streaming: un packing list largo (300 renglones) puede pasar del
+    // tiempo de una llamada normal.
+    const respuesta = await anthropic()
+      .messages.stream({
+        model: MODELO,
+        max_tokens: 64000,
+        system: INSTRUCCIONES,
+        output_config: { format: { type: "json_schema", schema: ESQUEMA as any }, effort: "medium" },
+        messages: [
+          { role: "user", content: [documento, { type: "text", text: "Lee este documento y devuelve sus datos." }] },
+        ],
+      })
+      .finalMessage();
+
+    if (respuesta.stop_reason === "refusal") {
+      return NextResponse.json({ error: "El documento no se pudo leer" }, { status: 422 });
+    }
+    if (respuesta.stop_reason === "max_tokens") {
+      return NextResponse.json(
+        { error: "El documento es demasiado largo para leerlo de una vez" },
+        { status: 422 },
+      );
+    }
 
     let leido: any = {};
     try {
-      leido = JSON.parse(respuesta.output_text || "{}");
+      leido = JSON.parse(
+        respuesta.content.map((b) => (b.type === "text" ? b.text : "")).join("") || "{}",
+      );
     } catch {
       return NextResponse.json({ error: "El documento no se pudo leer" }, { status: 422 });
     }
@@ -148,7 +170,19 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (e: any) {
-    console.error("[recepcion] no se pudo leer el documento:", e?.message);
+    if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {
+      return NextResponse.json(
+        { error: "La IA no está configurada en el servidor (falta o no sirve ANTHROPIC_API_KEY)" },
+        { status: 503 },
+      );
+    }
+    if (e instanceof Anthropic.RateLimitError) {
+      return NextResponse.json(
+        { error: "La IA está recibiendo demasiadas consultas. Intenta de nuevo en un minuto." },
+        { status: 429 },
+      );
+    }
+    console.error("[recepcion] no se pudo leer el documento:", e?.status, e?.message);
     return NextResponse.json({ error: "No se pudo leer el documento" }, { status: 502 });
   }
 }
