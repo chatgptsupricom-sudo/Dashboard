@@ -89,6 +89,7 @@ export const rolePermissions: RolePermissions = {
       "frecuencia_cpm", // HTML de Frecuencia CPM (mismo flujo que vista_custom)
       "catalogo_disenos", // Catálogo de Diseños del Diseñador
       "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
+      "organigrama", // Organigrama y actividades de cada cargo (también rol Procesos)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -405,15 +406,16 @@ export const rolePermissions: RolePermissions = {
       "almacen_actas_rma",
     ],
   },
-  // Rol Procesos: documenta los procesos. Por ahora solo ve Manuales, donde
-  // crea y edita (lib/manuales/datos.ts, puedeEditar).
+  // Rol Procesos: documenta los procesos. Ve Manuales, donde crea y edita
+  // (lib/manuales/datos.ts, puedeEditar), y el Organigrama con las
+  // actividades de cada cargo (lib/organigrama/datos.ts).
   [UserRole.PROCESOS]: {
     canViewAllSections: false,
     canManageUsers: false,
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["manuales"],
+    sections: ["manuales", "organigrama"],
   },
 };
 
