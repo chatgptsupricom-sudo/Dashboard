@@ -123,7 +123,7 @@
       "change_role": "Change role",
       "remove_role": "Remove role",
       "remove_title": "Remove panel role",
-      "remove_description": "{name} will lose the {role} role and won't be able to log into the panel. An already open session stays valid until it expires (up to 7 days).",
+      "remove_description": "{name} will lose the {role} role and won't be able to log into the panel. Any open session is closed.",
       "remove_confirm": "Remove role",
       "removing": "Removing..."
     },

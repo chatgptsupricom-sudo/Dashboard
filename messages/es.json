@@ -63,7 +63,7 @@
       "change_role": "Cambiar rol",
       "remove_role": "Quitar rol",
       "remove_title": "Quitar rol del panel",
-      "remove_description": "{name} dejará de tener el rol {role} y no podrá entrar al panel. Si ya tiene la sesión abierta, sigue dentro hasta que se le venza (hasta 7 días).",
+      "remove_description": "{name} dejará de tener el rol {role} y no podrá entrar al panel. Si tiene la sesión abierta, se le cierra.",
       "remove_confirm": "Quitar rol",
       "removing": "Quitando..."
     },

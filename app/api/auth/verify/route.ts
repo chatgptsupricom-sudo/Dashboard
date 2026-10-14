@@ -1,6 +1,7 @@
 // app/api/auth/verify/route.ts
 import { query } from "@/lib/db";
 import { verifyToken } from "@/lib/jwt";
+import { respuestaSesionTerminada, sesionVigente } from "@/lib/auth/vigencia";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -15,6 +16,13 @@ export async function GET(request: NextRequest) {
 
     if (!payload) {
       return NextResponse.json({ message: "Token inválido" }, { status: 401 });
+    }
+
+    // Rol quitado o cambiado desde SuperAdmin › Usuarios: la sesión termina
+    // aquí y no cuando vence el token. Si la MySQL no responde, sigue
+    // valiendo (lib/auth/vigencia.ts), por lo mismo que se explica abajo.
+    if (!(await sesionVigente(payload))) {
+      return respuestaSesionTerminada();
     }
 
     const userId = Number((payload as any).sub || (payload as any).userId || 0);

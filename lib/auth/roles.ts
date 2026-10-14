@@ -1,6 +1,7 @@
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { respuestaSesionTerminada, sesionVigente } from "@/lib/auth/vigencia";
 
 /**
  * Guard genérico por rol para las rutas de API.
@@ -25,12 +26,19 @@ async function verificarSesion(
     return { error: NextResponse.json({ error: "No autorizado" }, { status: 401 }) };
   }
 
+  let payload: any;
   try {
-    const result = await jwtVerify(token, JWT_SECRET);
-    return { payload: result.payload };
+    payload = (await jwtVerify(token, JWT_SECRET)).payload;
   } catch {
     return { error: NextResponse.json({ error: "Token invalido" }, { status: 401 }) };
   }
+
+  // La firma no basta: si le quitaron o cambiaron el rol, el token viejo deja
+  // de servir aunque no haya vencido (ver lib/auth/vigencia.ts).
+  if (!(await sesionVigente(payload))) {
+    return { error: respuestaSesionTerminada() };
+  }
+  return { payload };
 }
 
 export async function requireRoles(
