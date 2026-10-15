@@ -210,7 +210,8 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "salud_financiera", "gastos_presupuesto"],
+    // Sin "dashboard": su inicio es Salud Administrativa (/administracion).
+    sections: ["salud_financiera", "gastos_presupuesto"],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,

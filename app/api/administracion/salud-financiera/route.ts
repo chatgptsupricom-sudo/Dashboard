@@ -112,7 +112,8 @@ export async function GET(request: NextRequest) {
             ["invoice_date_due", "<=", hasta],
           ],
         ],
-        { fields: ["id", "partner_id", "move_type", "amount_total", "amount_residual", "invoice_date_due"], limit: 0 },
+        // *_signed: moneda de la empresa, no la de la factura (ver fetchCxP).
+        { fields: ["id", "partner_id", "move_type", "amount_total_signed", "amount_residual_signed", "invoice_date_due"], limit: 0 },
       )) || [];
     // Mismo filtro de internos que el Dashboard de CxC (nombre mostrado del partner).
     const ventasDelPeriodo = ventasRaw.filter(
@@ -127,8 +128,8 @@ export async function GET(request: NextRequest) {
           const signo = f.move_type === "out_refund" ? -1 : 1;
           return {
             id: f.id,
-            amountTotal: signo * Math.abs(Number(f.amount_total) || 0),
-            amountResidual: signo * Math.abs(Number(f.amount_residual) || 0),
+            amountTotal: signo * Math.abs(Number(f.amount_total_signed) || 0),
+            amountResidual: signo * Math.abs(Number(f.amount_residual_signed) || 0),
             dueDate: f.invoice_date_due ? new Date(f.invoice_date_due + "T00:00:00") : null,
           };
         }),

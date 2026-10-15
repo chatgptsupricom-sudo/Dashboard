@@ -222,8 +222,12 @@ export async function fetchCxP(
       "invoice_date_due",
       "invoice_date",
       "invoice_payment_term_id",
-      "amount_total",
-      "amount_residual",
+      // Los *_signed van en la moneda de la empresa (USD). amount_total /
+      // amount_residual van en la de la factura: Caracas tiene facturas de
+      // proveedor en bolivares y se sumaban como dolares (oct-2026: 2,86 M
+      // "de mas" en CxP por 23 facturas que en verdad son 3.780 $).
+      "amount_total_signed",
+      "amount_residual_signed",
       "payment_state",
       "partner_id",
       "name",
@@ -242,12 +246,12 @@ export async function fetchCxP(
   const fechasPago = await fetchFechasDePago(delPeriodo.map((f: any) => f.id));
 
   const mapear = (f: any): FacturaCxP => {
-    const residual = Math.abs(Number(f.amount_residual) || 0);
+    const residual = Math.abs(Number(f.amount_residual_signed) || 0);
     return {
       id: f.id,
       proveedor: f.partner_id?.[1] || "Sin proveedor",
       fechaVencimiento: f.invoice_date_due || "",
-      montoTotal: Math.abs(Number(f.amount_total) || 0),
+      montoTotal: Math.abs(Number(f.amount_total_signed) || 0),
       residual,
       pagada: f.payment_state === "paid" || residual <= 0.01,
       fechaPago: fechasPago[f.id] || null,
@@ -333,7 +337,8 @@ export async function fetchFacturasSinProcesar(
         ["move_type", "=", "in_invoice"],
         ["state", "=", "draft"],
       ],
-      ["create_date", "amount_total"],
+      // En moneda de la empresa: hay borradores en bolivares (Caracas).
+      ["create_date", "amount_total_signed"],
     ),
     rpcPaginado(
       "account.move",
@@ -359,7 +364,7 @@ export async function fetchFacturasSinProcesar(
     sinProcesar: vencidos.length,
     montoSinProcesar:
       Math.round(
-        vencidos.reduce((s: number, f: any) => s + Math.abs(Number(f.amount_total) || 0), 0) * 100,
+        vencidos.reduce((s: number, f: any) => s + Math.abs(Number(f.amount_total_signed) || 0), 0) * 100,
       ) / 100,
     antiguedadMaximaDias:
       vencidos.length > 0

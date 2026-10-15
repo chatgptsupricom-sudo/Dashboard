@@ -48,6 +48,7 @@ interface CuentaDesglose {
   presupuesto: number;
   variacionMonto: number;
   variacionPct: number | null;
+  movimientos?: number;
   proveedores: {
     proveedor: string;
     factura: string;
@@ -88,6 +89,27 @@ function money(n: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+/**
+ * Monto de una celda de la plantilla. Excel suele dar un numero, pero si la
+ * celda es texto puede venir "1.234,56" o "1,234.56": el separador que
+ * aparece de ultimo es el decimal. Antes "1,234.56" se volvia NaN y la fila
+ * se descartaba sin avisar.
+ */
+function leerMonto(valor: unknown): number | null {
+  if (typeof valor === "number") return Number.isFinite(valor) ? valor : null;
+  let txt = String(valor ?? "").replace(/[^0-9.,-]/g, "");
+  if (!txt) return null;
+  const decimal = Math.max(txt.lastIndexOf(","), txt.lastIndexOf("."));
+  if (decimal >= 0 && txt.length - decimal - 1 !== 3) {
+    txt = txt.slice(0, decimal).replace(/[.,]/g, "") + "." + txt.slice(decimal + 1);
+  } else {
+    // "1.234" o "1,234": separador de miles, no decimal.
+    txt = txt.replace(/[.,]/g, "");
+  }
+  const n = Number(txt);
+  return Number.isFinite(n) ? n : null;
 }
 
 function mesesDisponibles() {
@@ -189,10 +211,10 @@ export default function GastosPresupuestoPage() {
             ["presupuesto", "monto"].includes(k.toLowerCase().trim()),
           );
           if (!cuentaKey || !montoKey) return null;
-          const monto = Number(
-            String(row[montoKey]).replace(/[^0-9.,-]/g, "").replace(",", "."),
-          );
-          if (!Number.isFinite(monto) || monto <= 0) return null;
+          const monto = leerMonto(row[montoKey]);
+          // Vacio = no tocar esa cuenta; un 0 explicito si se guarda, para
+          // poder quitarle el presupuesto a una cuenta.
+          if (monto === null || monto < 0) return null;
           return {
             cuentaCodigo: String(row[cuentaKey]).trim(),
             monto,
@@ -204,7 +226,7 @@ export default function GastosPresupuestoPage() {
         toast({
           title: "Archivo sin datos válidos",
           description:
-            "Revisa que exista la columna CUENTA y PRESUPUESTO con montos mayores a 0.",
+            "Revisa que exista la columna CUENTA y PRESUPUESTO con montos.",
           variant: "destructive",
         });
         return;
@@ -470,7 +492,7 @@ export default function GastosPresupuestoPage() {
                 Detalle por cuenta contable
               </CardTitle>
               <p className="text-sm text-gray-500">
-                Clic en una cuenta para ver proveedores y facturas.
+                Clic en una cuenta para ver sus facturas y asientos.
               </p>
             </CardHeader>
             <CardContent className="p-0">
@@ -568,7 +590,9 @@ export default function GastosPresupuestoPage() {
                             <TableCell colSpan={5} className="bg-slate-50 p-0">
                               <div className="p-4">
                                 <p className="text-xs font-semibold text-gray-600 mb-2">
-                                  Facturas ({c.proveedores.length})
+                                  {(c.movimientos ?? c.proveedores.length) > c.proveedores.length
+                                    ? `Los ${c.proveedores.length} mayores de ${c.movimientos} movimientos`
+                                    : `Movimientos (${c.proveedores.length})`}
                                 </p>
                                 <div className="space-y-1">
                                   {c.proveedores.map((p, i) => (
