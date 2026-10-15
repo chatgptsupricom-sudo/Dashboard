@@ -182,6 +182,8 @@ export default async function middleware(request: NextRequest) {
       const isAlmacen = userRole === "almacen";
       // Rol Procesos: arma los manuales de procedimiento.
       const isProcesos = userRole === "procesos";
+      // Rol IT: entra a Notas de credito (preaprueba).
+      const isIt = userRole === "it";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -392,6 +394,10 @@ export default async function middleware(request: NextRequest) {
       // general no es su inicio (no hay loop: el regex es de /dashboard exacto).
       if (esDashboardComun && isProcesos) {
         return NextResponse.redirect(new URL(`/${locale}/manuales`, request.url));
+      }
+      // IT no tiene dashboard: su inicio es Notas de credito.
+      if (esDashboardComun && isIt) {
+        return NextResponse.redirect(new URL(`/${locale}/notas-credito`, request.url));
       }
       if (esDashboardComun && isDisenador) {
         return NextResponse.redirect(
