@@ -16,8 +16,9 @@ import { NextRequest, NextResponse } from "next/server";
  *  - `contando`:   ya llegaron pero Almacen todavia los esta contando: la
  *                  cantidad es la del packing list, no la contada.
  *  - `por_llegar`: todavia no llegan, en la fecha estimada que cargo Compras,
- *                  con la cantidad del packing list.
- * Los que no llegaron y no tienen fecha estimada van aparte en `sin_fecha`.
+ *                  sin cantidad (solo que producto viene).
+ * Los que no llegaron y no tienen fecha estimada van aparte en `sin_fecha`,
+ * tambien sin cantidad.
  *
  * A proposito NO devuelve proveedor, numero de packing list, contenedores,
  * precintos, fotos ni novedades: esos datos son de Compras y Almacen.
@@ -27,7 +28,7 @@ const CIDS_VALENCIA = 9;
 const DIAS_HISTORIA = 365;
 const ZONA = "America/Caracas";
 
-type Producto = { codigo: string | null; producto: string; cantidad: number };
+type Producto = { codigo: string | null; producto: string; cantidad?: number };
 type Lista = "llego" | "contando" | "por_llegar";
 type Dia = { fecha: string } & Record<Lista, Producto[]>;
 
@@ -51,7 +52,7 @@ class Acumulador {
     const productos = this.mapa.get(grupo)!;
     const clave = (f.codigo || f.producto || "").trim().toUpperCase();
     const ya = productos.get(clave);
-    if (ya) ya.cantidad += cantidad;
+    if (ya) ya.cantidad = (ya.cantidad || 0) + cantidad;
     else productos.set(clave, { codigo: f.codigo || null, producto: f.producto, cantidad });
   }
   lista(grupo: string): Producto[] {
@@ -100,19 +101,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Lo que va a llegar se muestra sin cantidad: solo que producto viene.
+    const sinCantidad = (ps: Producto[]): Producto[] => ps.map(({ codigo, producto }) => ({ codigo, producto }));
+
     const dias = new Map<string, Dia>();
     for (const grupo of acc.grupos()) {
       const [fecha, lista] = grupo.split("|") as [string, Lista];
       if (fecha === "sin_fecha") continue;
       if (!dias.has(fecha)) dias.set(fecha, { fecha, llego: [], contando: [], por_llegar: [] });
-      dias.get(fecha)![lista] = acc.lista(grupo);
+      const productos = acc.lista(grupo);
+      dias.get(fecha)![lista] = lista === "por_llegar" ? sinCantidad(productos) : productos;
     }
 
     return NextResponse.json({
       success: true,
       hoy: diaLocal(new Date()),
       dias: [...dias.values()].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)),
-      sin_fecha: acc.lista("sin_fecha|por_llegar"),
+      sin_fecha: sinCantidad(acc.lista("sin_fecha|por_llegar")),
     });
   } catch (e: any) {
     console.error("[llegadas] error:", e?.message);
