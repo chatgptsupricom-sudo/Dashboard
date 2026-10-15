@@ -4,8 +4,6 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
-  ETIQUETA_FRECUENCIA,
-  FRECUENCIAS,
   cadenaDeMando,
   descendientes,
   hijosPorPadre,
@@ -51,7 +49,6 @@ const pedir = async (url: string, method: string, body?: unknown) => {
 const nuevaActividad = (): Actividad => ({
   id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
   texto: "",
-  frecuencia: "",
   detalle: "",
 });
 
@@ -308,18 +305,6 @@ function Contenido({ nodo, nodos, tabInicial, onCerrar, onSeleccionar, onRecarga
                       className={input}
                     />
                     <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={a.frecuencia}
-                        onChange={(e) => editarActividad(i, { frecuencia: e.target.value as Actividad["frecuencia"] })}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
-                      >
-                        <option value="">Frecuencia…</option>
-                        {FRECUENCIAS.map((f) => (
-                          <option key={f} value={f}>
-                            {ETIQUETA_FRECUENCIA[f]}
-                          </option>
-                        ))}
-                      </select>
                       {!conDetalle.has(a.id) && (
                         <button
                           onClick={() => setConDetalle((s) => new Set(s).add(a.id))}

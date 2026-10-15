@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS supricom_panel.organigrama_nodos (
   nota VARCHAR(150) NOT NULL DEFAULT '',
   personas JSON NOT NULL,                          -- ["Nombre", ...]
   proposito TEXT NULL,
-  actividades JSON NOT NULL,                       -- [{id, texto, frecuencia, detalle}]
+  actividades JSON NOT NULL,                       -- [{id, texto, detalle}]
   updated_by VARCHAR(190) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

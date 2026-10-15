@@ -6,23 +6,9 @@ export type TipoNodo = "direccion" | "area" | "cargo";
 /** Cómo se dibujan los subordinados: en fila (uno al lado del otro) o en columna. */
 export type Disposicion = "fila" | "columna";
 
-export const FRECUENCIAS = ["diaria", "semanal", "quincenal", "mensual", "trimestral", "anual", "eventual"] as const;
-export type Frecuencia = (typeof FRECUENCIAS)[number] | "";
-
-export const ETIQUETA_FRECUENCIA: Record<string, string> = {
-  diaria: "Diaria",
-  semanal: "Semanal",
-  quincenal: "Quincenal",
-  mensual: "Mensual",
-  trimestral: "Trimestral",
-  anual: "Anual",
-  eventual: "Eventual",
-};
-
 export type Actividad = {
   id: string;
   texto: string;
-  frecuencia: Frecuencia;
   detalle: string;
 };
 

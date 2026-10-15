@@ -1,11 +1,9 @@
 import { db } from "@/lib/db";
 import {
-  FRECUENCIAS,
   descendientes,
   hijosPorPadre,
   type Actividad,
   type Disposicion,
-  type Frecuencia,
   type Nodo,
   type TipoNodo,
 } from "@/lib/organigrama/tipos";
@@ -102,9 +100,8 @@ const limpiarActividades = (v: unknown): Actividad[] =>
     ? v.slice(0, 200).flatMap((a: any, i) => {
         const t = texto(a?.texto, 2000);
         if (!t) return [];
-        const f = FRECUENCIAS.includes(a?.frecuencia) ? (a.frecuencia as Frecuencia) : "";
         const id = texto(a?.id, 40).replace(/[^\w-]/g, "") || `a${Date.now().toString(36)}${i}`;
-        return [{ id, texto: t, frecuencia: f, detalle: texto(a?.detalle, 4000) }];
+        return [{ id, texto: t, detalle: texto(a?.detalle, 4000) }];
       })
     : [];
 
