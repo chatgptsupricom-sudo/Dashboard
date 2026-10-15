@@ -110,7 +110,11 @@ export async function fetchCuentasGasto(
 ): Promise<CuentaGasto[]> {
   const cuentas = await fetchPaginado(
     "account.account",
-    [["account_type", "=", TIPO_CUENTA_GASTO]],
+    // Tambien el grupo 6 aunque la cuenta tenga otro tipo: en Valencia
+    // 6.06.01.035 "Gastos de Eventos Empresarial" esta creada como activo
+    // corriente, y en Panama la depreciacion (6.06.01.020, 6.08.01.010) es
+    // `expense_depreciation`; por tipo solo, ese gasto no salia.
+    ["|", ["account_type", "=", TIPO_CUENTA_GASTO], ["code", "=like", "6%"]],
     ["id", "code", "name"],
     { allowed_company_ids: companyIds },
   );
