@@ -51,6 +51,10 @@ export const rolePermissions: RolePermissions = {
       "seguridad", // Recepción y despacho de RMA (el módulo vive en /seguridad)
       "salud_financiera", // Administración: índice de salud financiera
       "gastos_presupuesto", // Administración: gastos vs presupuesto
+      "admin_cxp", // Administración: cuentas por pagar
+      "admin_tesoreria", // Administración: tesorería y bancos
+      "admin_fiscal", // Administración: fiscal (SENIAT / DGI)
+      "admin_contabilidad", // Administración: contabilidad y cierre
       "users", // Gestión de usuarios
       "reports", // Reportes
       "seller_map", // Para Christian Rodriguez
@@ -211,7 +215,14 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     // Sin "dashboard": su inicio es Salud Administrativa (/administracion).
-    sections: ["salud_financiera", "gastos_presupuesto"],
+    sections: [
+      "salud_financiera",
+      "gastos_presupuesto",
+      "admin_cxp",
+      "admin_tesoreria",
+      "admin_fiscal",
+      "admin_contabilidad",
+    ],
   },
   [UserRole.GERENTE_OPERACIONES]: {
     canViewAllSections: false,

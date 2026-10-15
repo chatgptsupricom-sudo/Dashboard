@@ -41,6 +41,9 @@ import {
   CreditCard,
   DollarSign,
   FileText,
+  Receipt,
+  Landmark,
+  BookOpenCheck,
   FileCheck2,
   Globe,
   IdCard,
@@ -392,6 +395,11 @@ export function Sidebar({
     // lib/types.ts; solo cambia la etiqueta, que ahora cubre el indice completo.
     { id: "salud_financiera", label: "Salud Administrativa", icon: Activity, slug: "/administracion", absoluteHref: true },
     { id: "gastos_presupuesto", label: "Gastos y Presupuesto", icon: Wallet, slug: "/administracion/gastos", absoluteHref: true },
+    // Modulos de solo lectura del rol Administracion (lib/administracion/).
+    { id: "admin_cxp", label: "Cuentas por Pagar", icon: Receipt, slug: "/administracion/cuentas-por-pagar", absoluteHref: true },
+    { id: "admin_tesoreria", label: "Tesorería y Bancos", icon: Landmark, slug: "/administracion/tesoreria", absoluteHref: true },
+    { id: "admin_fiscal", label: "Fiscal", icon: FileText, slug: "/administracion/fiscal", absoluteHref: true },
+    { id: "admin_contabilidad", label: "Contabilidad y cierre", icon: BookOpenCheck, slug: "/administracion/contabilidad", absoluteHref: true },
   ];
 
   const getBasePath = () => {
@@ -468,7 +476,14 @@ export function Sidebar({
   // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
   // desplegable "Administración", y KPI de Diseños dentro del de Marketing, en vez
   // de quedar sueltos en la lista plana.
-  const administracionDropdownIds = ["salud_financiera", "gastos_presupuesto"];
+  const administracionDropdownIds = [
+    "salud_financiera",
+    "gastos_presupuesto",
+    "admin_cxp",
+    "admin_tesoreria",
+    "admin_fiscal",
+    "admin_contabilidad",
+  ];
   // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
   // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
   const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
@@ -1623,6 +1638,10 @@ export function Sidebar({
                       {[
                         { label: "Salud Administrativa", href: `/${locale}/administracion` },
                         { label: "Gastos y Presupuesto", href: `/${locale}/administracion/gastos` },
+                        { label: "Cuentas por Pagar", href: `/${locale}/administracion/cuentas-por-pagar` },
+                        { label: "Tesorería y Bancos", href: `/${locale}/administracion/tesoreria` },
+                        { label: "Fiscal", href: `/${locale}/administracion/fiscal` },
+                        { label: "Contabilidad y cierre", href: `/${locale}/administracion/contabilidad` },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
                         return (
