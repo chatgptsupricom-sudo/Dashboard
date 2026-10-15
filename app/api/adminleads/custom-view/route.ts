@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { canUploadCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
 import { addHistory, ensureTables, esFrecuencia, getState, getView, marcaDeVista, resolveView } from "@/lib/customView/store";
 import { buildInjection } from "@/lib/customView/runtime";
+import { semillaFrecuencia } from "@/lib/customView/frecuenciaMarca";
 import { ensurePlanTables, getPlanState } from "@/lib/customView/planContentStore";
 import { buildReactInjection, detectReactPlan } from "@/lib/customView/reactInjection";
 import { getPublicOrigin } from "@/lib/publicOrigin";
@@ -114,11 +115,15 @@ export async function GET(request: NextRequest) {
           headers: { ...HTML_HEADERS, "Content-Disposition": `attachment; filename="${nombreDescarga}"` },
         });
       }
-      // La Frecuencia de otra marca guarda en la misma ruta que la de
-      // Supricom: se le avisa su marca para que no pise el plan de Supricom.
+      // Frecuencia de otra marca: se le avisa su marca (por si guarda en la
+      // ruta de Supricom, no la pisa) y se le siembra el último plan guardado
+      // en el panel (su HTML solo lee de localStorage; lib/customView/frecuenciaMarca.ts).
       const html =
         esFrecuencia(viewName) && marca !== "supricom"
-          ? injectAfterHeadOpen(view.html_content, marcaFrecuenciaScript(marca))
+          ? injectAfterHeadOpen(
+              view.html_content,
+              marcaFrecuenciaScript(marca) + (await semillaFrecuencia(marca, view.html_content)),
+            )
           : view.html_content;
       return new Response(html, { headers: HTML_HEADERS });
     }

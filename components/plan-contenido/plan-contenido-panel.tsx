@@ -121,8 +121,8 @@ export default function PlanContenidoPanel({
   // sesion). Aqui solo se refleja el estado para el usuario.
   useEffect(() => {
     const handler = (e: MessageEvent) => {
-      // Frecuencia CPM solo avisa cuando guardo con su boton.
-      if (e.data?.type === "SUPRICOM_FRECUENCIA_STATUS" && e.data.status === "saved") {
+      // Frecuencia CPM solo avisa cuando guardo con su boton (SUPRICOM_, ASTA_…_FRECUENCIA_STATUS).
+      if (/_FRECUENCIA_STATUS$/.test(String(e.data?.type || "")) && e.data.status === "saved") {
         setStatus("saved");
         return;
       }
