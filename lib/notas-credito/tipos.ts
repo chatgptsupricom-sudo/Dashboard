@@ -55,8 +55,13 @@ export function flujoCompleto(pasos: Partial<Record<PasoNC, string[]>> | null | 
 /** Usuario del panel (users_config) que se puede elegir como responsable. */
 export type UsuarioPanel = { email: string; nombre: string; rol: string; cids: number | null; activo: boolean };
 
-export function estadoInicial(origen: OrigenNC): EstadoNC {
-  return origen === "rma" ? "por_preaprobar" : "por_aprobar";
+/**
+ * Toda solicitud nueva empieza esperando la preaprobacion (IT). Antes las
+ * directas iban directo a aprobar porque las creaba quien preaprueba; ahora
+ * las crea quien procesa, asi que tambien pasan por IT.
+ */
+export function estadoInicial(_origen: OrigenNC): EstadoNC {
+  return "por_preaprobar";
 }
 
 /** Quién tiene la solicitud en sus manos en cada estado. */

@@ -184,9 +184,9 @@ export async function crearDesdeRma(datos: {
 }
 
 /**
- * Nota de crédito que no viene de RMA: la crea quien preaprueba (o el
- * SuperAdmin) y va directo a aprobación. Crearla no es aprobarla: igual la
- * decide quien aprueba.
+ * Nota de crédito que no viene de RMA: la crea quien procesa (o el
+ * SuperAdmin) y sigue el mismo camino que una de RMA: preaprueba IT, aprueba
+ * quien aprueba. Quien preaprueba (IT) solo preaprueba o rechaza: no crea.
  */
 export async function crearDirecta(datos: {
   companyId: number;
@@ -196,8 +196,8 @@ export async function crearDirecta(datos: {
   autor: Autor;
   origenPeticion: string;
 }): Promise<number> {
-  if (!esSuperadmin(datos.autor.rol) && !(await tienePaso(datos.autor.email, datos.companyId, "preaprueba"))) {
-    throw new ErrorNC("Solo quien preaprueba en esta sede (o el SuperAdmin) crea notas de crédito.", 403);
+  if (!esSuperadmin(datos.autor.rol) && !(await tienePaso(datos.autor.email, datos.companyId, "procesa"))) {
+    throw new ErrorNC("Solo quien hace la nota en esta sede (o el SuperAdmin) crea notas de crédito.", 403);
   }
   if (!(await sedeConFlujo(datos.companyId))) {
     throw new ErrorNC("A esta sede le falta alguien en aprobar o en hacer la nota: el SuperAdmin lo completa en Responsables.", 409);
@@ -226,7 +226,7 @@ export async function crearDirecta(datos: {
   const id = Number((ins.rows as any).insertId);
   await registrarEvento(id, "creada", datos.autor, motivo);
   const sol = await obtener(id);
-  if (sol) avisarNC("aprobar", sol, datos.origenPeticion);
+  if (sol) avisarNC("preaprobar", sol, datos.origenPeticion);
   return id;
 }
 
@@ -328,7 +328,8 @@ async function rechazar(sol: SolicitudNC, autor: Autor, motivo: string, origen: 
 
 /** Asigna (o corrige) la factura de Odoo. En una de RMA el monto sale de la factura; en una directa se manda. */
 async function asignarFactura(sol: SolicitudNC, autor: Autor, body: any) {
-  await exigirPaso(sol, autor, "preaprueba", "procesa");
+  // La factura la pone o corrige quien hace la nota; IT solo preaprueba.
+  await exigirPaso(sol, autor, "procesa");
   if (!["por_preaprobar", "por_aprobar", "aprobada"].includes(sol.estado) || sol.odoo_move_id) {
     throw new ErrorNC("La factura ya no se cambia: la nota de crédito ya está en Odoo o terminó.", 409);
   }
@@ -628,7 +629,7 @@ export async function permisosSobre(sol: SolicitudNC, autor: Autor) {
     preaprobar: sol.estado === "por_preaprobar" && tiene("preaprueba"),
     aprobar: sol.estado === "por_aprobar" && tiene("aprueba"),
     rechazar: (sol.estado === "por_preaprobar" && tiene("preaprueba")) || (sol.estado === "por_aprobar" && tiene("aprueba")),
-    factura: ["por_preaprobar", "por_aprobar", "aprobada"].includes(sol.estado) && !sol.odoo_move_id && (tiene("preaprueba") || tiene("procesa")),
+    factura: ["por_preaprobar", "por_aprobar", "aprobada"].includes(sol.estado) && !sol.odoo_move_id && tiene("procesa"),
     odoo: sol.estado === "aprobada" && tiene("procesa"),
     superadmin: esSuperadmin(autor.rol),
   };

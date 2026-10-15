@@ -11,7 +11,7 @@ import { useState } from "react";
 
 /**
  * Nota de crédito que no viene de RMA (descuento, error de precio, mercancía
- * no retirada…). La crea quien preaprueba y va directo a aprobación.
+ * no retirada…). La crea quien hace la nota (o el SuperAdmin) y pasa por la preaprobación de IT.
  */
 export function NuevaNota({ sedes, onCerrar, onCreada }: { sedes: number[]; onCerrar: () => void; onCreada: (id: number) => void }) {
   const [sede, setSede] = useState(sedes[0]);

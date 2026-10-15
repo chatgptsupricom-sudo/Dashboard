@@ -209,7 +209,9 @@ export function DetalleNota({ id, onCerrar, onCambio }: { id: number; onCerrar: 
             <ol className="grid gap-2 sm:grid-cols-4">
               {[
                 { t: s.origen === "rma" ? "Solicitada (RMA)" : "Creada", hecho: true, quien: s.creado_por, cuando: s.created_at },
-                ...(s.origen === "rma"
+                // Las directas viejas iban directo a aprobar: solo se muestra el
+                // paso si la nota paso (o esta pasando) por la preaprobacion.
+                ...(s.origen === "rma" || s.preaprobado_at || s.estado === "por_preaprobar" || s.rechazado_paso === "preaprueba"
                   ? [{ t: "Preaprobada", hecho: !!s.preaprobado_at, quien: s.preaprobado_por, cuando: s.preaprobado_at, no: s.rechazado_paso === "preaprueba" }]
                   : []),
                 { t: "Aprobada", hecho: !!s.aprobado_at, quien: s.aprobado_por, cuando: s.aprobado_at, no: s.rechazado_paso === "aprueba" },
