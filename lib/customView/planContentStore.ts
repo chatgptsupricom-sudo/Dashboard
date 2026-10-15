@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { VIEW_NAME, SANDBOX_VIEW_NAME } from "@/lib/customView/store";
+import { VIEW_NAME, VISTAS_PLAN } from "@/lib/customView/store";
 
 /**
  * Estado del Plan de Contenido cuando el panel es la SPA de React
@@ -21,11 +21,10 @@ export interface PlanContentState {
 
 export const EMPTY_PLAN_STATE: PlanContentState = { pieces: {} };
 
-/** Misma lista blanca que el runtime viejo: nunca un nombre arbitrario. */
-const VISTAS_PERMITIDAS = new Set([VIEW_NAME, SANDBOX_VIEW_NAME]);
+/** Misma lista blanca que el runtime viejo (incluye el plan de cada marca): nunca un nombre arbitrario. */
 export function resolvePlanView(raw?: string | null): string {
   const v = String(raw || "").trim();
-  return VISTAS_PERMITIDAS.has(v) ? v : VIEW_NAME;
+  return VISTAS_PLAN.has(v) ? v : VIEW_NAME;
 }
 
 let tablesReady = false;

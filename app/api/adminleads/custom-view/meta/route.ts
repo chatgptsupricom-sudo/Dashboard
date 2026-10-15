@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
-import { ensureTables, FRECUENCIA_VIEW_NAME, getViewMeta, resolveView } from "@/lib/customView/store";
+import { ensureTables, esFrecuencia, getViewMeta, resolveView } from "@/lib/customView/store";
 import { ensurePlanTables, getPlanState } from "@/lib/customView/planContentStore";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const view = await getViewMeta(viewName);
     if (!view) return NextResponse.json({ exists: false });
 
-    if (viewName === FRECUENCIA_VIEW_NAME) {
+    if (esFrecuencia(viewName)) {
       return NextResponse.json({
         exists: true,
         mode: "app",

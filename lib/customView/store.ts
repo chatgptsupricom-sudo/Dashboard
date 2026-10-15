@@ -1,4 +1,7 @@
 import { query } from "@/lib/db";
+import { MARCAS_PLAN, vistaDeMarca } from "@/lib/customView/marcas";
+
+export { marcaDeVista } from "@/lib/customView/marcas";
 
 /**
  * Todo el Plan de Contenido vive bajo un unico "view_name": los tres paneles
@@ -21,13 +24,20 @@ export const SANDBOX_VIEW_NAME = "adminleads__sandbox";
  */
 export const FRECUENCIA_VIEW_NAME = "frecuencia_cpm";
 
-const VISTAS_PERMITIDAS = new Set([VIEW_NAME, SANDBOX_VIEW_NAME, FRECUENCIA_VIEW_NAME]);
+// Otras marcas (Asta, Bluetti…): su propio plan y su propia Frecuencia, en
+// filas aparte `<vista>__<marca>` (lib/customView/marcas.ts).
+export const VISTAS_PLAN = new Set([VIEW_NAME, SANDBOX_VIEW_NAME, ...MARCAS_PLAN.map((m) => vistaDeMarca(VIEW_NAME, m))]);
+const VISTAS_FRECUENCIA = new Set([FRECUENCIA_VIEW_NAME, ...MARCAS_PLAN.map((m) => vistaDeMarca(FRECUENCIA_VIEW_NAME, m))]);
+const VISTAS_PERMITIDAS = new Set([...VISTAS_PLAN, ...VISTAS_FRECUENCIA]);
 
 /** Lista blanca: nunca se acepta un nombre arbitrario desde la URL. */
 export function resolveView(raw?: string | null): string {
   const v = String(raw || "").trim();
   return VISTAS_PERMITIDAS.has(v) ? v : VIEW_NAME;
 }
+
+/** ¿Es una Frecuencia CPM (de cualquier marca)? Se sirve como app, sin runtime. */
+export const esFrecuencia = (view: string) => VISTAS_FRECUENCIA.has(view);
 
 export interface ViewRow {
   html_content: string | null;

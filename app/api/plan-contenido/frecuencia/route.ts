@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { esMarcaPlan, marcaDeVista } from "@/lib/customView/marcas";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Persistencia del HTML de Frecuencia CPM (vista `frecuencia_cpm` de
- * custom_views). El HTML llama directo a esta ruta desde el iframe, con la
- * cookie de sesion: un plan por año+mes, guardado tal cual lo manda la app.
+ * custom_views, y `frecuencia_cpm__<marca>` para las otras marcas). El HTML
+ * llama directo a esta ruta desde el iframe, con la cookie de sesion: un plan
+ * por marca+año+mes, guardado tal cual lo manda la app.
  */
 const ROLES = ["adminleads", "diseñador"];
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -17,15 +19,41 @@ async function ensureTabla() {
   if (tablaLista) return;
   await query(`
     CREATE TABLE IF NOT EXISTS plan_frecuencia_cpm (
+      marca VARCHAR(20) NOT NULL DEFAULT 'supricom',
       anio SMALLINT NOT NULL,
       mes TINYINT NOT NULL,
       plan_json LONGTEXT NOT NULL,
       updated_by VARCHAR(120) NULL,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (anio, mes)
+      PRIMARY KEY (marca, anio, mes)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  // La tabla de antes era solo de Supricom (llave año+mes): sus planes quedan como marca "supricom".
+  const r = await query(`SHOW COLUMNS FROM plan_frecuencia_cpm LIKE 'marca'`);
+  if (!r.rows?.length) {
+    await query(
+      `ALTER TABLE plan_frecuencia_cpm
+         ADD COLUMN marca VARCHAR(20) NOT NULL DEFAULT 'supricom' FIRST,
+         DROP PRIMARY KEY,
+         ADD PRIMARY KEY (marca, anio, mes)`,
+    );
+  }
   tablaLista = true;
+}
+
+/**
+ * Marca del plan: el parámetro `marca` (lo agrega el panel al servir el HTML de
+ * otra marca) o, si falta, la vista de la página que llama (Referer). Sin
+ * ninguno de los dos, Supricom, como siempre.
+ */
+function marcaDe(request: NextRequest): string {
+  const m = request.nextUrl.searchParams.get("marca");
+  if (esMarcaPlan(m)) return m;
+  try {
+    return marcaDeVista(new URL(request.headers.get("referer") || "").searchParams.get("view"));
+  } catch {
+    return "supricom";
+  }
 }
 
 function periodo(year: unknown, month: unknown) {
@@ -46,8 +74,8 @@ export async function GET(request: NextRequest) {
   try {
     await ensureTabla();
     const r = await query(
-      `SELECT plan_json, updated_by, updated_at FROM plan_frecuencia_cpm WHERE anio = ? AND mes = ?`,
-      [p.anio, p.mes],
+      `SELECT plan_json, updated_by, updated_at FROM plan_frecuencia_cpm WHERE marca = ? AND anio = ? AND mes = ?`,
+      [marcaDe(request), p.anio, p.mes],
     );
     const row = r.rows?.[0];
     return NextResponse.json({
@@ -78,10 +106,10 @@ export async function POST(request: NextRequest) {
 
     await ensureTabla();
     await query(
-      `INSERT INTO plan_frecuencia_cpm (anio, mes, plan_json, updated_by)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO plan_frecuencia_cpm (marca, anio, mes, plan_json, updated_by)
+       VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE plan_json = VALUES(plan_json), updated_by = VALUES(updated_by)`,
-      [p.anio, p.mes, texto, String(auth.payload?.email || auth.payload?.role || "")],
+      [marcaDe(request), p.anio, p.mes, texto, String(auth.payload?.email || auth.payload?.role || "")],
     );
     return NextResponse.json({ success: true });
   } catch (error: any) {
