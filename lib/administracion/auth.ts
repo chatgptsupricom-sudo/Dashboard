@@ -23,6 +23,9 @@ const ADMIN_ROLES = new Set([
   "administración y finanzas",
 ]);
 
+/** Para `requireRoles()` en las APIs nuevas del area (superadmin entra siempre). */
+export const ROLES_ADMINISTRACION = Array.from(ADMIN_ROLES);
+
 export async function getAdminUser(
   request: NextRequest,
 ): Promise<AdminAuthUser | null> {
