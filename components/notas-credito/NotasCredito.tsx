@@ -185,8 +185,9 @@ export function NotasCredito() {
 
   const tieneAlgunPaso = Object.keys(pasos).length > 0;
   const sedesVisibles = superadmin ? SEDES : Object.keys(pasos).map(Number);
-  // Crea quien preaprueba en la sede (o el SuperAdmin), solo en sedes con el flujo activo.
-  const sedesQueCrean = (superadmin ? SEDES : Object.entries(pasos).filter(([, p]) => p.includes("preaprueba")).map(([s]) => Number(s))).filter(
+  // Crea quien hace la nota en la sede (o el SuperAdmin), solo en sedes con el
+  // flujo activo. IT (preaprueba) no crea: solo preaprueba o rechaza.
+  const sedesQueCrean = (superadmin ? SEDES : Object.entries(pasos).filter(([, p]) => p.includes("procesa")).map(([s]) => Number(s))).filter(
     (s) => sedesActivas.includes(s),
   );
 
@@ -407,9 +408,9 @@ export function NotasCredito() {
               </Button>
             ) : a.estado === "pendiente" ? (
               <p className="max-w-[16rem] text-xs text-slate-400 sm:text-right">
-                {superadmin || (pasos[a.company_id] ?? []).includes("preaprueba")
+                {superadmin || (pasos[a.company_id] ?? []).includes("procesa")
                   ? "La sede no tiene el flujo activo: completa sus responsables."
-                  : "La pasa al flujo el SuperAdmin o quien preaprueba."}
+                  : "La pasa al flujo el SuperAdmin o quien hace la nota."}
               </p>
             ) : null}
           </div>

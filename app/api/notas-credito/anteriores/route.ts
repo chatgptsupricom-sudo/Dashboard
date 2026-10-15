@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/** POST { rma_nota_id }: pasa una solicitud pendiente de RMA al flujo (SuperAdmin o quien preaprueba en la sede). */
+/** POST { rma_nota_id }: pasa una solicitud pendiente de RMA al flujo (SuperAdmin o quien hace la nota en la sede). */
 export async function POST(request: NextRequest) {
   const { acceso, error } = await requireNC(request);
   if (error) return error;
