@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { readFile } from "fs/promises";
 import path from "path";
 import { callOdooRPC } from "@/lib/odoo";
@@ -114,7 +115,7 @@ const dominioBloqueadas = (companyIds: number[]) => [
  * completo del cliente.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["cuentas por cobrar"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar"]);
   if (auth.error) return auth.error;
 
   try {

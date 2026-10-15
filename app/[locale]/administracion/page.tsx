@@ -23,6 +23,7 @@ import {
   TrendingDown,
   Wallet,
 } from "lucide-react";
+import { SelectorSede } from "@/components/administracion/comunes";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
@@ -159,12 +160,6 @@ const COLOR_ESTATUS: Record<EstatusAlerta, string> = {
   cerrada: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
-const SEDES = [
-  { value: "", label: "Todas las sedes" },
-  { value: "valencia", label: "Valencia" },
-  { value: "caracas", label: "Caracas" },
-  { value: "panama", label: "Panamá" },
-];
 
 function money(n: number) {
   return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
@@ -466,15 +461,8 @@ export default function SaludAdministrativaPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select
-            value={empresa}
-            onChange={(e) => setEmpresa(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm flex-1 sm:flex-none"
-          >
-            {SEDES.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
+          {/* Administracion solo ve la sede de su cids: ahi no hay selector. */}
+          <SelectorSede empresa={empresa} setEmpresa={setEmpresa} className="flex-1 sm:flex-none" />
           <select
             value={mes}
             onChange={(e) => setMes(e.target.value)}

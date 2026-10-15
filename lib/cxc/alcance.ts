@@ -9,6 +9,8 @@
  * un `cids` ausente o inválido (usuarios viejos sin sede asignada) cae al
  * alcance completo para no romperles la pantalla.
  */
+import { limitarSedesPorRol } from "@/lib/auth/sedeRol";
+
 export const COMPANY_MAP: Record<string, number> = { valencia: 9, caracas: 10, panama: 7 };
 export const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 export const COMPANY_IDS_ALL = [7, 9, 10];
@@ -27,5 +29,7 @@ export function companyIdsEnAlcance(payload: any, empresa: string): number[] {
       : [cids];
   const pedida = COMPANY_MAP[(empresa || "").toLowerCase().trim()];
   const pedidas = pedida ? [pedida] : alcance;
-  return pedidas.filter((id) => alcance.includes(id));
+  // Administracion no tiene el "sin cids = todo" de arriba: sin sede valida
+  // no ve nada (lib/auth/sedeRol.ts).
+  return limitarSedesPorRol(payload, pedidas.filter((id) => alcance.includes(id)));
 }

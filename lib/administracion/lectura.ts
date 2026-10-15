@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { callOdooRPCEstricto, OdooUnreachableError } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
-import { companyIdsDeEmpresa } from "@/lib/administracion/empresas";
+import { companyIdsDeEmpresa, empresaDeCompanyId } from "@/lib/administracion/empresas";
+import { limitarSedesPorRol } from "@/lib/auth/sedeRol";
 import { rangoDelMes } from "@/lib/administracion/gastos";
 
 /**
@@ -108,15 +109,23 @@ export interface FiltroAdmin {
   hoy: string;
 }
 
-/** Lee `?empresa=` y `?mes=YYYY-MM` (por defecto, el mes en curso). */
-export function leerFiltro(request: NextRequest): FiltroAdmin {
+/**
+ * Lee `?empresa=` y `?mes=YYYY-MM` (por defecto, el mes en curso). La sede se
+ * recorta a la del token del usuario (Administracion solo ve su `cids`):
+ * null = le pidio una sede que no es la suya o no tiene sede asignada.
+ */
+export function leerFiltro(request: NextRequest, payload: any): FiltroAdmin | null {
   const url = new URL(request.url);
-  const empresa = (url.searchParams.get("empresa") || "").toLowerCase().trim();
+  const pedida = (url.searchParams.get("empresa") || "").toLowerCase().trim();
+  const companyIds = limitarSedesPorRol(payload, companyIdsDeEmpresa(pedida));
+  if (companyIds.length === 0) return null;
+  // Si quedo una sola sede, `empresa` la nombra aunque se hayan pedido "todas".
+  const empresa = companyIds.length === 1 ? empresaDeCompanyId(companyIds[0]) : pedida;
   const hoy = hoyCaracas();
   const mesParam = url.searchParams.get("mes") || "";
   const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(mesParam) ? mesParam : hoy.slice(0, 7);
   const { desde, hasta } = rangoDelMes(mes);
-  return { empresa, companyIds: companyIdsDeEmpresa(empresa), mes, desde, hasta, hoy };
+  return { empresa, companyIds, mes, desde, hasta, hoy };
 }
 
 /** Guard de las APIs del rol: Administracion o SuperAdmin. */

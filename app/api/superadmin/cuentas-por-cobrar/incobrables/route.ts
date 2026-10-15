@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
@@ -38,7 +39,7 @@ function sedesPermitidas(payload: any, empresa: string | null): number[] {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["cuentas por cobrar"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar"]);
   if (auth.error) return auth.error;
 
   try {
@@ -179,7 +180,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ["cuentas por cobrar"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar"]);
   if (auth.error) return auth.error;
 
   try {
