@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ETIQUETA_FRECUENCIA, cadenaDeMando, hijosPorPadre, type Nodo } from "@/lib/organigrama/tipos";
+import { cadenaDeMando, hijosPorPadre, type Nodo } from "@/lib/organigrama/tipos";
 import { cn } from "@/lib/utils";
 import {
   ChevronDown,
@@ -278,14 +278,14 @@ export default function OrganigramaPage() {
   /** Todas las actividades en un CSV (abre en Excel), en el orden del organigrama. */
   const exportarActividades = () => {
     const mapa = hijosPorPadre(nodos);
-    const filas: string[][] = [["Área", "Cargo", "Reporta a", "Personas", "Propósito", "N.º", "Actividad", "Frecuencia", "Detalle"]];
+    const filas: string[][] = [["Área", "Cargo", "Reporta a", "Personas", "Propósito", "N.º", "Actividad", "Detalle"]];
     const recorrer = (padre: number | null) => {
       for (const n of mapa.get(padre) || []) {
         const sup = cadenaDeMando(nodos, n.id).at(-2)?.cargo || "";
         const base = [n.area, n.cargo, sup, n.personas.join(", "), n.proposito];
-        if (!n.actividades.length) filas.push([...base, "", "", "", ""]);
+        if (!n.actividades.length) filas.push([...base, "", "", ""]);
         n.actividades.forEach((a, i) =>
-          filas.push([...base, String(i + 1), a.texto, ETIQUETA_FRECUENCIA[a.frecuencia] || "", a.detalle]),
+          filas.push([...base, String(i + 1), a.texto, a.detalle]),
         );
         recorrer(n.id);
       }
