@@ -426,13 +426,11 @@ export function Sidebar({
       case "diseñador":
         return `/${locale}/disenador`;
       case "administración":
-        // El basePath solo lo usa el item "Dashboard", que es la pantalla de
-        // inicio del rol. Salud Financiera y Gastos y Presupuesto apuntan a
-        // /administracion con absoluteHref, asi que no dependen de esto.
-        // Antes basePath era /administracion y colisionaba con Salud
-        // Financiera: ambos items resolvian a la misma URL y el sidebar los
-        // marcaba activos al mismo tiempo.
-        return `/${locale}/dashboard`;
+        // Su pantalla de inicio es Salud Administrativa (/administracion). El
+        // rol no tiene el item "Dashboard" (lib/types.ts): ese es el tablero
+        // de ventas del SuperAdmin, y ademas resolvia a la misma URL que
+        // Salud Administrativa y el sidebar marcaba los dos activos.
+        return `/${locale}/administracion`;
       default:
         return `/${locale}/dashboard`;
     }

@@ -280,6 +280,8 @@ export async function GET(request: NextRequest) {
             presupuesto > 0
               ? Math.round(((real - presupuesto) / presupuesto) * 1000) / 10
               : null,
+          // Los 50 mayores; `movimientos` dice cuantos hay en total.
+          movimientos: detalles.filter((d) => d.cuentaCodigo === codigo).length,
           proveedores: detalles
             .filter((d) => d.cuentaCodigo === codigo)
             .sort((a, b) => b.monto - a.monto)
