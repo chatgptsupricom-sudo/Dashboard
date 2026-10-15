@@ -19,6 +19,7 @@ import {
   severidadDesdeDesvio,
 } from "@/lib/administracion/alertas";
 import { companyIdsDeEmpresa } from "@/lib/administracion/empresas";
+import { esIntercompania } from "@/lib/administracion/intercompania";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { calcularEfectividad } from "@/lib/cxc/efectividad";
 
@@ -82,10 +83,15 @@ export async function GET(request: NextRequest) {
             ["active", "=", true],
           ],
         ],
-        { fields: ["credit_limit", "credit"], limit: 0 },
+        { fields: ["credit_limit", "credit", "display_name"], limit: 0 },
       ),
     ]);
-    const clientesConLimite = clientesConLimiteRaw || [];
+    // Las empresas del grupo tienen limite cargado (SUPRICOM, LLC 2 M en
+    // Panama, SUPRICOM CCS 21 400 mil en Valencia) y lo pasan de largo: no son
+    // clientes a los que se les da credito, igual que en la cartera.
+    const clientesConLimite = (clientesConLimiteRaw || []).filter(
+      (c) => !esIntercompania(c.display_name),
+    );
     const clientesExcedidos = clientesConLimite.filter(
       (c) => Number(c.credit) > Number(c.credit_limit),
     ).length;
@@ -115,9 +121,10 @@ export async function GET(request: NextRequest) {
         // *_signed: moneda de la empresa, no la de la factura (ver fetchCxP).
         { fields: ["id", "partner_id", "move_type", "amount_total_signed", "amount_residual_signed", "invoice_date_due"], limit: 0 },
       )) || [];
-    // Mismo filtro de internos que el Dashboard de CxC (nombre mostrado del partner).
+    // Sin intercompania, como la cartera (fetchCxC). El Dashboard de CxC solo
+    // saca "supricom"; esto ademas saca "Office Solutions Center" (montos chicos).
     const ventasDelPeriodo = ventasRaw.filter(
-      (f: any) => !String(f.partner_id?.[1] || "").toLowerCase().includes("supricom"),
+      (f: any) => !esIntercompania(f.partner_id?.[1]),
     );
     const [efectividad, cobrosDelPeriodo] = await Promise.all([
       calcularEfectividad(
@@ -143,7 +150,15 @@ export async function GET(request: NextRequest) {
     const esperado = efectividad.exigibleMes;
     const cobrado = efectividad.cobradoAlCierre;
     const pctCobros = efectividad.value;
-    const cobranzaReal = Math.round(cobrosDelPeriodo.reduce((s, c) => s + c.monto, 0) * 100) / 100;
+    // Sin los cobros a empresas del grupo: el exigible ya las deja fuera, y en
+    // Panama las empresas del grupo pagaron ~$1,1 M entre el 1-sep y el
+    // 15-oct-2026 (casi lo mismo que todos los clientes de afuera), lo que
+    // inflaba el cumplimiento.
+    const cobranzaReal = Math.round(
+      cobrosDelPeriodo
+        .filter((c) => !esIntercompania(c.partnerName))
+        .reduce((s, c) => s + c.monto, 0) * 100,
+    ) / 100;
 
     const pct = (parte: number, total: number) =>
       total > 0 ? Math.round((parte / total) * 1000) / 10 : null;
