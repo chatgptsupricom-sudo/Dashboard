@@ -20,6 +20,7 @@ export enum UserRole {
   SEGURIDAD = "seguridad",
   ALMACEN = "almacen",
   PROCESOS = "procesos",
+  IT = "it",
 }
 
 // Permisos por rol
@@ -443,6 +444,17 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: ["manuales", "organigrama"],
+  },
+  // IT (Rangel): por ahora su trabajo en el panel es preaprobar notas de
+  // credito. La entrada a /notas-credito la da ser responsable de un paso en
+  // nc_aprobadores (lib/notas-credito/acceso.ts), no el rol.
+  [UserRole.IT]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: ["notas_credito"],
   },
 };
 

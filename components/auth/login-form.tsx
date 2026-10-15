@@ -269,6 +269,9 @@ export function LoginForm() {
         router.push(`/${locale}/disenador/dashboard`);
       } else if (role === "procesos") {
         router.push(`/${locale}/manuales`);
+      } else if (role === "it") {
+        // IT preaprueba notas de credito: entra directo ahi.
+        router.push(`/${locale}/notas-credito`);
       } else {
         console.log("Redirigiendo a /dashboard por fallo de coincidencia");
         router.push(`/${locale}/dashboard`);
