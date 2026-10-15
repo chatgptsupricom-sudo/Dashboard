@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { esIntercompania } from "@/lib/administracion/intercompania";
 
 /**
  * Fuentes de datos de las 3 areas financieras del Indice de Salud Administrativa.
@@ -7,6 +8,11 @@ import { callOdooRPC } from "@/lib/odoo";
  * numeros coincidan entre secciones:
  *   - Cuentas por cobrar -> `digiflex.cxc.report` (igual que /api/superadmin/cuentas-por-cobrar)
  *   - Cuentas por pagar  -> `account.move` (igual que el Stoplight de cuentas-pagar)
+ *
+ * CxC y CxP dejan fuera a las otras empresas del grupo (`esIntercompania`):
+ * esas deudas se compensan dentro del grupo, no son cobros ni pagos de caja,
+ * y con ellas el indice leia como vencido/por pagar casi todo el saldo de
+ * Caracas y Valencia.
  */
 
 export interface AgingCxC {
@@ -82,7 +88,9 @@ async function rpcPaginado(
 // ─────────────────────────────────────────────── Cuentas por cobrar
 
 export async function fetchCxC(companyIds: number[]): Promise<AgingCxC> {
-  const filas = await rpcPaginado(
+  // Sin intercompania: el Dashboard de CxC ya saca "supricom" del nombre; aqui
+  // se usa el criterio completo (tambien "Office Solutions Center").
+  const filas = (await rpcPaginado(
     "digiflex.cxc.report",
     [
       ["company_id", "in", companyIds],
@@ -98,7 +106,7 @@ export async function fetchCxC(companyIds: number[]): Promise<AgingCxC> {
       "days_overdue",
       "partner_name",
     ],
-  );
+  )).filter((r) => !esIntercompania(r.partner_name));
 
   const abs = (v: any) => Math.abs(Number(v) || 0);
   const sum = (k: string) => filas.reduce((s, r) => s + abs(r[k]), 0);
@@ -211,7 +219,12 @@ export async function fetchCxP(
 ): Promise<DatosCxP> {
   // Sin limite inferior de fecha: las obligaciones vencidas viejas son
   // justamente las que importan y quedarian fuera si se acotara al mes.
-  const facturasRaw = await rpcPaginado(
+  // Sin proveedores intercompania (Caracas le compra a SUPRICOM USA y a
+  // Valencia, Valencia a SUPRICOM LLC): oct-2026 eran $3,68 M de los $3,69 M que debia Caracas y
+  // $3,69 M de los $4,38 M de Valencia, y hacian ver vencida/sin cobertura
+  // una deuda que se compensa dentro del grupo. Mismo criterio que el modulo
+  // de Cuentas por Pagar.
+  const facturasRaw = (await rpcPaginado(
     "account.move",
     [
       ["company_id", "in", companyIds],
@@ -232,7 +245,7 @@ export async function fetchCxP(
       "partner_id",
       "name",
     ],
-  );
+  )).filter((f: any) => !esIntercompania(f.partner_id?.[1]));
   const sinCondicionPorId: Record<number, boolean> = {};
   facturasRaw.forEach((f: any) => {
     sinCondicionPorId[f.id] = !f.invoice_payment_term_id;
@@ -326,6 +339,8 @@ export async function fetchFacturasSinProcesar(
   hasta: string,
   plazoDias: number,
 ): Promise<DatosFacturasSinProcesar> {
+  // Aqui SI cuentan las facturas intercompania: cargarlas a tiempo tambien es
+  // trabajo de Administracion, aunque su saldo no entre en fetchCxP.
   const [borradores, recibidas] = await Promise.all([
     // Sin limite inferior de fecha, igual que las obligaciones vencidas en
     // fetchCxP: un borrador de hace cinco meses es justamente el que importa y
