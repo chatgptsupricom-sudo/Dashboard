@@ -313,14 +313,16 @@ export default function LlegadasProductos() {
                         )}
                         <ul className="mt-2 space-y-0.5">
                           {detalle[l].map((p) => (
-                            <li key={`${p.codigo}-${p.producto}`} className="flex items-center gap-3 py-1.5">
+                            <li key={`${p.codigo}-${p.producto}`} className="flex items-start gap-3 py-1.5">
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm text-slate-800 truncate" title={p.producto}>
+                                {/* Nombre completo en varias lineas: cortado con "..." no se distinguian
+                                    productos de nombre largo (APC SMART-UPS..., BLUETTI...). */}
+                                <p className="text-sm text-slate-800 leading-snug break-words" title={p.producto}>
                                   {p.producto}
                                 </p>
                                 {p.codigo && <p className="text-[11px] text-slate-400 font-mono">{p.codigo}</p>}
                               </div>
-                              <span className="text-sm font-semibold text-slate-700 tabular-nums">{p.cantidad.toLocaleString(locale)}</span>
+                              <span className="shrink-0 text-sm font-semibold text-slate-700 tabular-nums">{p.cantidad.toLocaleString(locale)}</span>
                             </li>
                           ))}
                         </ul>
@@ -341,14 +343,16 @@ export default function LlegadasProductos() {
                 <p className="text-[11px] text-slate-500 mt-1">{t("sin_fecha_nota")}</p>
                 <ul className="mt-2 grid sm:grid-cols-2 gap-x-6">
                   {sinFechaVisibles.map((p) => (
-                    <li key={`${p.codigo}-${p.producto}`} className="flex items-center gap-3 py-1.5">
+                    <li key={`${p.codigo}-${p.producto}`} className="flex items-start gap-3 py-1.5">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-slate-800 truncate" title={p.producto}>
+                        {/* Nombre completo en varias lineas: cortado con "..." no se distinguian
+                            productos de nombre largo (APC SMART-UPS..., BLUETTI...). */}
+                        <p className="text-sm text-slate-800 leading-snug break-words" title={p.producto}>
                           {p.producto}
                         </p>
                         {p.codigo && <p className="text-[11px] text-slate-400 font-mono">{p.codigo}</p>}
                       </div>
-                      <span className="text-sm font-semibold text-slate-700 tabular-nums">{p.cantidad.toLocaleString(locale)}</span>
+                      <span className="shrink-0 text-sm font-semibold text-slate-700 tabular-nums">{p.cantidad.toLocaleString(locale)}</span>
                     </li>
                   ))}
                 </ul>

@@ -262,6 +262,16 @@ export default async function middleware(request: NextRequest) {
         }
       }
 
+      // 5b-bis. Llegadas (calendario de mercancia): solo Diseñador y AdminLeads
+      // de Valencia (cids=9) y superAdmin. Su API ya rechaza otra sede; esto
+      // evita que un Diseñador de otra sede abra la pantalla vacia por URL.
+      if (pathname.includes("/disenador/llegadas")) {
+        const userCids = Number(payload.cids);
+        if (!isSuperAdmin && !((isDisenador || isAdminLeads) && userCids === 9)) {
+          return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+        }
+      }
+
       // 5c. Lógica para Material POP (acceso: adminleads de Valencia cids=9, superAdmin)
       if (pathname.includes("/adminleads/material-pop")) {
         const userCids = Number(payload.cids);
