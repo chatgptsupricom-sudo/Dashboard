@@ -1,5 +1,7 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
+import { completarCodigos } from "@/lib/recepcion/codigosLlegadas";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -19,6 +21,8 @@ import { NextRequest, NextResponse } from "next/server";
  *                  sin cantidad (solo que producto viene).
  * Los que no llegaron y no tienen fecha estimada van aparte en `sin_fecha`,
  * tambien sin cantidad.
+ * El renglon que se cargo sin codigo lo toma de Odoo si se puede
+ * (lib/recepcion/codigosLlegadas.ts).
  *
  * A proposito NO devuelve proveedor, numero de packing list, contenedores,
  * precintos, fotos ni novedades: esos datos son de Compras y Almacen.
@@ -73,6 +77,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // odoo_product_id se agrega sola con la carga en Odoo de la recepcion.
+    await asegurarColumnasOdoo();
     // Cerrados del ultimo año + todo lo que esta en camino o contandose.
     // La fecha estimada es DATE: se formatea en SQL para que la zona horaria
     // del driver no la corra un dia.
@@ -80,7 +86,7 @@ export async function GET(request: NextRequest) {
       `SELECT r.etapa,
               COALESCE(r.llegada_at, r.cerrado_at) AS llegada,
               DATE_FORMAT(r.fecha_estimada, '%Y-%m-%d') AS estimada,
-              i.codigo, i.producto, i.cantidad_esperada, i.cantidad_recibida
+              i.codigo, i.producto, i.odoo_product_id, i.cantidad_esperada, i.cantidad_recibida
          FROM recepcion_packing r
          JOIN recepcion_packing_items i ON i.recepcion_id = r.id
         WHERE r.cids = ?
@@ -88,6 +94,9 @@ export async function GET(request: NextRequest) {
                OR COALESCE(r.llegada_at, r.cerrado_at) >= DATE_SUB(NOW(), INTERVAL ? DAY))`,
       [CIDS_VALENCIA, DIAS_HISTORIA],
     );
+
+    // Antes de agrupar: con el codigo, el mismo producto se suma en un renglon.
+    await completarCodigos(r.rows as any[]);
 
     const acc = new Acumulador();
     for (const f of r.rows as any[]) {

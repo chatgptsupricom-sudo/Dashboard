@@ -24,6 +24,11 @@ const COLOR: Record<Lista, { punto: string; chip: string; titulo: string }> = {
   por_llegar: { punto: "bg-sky-500", chip: "bg-sky-50 text-sky-700", titulo: "text-sky-700" },
 };
 
+// Numero de orden y codigo de cada producto, para no confundir los de nombre
+// parecido (Asus Vivobook 16 F1605VA-WS96 / ...CoreTM i9).
+const NUMERO = "shrink-0 w-7 text-right text-xs text-slate-400 tabular-nums leading-5";
+const CODIGO = "text-xs text-slate-500 font-mono mt-0.5";
+
 const iso = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 // Mediodia para que el cambio de zona no corra el dia.
 const aFecha = (dia: string) => new Date(`${dia}T12:00:00`);
@@ -316,15 +321,16 @@ export default function LlegadasProductos() {
                           <p className="text-[11px] text-slate-500 mt-1">{atrasado ? t("nota_atrasado") : t(`nota_${l}`)}</p>
                         )}
                         <ul className="mt-2 space-y-0.5">
-                          {detalle[l].map((p) => (
+                          {detalle[l].map((p, i) => (
                             <li key={`${p.codigo}-${p.producto}`} className="flex items-start gap-3 py-1.5">
+                              <span className={NUMERO}>{i + 1}.</span>
                               <div className="min-w-0 flex-1">
                                 {/* Nombre completo en varias lineas: cortado con "..." no se distinguian
                                     productos de nombre largo (APC SMART-UPS..., BLUETTI...). */}
                                 <p className="text-sm text-slate-800 leading-snug break-words" title={p.producto}>
                                   {p.producto}
                                 </p>
-                                {p.codigo && <p className="text-[11px] text-slate-400 font-mono">{p.codigo}</p>}
+                                {p.codigo && <p className={CODIGO}>{p.codigo}</p>}
                               </div>
                               {conCantidad && p.cantidad != null && (
                                 <span className="shrink-0 text-sm font-semibold text-slate-700 tabular-nums">{p.cantidad.toLocaleString(locale)}</span>
@@ -348,15 +354,16 @@ export default function LlegadasProductos() {
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">{t("sin_fecha_nota")}</p>
                 <ul className="mt-2 grid sm:grid-cols-2 gap-x-6">
-                  {sinFechaVisibles.map((p) => (
+                  {sinFechaVisibles.map((p, i) => (
                     <li key={`${p.codigo}-${p.producto}`} className="flex items-start gap-3 py-1.5">
+                      <span className={NUMERO}>{i + 1}.</span>
                       <div className="min-w-0 flex-1">
                         {/* Nombre completo en varias lineas: cortado con "..." no se distinguian
                             productos de nombre largo (APC SMART-UPS..., BLUETTI...). */}
                         <p className="text-sm text-slate-800 leading-snug break-words" title={p.producto}>
                           {p.producto}
                         </p>
-                        {p.codigo && <p className="text-[11px] text-slate-400 font-mono">{p.codigo}</p>}
+                        {p.codigo && <p className={CODIGO}>{p.codigo}</p>}
                       </div>
                     </li>
                   ))}
