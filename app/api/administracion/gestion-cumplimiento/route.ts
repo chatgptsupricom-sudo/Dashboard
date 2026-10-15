@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { canViewAdministracion, getAdminUser } from "@/lib/administracion/auth";
+import { canViewAdministracion, getAdminUser, sedesDelUsuario } from "@/lib/administracion/auth";
+import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { OdooUnreachableError } from "@/lib/odoo";
 import { cargarMetas } from "@/lib/administracion/metas";
 import { construirKpi, resumirCategoria } from "@/lib/administracion/kpis";
@@ -7,7 +8,7 @@ import {
   AlertaAdmin,
   severidadDesdeDesvio,
 } from "@/lib/administracion/alertas";
-import { companyIdsDeEmpresa } from "@/lib/administracion/empresas";
+import { companyIdsDeEmpresa, empresaDeCompanyId } from "@/lib/administracion/empresas";
 import { cargarRefsAdminKpis } from "@/lib/administracion/odooRefs";
 import {
   fetchCierreMensual,
@@ -53,8 +54,11 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const empresa = (searchParams.get("empresa") || "").toLowerCase().trim();
-    const companyIds = companyIdsDeEmpresa(empresa);
+    const empresaPedida = (searchParams.get("empresa") || "").toLowerCase().trim();
+    // Administracion solo lee la sede de su `cids` (lib/auth/sedeRol.ts).
+    const companyIds = sedesDelUsuario(user, companyIdsDeEmpresa(empresaPedida));
+    if (companyIds.length === 0) return respuestaSedeNoPermitida();
+    const empresa = companyIds.length === 1 ? empresaDeCompanyId(companyIds[0]) : empresaPedida;
     const metas = await cargarMetas(companyIds[0]);
 
     const hoyDate = new Date();

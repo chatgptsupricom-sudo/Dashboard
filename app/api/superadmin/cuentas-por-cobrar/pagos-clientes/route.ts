@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
 import { COMPANY_NAMES, companyIdsEnAlcance } from "@/lib/cxc/alcance";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
@@ -76,7 +77,7 @@ const fechaCaracas = (utc: string): string =>
     .toISOString().slice(0, 10);
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
   try {

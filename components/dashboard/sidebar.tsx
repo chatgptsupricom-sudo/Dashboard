@@ -472,7 +472,10 @@ export function Sidebar({
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
   const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables", "cxc_sobregiro"];
   const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
-  const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones) && hasCxCPermission;
+  const isAdministracionRole = ["administración", "administracion"].includes(normalizedUserRole || "");
+  // Administracion tambien: sus items de CxC tienen slugs relativos al basePath
+  // del rol CxC, asi que en la lista plana saldrian rotos (/administracion/...).
+  const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones || isAdministracionRole) && hasCxCPermission;
   // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
   // desplegable "Administración", y KPI de Diseños dentro del de Marketing, en vez
   // de quedar sueltos en la lista plana.
@@ -517,6 +520,8 @@ export function Sidebar({
           !comprasDropdownIds.includes(item.id)) &&
         (!showVentasDropdown || !ventasDropdownIds.includes(item.id)) &&
         (!showCxCDropdown || !cxcDropdownIds.includes(item.id)) &&
+        // En Administracion estos dos tambien van dentro del desplegable de CxC.
+        !(isAdministracionRole && ["estado_cuenta", "stoplight_reports"].includes(item.id)) &&
         (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
         (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
         !(isSuperAdminRole &&
@@ -1461,7 +1466,22 @@ export function Sidebar({
                           href: `/${locale}/cuentas-por-cobrar/top-clientes-vendedor`,
                           permission: "cxc_top_clients",
                         },
-                      ].map((subItem, index) => {
+                        {
+                          label: "Estado de cuenta",
+                          href: `/${locale}/cuentas-por-cobrar/estado-cuenta`,
+                          permission: "estado_cuenta",
+                          soloAdministracion: true,
+                        },
+                      ]
+                        // Administracion ve solo lo que su rol tiene en lib/types.ts;
+                        // superadmin y Gerencia de Operaciones siguen viendo la lista
+                        // de siempre (Estado de cuenta ya lo tienen en otro lado).
+                        .filter((subItem: { permission: string; soloAdministracion?: boolean }) =>
+                          isAdministracionRole
+                            ? allowedSections.includes(subItem.permission)
+                            : !subItem.soloAdministracion,
+                        )
+                        .map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
 
                         return (

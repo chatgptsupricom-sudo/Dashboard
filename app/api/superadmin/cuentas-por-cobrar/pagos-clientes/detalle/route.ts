@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
 import { companyIdsEnAlcance } from "@/lib/cxc/alcance";
 import { NextRequest, NextResponse } from "next/server";
@@ -25,7 +26,7 @@ const CAMPOS = [
 const INLINE = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
 
 async function leerPago(request: NextRequest, id: number) {
-  const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return { error: auth.error };
 
   const pagos = await callOdooRPC<any[]>("account.payment", "read", [[id]], { fields: CAMPOS });

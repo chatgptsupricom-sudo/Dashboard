@@ -4,6 +4,7 @@ import { DateRangePicker } from "@tremor/react";
 import { Calendar, ChevronLeft, ChevronRight, RefreshCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { XLSX, estilizarHoja } from "@/lib/excel";
+import { useSedeFija } from "@/components/administracion/comunes";
 
 export default function IntegracionDePagoPage() {
   const [data, setData] = useState<any>({ results: [], total_count: 0 });
@@ -11,6 +12,11 @@ export default function IntegracionDePagoPage() {
 
   const [search, setSearch] = useState("");
   const [selectedCid, setSelectedCid] = useState("9");
+  // Administracion solo ve la sede de su cids (la API tambien lo impone).
+  const sedeFija = useSedeFija();
+  useEffect(() => {
+    if (sedeFija?.companyId && String(sedeFija.companyId) !== selectedCid) setSelectedCid(String(sedeFija.companyId));
+  }, [sedeFija?.companyId, selectedCid]);
   const [companies, setCompanies] = useState<{ cid: string; name: string }[]>(
     []
   );
@@ -152,6 +158,7 @@ export default function IntegracionDePagoPage() {
         <select
           className="bg-slate-50 border-none rounded-xl text-[10px] font-bold p-3 outline-none"
           value={selectedCid}
+          disabled={!!sedeFija}
           onChange={(e) => {
             setSelectedCid(e.target.value);
             setCurrentPage(1);

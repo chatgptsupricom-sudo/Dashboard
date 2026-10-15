@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { esRolAdministracion, respuestaSedeNoPermitida, sedeDelToken } from "@/lib/auth/sedeRol";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -64,9 +65,12 @@ export async function GET(request: NextRequest) {
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     const isCxC = userRole === "cuentas por cobrar";
     const isGerenteOps = userRole === "gerente de operaciones";
-    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && !isCxC && !isGerenteOps) {
+    // Administracion ve el Stoplight de CxC (su seccion de Cuentas por Cobrar).
+    const isAdministracion = esRolAdministracion(userRole);
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && !isCxC && !isGerenteOps && !isAdministracion) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
+    if (isAdministracion && sedeDelToken(payload as { cids?: unknown }) === null) return respuestaSedeNoPermitida();
 
     await ensureTables();
 
@@ -77,7 +81,7 @@ export async function GET(request: NextRequest) {
     const endDateParam = url.searchParams.get("endDate");
     // Gerencia de Ventas tampoco elige sede: su página ya manda su propio
     // `cids`, pero sin esto podía leer otra sede cambiando `company_id`.
-    const empresaFija = isCxC || isGerenteOps || userRole === "gerencia de ventas";
+    const empresaFija = isCxC || isGerenteOps || isAdministracion || userRole === "gerencia de ventas";
     const companyId = empresaFija ? (payload.cids as number) : (companyIdParam ? parseInt(companyIdParam, 10) : (payload.cids as number));
 
     const now = new Date();

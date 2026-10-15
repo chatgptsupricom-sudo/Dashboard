@@ -1,6 +1,7 @@
 import { jwtVerify } from "jose";
 import { NextRequest } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
+import { ROLES_ADMINISTRACION, limitarSedesPorRol } from "@/lib/auth/sedeRol";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -12,19 +13,19 @@ export interface AdminAuthUser {
   email: string;
 }
 
-// El rol nuevo se define en el issue #7 (lib/types.ts + tabla roles). Aqui se
-// acepta cualquiera de las variantes razonables para no acoplar este trabajo a
-// la cadena exacta que termine usando ese issue; cuando #7 este mergeado se
-// puede reducir a la definitiva sin tocar los endpoints.
-const ADMIN_ROLES = new Set([
-  "administracion",
-  "administración",
-  "administracion y finanzas",
-  "administración y finanzas",
-]);
+// Los nombres del rol viven en lib/auth/sedeRol.ts, junto con la regla de que
+// Administracion solo lee la sede de su `cids`.
+const ADMIN_ROLES = new Set(ROLES_ADMINISTRACION);
 
-/** Para `requireRoles()` en las APIs nuevas del area (superadmin entra siempre). */
-export const ROLES_ADMINISTRACION = Array.from(ADMIN_ROLES);
+export { ROLES_ADMINISTRACION };
+
+/**
+ * Sedes que este usuario puede leer de las pedidas (`limitarSedesPorRol`).
+ * Vacio = ninguna: responder `respuestaSedeNoPermitida()`.
+ */
+export function sedesDelUsuario(user: AdminAuthUser | null, companyIds: number[]): number[] {
+  return limitarSedesPorRol(user ? { role: user.role, cids: user.cids } : null, companyIds);
+}
 
 export async function getAdminUser(
   request: NextRequest,
