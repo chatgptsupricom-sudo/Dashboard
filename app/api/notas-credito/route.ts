@@ -1,5 +1,5 @@
 import { requireSession } from "@/lib/auth/roles";
-import { accesoNC, requireNC } from "@/lib/notas-credito/acceso";
+import { accesoNC, puedeVerSolicitud, requireNC, soloPreaprueba } from "@/lib/notas-credito/acceso";
 import { listarAnteriores } from "@/lib/notas-credito/anteriores";
 import { sedeConFlujo } from "@/lib/notas-credito/datos";
 import { crearDirecta, ErrorNC, listar, sincronizarAprobadas } from "@/lib/notas-credito/solicitudes";
@@ -49,9 +49,13 @@ export async function GET(request: NextRequest) {
     } catch (e: any) {
       console.error("[notas-credito] sincronizar con Odoo:", e?.message);
     }
+    // IT (solo preaprueba) ve lo que espera su preaprobacion y lo que ya paso por el.
+    notas = notas.filter((s) => puedeVerSolicitud(acceso!, s));
     let anteriores: Awaited<ReturnType<typeof listarAnteriores>> = [];
     try {
-      anteriores = await listarAnteriores(acceso!.sedes, acceso!.autor, acceso!.superadmin);
+      anteriores = (await listarAnteriores(acceso!.sedes, acceso!.autor, acceso!.superadmin)).filter(
+        (a) => !soloPreaprueba(acceso!, a.company_id),
+      );
     } catch (e: any) {
       console.error("[notas-credito] solicitudes anteriores:", e?.message);
     }
@@ -72,7 +76,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** POST { company_id, factura_id, monto, motivo }: nota de crédito que no viene de RMA (la crea quien preaprueba). */
+/** POST { company_id, factura_id, monto, motivo }: nota de crédito que no viene de RMA (la crea quien la hace, o el SuperAdmin; pasa por IT). */
 export async function POST(request: NextRequest) {
   const { acceso, error } = await requireNC(request);
   if (error) return error;

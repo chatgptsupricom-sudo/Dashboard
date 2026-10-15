@@ -1,4 +1,4 @@
-import { puedeVerSede, requireNC } from "@/lib/notas-credito/acceso";
+import { puedeVerSolicitud, requireNC } from "@/lib/notas-credito/acceso";
 import { detalle, ejecutarAccion, ErrorNC, obtener, permisosSobre } from "@/lib/notas-credito/solicitudes";
 import type { AccionNC } from "@/lib/notas-credito/tipos";
 import { getPublicOrigin } from "@/lib/publicOrigin";
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
   const id = parseInt((await params).id, 10);
   try {
     const sol = await obtener(id);
-    if (!sol || !puedeVerSede(acceso!, sol.company_id)) {
+    if (!sol || !puedeVerSolicitud(acceso!, sol)) {
       return NextResponse.json({ error: "Nota de crédito no encontrada" }, { status: 404 });
     }
     const d = await detalle(id, getPublicOrigin(request));
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     const accion = body.accion as AccionNC;
     if (!ACCIONES.includes(accion)) return NextResponse.json({ error: "Acción desconocida" }, { status: 400 });
     const sol = await obtener(id);
-    if (!sol || !puedeVerSede(acceso!, sol.company_id)) {
+    if (!sol || !puedeVerSolicitud(acceso!, sol)) {
       return NextResponse.json({ error: "Nota de crédito no encontrada" }, { status: 404 });
     }
     const extra = await ejecutarAccion(id, accion, body, acceso!.autor, getPublicOrigin(request));

@@ -37,7 +37,7 @@ export async function listarAnteriores(sedes: number[] | null, autor: Autor, sup
     if (sedes && !sedes.includes(sede)) continue;
     if (!flujo.has(sede)) flujo.set(sede, await sedeConFlujo(sede));
     const puede =
-      n.estado === "pendiente" && !!flujo.get(sede) && (superadmin || (await tienePaso(autor.email, sede, "preaprueba")));
+      n.estado === "pendiente" && !!flujo.get(sede) && (superadmin || (await tienePaso(autor.email, sede, "procesa")));
     out.push({
       rma_nota_id: n.id,
       case_id: n.case_id,
@@ -61,7 +61,7 @@ export async function listarAnteriores(sedes: number[] | null, autor: Autor, sup
 /**
  * Pasa una solicitud pendiente de RMA al flujo: nace "por preaprobar", el
  * equipo queda en "NC en revisión" y le llega el aviso a quien preaprueba.
- * Solo la pasa el SuperAdmin o quien preaprueba en esa sede, y solo si la
+ * Solo la pasa el SuperAdmin o quien hace la nota (procesa) en esa sede, y solo si la
  * sede tiene el flujo activo y el equipo sigue en el taller.
  */
 export async function pasarAlFlujo(rmaNotaId: number, autor: Autor, superadmin: boolean, origenPeticion: string): Promise<number> {
@@ -70,8 +70,8 @@ export async function pasarAlFlujo(rmaNotaId: number, autor: Autor, superadmin: 
   if (nota.flujo_id) throw new ErrorNC(`Ya está en el flujo como NC-${nota.flujo_id}.`, 409);
   if (nota.estado !== "pendiente") throw new ErrorNC("Solo se pasan al flujo las solicitudes pendientes.", 409);
   const companyId = Number(nota.company_id) || 9;
-  if (!superadmin && !(await tienePaso(autor.email, companyId, "preaprueba"))) {
-    throw new ErrorNC("Solo el SuperAdmin o quien preaprueba en la sede la pasa al flujo.", 403);
+  if (!superadmin && !(await tienePaso(autor.email, companyId, "procesa"))) {
+    throw new ErrorNC("Solo el SuperAdmin o quien hace la nota en la sede la pasa al flujo.", 403);
   }
   if (!(await sedeConFlujo(companyId))) {
     throw new ErrorNC("La sede todavía no tiene el flujo activo: completa sus responsables.", 409);

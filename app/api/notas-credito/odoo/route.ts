@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireNC } from "@/lib/notas-credito/acceso";
+import { requireNC, soloPreaprueba } from "@/lib/notas-credito/acceso";
 import { ensureTablas } from "@/lib/notas-credito/datos";
 import { notasOdooBorrador, notasOdooDelRango } from "@/lib/notas-credito/odoo";
 import { SEDES } from "@/lib/notas-credito/tipos";
@@ -26,10 +26,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "mes inválido (YYYY-MM)" }, { status: 400 });
   }
 
-  const permitidas = acceso!.sedes ?? SEDES;
+  // IT (solo preaprueba) no ve las notas de Odoo: solo lo que pasa por su preaprobacion.
+  const permitidas = (acceso!.sedes ?? SEDES).filter((s) => !soloPreaprueba(acceso!, s));
   const pedida = Number(sp.get("company_id")) || null;
   if (pedida && !permitidas.includes(pedida)) return NextResponse.json({ error: "Sede no permitida" }, { status: 403 });
   const sedes = pedida ? [pedida] : permitidas;
+  if (!sedes.length) return NextResponse.json({ success: true, sedes, notas: [] });
 
   try {
     let notas;

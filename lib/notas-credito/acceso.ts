@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/auth/roles";
 import { esSuperadmin, pasosDe } from "@/lib/notas-credito/datos";
 import { autorDeSesion, type Autor } from "@/lib/notas-credito/solicitudes";
-import type { PasoNC } from "@/lib/notas-credito/tipos";
+import type { PasoNC, SolicitudNC } from "@/lib/notas-credito/tipos";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -35,4 +35,33 @@ export async function requireNC(request: NextRequest): Promise<{ acceso?: Acceso
 
 export function puedeVerSede(acceso: AccesoNC, companyId: number): boolean {
   return acceso.sedes === null || acceso.sedes.includes(companyId);
+}
+
+/**
+ * Responsable que en esta sede solo preaprueba (IT, Rangel). IT solo
+ * preaprueba o rechaza: no crea, no toca la factura y no ve el resto de las
+ * notas de la sede ni las de Odoo. El SuperAdmin ve todo.
+ */
+export function soloPreaprueba(acceso: AccesoNC, companyId: number): boolean {
+  if (acceso.superadmin) return false;
+  const pasos = acceso.pasos[companyId] ?? [];
+  return pasos.includes("preaprueba") && pasos.every((p) => p === "preaprueba");
+}
+
+/**
+ * Si la sesion ve esta solicitud. Quien solo preaprueba ve las que esperan su
+ * preaprobacion y las que el mismo preaprobo o rechazo (para seguirlas).
+ */
+export function puedeVerSolicitud(
+  acceso: AccesoNC,
+  sol: Pick<SolicitudNC, "company_id" | "estado" | "preaprobado_por" | "rechazado_por" | "rechazado_paso">,
+): boolean {
+  if (!puedeVerSede(acceso, sol.company_id)) return false;
+  if (!soloPreaprueba(acceso, sol.company_id)) return true;
+  const yo = acceso.autor.nombre;
+  return (
+    sol.estado === "por_preaprobar" ||
+    (!!sol.preaprobado_por && sol.preaprobado_por === yo) ||
+    (sol.rechazado_paso === "preaprueba" && sol.rechazado_por === yo)
+  );
 }
