@@ -30,6 +30,14 @@ import {
   ChevronRight,
   Layers,
 } from "lucide-react";
+import DescargaMultiple from "@/components/banco-imagenes/DescargaMultiple";
+import {
+  armarFlyer,
+  flyerPng,
+  guardarBlob,
+  nombreFlyer,
+  type FlyerADescargar,
+} from "@/lib/banco-imagenes/descargas";
 
 interface OdooProduct {
   id: number;
@@ -464,77 +472,29 @@ export default function BancoImagenesPage() {
     if (!targetImage) return;
 
     const price = priceMode === "odoo" ? Number(targetImage.price || 0) : parseFloat(customPrice) || 0;
-    const priceText = `$${price.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = targetImage.image_path;
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
-    });
-
-    const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(img, 0, 0);
-
-    if (withPrice) {
-      const fontSize = Math.max(canvas.width * 0.055, 28);
-      ctx.font = `bold ${fontSize}px Arial`;
-      const textWidth = ctx.measureText(priceText).width;
-      const padX = fontSize * 0.65;
-      const padY = fontSize * 0.4;
-      const labelW = textWidth + padX * 2;
-      const labelH = fontSize + padY * 2;
-
-      const centerX = (badgePos.x / 100) * canvas.width;
-      const centerY = (badgePos.y / 100) * canvas.height;
-      const labelX = Math.max(10, Math.min(canvas.width - labelW - 10, centerX - labelW / 2));
-      const labelY = Math.max(10, Math.min(canvas.height - labelH - 10, centerY - labelH / 2));
-
-      const grad = ctx.createLinearGradient(labelX, labelY, labelX + labelW, labelY);
-      grad.addColorStop(0, "rgba(239, 68, 68, 0.95)");
-      grad.addColorStop(1, "rgba(220, 38, 38, 0.95)");
-
-      const radius = labelH / 2;
-      ctx.beginPath();
-      ctx.moveTo(labelX + radius, labelY);
-      ctx.lineTo(labelX + labelW - radius, labelY);
-      ctx.arcTo(labelX + labelW, labelY, labelX + labelW, labelY + radius, radius);
-      ctx.arcTo(labelX + labelW, labelY + labelH, labelX + labelW - radius, labelY + labelH, radius);
-      ctx.lineTo(labelX + radius, labelY + labelH);
-      ctx.arcTo(labelX, labelY + labelH, labelX, labelY + labelH - radius, radius);
-      ctx.arcTo(labelX, labelY, labelX + radius, labelY, radius);
-      ctx.closePath();
-      ctx.shadowColor = "rgba(0,0,0,0.4)";
-      ctx.shadowBlur = fontSize * 0.5;
-      ctx.shadowOffsetY = fontSize * 0.1;
-      ctx.fillStyle = grad;
-      ctx.fill();
-      ctx.shadowColor = "transparent";
-      ctx.strokeStyle = "rgba(255,255,255,0.4)";
-      ctx.lineWidth = fontSize * 0.05;
-      ctx.stroke();
-      ctx.fillStyle = "#ffffff";
-      ctx.textBaseline = "middle";
-      ctx.fillText(priceText, labelX + padX, labelY + labelH / 2);
+    const flyer: FlyerADescargar = {
+      image_path: targetImage.image_path,
+      product_code: targetImage.product_code,
+      precio: withPrice ? price : null,
+      badgePos,
+    };
+    try {
+      guardarBlob(await flyerPng(flyer), nombreFlyer(flyer));
+    } catch (error) {
+      console.error("Error:", error);
     }
-
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      const suffix = withPrice ? `_${price}` : "";
-      link.download = `${targetImage.product_code || "flyer"}${suffix}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, "image/png");
   };
+
+  // ── Descarga múltiple ─────────────────────────────────────────────────────
+  // Desde la galería: precio de Odoo en la posición inicial.
+  const flyersSeleccionados = (conPrecio: boolean) =>
+    Array.from(selectedImages.values()).map((img) => armarFlyer(img, undefined, conPrecio));
+
+  // Desde el editor: lo que se ajustó en cada flyer (el que está abierto, con lo de pantalla).
+  const flyersDelEditor = (conPrecio: boolean) =>
+    multiImages.map((img, idx) =>
+      armarFlyer(img, idx === multiIndex ? { priceMode, customPrice, badgePos } : flyerSettings[img.id], conPrecio)
+    );
 
   const resetPreview = () => {
     setPreviewImage(null);
@@ -720,6 +680,10 @@ export default function BancoImagenesPage() {
                   <Layers className="w-3 h-3 mr-1.5" />
                   Editar seleccionados
                 </Button>
+                <DescargaMultiple
+                  obtenerFlyers={flyersSeleccionados}
+                  className="h-7 text-xs px-3 bg-white border-blue-200 text-blue-700 hover:bg-blue-100"
+                />
               </div>
             )}
             <div className="relative w-64">
@@ -1048,6 +1012,14 @@ export default function BancoImagenesPage() {
                   <Download className="w-4 h-4 mr-2" />
                   Descargar sin Precio
                 </Button>
+                {isMultiMode && (
+                  <DescargaMultiple
+                    obtenerFlyers={flyersDelEditor}
+                    etiqueta={`Descargar los ${multiImages.length} flyers`}
+                    className="w-full h-9 text-xs"
+                    avisoEnBloque
+                  />
+                )}
                 {isMultiMode && multiIndex < multiImages.length - 1 && (
                   <Button
                     onClick={() => handleSwitchFlyer(multiIndex + 1)}
