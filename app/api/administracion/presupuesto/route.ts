@@ -1,5 +1,4 @@
 import { query } from "@/lib/db";
-import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import {
   canEditPresupuesto,
@@ -11,6 +10,7 @@ import {
   ensurePresupuestoTable as ensureTable,
   fetchCuentasGasto,
 } from "@/lib/administracion/gastos";
+import { TODAS_LAS_SEDES } from "@/lib/administracion/empresas";
 
 export async function GET(request: NextRequest) {
   try {
@@ -75,6 +75,15 @@ export async function POST(request: NextRequest) {
     if (!mes || !companyId || !Array.isArray(items)) {
       return NextResponse.json(
         { error: "Faltan campos: mes, company_id, items" },
+        { status: 400 },
+      );
+    }
+
+    // Un mes mal escrito ("2026-9") o una sede que no existe quedaban
+    // guardados y nunca coincidian con ninguna consulta.
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(mes)) || !TODAS_LAS_SEDES.includes(Number(companyId))) {
+      return NextResponse.json(
+        { error: "mes (YYYY-MM) o company_id invalidos" },
         { status: 400 },
       );
     }

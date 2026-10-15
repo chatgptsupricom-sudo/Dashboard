@@ -258,7 +258,9 @@ export function LoginForm() {
       } else if (role === "asistente de ventas") {
         router.push(`/${locale}/gerente_venta`);
       } else if (role === "administración") {
-        router.push(`/${locale}/dashboard`);
+        // Entra a Salud Administrativa: /dashboard es el tablero de ventas
+        // del SuperAdmin.
+        router.push(`/${locale}/administracion`);
       } else if (role === "rma") {
         router.push(`/${locale}/rma`);
       } else if (role === "seguridad") {

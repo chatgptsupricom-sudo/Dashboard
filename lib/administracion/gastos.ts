@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
+import { desdeOdoo } from "@/lib/smartbit";
 
 /**
  * `presupuesto_gastos` la crea el endpoint de carga (`/api/administracion/
@@ -26,15 +27,31 @@ export async function ensurePresupuestoTable() {
 }
 
 /**
- * Fuente del "gasto real": facturas de proveedor contabilizadas, tomando las
- * lineas cuya cuenta es de tipo `expense` (el grupo 6.x del plan de cuentas:
- * alquiler, fletes, servicios profesionales, mantenimiento, etc.).
+ * Fuente del "gasto real": todo lo contabilizado en cuentas de tipo `expense`
+ * (el grupo 6.x del plan de cuentas: personal, alquiler, fletes, servicios
+ * profesionales, gastos bancarios, etc.), venga de una factura de proveedor o
+ * de un asiento.
+ *
+ * Antes solo se leian las facturas de proveedor, y buena parte del gasto entra
+ * por asiento (nomina, bonos, comisiones, comisiones bancarias, honorarios):
+ * de abr a sep-2026 eso era el 27% del gasto 6.x en Panama, el 30% en
+ * Valencia y el 87% en Caracas, que quedaba fuera del indice.
  *
  * Se excluye `expense_direct_cost` (5.x, Costo de Venta) a proposito: es costo
  * de mercancia, no gasto operativo, y su magnitud (~$4.4MM vs ~$400K de gasto
- * operativo en 2026) ahogaria por completo los KPIs de presupuesto.
+ * operativo en 2026) ahogaria por completo los KPIs de presupuesto. Por lo
+ * mismo se excluyen las cuentas de `CODIGO_NO_OPERATIVO`.
  */
 const TIPO_CUENTA_GASTO = "expense";
+
+/**
+ * Cuentas de tipo `expense` que no son gasto operativo: el grupo 8 ("Otros
+ * ingresos y egresos": diferencial cambiario y su cuenta transitoria, que en
+ * Valencia mueve millones en asientos de cambio que se compensan entre si) y
+ * la perdida por diferencia de efectivo (999...). Dejarlas inflaria el gasto y
+ * el presupuesto no se arma sobre ellas.
+ */
+const CODIGO_NO_OPERATIVO = /^(8|999)/;
 
 export interface CuentaGasto {
   id: number;
@@ -102,7 +119,7 @@ export async function fetchCuentasGasto(
   // gasto real necesita todos esos ids. Para listas de cuentas (plantilla de
   // presupuesto) usar dedupPorCodigo().
   return (cuentas || [])
-    .filter((c: any) => c.code)
+    .filter((c: any) => c.code && !CODIGO_NO_OPERATIVO.test(String(c.code).trim()))
     .map((c: any) => ({
       id: c.id,
       codigo: String(c.code).trim(),
@@ -123,8 +140,14 @@ export function dedupPorCodigo(cuentas: CuentaGasto[]): CuentaGasto[] {
 }
 
 /**
- * Gasto real por cuenta en un rango. Incluye notas de credito de proveedor
- * (`in_refund`), cuyo balance negativo descuenta correctamente del gasto.
+ * Gasto real por cuenta en un rango, por fecha contable de la linea. Entra
+ * cualquier asiento publicado (facturas, notas de credito de proveedor,
+ * asientos manuales): el balance negativo de una NC o de una reversion
+ * descuenta solo. `balance` ya esta en la moneda de la empresa.
+ *
+ * Nada antes del corte a Odoo (`CORTE_ODOO`): en mar-2026 estan los asientos
+ * de migracion con el gasto acumulado de la epoca de Smartbit (1,77 M en
+ * Valencia, 1,09 M en Panama), que no son gasto de ese mes.
  */
 export async function fetchGastoReal(
   companyIds: number[],
@@ -134,7 +157,8 @@ export async function fetchGastoReal(
 ): Promise<{ porCuenta: Record<string, number>; detalles: GastoDetalle[] }> {
   const porCuenta: Record<string, number> = {};
   const detalles: GastoDetalle[] = [];
-  if (cuentas.length === 0) return { porCuenta, detalles };
+  desde = desdeOdoo(desde);
+  if (cuentas.length === 0 || desde > hasta) return { porCuenta, detalles };
 
   const idACodigo: Record<number, CuentaGasto> = {};
   cuentas.forEach((c) => {
@@ -144,14 +168,13 @@ export async function fetchGastoReal(
   const lineas = await fetchPaginado(
     "account.move.line",
     [
-      ["move_id.move_type", "in", ["in_invoice", "in_refund"]],
-      ["move_id.state", "=", "posted"],
-      ["move_id.invoice_date", ">=", desde],
-      ["move_id.invoice_date", "<=", hasta],
-      ["move_id.company_id", "in", companyIds],
+      ["parent_state", "=", "posted"],
+      ["date", ">=", desde],
+      ["date", "<=", hasta],
+      ["company_id", "in", companyIds],
       ["account_id", "in", cuentas.map((c) => c.id)],
     ],
-    ["account_id", "balance", "move_id", "partner_id", "date"],
+    ["account_id", "balance", "move_id", "partner_id", "date", "name"],
     { allowed_company_ids: companyIds },
   );
 
@@ -162,7 +185,9 @@ export async function fetchGastoReal(
     porCuenta[cuenta.codigo] = (porCuenta[cuenta.codigo] || 0) + monto;
     detalles.push({
       cuentaCodigo: cuenta.codigo,
-      proveedor: l.partner_id?.[1] || "Sin proveedor",
+      // Un asiento de nomina o de banco no suele tener contacto: se muestra
+      // la etiqueta de la linea para que el detalle diga que es.
+      proveedor: l.partner_id?.[1] || (typeof l.name === "string" && l.name.trim()) || "Sin contacto",
       factura: l.move_id?.[1] || "",
       fecha: l.date || "",
       monto,
