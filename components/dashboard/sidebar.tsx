@@ -431,6 +431,8 @@ export function Sidebar({
         return `/${locale}/seguridad`;
       case "cuentas por cobrar":
         return `/${locale}/cuentas-por-cobrar`;
+      case "it":
+        return `/${locale}/notas-credito`;
       case "diseñador":
         return `/${locale}/disenador`;
       case "administración":
