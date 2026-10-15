@@ -42,6 +42,7 @@ import {
   DollarSign,
   FileText,
   Receipt,
+  Monitor,
   Landmark,
   BookOpenCheck,
   FileCheck2,
@@ -133,6 +134,7 @@ export function Sidebar({
   const [isCxCOpen, setIsCxCOpen] = useState(false);
   const [isMarketingOpen, setIsMarketingOpen] = useState(false);
   const [isAdministracionOpen, setIsAdministracionOpen] = useState(false);
+  const [isITOpen, setIsITOpen] = useState(false);
   const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
   const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
   const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
@@ -481,6 +483,9 @@ export function Sidebar({
   // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
   // desplegable "Administración", y KPI de Diseños dentro del de Marketing, en vez
   // de quedar sueltos en la lista plana.
+  // SuperAdmin: lo que hace el rol IT (hoy, preaprobar notas de credito)
+  // va en su propio desplegable "IT".
+  const itSuperAdminIds = ["notas_credito"];
   const administracionDropdownIds = [
     "salud_financiera",
     "gastos_presupuesto",
@@ -527,7 +532,7 @@ export function Sidebar({
         (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
         (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
         !(isSuperAdminRole &&
-          [...administracionDropdownIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+          [...administracionDropdownIds, ...itSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
     )
@@ -1664,6 +1669,65 @@ export function Sidebar({
                         { label: "Tesorería y Bancos", href: `/${locale}/administracion/tesoreria` },
                         { label: "Fiscal", href: `/${locale}/administracion/fiscal` },
                         { label: "Contabilidad y cierre", href: `/${locale}/administracion/contabilidad` },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de IT (solo superadmin): lo que hace el rol IT */}
+            {userRole === "superAdmin" && allowedSections.includes("notas_credito") && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsITOpen(!isITOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Monitor size={20} className="text-slate-400" />
+                    <span className="text-sm">IT</span>
+                    {!isITOpen && notasCredito.pendientes > 0 && (
+                      <span className="text-[10px] font-semibold rounded-full bg-amber-500/20 text-amber-300 px-1.5 py-0.5">
+                        {notasCredito.pendientes}
+                      </span>
+                    )}
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isITOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isITOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        {
+                          label: `Notas de crédito${notasCredito.pendientes ? ` (${notasCredito.pendientes})` : ""}`,
+                          href: `/${locale}/notas-credito`,
+                        },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
                         return (
