@@ -10,7 +10,8 @@ import { ChevronLeft, ChevronRight, Loader2, PackageCheck, Search, X } from "luc
  * Solo fecha y productos: sin proveedor, contenedores, precintos ni fotos.
  */
 
-type Producto = { codigo: string | null; producto: string; cantidad: number };
+// Lo que va a llegar (`por_llegar` y sin fecha) viene sin cantidad.
+type Producto = { codigo: string | null; producto: string; cantidad?: number };
 type Lista = "llego" | "contando" | "por_llegar";
 type Dia = { fecha: string } & Record<Lista, Producto[]>;
 
@@ -297,7 +298,8 @@ export default function LlegadasProductos() {
               ) : (
                 <div className="divide-y divide-slate-100">
                   {LISTAS.filter((l) => detalle[l].length).map((l) => {
-                    const unidades = detalle[l].reduce((s, p) => s + p.cantidad, 0);
+                    const conCantidad = l !== "por_llegar";
+                    const unidades = detalle[l].reduce((s, p) => s + (p.cantidad || 0), 0);
                     const atrasado = l === "por_llegar" && detalle.fecha < hoy;
                     return (
                       <div key={l} className="px-4 sm:px-5 py-3">
@@ -305,7 +307,9 @@ export default function LlegadasProductos() {
                           <span className={`w-2 h-2 rounded-full ${COLOR[l].punto}`} />
                           <h3 className={`text-xs font-semibold uppercase tracking-wide ${COLOR[l].titulo}`}>{t(`titulo_${l}`)}</h3>
                           <span className="ml-auto text-[11px] text-slate-400 tabular-nums">
-                            {t("resumen", { productos: detalle[l].length, unidades })}
+                            {conCantidad
+                              ? t("resumen", { productos: detalle[l].length, unidades })
+                              : t("resumen_productos", { productos: detalle[l].length })}
                           </span>
                         </div>
                         {l !== "llego" && (
@@ -322,7 +326,9 @@ export default function LlegadasProductos() {
                                 </p>
                                 {p.codigo && <p className="text-[11px] text-slate-400 font-mono">{p.codigo}</p>}
                               </div>
-                              <span className="shrink-0 text-sm font-semibold text-slate-700 tabular-nums">{p.cantidad.toLocaleString(locale)}</span>
+                              {conCantidad && p.cantidad != null && (
+                                <span className="shrink-0 text-sm font-semibold text-slate-700 tabular-nums">{p.cantidad.toLocaleString(locale)}</span>
+                              )}
                             </li>
                           ))}
                         </ul>
@@ -352,7 +358,6 @@ export default function LlegadasProductos() {
                         </p>
                         {p.codigo && <p className="text-[11px] text-slate-400 font-mono">{p.codigo}</p>}
                       </div>
-                      <span className="shrink-0 text-sm font-semibold text-slate-700 tabular-nums">{p.cantidad.toLocaleString(locale)}</span>
                     </li>
                   ))}
                 </ul>
