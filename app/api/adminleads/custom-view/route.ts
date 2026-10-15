@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { canUploadCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
-import { addHistory, ensureTables, FRECUENCIA_VIEW_NAME, getState, getView, resolveView } from "@/lib/customView/store";
+import { addHistory, ensureTables, esFrecuencia, getState, getView, marcaDeVista, resolveView } from "@/lib/customView/store";
 import { buildInjection } from "@/lib/customView/runtime";
 import { ensurePlanTables, getPlanState } from "@/lib/customView/planContentStore";
 import { buildReactInjection, detectReactPlan } from "@/lib/customView/reactInjection";
@@ -46,6 +46,23 @@ function injectBeforeBodyClose(html: string, injection: string): string {
   return html.slice(0, i) + injection + html.slice(i);
 }
 
+/** Inserta al inicio del <head> (antes de los scripts de la app), o al inicio del documento. */
+function injectAfterHeadOpen(html: string, injection: string): string {
+  const m = /<head[^>]*>/i.exec(html);
+  if (!m) return injection + html;
+  const i = m.index + m[0].length;
+  return html.slice(0, i) + injection + html.slice(i);
+}
+
+/**
+ * Agrega `marca=<marca>` a toda llamada de la app a /api/plan-contenido/frecuencia
+ * (fetch y XHR), así cada marca lee y guarda su propio plan. La ruta además lo
+ * deduce del Referer, por si el HTML llamara de otra forma.
+ */
+function marcaFrecuenciaScript(marca: string): string {
+  return `<script>(function(){var M=${JSON.stringify(marca)};function c(u){try{u=String(u);if(u.indexOf("/api/plan-contenido/frecuencia")===-1||/[?&]marca=/.test(u))return u;return u+(u.indexOf("?")===-1?"?":"&")+"marca="+M}catch(e){return u}}var f=window.fetch;if(f)window.fetch=function(i,o){if(typeof i==="string"||i instanceof URL)i=c(i);else if(i&&i.url){var n=c(i.url);if(n!==i.url)i=new Request(n,i)}return f.call(this,i,o)};var x=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=c(u);return x.apply(this,arguments)}})();</script>`;
+}
+
 /**
  * GET
  *  - (sin params)      HTML base + runtime de guardado. El runtime aplica el
@@ -64,8 +81,10 @@ export async function GET(request: NextRequest) {
     await ensureTables();
     const viewName = resolveView(request.nextUrl.searchParams.get("view"));
     const mode = request.nextUrl.searchParams.get("mode");
-    const nombreDescarga =
-      viewName === FRECUENCIA_VIEW_NAME ? "frecuencia-cpm.html" : "plan-de-contenido.html";
+    const marca = marcaDeVista(viewName);
+    const nombreDescarga = `${esFrecuencia(viewName) ? "frecuencia-cpm" : "plan-de-contenido"}${
+      marca === "supricom" ? "" : `-${marca}`
+    }.html`;
 
     if (mode === "snapshot") {
       const state = await getState(viewName);
@@ -88,13 +107,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Frecuencia CPM guarda su propio estado: se sirve tal cual se subio.
-    if (mode === "base" || viewName === FRECUENCIA_VIEW_NAME) {
+    if (mode === "base" || esFrecuencia(viewName)) {
       const download = request.nextUrl.searchParams.get("download") === "1";
-      return new Response(view.html_content, {
-        headers: download
-          ? { ...HTML_HEADERS, "Content-Disposition": `attachment; filename="${nombreDescarga}"` }
-          : HTML_HEADERS,
-      });
+      if (download) {
+        return new Response(view.html_content, {
+          headers: { ...HTML_HEADERS, "Content-Disposition": `attachment; filename="${nombreDescarga}"` },
+        });
+      }
+      // La Frecuencia de otra marca guarda en la misma ruta que la de
+      // Supricom: se le avisa su marca para que no pise el plan de Supricom.
+      const html =
+        esFrecuencia(viewName) && marca !== "supricom"
+          ? injectAfterHeadOpen(view.html_content, marcaFrecuenciaScript(marca))
+          : view.html_content;
+      return new Response(html, { headers: HTML_HEADERS });
     }
 
     // Panel React (SPA): la persistencia es un objeto plano en plan_content_state

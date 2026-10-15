@@ -73,12 +73,15 @@ export default function PlanContenidoPanel({
   emptyHint,
   view,
   title = "Plan de Contenido",
+  encabezado,
 }: {
   canUpload: boolean;
   emptyHint?: string;
   /** Vista de `custom_views` (lista blanca en lib/customView/store.ts). Sin ella, el plan. */
   view?: string;
   title?: string;
+  /** Debajo del título (las pestañas de marca de PlanContenidoMarcas). */
+  encabezado?: React.ReactNode;
 }) {
   // Todas las llamadas a la API llevan la vista; sin `view` el server usa el plan.
   const url = (path = "", params = "") => {
@@ -299,6 +302,7 @@ export default function PlanContenidoPanel({
               </p>
             )}
           </div>
+          {encabezado}
         </div>
 
         <div className="flex items-center gap-2">
