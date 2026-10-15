@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROLES_ADMINISTRACION, SEDES_VALIDAS, esRolAdministracion, limitarSedesPorRol, respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -19,12 +20,18 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
   try {
     const { searchParams } = new URL(request.url);
-    const companyId = searchParams.get("companyId");
+    // Administracion solo lee la sede de su `cids` ("all" incluido).
+    const pedido = searchParams.get("companyId");
+    const sedeAdmin = esRolAdministracion(auth.payload?.role)
+      ? limitarSedesPorRol(auth.payload, pedido && pedido !== "all" ? [parseInt(pedido, 10)] : SEDES_VALIDAS)
+      : null;
+    if (sedeAdmin && sedeAdmin.length === 0) return respuestaSedeNoPermitida();
+    const companyId = sedeAdmin ? String(sedeAdmin[0]) : pedido;
 
     let partnerIds: number[] | null = null;
 

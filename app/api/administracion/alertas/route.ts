@@ -4,12 +4,15 @@ import {
   canEditAlertas,
   canViewAdministracion,
   getAdminUser,
+  sedesDelUsuario,
+  type AdminAuthUser,
 } from "@/lib/administracion/auth";
+import { esRolAdministracion, respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import {
   SeguimientoAlerta,
   esEstatusValido,
 } from "@/lib/administracion/alertas";
-import { COMPANY_MAP } from "@/lib/administracion/empresas";
+import { COMPANY_MAP, TODAS_LAS_SEDES, empresaDeCompanyId } from "@/lib/administracion/empresas";
 
 /**
  * Seguimiento del Top 10 de Alertas.
@@ -53,6 +56,16 @@ function normalizarEmpresa(v: unknown): string | null {
   return COMPANY_MAP[e] ? e : null;
 }
 
+/**
+ * Administracion solo trabaja sobre la sede de su `cids`: "" (todas) o su
+ * propia sede se convierten en esa sede; otra sede = null (403).
+ */
+function empresaDelUsuario(user: AdminAuthUser | null, empresa: string): string | null {
+  const ids = sedesDelUsuario(user, empresa ? [COMPANY_MAP[empresa]] : TODAS_LAS_SEDES);
+  if (ids.length === 0) return null;
+  return ids.length === 1 && esRolAdministracion(user?.role) ? empresaDeCompanyId(ids[0]) : empresa;
+}
+
 function aFecha(v: any): string | null {
   if (!v) return null;
   // MySQL devuelve DATE como Date; la UI trabaja con YYYY-MM-DD.
@@ -71,14 +84,16 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(request.url);
-    const empresa = normalizarEmpresa(url.searchParams.get("empresa"));
+    const empresaPedida = normalizarEmpresa(url.searchParams.get("empresa"));
     const mes = url.searchParams.get("mes") || "";
-    if (empresa === null || !RE_MES.test(mes)) {
+    if (empresaPedida === null || !RE_MES.test(mes)) {
       return NextResponse.json(
         { error: "Parametros invalidos: empresa y mes (YYYY-MM)" },
         { status: 400 },
       );
     }
+    const empresa = empresaDelUsuario(user, empresaPedida);
+    if (empresa === null) return respuestaSedeNoPermitida();
 
     await ensureTable();
     const rows = await query(
@@ -118,7 +133,7 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const alertaId = String(body.alerta_id ?? "").trim();
-    const empresa = normalizarEmpresa(body.empresa);
+    const empresaPedida = normalizarEmpresa(body.empresa);
     const mes = String(body.mes ?? "");
     const estatus = body.estatus ?? "abierta";
     const fechaCompromiso =
@@ -131,7 +146,7 @@ export async function PUT(request: NextRequest) {
     if (
       !alertaId ||
       alertaId.length > 120 ||
-      empresa === null ||
+      empresaPedida === null ||
       !RE_MES.test(mes)
     ) {
       return NextResponse.json(
@@ -139,6 +154,8 @@ export async function PUT(request: NextRequest) {
         { status: 400 },
       );
     }
+    const empresa = empresaDelUsuario(user, empresaPedida);
+    if (empresa === null) return respuestaSedeNoPermitida();
     if (!esEstatusValido(estatus)) {
       return NextResponse.json(
         { error: "Estatus invalido: abierta, en_proceso o cerrada" },

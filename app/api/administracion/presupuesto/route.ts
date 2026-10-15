@@ -4,7 +4,9 @@ import {
   canEditPresupuesto,
   canViewAdministracion,
   getAdminUser,
+  sedesDelUsuario,
 } from "@/lib/administracion/auth";
+import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import {
   dedupPorCodigo,
   ensurePresupuestoTable as ensureTable,
@@ -29,6 +31,7 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
+    if (sedesDelUsuario(user, [companyId]).length === 0) return respuestaSedeNoPermitida();
 
     const cuentas = dedupPorCodigo(await fetchCuentasGasto([companyId]));
     const rows = await query(
@@ -87,6 +90,8 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    if (sedesDelUsuario(user, [Number(companyId)]).length === 0) return respuestaSedeNoPermitida();
 
     const validos = items
       .map((i: any) => ({

@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROLES_ADMINISTRACION, limitarSedesPorRol, respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -12,7 +13,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRoles(request, [
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, 
     "cuentas por cobrar",
     "gerente de operaciones",
     "gerencia de ventas",
@@ -100,6 +101,8 @@ export async function GET(
     const paid = totalWithTax - residual;
 
     const companyId = inv.company_id?.[0] || 0;
+    // Administracion solo ve facturas de la sede de su `cids`.
+    if (limitarSedesPorRol(auth.payload, [companyId]).length === 0) return respuestaSedeNoPermitida();
 
     // Las facturas migradas ("Importación Masiva") no traen vendedor propio.
     // Como el reporte de CxC (Cartera por Responsable), se usa el vendedor del

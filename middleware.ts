@@ -307,7 +307,9 @@ export default async function middleware(request: NextRequest) {
       }
 
       // 9. Lógica para Cuentas por Cobrar
-      if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin && !isGerenciaOperaciones) {
+      // Administracion tambien tiene todas las secciones de CxC (sus APIs la
+      // dejan en la sede de su cids, lib/auth/sedeRol.ts).
+      if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin && !isGerenciaOperaciones && !isAdministracion) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );

@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -15,12 +16,16 @@ const COMPANY_NAMES: Record<number, string> = {
 };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["cuentas por cobrar", "gerente de operaciones"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
   try {
     const { searchParams } = new URL(request.url);
-    const empresa = searchParams.get("empresa")?.toLowerCase() || "";
+    const empresaPedida = searchParams.get("empresa")?.toLowerCase() || "";
+    // Administracion solo lee la sede de su `cids` (lib/auth/sedeRol.ts).
+    const empresaForzada = empresaForzadaPorRol(auth.payload, empresaPedida);
+    if (empresaForzada === null) return respuestaSedeNoPermitida();
+    const empresa = empresaForzada ?? empresaPedida;
     const userCidsParam = searchParams.get("userCids");
 
     const companyIds =

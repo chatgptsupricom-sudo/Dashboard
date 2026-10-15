@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { AlertTriangle, Download, Loader2, WifiOff } from "lucide-react";
 import { ReactNode, useCallback, useEffect, useState } from "react";
+import { useAuthStore } from "@/lib/stores/auth.store";
 import * as XLSX from "xlsx";
 
 /**
@@ -25,6 +26,59 @@ export const NOMBRE_SEDE: Record<string, string> = {
   caracas: "Caracas",
   panama: "Panamá",
 };
+
+const EMPRESA_DE_CIDS: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
+const ROLES_SEDE_FIJA = ["administracion", "administración", "administracion y finanzas", "administración y finanzas"];
+
+/**
+ * Sede fija del usuario: el rol Administracion solo ve la de su `cids` (las
+ * APIs lo imponen igual; esto solo evita ofrecerle un selector que no sirve).
+ * null = el usuario elige sede (superadmin).
+ */
+export function useSedeFija(): { empresa: string; companyId: number | null } | null {
+  const { user } = useAuthStore();
+  const rol = String((user as any)?.role || "").toLowerCase().trim();
+  if (!ROLES_SEDE_FIJA.includes(rol)) return null;
+  const cids = Number((user as any)?.cids);
+  return EMPRESA_DE_CIDS[cids] ? { empresa: EMPRESA_DE_CIDS[cids], companyId: cids } : { empresa: "", companyId: null };
+}
+
+/** Selector de sede, o la sede fija del usuario si no puede elegir. */
+export function SelectorSede({
+  empresa,
+  setEmpresa,
+  className = "",
+}: {
+  empresa: string;
+  setEmpresa: (v: string) => void;
+  className?: string;
+}) {
+  const fija = useSedeFija();
+  useEffect(() => {
+    if (fija && fija.empresa && empresa !== fija.empresa) setEmpresa(fija.empresa);
+  }, [fija?.empresa, empresa, setEmpresa]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (fija) {
+    return (
+      <span className={`border rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-700 ${className}`}>
+        {fija.empresa ? NOMBRE_SEDE[fija.empresa] : "Sin sede asignada"}
+      </span>
+    );
+  }
+  return (
+    <select
+      value={empresa}
+      onChange={(e) => setEmpresa(e.target.value)}
+      className={`border rounded-lg px-3 py-2 text-sm bg-white ${className}`}
+      aria-label="Sede"
+    >
+      {SEDES_ADMIN.map((s) => (
+        <option key={s.value} value={s.value}>
+          {s.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export function mesActual(): string {
   const n = new Date();
@@ -120,18 +174,7 @@ export function EncabezadoAdmin({
         <p className="text-gray-500 text-sm">{subtitulo}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-        <select
-          value={empresa}
-          onChange={(e) => setEmpresa(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm flex-1 lg:flex-none bg-white"
-          aria-label="Sede"
-        >
-          {SEDES_ADMIN.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
+        <SelectorSede empresa={empresa} setEmpresa={setEmpresa} className="flex-1 lg:flex-none" />
         {conMes && mes !== undefined && setMes && (
           <select
             value={mes}

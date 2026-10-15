@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROLES_ADMINISTRACION, SEDES_VALIDAS, esRolAdministracion, limitarSedesPorRol, respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { query } from "@/lib/db";
 import { normalizarRif, RIF_SQL } from "@/lib/smartbit";
 import { requireRoles } from "@/lib/auth/roles";
@@ -25,7 +26,7 @@ export const dynamic = "force-dynamic";
  * fecha mas vieja de las dos fuentes.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["cuentas por cobrar"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar"]);
   if (auth.error) return auth.error;
 
   try {
@@ -34,7 +35,16 @@ export async function GET(request: NextRequest) {
     if (!Number.isFinite(partnerId) || partnerId <= 0) {
       return NextResponse.json({ error: "partner_id invalido" }, { status: 400 });
     }
-    const companyId = parseInt(searchParams.get("company_id") || "", 10);
+    const companyIdPedido = parseInt(searchParams.get("company_id") || "", 10);
+    // Administracion solo lee la sede de su `cids`: se fija la sede y la
+    // primera factura se busca solo ahi.
+    const esAdmin = esRolAdministracion(auth.payload?.role);
+    const sedes = limitarSedesPorRol(
+      auth.payload,
+      Number.isFinite(companyIdPedido) ? [companyIdPedido] : SEDES_VALIDAS,
+    );
+    if (sedes.length === 0) return respuestaSedeNoPermitida();
+    const companyId = esAdmin ? sedes[0] : companyIdPedido;
 
     const [invoices, partners] = await Promise.all([
       callOdooRPC<any[]>(
@@ -44,6 +54,7 @@ export async function GET(request: NextRequest) {
           ["partner_id", "=", partnerId],
           ["move_type", "in", ["out_invoice", "out_refund"]],
           ["state", "=", "posted"],
+          ...(esAdmin ? [["company_id", "in", sedes]] : []),
         ]],
         { fields: ["invoice_date"], order: "invoice_date asc", limit: 1 },
       ),

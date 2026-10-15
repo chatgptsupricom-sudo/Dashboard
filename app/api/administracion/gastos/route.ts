@@ -1,7 +1,8 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { OdooUnreachableError } from "@/lib/odoo";
-import { canViewAdministracion, getAdminUser } from "@/lib/administracion/auth";
+import { canViewAdministracion, getAdminUser, sedesDelUsuario } from "@/lib/administracion/auth";
+import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import {
   ensurePresupuestoTable,
   fetchCuentasGasto,
@@ -40,12 +41,15 @@ export async function GET(request: NextRequest) {
     // `empresa` que Salud Financiera, donde vacio significa todas las sedes.
     const empresaParam = url.searchParams.get("empresa");
     const companyIdParam = url.searchParams.get("company_id");
-    const companyIds =
+    const pedidas =
       empresaParam !== null
         ? companyIdsDeEmpresa(empresaParam)
         : [parseInt(companyIdParam || "9", 10)];
+    // Administracion solo lee la sede de su `cids` (lib/auth/sedeRol.ts).
+    const companyIds = sedesDelUsuario(user, pedidas);
+    if (companyIds.length === 0) return respuestaSedeNoPermitida();
     const empresa =
-      empresaParam !== null
+      empresaParam !== null && companyIds.length > 1
         ? (empresaParam || "").toLowerCase().trim()
         : empresaDeCompanyId(companyIds[0]);
 

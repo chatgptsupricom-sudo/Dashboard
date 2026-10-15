@@ -24,6 +24,7 @@ import {
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
+import { useSedeFija } from "@/components/administracion/comunes";
 
 interface Kpi {
   id: string;
@@ -129,7 +130,11 @@ function mesesDisponibles() {
 export default function GastosPresupuestoPage() {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const sedeFija = useSedeFija();
   const [sede, setSede] = useState("9");
+  useEffect(() => {
+    if (sedeFija?.companyId && String(sedeFija.companyId) !== sede) setSede(String(sedeFija.companyId));
+  }, [sedeFija?.companyId, sede]);
   const [mes, setMes] = useState(() => {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
@@ -274,17 +279,24 @@ export default function GastosPresupuestoPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select
-            value={sede}
-            onChange={(e) => setSede(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm flex-1 sm:flex-none"
-          >
-            {SEDES.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+          {sedeFija ? (
+            // Administracion solo ve la sede de su cids.
+            <span className="border rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-700 flex-1 sm:flex-none">
+              {SEDES.find((s) => s.id === String(sedeFija.companyId))?.label || "Sin sede asignada"}
+            </span>
+          ) : (
+            <select
+              value={sede}
+              onChange={(e) => setSede(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm flex-1 sm:flex-none"
+            >
+              {SEDES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={mes}
             onChange={(e) => setMes(e.target.value)}
