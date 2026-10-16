@@ -134,6 +134,9 @@ type SerialItem = { id: number; item_id: number; serial: string; escaneado_por: 
 /** Cada dano marcado con la cantidad tal como se escribe en el campo. */
 type DanoForm = { tipo: TipoDano; cantidad: string };
 type Conteo = { recibida: string; motivo: string; danos: DanoForm[]; nota: string };
+/** Lo que se escribe de un renglon y se manda al guardar (danos y nota van juntos). */
+type CampoConteo = "recibida" | "motivo" | "dano";
+const CAMPOS_DE: Record<keyof Conteo, CampoConteo> = { recibida: "recibida", motivo: "motivo", danos: "dano", nota: "dano" };
 
 const danosANumero = (danos: DanoForm[] = []) =>
   danos.map((d) => ({ tipo: d.tipo, cantidad: d.cantidad.trim() === "" ? null : Number(d.cantidad) }));
@@ -202,25 +205,45 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     return () => clearInterval(t);
   }, [abierto]);
 
+  // Renglones que este telefono cambio y todavia no guardo, con que campos.
+  // Al guardar se manda solo eso: varios telefonos cuentan la misma recepcion
+  // a la vez y mandar todo pisaba lo que contaban los otros. `v` sube con cada
+  // cambio: lo que se edito mientras se guardaba queda pendiente.
+  const pendientes = useRef(new Map<number, { campos: Set<CampoConteo>; v: number }>());
+
   const aplicar = useCallback((j: any, conConteo: boolean) => {
     setRec(j.recepcion);
     setItems(j.items || []);
     setContenedores(j.contenedores || []);
     setArchivos(j.archivos || []);
     if (conConteo) {
-      const c: Record<number, Conteo> = {};
-      for (const i of j.items || []) {
-        c[i.id] = {
-          recibida: i.cantidad_recibida === null ? "" : String(Number(i.cantidad_recibida)),
-          motivo: i.motivo_diferencia || "",
-          danos: (Array.isArray(i.danos) ? i.danos : []).map((d: any) => ({
-            tipo: d.tipo,
-            cantidad: d.cantidad === null || d.cantidad === undefined ? "" : String(d.cantidad),
-          })),
-          nota: i.golpeado_nota || "",
-        };
-      }
-      setConteo(c);
+      setConteo((prev) => {
+        const c: Record<number, Conteo> = {};
+        for (const i of j.items || []) {
+          const servidor: Conteo = {
+            recibida: i.cantidad_recibida === null ? "" : String(Number(i.cantidad_recibida)),
+            motivo: i.motivo_diferencia || "",
+            danos: (Array.isArray(i.danos) ? i.danos : []).map((d: any) => ({
+              tipo: d.tipo,
+              cantidad: d.cantidad === null || d.cantidad === undefined ? "" : String(d.cantidad),
+            })),
+            nota: i.golpeado_nota || "",
+          };
+          // Lo que se escribio aca y no se guardo todavia no se pisa.
+          const local = prev[i.id];
+          const campos = pendientes.current.get(i.id)?.campos;
+          c[i.id] =
+            local && campos
+              ? {
+                  recibida: campos.has("recibida") ? local.recibida : servidor.recibida,
+                  motivo: campos.has("motivo") ? local.motivo : servidor.motivo,
+                  danos: campos.has("dano") ? local.danos : servidor.danos,
+                  nota: campos.has("dano") ? local.nota : servidor.nota,
+                }
+              : servidor;
+        }
+        return c;
+      });
     }
   }, []);
 
@@ -268,11 +291,17 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     const timer = setTimeout(async () => {
       setAutoguardado("guardando");
       try {
+        const { items: cuerpo, enviado } = cuerpoConteo();
+        if (!cuerpo.length) {
+          setAutoguardado(null);
+          return;
+        }
         const res = await fetch(`/api/recepcion/${id}/etapa`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accion: "guardar_conteo", items: cuerpoConteo() }),
+          body: JSON.stringify({ accion: "guardar_conteo", items: cuerpo }),
         });
+        if (res.ok) guardados(enviado);
         setAutoguardado(res.ok ? "guardado" : null);
       } catch {
         setAutoguardado(null);
@@ -307,6 +336,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       ...prev,
       [r.item_id]: { ...(prev[r.item_id] || { recibida: "", motivo: "", danos: [], nota: "" }), recibida: String(r.cantidad) },
     }));
+    // La cantidad ya la tiene el servidor: si habia una escrita sin guardar,
+    // no se manda encima de la lectura.
+    const pendiente = pendientes.current.get(r.item_id);
+    if (pendiente?.campos.delete("recibida") && pendiente.campos.size === 0) pendientes.current.delete(r.item_id);
     if (r.resultado === "serial") {
       setItems((prev) =>
         prev.map((i) => (i.id === r.item_id ? { ...i, seriales: [...(i.seriales || []), r.serial] } : i)),
@@ -383,6 +416,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     accion: string,
     extra: Record<string, unknown> = {},
     conConteo = true,
+    // Renglones pendientes que van en este envio (ver cuerpoConteo).
+    enviado?: Map<number, number>,
   ) => {
     setError(null);
     setAviso(null);
@@ -400,6 +435,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
         return;
       }
       if (!res.ok) throw new Error(j.error || t("error"));
+      if (enviado) guardados(enviado);
       aplicar(j, conConteo);
       if (accion === "guardar_conteo") setAviso(t("avance_guardado"));
     } catch (e: any) {
@@ -409,17 +445,36 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     }
   };
 
-  const cuerpoConteo = () =>
-    items.map((i) => {
-      const c = conteo[i.id];
-      return {
-        id: i.id,
-        cantidad_recibida: c?.recibida === "" || c?.recibida === undefined ? null : Number(c.recibida),
-        motivo_diferencia: c?.motivo || null,
-        danos: danosANumero(c?.danos),
-        golpeado_nota: c?.danos?.length ? c.nota || null : null,
-      };
-    });
+  /**
+   * Lo que este telefono cambio y no guardo: solo esos renglones y, de cada
+   * uno, solo los campos tocados (el servidor no toca los que no vienen).
+   * `enviado` dice con que version salio cada renglon, para no dar por
+   * guardado lo que se volvio a editar mientras tanto.
+   */
+  const cuerpoConteo = () => {
+    const enviado = new Map<number, number>();
+    const cuerpo: Array<Record<string, unknown>> = [];
+    for (const [itemId, p] of pendientes.current) {
+      const c = conteo[itemId];
+      if (!c) continue;
+      enviado.set(itemId, p.v);
+      const fila: Record<string, unknown> = { id: itemId };
+      if (p.campos.has("recibida")) fila.cantidad_recibida = c.recibida === "" ? null : Number(c.recibida);
+      if (p.campos.has("motivo")) fila.motivo_diferencia = c.motivo || null;
+      if (p.campos.has("dano")) {
+        fila.danos = danosANumero(c.danos);
+        fila.golpeado_nota = c.danos.length ? c.nota || null : null;
+      }
+      cuerpo.push(fila);
+    }
+    return { items: cuerpo, enviado };
+  };
+
+  const guardados = (enviado: Map<number, number>) => {
+    for (const [itemId, v] of enviado) {
+      if (pendientes.current.get(itemId)?.v === v) pendientes.current.delete(itemId);
+    }
+  };
 
   const anular = async () => {
     if (!window.confirm(t("anular_confirmar"))) return;
@@ -994,6 +1049,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 const hayDif = c.recibida !== "" && Number(c.recibida) !== esperado;
                 const set = (p: Partial<Conteo>) => {
                   setConteo((prev) => ({ ...prev, [i.id]: { ...c, ...p } }));
+                  const previo = pendientes.current.get(i.id);
+                  const campos = new Set(previo?.campos);
+                  for (const k of Object.keys(p) as Array<keyof Conteo>) campos.add(CAMPOS_DE[k]);
+                  pendientes.current.set(i.id, { campos, v: (previo?.v ?? 0) + 1 });
                   setEditado((n) => n + 1);
                 };
                 const esSeleccionado = seleccionado === i.id;
@@ -1253,7 +1312,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
               {contando && (
                 <>
                   <BotonSecundario
-                    onClick={() => void accionar("guardar_conteo", { items: cuerpoConteo() })}
+                    onClick={() => {
+                      const { items: cuerpo, enviado } = cuerpoConteo();
+                      void accionar("guardar_conteo", { items: cuerpo }, true, enviado);
+                    }}
                     disabled={enviando}
                     icon={Save}
                     className="w-full mt-3"
@@ -1312,7 +1374,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         : t("odoo.al_cerrar_sin_oc")}
                     </p>
                     <BotonPrimario
-                      onClick={() => void accionar("cerrar", { items: cuerpoConteo(), notas_cierre: notas })}
+                      onClick={() => {
+                        const { items: cuerpo, enviado } = cuerpoConteo();
+                        void accionar("cerrar", { items: cuerpo, notas_cierre: notas }, true, enviado);
+                      }}
                       disabled={enviando || !ev.listo || abiertos.length > 0}
                       icon={CheckCircle2}
                       className="w-full h-12"
