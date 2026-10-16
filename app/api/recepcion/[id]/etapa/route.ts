@@ -7,6 +7,7 @@ import {
   limpiarPrecintos,
 } from "@/lib/recepcion/flujo";
 import { cargarEnOdoo, ocPendiente } from "@/lib/recepcion/odoo";
+import { contenedorDeConteo, ponerCantidad, recalcularTotales } from "@/lib/recepcion/conteo";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -29,8 +30,11 @@ export const dynamic = "force-dynamic";
  *  cerrar_contenedor  { contenedor_id, notas_cierre }
  *                     contenedor descargando -> cerrado (foto de como quedo)
  *
- * Del packing list entero (el conteo es uno solo):
- *  guardar_conteo     guarda el avance, no avanza
+ * Del packing list entero:
+ *  guardar_conteo     guarda el avance, no avanza. Cada renglon trae solo lo
+ *                     que cambio; la cantidad va con el `contenedor_id` que
+ *                     esta contando ese telefono (lib/recepcion/conteo.ts) y
+ *                     el total del renglon es la suma de los contenedores.
  *  cerrar             descargando -> cerrado: todos los contenedores cerrados
  *                     y el conteo completo. Al cerrar se carga lo contado en
  *                     Odoo (recepcion de la OC + traslado a Existencias,
@@ -241,62 +245,109 @@ export async function POST(
         if (rec.etapa !== "descargando") return conflicto();
 
         // Se guarda el conteo (tambien al cerrar: el cierre manda el ultimo).
+        // Solo los campos que vienen: varios telefonos cuentan la misma
+        // recepcion a la vez y cada uno manda lo que cambio el; un campo que
+        // no viene no se toca (antes se mandaba todo y se pisaba lo de otro).
         const porId = new Map<number, any>(datos.items.map((i) => [Number(i.id), i]));
+        let cambioAlgo = false;
         for (const c of Array.isArray(body?.items) ? body.items : []) {
           const item = porId.get(Number(c?.id));
           if (!item) continue;
-          // Un renglon con serial vale lo que se pistoleo: su cantidad es la
-          // cantidad de seriales, no lo que venga escrito. Sin ningun serial
-          // solo se acepta un 0 explicito (no llego ninguno).
-          const escrito = c?.cantidad_recibida;
-          const bruto = item.lleva_serial
-            ? item.seriales.length > 0
-              ? item.seriales.length
-              : escrito !== null && escrito !== undefined && escrito !== "" && Number(escrito) === 0
-                ? 0
-                : null
-            : escrito;
-          const cantidad = bruto === null || bruto === undefined || bruto === "" ? null : Number(bruto);
-          if (cantidad !== null && (!Number.isFinite(cantidad) || cantidad < 0)) {
-            return NextResponse.json(
-              { error: `Cantidad invalida en "${item.producto}"` },
-              { status: 400 },
-            );
+          const tiene = (k: string) => c !== null && typeof c === "object" && Object.prototype.hasOwnProperty.call(c, k);
+          const sets: string[] = [];
+          const vals: unknown[] = [];
+          const cambios: Record<string, unknown> = {};
+
+          if (tiene("cantidad_recibida")) {
+            // La cantidad es la del contenedor que cuenta ese telefono.
+            const cont = contenedorDeConteo(datos.contenedores, c.contenedor_id);
+            if ("error" in cont) return NextResponse.json({ error: cont.error }, { status: cont.status });
+            // Un renglon con serial vale lo que se pistoleo en ese contenedor:
+            // con seriales, lo escrito no cuenta. Sin ninguno solo se acepta
+            // un 0 explicito (no llego ninguno).
+            const serialesAca = (item.seriales as any[]).filter((s) => Number(s.contenedor_id) === cont.id).length;
+            if (!(item.lleva_serial && serialesAca > 0)) {
+              const escrito = c.cantidad_recibida;
+              const bruto = item.lleva_serial
+                ? escrito !== null && escrito !== undefined && escrito !== "" && Number(escrito) === 0
+                  ? 0
+                  : null
+                : escrito;
+              const cantidad = bruto === null || bruto === undefined || bruto === "" ? null : Number(bruto);
+              if (cantidad !== null && (!Number.isFinite(cantidad) || cantidad < 0)) {
+                return NextResponse.json(
+                  { error: `Cantidad invalida en "${item.producto}"` },
+                  { status: 400 },
+                );
+              }
+              const r = await ponerCantidad(id, Number(item.id), cont.id, cantidad, sesion!.nombre);
+              item.cantidad_recibida = r.total;
+              cambioAlgo = true;
+            }
           }
-          // En que estado llego la caja (danada, humeda y/o abierta) y
-          // cuantas unidades de cada una: no siempre es todo el renglon. Se
-          // aceptan tambien la lista de tipos sin cantidad y el `golpeado`
-          // suelto de antes (= danada).
-          const danos = limpiarDanos(
-            Array.isArray(c?.danos)
-              ? c.danos
-              : Array.isArray(c?.golpeado_tipos)
-                ? c.golpeado_tipos
-                : c?.golpeado === true
-                  ? ["danada"]
-                  : [],
-          );
-          const golpeado = danos.length > 0;
-          const motivo = texto(c?.motivo_diferencia, MAX.motivo);
-          const nota = golpeado ? texto(c?.golpeado_nota, MAX.nota) : null;
+
+          if (tiene("motivo_diferencia")) {
+            const motivo = texto(c.motivo_diferencia, MAX.motivo);
+            sets.push("motivo_diferencia = ?");
+            vals.push(motivo);
+            cambios.motivo_diferencia = motivo;
+          }
+
+          if (tiene("danos") || tiene("golpeado_tipos") || tiene("golpeado")) {
+            // En que estado llego la caja (danada, humeda y/o abierta) y
+            // cuantas unidades de cada una: no siempre es todo el renglon. Se
+            // aceptan tambien la lista de tipos sin cantidad y el `golpeado`
+            // suelto de antes (= danada).
+            const danos = limpiarDanos(
+              Array.isArray(c.danos)
+                ? c.danos
+                : Array.isArray(c.golpeado_tipos)
+                  ? c.golpeado_tipos
+                  : c.golpeado === true
+                    ? ["danada"]
+                    : [],
+            );
+            const golpeado = danos.length > 0;
+            const nota = golpeado ? texto(tiene("golpeado_nota") ? c.golpeado_nota : item.golpeado_nota, MAX.nota) : null;
+            sets.push("golpeado = ?", "golpeado_tipos = ?", "golpeado_nota = ?");
+            vals.push(golpeado ? 1 : 0, golpeado ? JSON.stringify(danos) : null, nota);
+            Object.assign(cambios, {
+              golpeado: golpeado ? 1 : 0,
+              danos,
+              golpeado_tipos: danos.map((d) => d.tipo),
+              golpeado_nota: nota,
+            });
+          } else if (tiene("golpeado_nota")) {
+            const nota = Number(item.golpeado) === 1 ? texto(c.golpeado_nota, MAX.nota) : null;
+            sets.push("golpeado_nota = ?");
+            vals.push(nota);
+            cambios.golpeado_nota = nota;
+          }
+
+          if (!sets.length) continue;
           await query(
-            `UPDATE recepcion_packing_items
-                SET cantidad_recibida = ?, motivo_diferencia = ?, golpeado = ?,
-                    golpeado_tipos = ?, golpeado_nota = ?
-              WHERE id = ? AND recepcion_id = ?`,
-            [cantidad, motivo, golpeado ? 1 : 0, golpeado ? JSON.stringify(danos) : null, nota, item.id, id],
+            `UPDATE recepcion_packing_items SET ${sets.join(", ")} WHERE id = ? AND recepcion_id = ?`,
+            [...vals, item.id, id],
           );
-          Object.assign(item, {
-            cantidad_recibida: cantidad,
-            motivo_diferencia: motivo,
-            golpeado: golpeado ? 1 : 0,
-            danos,
-            golpeado_tipos: danos.map((d) => d.tipo),
-            golpeado_nota: nota,
-          });
+          Object.assign(item, cambios);
+          cambioAlgo = true;
         }
+        // Los otros telefonos que cuentan este packing list lo ven.
+        if (cambioAlgo) emitirRecepcion({ accion: "conteo", id, cids: Number(rec.cids) });
 
         if (body.accion === "guardar_conteo") break;
+
+        // El total de cada renglon es la suma de sus contenedores: se
+        // recalcula todo antes de evaluar el cierre, por si algo quedo a medias.
+        await recalcularTotales(id);
+        const totales = await query(
+          "SELECT id, cantidad_recibida FROM recepcion_packing_items WHERE recepcion_id = ?",
+          [id],
+        );
+        for (const t of totales.rows as any[]) {
+          const item = porId.get(Number(t.id));
+          if (item) item.cantidad_recibida = t.cantidad_recibida === null ? null : Number(t.cantidad_recibida);
+        }
 
         const fotosGolpe = new Set(
           datos.archivos

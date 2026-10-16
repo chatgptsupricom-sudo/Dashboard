@@ -27,7 +27,16 @@ import {
  * abrir.
  */
 
-type Renglon = { codigo: string; producto: string; cantidad_esperada: string; cajas_esperadas: string };
+/** Cuanto trae cada contenedor de un renglon, cuando el packing list lo dice. */
+type Reparto = Array<{ contenedor: string; cantidad: number }>;
+type Renglon = {
+  codigo: string;
+  producto: string;
+  cantidad_esperada: string;
+  cajas_esperadas: string;
+  // Lo lee la IA del PDF; se pierde si se cambia la cantidad a mano (ya no suma).
+  reparto?: Reparto | null;
+};
 type Orden = { id: number; order_number: string; supplier_name: string };
 /** OC de Odoo que espera mercancia (lib/recepcion/odoo.ts). */
 type OcOdoo = { id: number; nombre: string; proveedor: string; parcial: boolean };
@@ -99,13 +108,20 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
         setOcRef(r.oc_referencia || "");
         setOcOdoo(r.odoo_purchase_order_id ? Number(r.odoo_purchase_order_id) : "");
         setObservaciones(r.observaciones || "");
+        const numeroDe = new Map<number, string>((j.contenedores || []).map((c: any) => [Number(c.id), c.numero]));
         setRenglones(
-          (j.items || []).map((i: any) => ({
-            codigo: i.codigo || "",
-            producto: i.producto,
-            cantidad_esperada: String(Number(i.cantidad_esperada)),
-            cajas_esperadas: i.cajas_esperadas === null ? "" : String(i.cajas_esperadas),
-          })),
+          (j.items || []).map((i: any) => {
+            const reparto: Reparto = (i.conteo || [])
+              .filter((f: any) => f.cantidad_esperada !== null && numeroDe.has(Number(f.contenedor_id)))
+              .map((f: any) => ({ contenedor: numeroDe.get(Number(f.contenedor_id))!, cantidad: Number(f.cantidad_esperada) }));
+            return {
+              codigo: i.codigo || "",
+              producto: i.producto,
+              cantidad_esperada: String(Number(i.cantidad_esperada)),
+              cajas_esperadas: i.cajas_esperadas === null ? "" : String(i.cajas_esperadas),
+              reparto: reparto.length ? reparto : null,
+            };
+          }),
         );
         setExistentes((j.archivos || []).filter((a: any) => a.tipo === "packing_list"));
       } catch (e: any) {
@@ -222,6 +238,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           producto: l.producto,
           cantidad_esperada: String(l.cantidad_esperada),
           cajas_esperadas: l.cajas_esperadas === null ? "" : String(l.cajas_esperadas),
+          reparto: Array.isArray(l.reparto) && l.reparto.length ? l.reparto : null,
         })),
       );
       setAviso(t("documento_leido", { count: d.renglones.length, contenedores: leidos.length }));
@@ -259,8 +276,15 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
     );
   };
 
-  const cambiar = (i: number, campo: keyof Renglon, v: string) =>
-    setRenglones((p) => p.map((r, n) => (n === i ? { ...r, [campo]: v } : r)));
+  const cambiar = (i: number, campo: Exclude<keyof Renglon, "reparto">, v: string) =>
+    setRenglones((p) =>
+      p.map((r, n) =>
+        n === i
+          ? // Otra cantidad ya no suma lo que dice cada contenedor: se descarta.
+            { ...r, [campo]: v, ...(campo === "cantidad_esperada" ? { reparto: null } : {}) }
+          : r,
+      ),
+    );
 
   const cambiarCont = (i: number, campo: keyof ContenedorForm, v: string) =>
     setContenedores((p) => p.map((c, n) => (n === i ? { ...c, [campo]: v } : c)));
@@ -314,6 +338,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
             producto: r.producto,
             cantidad_esperada: Number(r.cantidad_esperada),
             cajas_esperadas: r.cajas_esperadas === "" ? null : Number(r.cajas_esperadas),
+            reparto: r.reparto || null,
           })),
         }),
       });
@@ -579,6 +604,22 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
+                {r.reparto && r.reparto.length > 0 && (() => {
+                  // Si cambio el numero de un contenedor, el reparto no se guarda.
+                  const llave = (v: string) => v.toUpperCase().replace(/[\s-]+/g, "");
+                  const hay = new Set(contLimpios.map((c) => llave(c.numero)));
+                  const coincide = r.reparto.every((x) => hay.has(llave(x.contenedor)));
+                  return (
+                    <p className={`col-span-full -mt-1 text-[11px] ${coincide ? "text-slate-500" : "text-amber-700"}`}>
+                      {t("reparto_linea", {
+                        lista: r.reparto
+                          .map((x) => `${x.contenedor}: ${x.cantidad.toLocaleString("es-VE")}`)
+                          .join(" · "),
+                      })}
+                      {!coincide && ` — ${t("reparto_no_coincide")}`}
+                    </p>
+                  );
+                })()}
               </div>
             ))}
           </div>

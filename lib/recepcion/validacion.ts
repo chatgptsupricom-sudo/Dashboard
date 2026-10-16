@@ -33,7 +33,35 @@ export type ItemNuevo = {
   producto: string;
   cantidad_esperada: number;
   cajas_esperadas: number | null;
+  /**
+   * Cuanto trae cada contenedor, cuando el packing list lo dice (lo lee la IA
+   * del PDF). Se guarda solo si cada contenedor existe y la suma da la
+   * cantidad del renglon: si no, no se sabe y se compara solo el total.
+   */
+  reparto: Array<{ contenedor: string; cantidad: number }> | null;
 };
+
+const llaveContenedor = (v: unknown) => String(v ?? "").toUpperCase().replace(/[\s-]+/g, "");
+
+function validarReparto(
+  crudo: unknown,
+  cantidad: number,
+  contenedores: ContenedorNuevo[],
+): ItemNuevo["reparto"] {
+  if (!Array.isArray(crudo) || crudo.length === 0 || contenedores.length < 2) return null;
+  const porLlave = new Map(contenedores.map((c) => [llaveContenedor(c.numero), c.numero]));
+  const out: Array<{ contenedor: string; cantidad: number }> = [];
+  for (const r of crudo) {
+    const numero = porLlave.get(llaveContenedor((r as any)?.contenedor));
+    const n = Number((r as any)?.cantidad);
+    if (!numero || !Number.isFinite(n) || n < 0) return null;
+    const previo = out.find((x) => x.contenedor === numero);
+    if (previo) previo.cantidad += n;
+    else out.push({ contenedor: numero, cantidad: n });
+  }
+  const suma = out.reduce((a, r) => a + r.cantidad, 0);
+  return Math.abs(suma - cantidad) < 0.001 ? out : null;
+}
 
 export function validarCabeceraEItems(body: any):
   | {
@@ -106,6 +134,7 @@ export function validarCabeceraEItems(body: any):
       producto,
       cantidad_esperada: cantidad,
       cajas_esperadas: cajas !== null && Number.isFinite(cajas) && cajas >= 0 ? Math.round(cajas) : null,
+      reparto: validarReparto(it?.reparto, cantidad, contenedores),
     });
   }
 

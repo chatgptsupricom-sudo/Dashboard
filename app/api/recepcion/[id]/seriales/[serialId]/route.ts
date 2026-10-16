@@ -1,7 +1,8 @@
 import { query } from "@/lib/db";
-import { recontarSeriales } from "@/lib/recepcion/seriales";
+import { recontarSeriales } from "@/lib/recepcion/conteo";
 import {
   cargarRecepcion,
+  emitirRecepcion,
   fueraDeAlcance,
   puedeComo,
   requireRecepcion,
@@ -37,16 +38,25 @@ export async function DELETE(
       return NextResponse.json({ error: "El conteo no esta abierto: ya no se puede modificar" }, { status: 409 });
     }
 
-    const r = await query("SELECT item_id FROM recepcion_packing_seriales WHERE id = ? AND recepcion_id = ?", [
-      serialId,
-      id,
-    ]);
+    const r = await query(
+      "SELECT item_id, contenedor_id FROM recepcion_packing_seriales WHERE id = ? AND recepcion_id = ?",
+      [serialId, id],
+    );
     const itemId = (r.rows as any[])[0]?.item_id;
     if (!itemId) return NextResponse.json({ error: "Serial no encontrado" }, { status: 404 });
+    const contenedorId = Number((r.rows as any[])[0]?.contenedor_id) || 0;
 
     await query("DELETE FROM recepcion_packing_seriales WHERE id = ? AND recepcion_id = ?", [serialId, id]);
-    const cantidad = await recontarSeriales(Number(itemId));
-    return NextResponse.json({ success: true, item_id: Number(itemId), cantidad });
+    // Se resta en el contenedor donde se habia pistoleado.
+    const c = await recontarSeriales(id, Number(itemId), contenedorId, sesion!.nombre);
+    emitirRecepcion({ accion: "conteo", id, cids: Number(datos.recepcion.cids) });
+    return NextResponse.json({
+      success: true,
+      item_id: Number(itemId),
+      cantidad: Number(c.total || 0),
+      contenedor_id: contenedorId,
+      cantidad_contenedor: c.contenedor ?? 0,
+    });
   } catch (e: any) {
     console.error("[recepcion] no se pudo quitar el serial:", e?.message);
     return NextResponse.json({ error: "No se pudo quitar el serial" }, { status: 500 });

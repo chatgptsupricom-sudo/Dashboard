@@ -16,6 +16,8 @@ export type SerialLeido = {
   serial: string;
   escaneado_por: string | null;
   created_at: string;
+  /** Contenedor donde se pistoleo (0 = sin contenedor o de antes). */
+  contenedor_id: number;
 };
 
 /**
@@ -73,21 +75,22 @@ export async function completarLlevaSerial<T extends { id: number; codigo: strin
 export async function leerSeriales(recepcionId: number): Promise<SerialLeido[]> {
   try {
     const r = await query(
-      `SELECT id, item_id, serial, escaneado_por, created_at
+      `SELECT id, item_id, serial, escaneado_por, created_at, contenedor_id
          FROM recepcion_packing_seriales WHERE recepcion_id = ? ORDER BY id`,
       [recepcionId],
     );
-    return r.rows as SerialLeido[];
+    return (r.rows as any[]).map((s) => ({ ...s, contenedor_id: Number(s.contenedor_id) || 0 }));
   } catch {
-    // Sin la tabla (migracion pendiente): sin seriales.
-    return [];
+    // Sin la tabla (migracion pendiente) o sin la columna del contenedor.
+    try {
+      const r = await query(
+        `SELECT id, item_id, serial, escaneado_por, created_at
+           FROM recepcion_packing_seriales WHERE recepcion_id = ? ORDER BY id`,
+        [recepcionId],
+      );
+      return (r.rows as any[]).map((s) => ({ ...s, contenedor_id: 0 }));
+    } catch {
+      return [];
+    }
   }
-}
-
-/** Cuenta los seriales de un renglon y la deja como su cantidad recibida. */
-export async function recontarSeriales(itemId: number): Promise<number> {
-  const r = await query("SELECT COUNT(*) AS n FROM recepcion_packing_seriales WHERE item_id = ?", [itemId]);
-  const n = Number((r.rows as any[])[0]?.n || 0);
-  await query("UPDATE recepcion_packing_items SET cantidad_recibida = ? WHERE id = ?", [n, itemId]);
-  return n;
 }
