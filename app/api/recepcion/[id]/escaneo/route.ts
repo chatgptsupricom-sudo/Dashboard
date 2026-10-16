@@ -1,8 +1,9 @@
 import { query } from "@/lib/db";
 import { procesarEscaneo } from "@/lib/escaneo/procesar";
-import { recontarSeriales } from "@/lib/recepcion/seriales";
+import { contenedorDeConteo, recontarSeriales, sumarUno } from "@/lib/recepcion/conteo";
 import {
   cargarRecepcion,
+  emitirRecepcion,
   fueraDeAlcance,
   puedeComo,
   requireRecepcion,
@@ -10,13 +11,18 @@ import {
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * POST /api/recepcion/[id]/escaneo
- * { codigo, item_id?, aprender_item_id?, forzar_serial? }
+ * POST /api/recepcion/[id]/escaneo?contenedor_id=
+ * { codigo, item_id?, aprender_item_id?, forzar_serial?, contenedor_id? }
  *
  * Lo que lee la pistola durante el conteo. Que es cada lectura (conteo,
  * producto seleccionado, serial, desconocido) lo decide lib/escaneo/procesar,
  * el mismo que usa la verificacion del egreso. Aca solo va lo propio de la
  * recepcion: en que tablas se suma y donde se guardan los seriales.
+ *
+ * Cada lectura suma en el contenedor que esta descargando ese telefono
+ * (`contenedor_id`, en el body o en la URL: la pistola es la misma de otros
+ * flujos y solo conoce su endpoint). La respuesta trae `cantidad` (el total
+ * del renglon) y `cantidad_contenedor` (lo de ese contenedor).
  *
  * Un serial repetido en el mismo packing list -> 409 "repetido". Si ya entro
  * en otro packing list se avisa (`en_otro`) pero no se bloquea.
@@ -55,17 +61,20 @@ export async function POST(
       );
     }
     const items = datos.items as any[];
+    const cont = contenedorDeConteo(
+      datos.contenedores,
+      body?.contenedor_id ?? request.nextUrl.searchParams.get("contenedor_id"),
+    );
+    if ("error" in cont) return NextResponse.json({ error: cont.error }, { status: cont.status });
+    // Lo de ese contenedor despues de la lectura, para la respuesta.
+    let enContenedor: number | null = null;
 
     const r = await procesarEscaneo(body, items, {
       quien: sesion!.nombre,
       sumarUno: async (item) => {
-        await query(
-          `UPDATE recepcion_packing_items SET cantidad_recibida = COALESCE(cantidad_recibida, 0) + 1
-            WHERE id = ? AND recepcion_id = ?`,
-          [item.id, id],
-        );
-        const c = await query("SELECT cantidad_recibida FROM recepcion_packing_items WHERE id = ?", [item.id]);
-        return Number((c.rows as any[])[0]?.cantidad_recibida || 0);
+        const c = await sumarUno(id, Number(item.id), cont.id, sesion!.nombre);
+        enContenedor = c.contenedor;
+        return Number(c.total || 0);
       },
       registrarSerial: async (item, serial) => {
         const repetido = await query(
@@ -87,9 +96,9 @@ export async function POST(
         );
         try {
           await query(
-            `INSERT INTO recepcion_packing_seriales (recepcion_id, item_id, serial, escaneado_por)
-             VALUES (?, ?, ?, ?)`,
-            [id, item.id, serial, sesion!.nombre],
+            `INSERT INTO recepcion_packing_seriales (recepcion_id, item_id, serial, escaneado_por, contenedor_id)
+             VALUES (?, ?, ?, ?, ?)`,
+            [id, item.id, serial, sesion!.nombre, cont.id],
           );
         } catch (e: any) {
           if (/Duplicate entry/i.test(e?.message || "")) {
@@ -97,9 +106,12 @@ export async function POST(
           }
           throw e;
         }
-        const cantidad = await recontarSeriales(item.id);
+        const c = await recontarSeriales(id, Number(item.id), cont.id, sesion!.nombre);
+        enContenedor = c.contenedor;
+        const cantidad = Number(c.total || 0);
         const ins = await query(
-          "SELECT id, item_id, serial, escaneado_por, created_at FROM recepcion_packing_seriales WHERE recepcion_id = ? AND serial = ?",
+          `SELECT id, item_id, serial, escaneado_por, created_at, contenedor_id
+             FROM recepcion_packing_seriales WHERE recepcion_id = ? AND serial = ?`,
           [id, serial],
         );
         return {
@@ -114,6 +126,12 @@ export async function POST(
         };
       },
     });
+    if (r.status === 200 && (r.body.resultado === "conteo" || r.body.resultado === "serial")) {
+      r.body.cantidad_contenedor = enContenedor ?? 0;
+      r.body.contenedor_id = cont.id;
+      // Los otros telefonos que cuentan este packing list ven el avance.
+      emitirRecepcion({ accion: "conteo", id, cids: Number(datos.recepcion.cids) });
+    }
     return NextResponse.json(r.body, { status: r.status });
   } catch (e: any) {
     console.error("[recepcion] error en escaneo:", e?.message);
