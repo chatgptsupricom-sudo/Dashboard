@@ -2,7 +2,10 @@ import { Mail } from "lucide-react";
 
 const EMAIL = "soporte.tecnico@supricom.com.ve";
 
-export function PortalFooter() {
+/** `email`: el de contacto; null lo oculta (notas de crédito). */
+export function PortalFooter({
+  email = EMAIL,
+}: { email?: string | null } = {}) {
   return (
     <footer className="mt-16 border-t border-[color:var(--portal-line)] bg-[color:var(--portal-surface-soft)]">
       <div className="mx-auto max-w-5xl px-5 py-10">
@@ -12,13 +15,15 @@ export function PortalFooter() {
         </p>
 
         <div className="mt-6 flex flex-col gap-2 text-sm sm:flex-row sm:gap-8">
-          <a
-            href={`mailto:${EMAIL}`}
-            className="flex items-center gap-2 font-semibold break-all hover:text-[color:var(--portal-primary)]"
-          >
-            <Mail className="h-4 w-4" aria-hidden />
-            {EMAIL}
-          </a>
+          {email && (
+            <a
+              href={`mailto:${email}`}
+              className="flex items-center gap-2 font-semibold break-all hover:text-[color:var(--portal-primary)]"
+            >
+              <Mail className="h-4 w-4" aria-hidden />
+              {email}
+            </a>
+          )}
         </div>
 
         <p className="mt-8 border-t border-[color:var(--portal-line)] pt-6 text-xs text-[color:var(--portal-muted)]">

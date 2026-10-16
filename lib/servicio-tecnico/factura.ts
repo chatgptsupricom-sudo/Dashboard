@@ -192,6 +192,59 @@ export async function buscarFacturaConSeriales(
   rif?: string,
   cid?: number,
 ): Promise<ResultadoBusqueda> {
+  const encontrada = await resolverFactura(numeroCrudo, rif, cid);
+  if (encontrada.estado !== "ok") return encontrada;
+  const factura = encontrada.cruda;
+
+  const lineas = await rpc<any[]>(
+    "account.move.line",
+    "search_read",
+    [
+      [
+        ["move_id", "=", factura.id],
+        ["display_type", "=", "product"],
+      ],
+    ],
+    { fields: ["id", "product_id", "quantity", "sale_line_ids"], limit: 200 },
+  );
+
+  // Las líneas de texto libre no tienen producto y no hay nada que reportar.
+  const lineasConProducto = lineas.filter((l) => m2oId(l.product_id) !== null);
+
+  const [items, cliente] = await Promise.all([
+    armarItems(lineasConProducto, factura.invoice_date || null, factura.name || ""),
+    leerCliente(m2oId(factura.partner_id)),
+  ]);
+
+  const despachos = [
+    ...new Set(items.map((i) => i.despacho).filter(Boolean)),
+  ];
+
+  return {
+    estado: "ok",
+    factura: resumen(factura),
+    cliente,
+    partner_id: m2oId(factura.partner_id),
+    despachos,
+    items,
+  };
+}
+
+/**
+ * La factura publicada de la sucursal con ese número y de ese cliente (el
+ * documento tiene que coincidir con el del partner). Es la comprobación de
+ * "es el dueño de la factura" del portal: la usan el reporte de servicio
+ * técnico y la solicitud de nota de crédito (lib/notas-credito/cliente.ts).
+ */
+export async function resolverFactura(
+  numeroCrudo: string,
+  rif?: string,
+  cid?: number,
+): Promise<
+  | { estado: "ok"; id: number; factura: FacturaResumen; partner_id: number | null; cruda: any }
+  | { estado: "no_encontrada" }
+  | { estado: "ambiguo"; coincidencias: FacturaResumen[] }
+> {
   const numero = normalizarNumero(numeroCrudo);
   if (!numero) return { estado: "no_encontrada" };
 
@@ -231,39 +284,7 @@ export async function buscarFacturaConSeriales(
   }
 
   const factura = candidatas[0];
-
-  const lineas = await rpc<any[]>(
-    "account.move.line",
-    "search_read",
-    [
-      [
-        ["move_id", "=", factura.id],
-        ["display_type", "=", "product"],
-      ],
-    ],
-    { fields: ["id", "product_id", "quantity", "sale_line_ids"], limit: 200 },
-  );
-
-  // Las líneas de texto libre no tienen producto y no hay nada que reportar.
-  const lineasConProducto = lineas.filter((l) => m2oId(l.product_id) !== null);
-
-  const [items, cliente] = await Promise.all([
-    armarItems(lineasConProducto, factura.invoice_date || null, factura.name || ""),
-    leerCliente(m2oId(factura.partner_id)),
-  ]);
-
-  const despachos = [
-    ...new Set(items.map((i) => i.despacho).filter(Boolean)),
-  ];
-
-  return {
-    estado: "ok",
-    factura: resumen(factura),
-    cliente,
-    partner_id: m2oId(factura.partner_id),
-    despachos,
-    items,
-  };
+  return { estado: "ok", id: factura.id, factura: resumen(factura), partner_id: m2oId(factura.partner_id), cruda: factura };
 }
 
 async function filtrarPorDocumento(

@@ -48,6 +48,7 @@ const fecha = (v: string | null | undefined) =>
 
 const ACCION_EVENTO: Record<string, string> = {
   solicitada: "Solicitada por RMA",
+  solicitada_cliente: "Solicitada por el cliente (portal)",
   creada: "Creada",
   preaprobada: "Preaprobada",
   aprobada: "Aprobada",
@@ -191,7 +192,7 @@ export function DetalleNota({ id, onCerrar, onCambio }: { id: number; onCerrar: 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl bg-slate-50 p-4 space-y-1">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  {s.origen === "rma" ? "Equipo de RMA que no se puede reparar" : "Nota de crédito directa"} · {NOMBRE_SEDE[s.company_id] || s.company_id}
+                  {s.origen === "rma" ? "Equipo de RMA que no se puede reparar" : s.origen === "cliente" ? "Pedida por el cliente en el portal" : "Nota de crédito directa"} · {NOMBRE_SEDE[s.company_id] || s.company_id}
                 </p>
                 <p className="font-semibold text-slate-800">{s.cliente || "—"}</p>
                 <p className="text-slate-600">Factura {s.factura_nombre || "sin asignar"}</p>
@@ -217,12 +218,28 @@ export function DetalleNota({ id, onCerrar, onCambio }: { id: number; onCerrar: 
               </div>
               <div className="rounded-2xl bg-orange-50/60 p-4 space-y-1">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700/70">
-                  {s.origen === "rma" ? "Por qué la nota de crédito" : "Motivo"}
+                  {s.origen === "directa" ? "Motivo" : "Por qué la nota de crédito"}
                 </p>
                 <p className="whitespace-pre-wrap text-slate-800">{s.motivo}</p>
                 <p className="pt-1 text-xs text-slate-500">
                   {s.creado_por || "—"} · {fecha(s.created_at)}
                 </p>
+                {s.origen === "cliente" && (s.contacto_telefono || s.contacto_email) && (
+                  <p className="text-xs text-slate-600">
+                    Contacto:{" "}
+                    {s.contacto_telefono && (
+                      <a href={`tel:${s.contacto_telefono}`} className="text-blue-700 hover:underline">
+                        {s.contacto_telefono}
+                      </a>
+                    )}
+                    {s.contacto_telefono && s.contacto_email ? " · " : ""}
+                    {s.contacto_email && (
+                      <a href={`mailto:${s.contacto_email}`} className="text-blue-700 hover:underline">
+                        {s.contacto_email}
+                      </a>
+                    )}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -314,7 +331,7 @@ export function DetalleNota({ id, onCerrar, onCambio }: { id: number; onCerrar: 
             {/* Pasos */}
             <ol className="grid gap-2 sm:grid-cols-4">
               {[
-                { t: s.origen === "rma" ? "Solicitada (RMA)" : "Creada", hecho: true, quien: s.creado_por, cuando: s.created_at },
+                { t: s.origen === "rma" ? "Solicitada (RMA)" : s.origen === "cliente" ? "Solicitada (cliente)" : "Creada", hecho: true, quien: s.creado_por, cuando: s.created_at },
                 // Las directas las crea quien preaprueba: nacen preaprobadas.
                 // Las directas viejas iban directo a aprobar: solo se muestra el
                 // paso si la nota paso (o esta pasando) por la preaprobacion.
@@ -402,7 +419,7 @@ export function DetalleNota({ id, onCerrar, onCambio }: { id: number; onCerrar: 
                 <Textarea
                   value={nota}
                   onChange={(e) => setNota(e.target.value)}
-                  placeholder={rechazando ? "Por qué no procede (obligatorio)" : "Comentario (opcional)"}
+                  placeholder={rechazando ? (s.origen === "cliente" ? "Por qué no procede (obligatorio; el cliente lo ve en su enlace)" : "Por qué no procede (obligatorio)") : "Comentario (opcional)"}
                   rows={2}
                 />
                 <div className="flex flex-wrap gap-2">

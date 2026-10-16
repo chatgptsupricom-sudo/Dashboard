@@ -55,8 +55,13 @@ export async function ensureTablas(): Promise<void> {
       odoo_bloqueo DATETIME NULL,
       procesado_por VARCHAR(190) NULL,
       procesado_at DATETIME NULL,
+      motivo_tipo VARCHAR(30) NULL,
+      contacto_telefono VARCHAR(40) NULL,
+      contacto_email VARCHAR(190) NULL,
+      tracking_token CHAR(64) NULL,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_nc_rma_nota (rma_nota_id),
+      UNIQUE KEY uq_nc_tracking (tracking_token),
       KEY idx_nc_estado (company_id, estado),
       KEY idx_nc_factura (factura_id),
       KEY idx_nc_move (odoo_move_id)
@@ -101,7 +106,29 @@ export async function ensureTablas(): Promise<void> {
       PRIMARY KEY (company_id, paso, email)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  await columnasDelPortal();
   tablasListas = true;
+}
+
+/**
+ * Columnas de las solicitudes que pide el cliente en el portal, para las
+ * tablas creadas antes de que existieran (sql/notas_credito_flujo.sql).
+ */
+async function columnasDelPortal(): Promise<void> {
+  const r = await query(`SHOW COLUMNS FROM nc_solicitudes`);
+  const hay = new Set((r.rows as any[]).map((c) => String(c.Field)));
+  const faltan: [string, string][] = (
+    [
+      ["motivo_tipo", "VARCHAR(30) NULL"],
+      ["contacto_telefono", "VARCHAR(40) NULL"],
+      ["contacto_email", "VARCHAR(190) NULL"],
+      ["tracking_token", "CHAR(64) NULL"],
+    ] as [string, string][]
+  ).filter(([c]) => !hay.has(c));
+  for (const [col, tipo] of faltan) {
+    await db.execute(`ALTER TABLE nc_solicitudes ADD COLUMN ${col} ${tipo}`);
+    if (col === "tracking_token") await db.execute(`ALTER TABLE nc_solicitudes ADD UNIQUE KEY uq_nc_tracking (tracking_token)`);
+  }
 }
 
 export const normCorreo = (c: unknown) => String(c ?? "").toLowerCase().trim();

@@ -78,7 +78,7 @@ function estadoFila(f: Fila): EstadoFiltro {
 function origenFila(f: Fila): OrigenFiltro {
   if (f.tipo === "odoo") return f.odoo.solicitud_id ? "directa" : "odoo";
   if (f.tipo === "ant") return "rma";
-  return f.sol.origen === "rma" ? "rma" : "directa";
+  return f.sol.origen;
 }
 
 const sinAcentos = (t: string) => t.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
@@ -402,7 +402,7 @@ export function NotasCredito() {
                   <Badge className={`${COLOR_ESTADO[n.estado]} border text-[11px]`}>{ETIQUETA_ESTADO[n.estado]}</Badge>
                   {estadoNC(n, f.odoo)}
                   <Badge variant="outline" className="text-[11px]">
-                    {n.origen === "rma" ? `RMA N.º ${n.case_number}` : "Directa"}
+                    {n.origen === "rma" ? `RMA N.º ${n.case_number}` : n.origen === "cliente" ? "Cliente (portal)" : "Directa"}
                   </Badge>
                   <span className="text-xs text-slate-400">{NOMBRE_SEDE[n.company_id] || n.company_id}</span>
                 </div>
