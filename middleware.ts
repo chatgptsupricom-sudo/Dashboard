@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { routing } from "./i18n.config";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
+import { esHostNC, RUTA_INTERNA, RUTA_PUBLICA } from "@/lib/notas-credito/hostCliente";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -78,9 +79,30 @@ export default async function middleware(request: NextRequest) {
     return verificarOrigenApi(request);
   }
 
-  const response = intlMiddleware(request);
-
   const host = (request.headers.get("host") || "").toLowerCase().split(":")[0];
+
+  // Servicio de notas de crédito para clientes en su propio dominio
+  // (lib/notas-credito/hostCliente.ts): /es/notas-credito/... se sirve desde
+  // /es/credito-clientes/..., la raíz va ahí, y nada más existe (404, como en
+  // el portal de servicio técnico). Va antes de todo: en el panel,
+  // /notas-credito es una ruta protegida.
+  if (esHostNC(host)) {
+    const m = pathname.match(/^\/(es|en)(\/.*)?$/);
+    const idioma = m?.[1] || "es";
+    const resto = m ? m[2] || "" : pathname;
+    if (resto === "" || resto === "/") {
+      return NextResponse.redirect(new URL(`/${idioma}${RUTA_PUBLICA}`, request.url));
+    }
+    if (resto === RUTA_PUBLICA || resto.startsWith(`${RUTA_PUBLICA}/`)) {
+      const destino = `/${idioma}${RUTA_INTERNA}${resto.slice(RUTA_PUBLICA.length)}`;
+      // Sin idioma en la URL: se le pone, para que el enlace quede estable.
+      if (!m) return NextResponse.redirect(new URL(`/${idioma}${resto}`, request.url));
+      return NextResponse.rewrite(new URL(destino + request.nextUrl.search, request.url));
+    }
+    return new NextResponse(null, { status: 404 });
+  }
+
+  const response = intlMiddleware(request);
 
   if (HOSTS_DEL_PORTAL.includes(host)) {
     // Raíz de un subdominio de clientes -> portal, no login.

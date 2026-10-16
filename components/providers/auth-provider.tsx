@@ -58,13 +58,16 @@ import { useEffect } from "react";
 // Rutas públicas: las ve un cliente final sin sesión, así que no tiene sentido
 // pedirle /api/auth/verify ni mostrarle el spinner de "sincronizando sesión"
 // mientras esa llamada falla.
-const RUTAS_PUBLICAS = ["/servicio-tecnico"];
+// "/credito-clientes" es el servicio de notas de crédito para clientes por
+// dentro; en su dominio la URL es /notas-credito y llega `publico` desde el
+// layout (lib/notas-credito/hostCliente.ts).
+const RUTAS_PUBLICAS = ["/servicio-tecnico", "/credito-clientes"];
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children, publico = false }: { children: React.ReactNode; publico?: boolean }) {
   const { isLoading, user, initializeFromToken } = useAuthStore();
   const pathname = usePathname();
   const router = useRouter();
-  const esPublica = RUTAS_PUBLICAS.some((ruta) => pathname?.includes(ruta));
+  const esPublica = publico || RUTAS_PUBLICAS.some((ruta) => pathname?.includes(ruta));
   const esLogin = pathname?.includes("/login") ?? false;
 
   useEffect(() => {

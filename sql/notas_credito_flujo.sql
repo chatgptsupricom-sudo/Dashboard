@@ -60,8 +60,15 @@ CREATE TABLE IF NOT EXISTS supricom_panel.nc_solicitudes (
   odoo_bloqueo DATETIME NULL,
   procesado_por VARCHAR(190) NULL,
   procesado_at DATETIME NULL,
+  -- Las que pide el cliente en el portal (origen 'cliente'). En una tabla
+  -- vieja el panel las agrega solo (columnasDelPortal en lib/notas-credito/datos.ts).
+  motivo_tipo VARCHAR(30) NULL,
+  contacto_telefono VARCHAR(40) NULL,
+  contacto_email VARCHAR(190) NULL,
+  tracking_token CHAR(64) NULL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_nc_rma_nota (rma_nota_id),
+  UNIQUE KEY uq_nc_tracking (tracking_token),
   KEY idx_nc_estado (company_id, estado),
   KEY idx_nc_factura (factura_id),
   KEY idx_nc_move (odoo_move_id)
