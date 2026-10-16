@@ -943,6 +943,11 @@ export default function MetricsDashboardPage() {
           }
           emptyText="Sin ventas"
           icon={<DollarSign className="w-4 h-4" />}
+          nota={
+            Number(data.stats?.ventas_pagina_web) > 0
+              ? `Página Web aparte: $${Number(data.stats.monto_pagina_web).toLocaleString()} (${data.stats.ventas_pagina_web} ${Number(data.stats.ventas_pagina_web) === 1 ? "venta" : "ventas"}), no suma`
+              : undefined
+          }
         />
         <MetricCard
           title="Efectividad"
@@ -1289,7 +1294,7 @@ function formatMinutos(min: number): string {
   return `${minutos}m`;
 }
 
-function MetricCard({ title, value, icon, emptyText = "Sin datos" }: any) {
+function MetricCard({ title, value, icon, emptyText = "Sin datos", nota }: any) {
   const isEmpty = value === null || value === undefined;
   return (
     <Card className="rounded-2xl border-zinc-200 shadow-none hover:border-blue-200 transition-colors">
@@ -1311,6 +1316,7 @@ function MetricCard({ title, value, icon, emptyText = "Sin datos" }: any) {
             {value}
           </div>
         )}
+        {nota && <div className="mt-1 text-[10px] leading-tight text-zinc-500">{nota}</div>}
       </CardContent>
     </Card>
   );

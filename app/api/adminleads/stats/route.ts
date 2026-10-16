@@ -271,6 +271,8 @@ export async function GET(request: NextRequest) {
     // Los cierres de "Pagina Web" se ven en el panel pero no suman al conteo
     // de ventas ni al monto (ver canalSumaVentas). La Efectividad si los cuenta.
     const ventaQueSuma = `${ventaEnPeriodo} AND ${canalSumaVentasSql("canal_origen")}`;
+    // Lo que queda afuera (Pagina Web) se informa aparte, sin sumar.
+    const ventaQueNoSuma = `${ventaEnPeriodo} AND NOT ${canalSumaVentasSql("canal_origen")}`;
 
     if (conFechas) {
       conditions.push(`((${entradaEnPeriodo}) OR (${ventaEnPeriodo}))`);
@@ -293,13 +295,15 @@ export async function GET(request: NextRequest) {
         IFNULL(AVG(tiempo_primer_contacto_minutos), 0) as avg_tiempo_contacto,
         IFNULL(AVG(CASE WHEN fecha_venta IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, COALESCE(fecha_ingreso, created_at), fecha_venta) ELSE NULL END), 0) as avg_tiempo_cierre,
         (SUM(CASE WHEN reactivacion = 1 THEN 1 ELSE 0 END) /
-         NULLIF(SUM(CASE WHEN reactivacion = 1 OR (status = 'CERRADO' AND motivo_cierre = 'ABANDONO') THEN 1 ELSE 0 END), 0)) * 100 as tasa_reactivacion
+         NULLIF(SUM(CASE WHEN reactivacion = 1 OR (status = 'CERRADO' AND motivo_cierre = 'ABANDONO') THEN 1 ELSE 0 END), 0)) * 100 as tasa_reactivacion,
+        SUM(CASE WHEN ${ventaQueNoSuma} THEN 1 ELSE 0 END) as ventas_pagina_web,
+        IFNULL(SUM(CASE WHEN ${ventaQueNoSuma} THEN monto_cerrado_usd ELSE 0 END), 0) as monto_pagina_web
       FROM leads ${whereClause}
     `,
-      // El SELECT consume el rango 6 veces antes de que el WHERE consuma los
+      // El SELECT consume el rango 8 veces antes de que el WHERE consuma los
       // suyos: total_leads, monto, ventas_del_mes, los dos lados de la
-      // efectividad y las ventas del periodo.
-      [...Array(6).fill(rangoParams).flat(), ...params],
+      // efectividad, las ventas del periodo y las dos de Pagina Web.
+      [...Array(8).fill(rangoParams).flat(), ...params],
     );
 
     // 2. Distribución por etapas

@@ -217,7 +217,15 @@ export default function ReporteVentasCampanas({
 
         <div className="grid grid-cols-4 gap-3 mt-8">
           <Kpi label="Ventas cerradas" valor={fmtNum(totales.ventas)} />
-          <Kpi label="Monto cerrado" valor={fmtUsd(totales.monto)} />
+          <Kpi
+            label="Monto cerrado"
+            valor={fmtUsd(totales.monto)}
+            nota={
+              totales.paginaWeb.ventas > 0
+                ? `+ Página Web aparte: ${fmtUsd(totales.paginaWeb.monto)} (${fmtNum(totales.paginaWeb.ventas)}), no suma`
+                : undefined
+            }
+          />
           <Kpi label="Ticket promedio" valor={fmtUsd(totales.ticketPromedio)} />
           <Kpi label="Campañas con venta" valor={fmtNum(totales.campanas)} />
         </div>
