@@ -15,7 +15,8 @@ import { VIEW_NAME, VISTAS_PLAN } from "@/lib/customView/store";
  */
 
 export interface PlanContentState {
-  pieces: Record<string, { checked?: boolean; moved?: boolean; colId?: string | null }>;
+  // content: ediciones del modo edición del panel (tema, caption, slides…).
+  pieces: Record<string, { checked?: boolean; moved?: boolean; colId?: string | null; content?: Record<string, unknown> }>;
   [k: string]: unknown;
 }
 
