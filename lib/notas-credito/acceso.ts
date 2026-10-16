@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/auth/roles";
-import { esSuperadmin, pasosDe } from "@/lib/notas-credito/datos";
+import { esSuperadmin, normCorreo, pasosDe } from "@/lib/notas-credito/datos";
 import { autorDeSesion, type Autor } from "@/lib/notas-credito/solicitudes";
-import type { PasoNC, SolicitudNC } from "@/lib/notas-credito/tipos";
+import { veOdooDeLaSede, veTodoLaSede, type PasoNC, type SolicitudNC } from "@/lib/notas-credito/tipos";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -37,31 +37,46 @@ export function puedeVerSede(acceso: AccesoNC, companyId: number): boolean {
   return acceso.sedes === null || acceso.sedes.includes(companyId);
 }
 
-/**
- * Responsable que en esta sede solo preaprueba (IT, Rangel). IT solo
- * preaprueba o rechaza: no crea, no toca la factura y no ve el resto de las
- * notas de la sede ni las de Odoo. El SuperAdmin ve todo.
- */
-export function soloPreaprueba(acceso: AccesoNC, companyId: number): boolean {
-  if (acceso.superadmin) return false;
-  const pasos = acceso.pasos[companyId] ?? [];
-  return pasos.includes("preaprueba") && pasos.every((p) => p === "preaprueba");
+/** El SuperAdmin (todas las sedes) y quien aprueba (su sede) ven todo el flujo. */
+export function veTodo(acceso: AccesoNC, companyId: number): boolean {
+  return puedeVerSede(acceso, companyId) && veTodoLaSede(acceso.pasos[companyId], acceso.superadmin);
+}
+
+/** Las NC de Odoo de la sede: quien ve todo y quien procesa. */
+export function veOdoo(acceso: AccesoNC, companyId: number): boolean {
+  return puedeVerSede(acceso, companyId) && veOdooDeLaSede(acceso.pasos[companyId], acceso.superadmin);
+}
+
+/** Las solicitudes de RMA fuera del flujo: quien ve todo y quien procesa (las pasa al flujo). */
+export function veAnteriores(acceso: AccesoNC, companyId: number): boolean {
+  return veTodo(acceso, companyId) || (acceso.pasos[companyId] ?? []).includes("procesa");
 }
 
 /**
- * Si la sesion ve esta solicitud. Quien solo preaprueba ve las que esperan su
- * preaprobacion y las que el mismo preaprobo o rechazo (para seguirlas).
+ * Si la sesión ve esta solicitud. Cada paso ve lo suyo:
+ *   preaprueba  las que esperan preaprobación y las que creó, preaprobó o rechazó
+ *   procesa     las aprobadas y las procesadas
+ *   rma         las de RMA de su sede
+ * El SuperAdmin y quien aprueba ven todo.
  */
 export function puedeVerSolicitud(
   acceso: AccesoNC,
-  sol: Pick<SolicitudNC, "company_id" | "estado" | "preaprobado_por" | "rechazado_por" | "rechazado_paso">,
+  sol: Pick<SolicitudNC, "company_id" | "origen" | "estado" | "creado_email" | "preaprobado_por" | "rechazado_por" | "rechazado_paso">,
 ): boolean {
   if (!puedeVerSede(acceso, sol.company_id)) return false;
-  if (!soloPreaprueba(acceso, sol.company_id)) return true;
-  const yo = acceso.autor.nombre;
-  return (
-    sol.estado === "por_preaprobar" ||
-    (!!sol.preaprobado_por && sol.preaprobado_por === yo) ||
-    (sol.rechazado_paso === "preaprueba" && sol.rechazado_por === yo)
-  );
+  if (veTodo(acceso, sol.company_id)) return true;
+  const pasos = acceso.pasos[sol.company_id] ?? [];
+  const yo = acceso.autor;
+  if (
+    pasos.includes("preaprueba") &&
+    (sol.estado === "por_preaprobar" ||
+      (!!yo.email && normCorreo(sol.creado_email) === yo.email) ||
+      (!!sol.preaprobado_por && sol.preaprobado_por === yo.nombre) ||
+      (sol.rechazado_paso === "preaprueba" && sol.rechazado_por === yo.nombre))
+  ) {
+    return true;
+  }
+  if (pasos.includes("procesa") && (sol.estado === "aprobada" || sol.estado === "procesada")) return true;
+  if (pasos.includes("rma") && sol.origen === "rma") return true;
+  return false;
 }

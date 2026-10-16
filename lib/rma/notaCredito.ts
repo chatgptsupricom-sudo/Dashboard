@@ -89,15 +89,22 @@ export async function solicitarNotaCredito(datos: {
   caseId: number;
   itemId: number | null;
   motivo: string;
+  /** Por qué el equipo no se puede reparar; va en el mismo motivo, debajo. */
+  noReparable: string;
   observations: string | null;
   images: unknown;
   opciones: Opciones;
 }): Promise<{ id: number }> {
   if (!(await hayColumnasAprobacion())) throw new ErrorNota(FALTA_MIGRACION, 409);
-  const motivo = datos.motivo.trim();
-  if (motivo.length < 10) {
+  const porQue = datos.motivo.trim();
+  if (porQue.length < 10) {
     throw new ErrorNota("Explica por qué se pide la nota de crédito (al menos 10 caracteres).");
   }
+  const noReparable = datos.noReparable.trim();
+  if (noReparable.length < 10) {
+    throw new ErrorNota("Explica por qué el equipo no se puede reparar (al menos 10 caracteres).");
+  }
+  const motivo = `${porQue}\n\nNo se puede reparar: ${noReparable}`;
 
   const r = await query(`SELECT * FROM rma_cases WHERE id = ?`, [datos.caseId]);
   const caso = (r.rows as any[])[0];

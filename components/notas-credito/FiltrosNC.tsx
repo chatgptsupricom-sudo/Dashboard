@@ -54,6 +54,7 @@ export function FiltrosNC({
   coinciden,
   mes,
   onMes,
+  conOrigen = true,
 }: {
   filtros: Filtros;
   onCambio: (f: Filtros) => void;
@@ -63,6 +64,8 @@ export function FiltrosNC({
   coinciden: number;
   mes?: string;
   onMes?: (m: string) => void;
+  /** Sin el filtro de origen (pestañas que ya son de un solo origen o paso). */
+  conOrigen?: boolean;
 }) {
   const activos = !!(filtros.q.trim() || filtros.sede || filtros.estado || filtros.origen);
   const set = (p: Partial<Filtros>) => onCambio({ ...filtros, ...p });
@@ -117,38 +120,42 @@ export function FiltrosNC({
               </Select>
             </label>
           )}
-          <label className="space-y-1">
-            <span className="block text-xs font-medium text-slate-500">Estado</span>
-            <Select value={filtros.estado || TODAS} onValueChange={(v) => set({ estado: v === TODAS ? "" : (v as EstadoFiltro) })}>
-              <SelectTrigger className="sm:w-52">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={TODAS}>Todos los estados</SelectItem>
-                {estados.map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {ETIQUETA_ESTADO_FILTRO[e]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-          <label className="space-y-1">
-            <span className="block text-xs font-medium text-slate-500">Origen</span>
-            <Select value={filtros.origen || TODAS} onValueChange={(v) => set({ origen: v === TODAS ? "" : (v as OrigenFiltro) })}>
-              <SelectTrigger className="sm:w-52">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={TODAS}>Todos los orígenes</SelectItem>
-                {(Object.keys(ETIQUETA_ORIGEN) as OrigenFiltro[]).map((o) => (
-                  <SelectItem key={o} value={o}>
-                    {ETIQUETA_ORIGEN[o]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
+          {estados.length > 1 && (
+            <label className="space-y-1">
+              <span className="block text-xs font-medium text-slate-500">Estado</span>
+              <Select value={filtros.estado || TODAS} onValueChange={(v) => set({ estado: v === TODAS ? "" : (v as EstadoFiltro) })}>
+                <SelectTrigger className="sm:w-52">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={TODAS}>Todos los estados</SelectItem>
+                  {estados.map((e) => (
+                    <SelectItem key={e} value={e}>
+                      {ETIQUETA_ESTADO_FILTRO[e]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          )}
+          {conOrigen && (
+            <label className="space-y-1">
+              <span className="block text-xs font-medium text-slate-500">Origen</span>
+              <Select value={filtros.origen || TODAS} onValueChange={(v) => set({ origen: v === TODAS ? "" : (v as OrigenFiltro) })}>
+                <SelectTrigger className="sm:w-52">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={TODAS}>Todos los orígenes</SelectItem>
+                  {(Object.keys(ETIQUETA_ORIGEN) as OrigenFiltro[]).map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {ETIQUETA_ORIGEN[o]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
