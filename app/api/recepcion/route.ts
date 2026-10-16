@@ -6,6 +6,7 @@ import {
 } from "@/lib/recepcion/validacion";
 import { emitirRecepcion, puedeComo, requireRecepcion } from "@/lib/recepcion/servidor";
 import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
+import { guardarReparto } from "@/lib/recepcion/conteo";
 import { ErrorRecepcion, guardarOcElegida, packingListRepetido, validarOcElegida } from "@/lib/recepcion/odoo";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -135,6 +136,8 @@ export async function POST(request: NextRequest) {
     const id = Number((res.rows as any)?.insertId);
     await insertarItems(id, items);
     await insertarContenedores(id, contenedores);
+    // Lo que trae cada contenedor, si el packing list lo dice.
+    await guardarReparto(id, items.map((i) => i.reparto));
     if (oc) await guardarOcElegida(id, oc);
 
     emitirRecepcion({
