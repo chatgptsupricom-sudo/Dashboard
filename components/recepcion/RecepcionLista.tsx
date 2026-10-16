@@ -91,6 +91,9 @@ export default function RecepcionLista({ base }: { base: string }) {
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   useRecepcionEnVivo((a) => {
+    // Cada lectura de la pistola avisa a la pantalla del packing list; la
+    // lista no cambia con eso.
+    if (a.accion === "conteo") return;
     void cargar();
     let texto: string | null = null;
     let malo = false;

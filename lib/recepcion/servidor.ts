@@ -3,6 +3,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { alinearPrecintos, leerCorrecciones, leerDanos, leerPrecintos } from "@/lib/recepcion/flujo";
 import { completarLlevaSerial, leerSeriales } from "@/lib/recepcion/seriales";
 import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
+import { asegurarTablaConteo, leerConteo, pasarConteoAnterior, type FilaConteo } from "@/lib/recepcion/conteo";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -63,6 +64,13 @@ export async function cargarRecepcion(id: number) {
   } catch (e: any) {
     console.error("[recepcion] no se pudieron agregar las columnas de Odoo:", e?.message);
   }
+  let hayConteo = true;
+  try {
+    await asegurarTablaConteo();
+  } catch (e: any) {
+    hayConteo = false;
+    console.error("[recepcion] no se pudo crear la tabla del conteo por contenedor:", e?.message);
+  }
   const r = await query("SELECT * FROM recepcion_packing WHERE id = ?", [id]);
   if (r.rows.length === 0) return null;
   const [items, contenedores, archivos, seriales] = await Promise.all([
@@ -77,6 +85,15 @@ export async function cargarRecepcion(id: number) {
   ]);
   // Que renglon lleva serial lo dice Odoo; se consulta una sola vez.
   await completarLlevaSerial(items.rows as any[]);
+  // Lo contado por contenedor (lib/recepcion/conteo.ts). Si la recepcion se
+  // estaba contando antes de esto, lo que ya tenia pasa a "sin contenedor".
+  let conteo: FilaConteo[] = [];
+  if (hayConteo) {
+    conteo = await leerConteo(id);
+    if ((r.rows[0] as any).etapa === "descargando" && (await pasarConteoAnterior(id, items.rows as any[], conteo))) {
+      conteo = await leerConteo(id);
+    }
+  }
   return {
     recepcion: r.rows[0] as any,
     // Los tipos de dano van como lista; un renglon de antes de que existieran
@@ -90,6 +107,8 @@ export async function cargarRecepcion(id: number) {
         lleva_serial: Number(i.lleva_serial) === 1,
         // Los seriales pistoleados de este renglon.
         seriales: seriales.filter((s) => Number(s.item_id) === Number(i.id)),
+        // Esperado y contado de cada contenedor (0 = sin contenedor).
+        conteo: conteo.filter((f) => f.item_id === Number(i.id)),
       };
     }),
     // Los precintos van como lista (un contenedor puede tener varios); si el
@@ -121,9 +140,11 @@ export const EVENTO_RECEPCION = "recepcion_actualizada";
 export type AvisoRecepcion = {
   /**
    * `llegada` y `contenedor_cerrado` son de UN contenedor (van con su numero
-   * y cuantos llevan); `cerrado` es el packing list entero.
+   * y cuantos llevan); `cerrado` es el packing list entero. `conteo` es una
+   * lectura o una cantidad guardada: solo le importa a quien tiene abierto
+   * ese packing list (los demas telefonos que cuentan).
    */
-  accion: "creado" | "llegada" | "contenedor_cerrado" | "cerrado" | "editado" | "eliminado";
+  accion: "creado" | "llegada" | "contenedor_cerrado" | "cerrado" | "editado" | "eliminado" | "conteo";
   id: number;
   cids: number;
   referencia?: string | null;

@@ -7,6 +7,7 @@ import {
   limpiarPrecintos,
 } from "@/lib/recepcion/flujo";
 import { cargarEnOdoo, ocPendiente } from "@/lib/recepcion/odoo";
+import { contenedorDeConteo, ponerCantidad, recalcularTotales } from "@/lib/recepcion/conteo";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -29,8 +30,11 @@ export const dynamic = "force-dynamic";
  *  cerrar_contenedor  { contenedor_id, notas_cierre }
  *                     contenedor descargando -> cerrado (foto de como quedo)
  *
- * Del packing list entero (el conteo es uno solo):
- *  guardar_conteo     guarda el avance, no avanza
+ * Del packing list entero:
+ *  guardar_conteo     guarda el avance, no avanza. Cada renglon trae solo lo
+ *                     que cambio; la cantidad va con el `contenedor_id` que
+ *                     esta contando ese telefono (lib/recepcion/conteo.ts) y
+ *                     el total del renglon es la suma de los contenedores.
  *  cerrar             descargando -> cerrado: todos los contenedores cerrados
  *                     y el conteo completo. Al cerrar se carga lo contado en
  *                     Odoo (recepcion de la OC + traslado a Existencias,
@@ -245,6 +249,7 @@ export async function POST(
         // recepcion a la vez y cada uno manda lo que cambio el; un campo que
         // no viene no se toca (antes se mandaba todo y se pisaba lo de otro).
         const porId = new Map<number, any>(datos.items.map((i) => [Number(i.id), i]));
+        let cambioAlgo = false;
         for (const c of Array.isArray(body?.items) ? body.items : []) {
           const item = porId.get(Number(c?.id));
           if (!item) continue;
@@ -254,27 +259,31 @@ export async function POST(
           const cambios: Record<string, unknown> = {};
 
           if (tiene("cantidad_recibida")) {
-            // Un renglon con serial vale lo que se pistoleo: su cantidad es la
-            // cantidad de seriales, no lo que venga escrito. Sin ningun serial
-            // solo se acepta un 0 explicito (no llego ninguno).
-            const escrito = c.cantidad_recibida;
-            const bruto = item.lleva_serial
-              ? item.seriales.length > 0
-                ? item.seriales.length
-                : escrito !== null && escrito !== undefined && escrito !== "" && Number(escrito) === 0
+            // La cantidad es la del contenedor que cuenta ese telefono.
+            const cont = contenedorDeConteo(datos.contenedores, c.contenedor_id);
+            if ("error" in cont) return NextResponse.json({ error: cont.error }, { status: cont.status });
+            // Un renglon con serial vale lo que se pistoleo en ese contenedor:
+            // con seriales, lo escrito no cuenta. Sin ninguno solo se acepta
+            // un 0 explicito (no llego ninguno).
+            const serialesAca = (item.seriales as any[]).filter((s) => Number(s.contenedor_id) === cont.id).length;
+            if (!(item.lleva_serial && serialesAca > 0)) {
+              const escrito = c.cantidad_recibida;
+              const bruto = item.lleva_serial
+                ? escrito !== null && escrito !== undefined && escrito !== "" && Number(escrito) === 0
                   ? 0
                   : null
-              : escrito;
-            const cantidad = bruto === null || bruto === undefined || bruto === "" ? null : Number(bruto);
-            if (cantidad !== null && (!Number.isFinite(cantidad) || cantidad < 0)) {
-              return NextResponse.json(
-                { error: `Cantidad invalida en "${item.producto}"` },
-                { status: 400 },
-              );
+                : escrito;
+              const cantidad = bruto === null || bruto === undefined || bruto === "" ? null : Number(bruto);
+              if (cantidad !== null && (!Number.isFinite(cantidad) || cantidad < 0)) {
+                return NextResponse.json(
+                  { error: `Cantidad invalida en "${item.producto}"` },
+                  { status: 400 },
+                );
+              }
+              const r = await ponerCantidad(id, Number(item.id), cont.id, cantidad, sesion!.nombre);
+              item.cantidad_recibida = r.total;
+              cambioAlgo = true;
             }
-            sets.push("cantidad_recibida = ?");
-            vals.push(cantidad);
-            cambios.cantidad_recibida = cantidad;
           }
 
           if (tiene("motivo_diferencia")) {
@@ -321,9 +330,24 @@ export async function POST(
             [...vals, item.id, id],
           );
           Object.assign(item, cambios);
+          cambioAlgo = true;
         }
+        // Los otros telefonos que cuentan este packing list lo ven.
+        if (cambioAlgo) emitirRecepcion({ accion: "conteo", id, cids: Number(rec.cids) });
 
         if (body.accion === "guardar_conteo") break;
+
+        // El total de cada renglon es la suma de sus contenedores: se
+        // recalcula todo antes de evaluar el cierre, por si algo quedo a medias.
+        await recalcularTotales(id);
+        const totales = await query(
+          "SELECT id, cantidad_recibida FROM recepcion_packing_items WHERE recepcion_id = ?",
+          [id],
+        );
+        for (const t of totales.rows as any[]) {
+          const item = porId.get(Number(t.id));
+          if (item) item.cantidad_recibida = t.cantidad_recibida === null ? null : Number(t.cantidad_recibida);
+        }
 
         const fotosGolpe = new Set(
           datos.archivos

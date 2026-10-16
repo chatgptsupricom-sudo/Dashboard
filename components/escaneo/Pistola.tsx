@@ -29,17 +29,23 @@ export type ItemPistola = {
   recibido: number;
 };
 
+/**
+ * `cantidad` es el total del renglon. La recepcion, que cuenta por
+ * contenedor, manda ademas en cual sumo y cuanto lleva ese contenedor.
+ */
+type PorContenedor = { contenedor_id?: number; cantidad_contenedor?: number };
+
 export type ResultadoEscaneo =
-  | { resultado: "conteo"; item_id: number; cantidad: number; codigo: string }
+  | ({ resultado: "conteo"; item_id: number; cantidad: number; codigo: string } & PorContenedor)
   | { resultado: "seleccionado"; item_id: number; codigo: string }
-  | {
+  | ({
       resultado: "serial";
       item_id: number;
       cantidad: number;
       serial: { id: number; item_id: number; serial: string; escaneado_por: string | null; created_at: string };
       /** Referencia del otro documento donde ya estaba ese serial (aviso, no bloquea). */
       en_otro: string | null;
-    };
+    } & PorContenedor);
 
 /**
  * Lectura que quedo como novedad (egreso, #301): un serial que no esta en el

@@ -131,29 +131,50 @@ function juntarContenedores(lista: unknown): ContenedorLeido[] {
 
 /**
  * Un renglon por producto: si el mismo producto viene en varios contenedores,
- * se suman cantidades y cajas (la recepcion espera el total del embarque).
+ * se suman cantidades y cajas (la recepcion espera el total del embarque) y
+ * queda anotado cuanto trae cada contenedor (`reparto`), para que Almacen
+ * compare cada uno por su lado. Si algun pedazo no dice de que contenedor
+ * es, no hay reparto: no se puede saber.
  */
-function juntarRenglones(lista: unknown) {
-  const porProducto = new Map<
-    string,
-    { codigo: string; producto: string; cantidad_esperada: number; cajas_esperadas: number | null }
-  >();
+function juntarRenglones(lista: unknown, contenedores: ContenedorLeido[]) {
+  type Junto = {
+    codigo: string;
+    producto: string;
+    cantidad_esperada: number;
+    cajas_esperadas: number | null;
+    reparto: Map<string, number> | null;
+  };
+  const conocidos = new Set(contenedores.map((c) => c.numero));
+  const porProducto = new Map<string, Junto>();
   for (const r of Array.isArray(lista) ? lista : []) {
     const codigo = texto((r as any)?.codigo, 100);
     const producto = texto((r as any)?.producto, 300);
     const cantidad = Number((r as any)?.cantidad);
     const cajas = Number((r as any)?.cajas) > 0 ? Math.round(Number((r as any).cajas)) : null;
     if (!producto || !Number.isFinite(cantidad) || cantidad < 0) continue;
+    const contenedor = texto((r as any)?.contenedor, 50).toUpperCase().replace(/[\s-]+/g, "");
     const llave = (codigo || producto).toUpperCase().replace(/\s+/g, " ");
-    const previo = porProducto.get(llave);
-    if (!previo) {
-      porProducto.set(llave, { codigo, producto, cantidad_esperada: cantidad, cajas_esperadas: cajas });
-      continue;
+    let junto = porProducto.get(llave);
+    if (!junto) {
+      junto = { codigo, producto, cantidad_esperada: 0, cajas_esperadas: null, reparto: new Map() };
+      porProducto.set(llave, junto);
     }
-    previo.cantidad_esperada += cantidad;
-    if (cajas !== null) previo.cajas_esperadas = (previo.cajas_esperadas ?? 0) + cajas;
+    junto.cantidad_esperada += cantidad;
+    if (cajas !== null) junto.cajas_esperadas = (junto.cajas_esperadas ?? 0) + cajas;
+    if (junto.reparto && conocidos.has(contenedor)) {
+      junto.reparto.set(contenedor, (junto.reparto.get(contenedor) ?? 0) + cantidad);
+    } else {
+      junto.reparto = null;
+    }
   }
-  return [...porProducto.values()].slice(0, MAX_RENGLONES);
+  return [...porProducto.values()].slice(0, MAX_RENGLONES).map(({ reparto, ...r }) => ({
+    ...r,
+    // Con un solo contenedor no hace falta: todo es de ese.
+    reparto:
+      reparto && contenedores.length > 1
+        ? [...reparto].map(([contenedor, cantidad]) => ({ contenedor, cantidad }))
+        : null,
+  }));
 }
 
 export async function POST(request: NextRequest) {
@@ -228,13 +249,14 @@ export async function POST(request: NextRequest) {
 
     // Se limpia aca lo que devuelve el modelo: la pantalla recibe siempre lo
     // mismo que escribiria una persona a mano.
+    const contenedores = juntarContenedores(leido.contenedores).slice(0, MAX_CONTENEDORES);
     return NextResponse.json({
       success: true,
       datos: {
         proveedor: texto(leido.proveedor, 200),
         referencia: texto(leido.referencia, 100),
-        contenedores: juntarContenedores(leido.contenedores).slice(0, MAX_CONTENEDORES),
-        renglones: juntarRenglones(leido.renglones),
+        contenedores,
+        renglones: juntarRenglones(leido.renglones, contenedores),
       },
     });
   } catch (e: any) {

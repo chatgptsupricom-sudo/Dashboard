@@ -61,10 +61,15 @@ import EscenaRecepcion from "./EscenaRecepcion";
  *
  * El packing list puede venir en varios contenedores que llegan en dias
  * distintos. Almacen recibe cada uno por su cuenta (fotos + precinto al
- * llegar, foto de como quedo al terminar de descargarlo); el conteo contra el
- * packing list es uno solo y se va llenando con cada contenedor; y el packing
- * list se cierra cuando llegaron y se descargaron todos. Compras lo sigue en
- * vivo y puede corregirlo o anularlo mientras no haya llegado ninguno.
+ * llegar, foto de como quedo al terminar de descargarlo) y el packing list se
+ * cierra cuando llegaron y se descargaron todos. Compras lo sigue en vivo y
+ * puede corregirlo o anularlo mientras no haya llegado ninguno.
+ *
+ * Conteo por contenedor: varios telefonos (el mismo usuario) descargan
+ * contenedores a la vez. Cada telefono elige el suyo y cuenta solo ahi
+ * (lib/recepcion/conteo.ts); el total del renglon es la suma de todos y se ve
+ * en vivo en todos los telefonos. Cuando el packing list dice cuanto trae
+ * cada contenedor, cada uno se compara contra lo suyo.
  */
 
 type Recepcion = {
@@ -127,9 +132,42 @@ type Item = {
   /** En Odoo lleva numero de serie: se cuenta pistoleando cada serial. */
   lleva_serial: boolean;
   seriales: SerialItem[];
+  /** Esperado (si el packing list lo dice) y contado en cada contenedor; 0 = sin contenedor. */
+  conteo: FilaConteo[];
 };
 
-type SerialItem = { id: number; item_id: number; serial: string; escaneado_por: string | null; created_at: string };
+type FilaConteo = { contenedor_id: number; cantidad_esperada: number | null; cantidad_recibida: number | null };
+
+type SerialItem = {
+  id: number;
+  item_id: number;
+  serial: string;
+  escaneado_por: string | null;
+  created_at: string;
+  contenedor_id?: number;
+};
+
+/** Lo contado en un contenedor, como se escribe en el campo ("" = sin contar). */
+function recibidaEn(item: { conteo?: FilaConteo[] }, contenedorId: number | null): string {
+  if (contenedorId === null) return "";
+  const f = (item.conteo || []).find((x) => Number(x.contenedor_id) === contenedorId);
+  return f && f.cantidad_recibida !== null ? String(Number(f.cantidad_recibida)) : "";
+}
+
+/** El renglon con lo contado en un contenedor y su nuevo total (tras una lectura). */
+function conFila<T extends Item>(item: T, contenedorId: number, enContenedor: number | null, total: number | null): T {
+  const filas = [...(item.conteo || [])];
+  const k = filas.findIndex((f) => Number(f.contenedor_id) === contenedorId);
+  const fila = {
+    ...(k >= 0 ? filas[k] : { contenedor_id: contenedorId, cantidad_esperada: null }),
+    cantidad_recibida: enContenedor,
+  };
+  if (k >= 0) filas[k] = fila;
+  else filas.push(fila);
+  return { ...item, conteo: filas, cantidad_recibida: total };
+}
+
+const fmt = (n: number) => n.toLocaleString("es-VE");
 
 /** Cada dano marcado con la cantidad tal como se escribe en el campo. */
 type DanoForm = { tipo: TipoDano; cantidad: string };
@@ -209,7 +247,20 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Al guardar se manda solo eso: varios telefonos cuentan la misma recepcion
   // a la vez y mandar todo pisaba lo que contaban los otros. `v` sube con cada
   // cambio: lo que se edito mientras se guardaba queda pendiente.
-  const pendientes = useRef(new Map<number, { campos: Set<CampoConteo>; v: number }>());
+  // La cantidad escrita va con el contenedor donde se escribio (`contenedor`).
+  const pendientes = useRef(
+    new Map<number, { campos: Set<CampoConteo>; v: number; contenedor: number | null }>(),
+  );
+
+  // Contenedor que esta descargando ESTE telefono: cada uno cuenta el suyo y
+  // nadie escribe en el de otro. Se recuerda en el telefono (si se recarga la
+  // pagina sigue en el mismo). `corrigiendoCont`: eligio uno ya terminado para
+  // corregir un error, no para descargarlo.
+  const [miContenedor, setMiContenedor] = useState<number | null>(null);
+  const [corrigiendoCont, setCorrigiendoCont] = useState(false);
+  const miRef = useRef<number | null>(null);
+  miRef.current = miContenedor;
+  const yaElegido = useRef(false);
 
   const aplicar = useCallback((j: any, conConteo: boolean) => {
     setRec(j.recepcion);
@@ -217,11 +268,14 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     setContenedores(j.contenedores || []);
     setArchivos(j.archivos || []);
     if (conConteo) {
+      // Sin contenedores (recepcion por factura) se cuenta en el 0.
+      const mio = (j.contenedores || []).length ? miRef.current : 0;
       setConteo((prev) => {
         const c: Record<number, Conteo> = {};
         for (const i of j.items || []) {
           const servidor: Conteo = {
-            recibida: i.cantidad_recibida === null ? "" : String(Number(i.cantidad_recibida)),
+            // El campo es lo de este contenedor; el total se suma en pantalla.
+            recibida: recibidaEn(i, mio),
             motivo: i.motivo_diferencia || "",
             danos: (Array.isArray(i.danos) ? i.danos : []).map((d: any) => ({
               tipo: d.tipo,
@@ -231,11 +285,12 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
           };
           // Lo que se escribio aca y no se guardo todavia no se pisa.
           const local = prev[i.id];
-          const campos = pendientes.current.get(i.id)?.campos;
+          const pend = pendientes.current.get(i.id);
+          const campos = pend?.campos;
           c[i.id] =
             local && campos
               ? {
-                  recibida: campos.has("recibida") ? local.recibida : servidor.recibida,
+                  recibida: campos.has("recibida") && pend!.contenedor === mio ? local.recibida : servidor.recibida,
                   motivo: campos.has("motivo") ? local.motivo : servidor.motivo,
                   danos: campos.has("dano") ? local.danos : servidor.danos,
                   nota: campos.has("dano") ? local.nota : servidor.nota,
@@ -268,14 +323,62 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     void cargar();
   }, [cargar]);
 
-  // En vivo: llegada o cierre de un contenedor, cierre, edicion o anulacion.
-  // Sin pisar el conteo en curso: la llegada de otro contenedor no cambia lo
-  // que se lleva contado.
+  // En vivo: lo que cuentan los otros telefonos, llegada o cierre de un
+  // contenedor, cierre, edicion o anulacion. Lo escrito aca y no guardado no
+  // se pisa (ver `aplicar`). Las lecturas de los otros llegan seguidas: se
+  // recarga una vez cuando paran.
+  const recarga = useRef<ReturnType<typeof setTimeout> | null>(null);
   useRecepcionEnVivo((a) => {
     if (a.id !== Number(id)) return;
-    if (a.accion === "eliminado") setAnulada(true);
-    else void cargar(a.accion !== "llegada" && a.accion !== "contenedor_cerrado");
+    if (a.accion === "eliminado") {
+      setAnulada(true);
+      return;
+    }
+    if (recarga.current) clearTimeout(recarga.current);
+    recarga.current = setTimeout(() => void cargar(true), a.accion === "conteo" ? 700 : 0);
   });
+  useEffect(() => () => {
+    if (recarga.current) clearTimeout(recarga.current);
+  }, []);
+
+  // El contenedor de este telefono: el que recuerda, si sigue descargandose.
+  // Si se termino (lo cerro otro telefono), hay que elegir otro. La primera
+  // vez, si hay uno solo descargandose, ese.
+  const claveMio = `recepcion:${id}:contenedor`;
+  useEffect(() => {
+    if (!contenedores.length) return;
+    let elegido = miRef.current;
+    if (elegido === null && !yaElegido.current) {
+      try {
+        const v = Number(localStorage.getItem(claveMio));
+        if (v) elegido = v;
+      } catch {
+        // Sin almacenamiento: se elige de nuevo.
+      }
+    }
+    const c = contenedores.find((x) => x.id === elegido);
+    if (!c || c.etapa === "por_llegar" || (c.etapa === "cerrado" && !corrigiendoCont)) elegido = null;
+    const abiertos = contenedores.filter((x) => x.etapa === "descargando");
+    if (elegido === null && !yaElegido.current && abiertos.length === 1) elegido = abiertos[0].id;
+    if (elegido !== null) yaElegido.current = true;
+    if (elegido !== miRef.current) setMiContenedor(elegido);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contenedores, corrigiendoCont]);
+
+  // Al cambiar de contenedor, el campo muestra lo contado en el nuevo.
+  useEffect(() => {
+    const mio = contenedores.length ? miContenedor : 0;
+    setConteo((prev) => {
+      const c = { ...prev };
+      for (const i of items) {
+        const p = pendientes.current.get(i.id);
+        if (p?.campos.has("recibida") && p.contenedor === mio) continue;
+        c[i.id] = { ...(c[i.id] || { recibida: "", motivo: "", danos: [], nota: "" }), recibida: recibidaEn(i, mio) };
+      }
+      return c;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [miContenedor]);
 
   // Tras subir/quitar una foto se recarga sin pisar lo que se esta contando.
   const recargarArchivos = () => void cargar(false);
@@ -291,18 +394,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     const timer = setTimeout(async () => {
       setAutoguardado("guardando");
       try {
-        const { items: cuerpo, enviado } = cuerpoConteo();
-        if (!cuerpo.length) {
-          setAutoguardado(null);
-          return;
-        }
-        const res = await fetch(`/api/recepcion/${id}/etapa`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accion: "guardar_conteo", items: cuerpo }),
-        });
-        if (res.ok) guardados(enviado);
-        setAutoguardado(res.ok ? "guardado" : null);
+        setAutoguardado((await guardarPendientes()) ? "guardado" : null);
       } catch {
         setAutoguardado(null);
       }
@@ -311,6 +403,43 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     // cuerpoConteo lee `conteo`, que cambia junto con `editado`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editado]);
+
+  /** Manda lo pendiente de este telefono. true si quedo guardado (o no habia nada). */
+  const guardarPendientes = async (): Promise<boolean> => {
+    const { items: cuerpo, enviado } = cuerpoConteo();
+    if (!cuerpo.length) return true;
+    const res = await fetch(`/api/recepcion/${id}/etapa`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accion: "guardar_conteo", items: cuerpo }),
+    });
+    if (res.ok) guardados(enviado);
+    return res.ok;
+  };
+
+  /** Cambia el contenedor de este telefono (lo escrito en el anterior se guarda antes). */
+  const elegirContenedor = async (cid: number | null, correccion = false) => {
+    if ([...pendientes.current.values()].some((x) => x.campos.has("recibida"))) {
+      try {
+        if (!(await guardarPendientes())) {
+          setError(t("error"));
+          return;
+        }
+      } catch {
+        setError(t("error"));
+        return;
+      }
+    }
+    yaElegido.current = true;
+    setCorrigiendoCont(correccion);
+    setMiContenedor(cid);
+    try {
+      if (cid === null) localStorage.removeItem(claveMio);
+      else localStorage.setItem(claveMio, String(cid));
+    } catch {
+      // Sin almacenamiento: vale para esta pantalla.
+    }
+  };
 
   // Cada lectura de la pistola ya quedo guardada en el servidor: aca solo se
   // refleja en pantalla (sin disparar el guardado automatico).
@@ -332,19 +461,24 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       setSeleccionado(r.item_id);
       return;
     }
+    // `cantidad` es el total del renglon; `cantidad_contenedor`, lo de este contenedor.
+    const cid = Number(r.contenedor_id ?? 0);
+    const enCont = r.cantidad_contenedor ?? r.cantidad;
     setConteo((prev) => ({
       ...prev,
-      [r.item_id]: { ...(prev[r.item_id] || { recibida: "", motivo: "", danos: [], nota: "" }), recibida: String(r.cantidad) },
+      [r.item_id]: { ...(prev[r.item_id] || { recibida: "", motivo: "", danos: [], nota: "" }), recibida: String(enCont) },
     }));
     // La cantidad ya la tiene el servidor: si habia una escrita sin guardar,
     // no se manda encima de la lectura.
     const pendiente = pendientes.current.get(r.item_id);
     if (pendiente?.campos.delete("recibida") && pendiente.campos.size === 0) pendientes.current.delete(r.item_id);
-    if (r.resultado === "serial") {
-      setItems((prev) =>
-        prev.map((i) => (i.id === r.item_id ? { ...i, seriales: [...(i.seriales || []), r.serial] } : i)),
-      );
-    }
+    setItems((prev) =>
+      prev.map((i) => {
+        if (i.id !== r.item_id) return i;
+        const nuevo = conFila(i, cid, enCont, r.cantidad);
+        return r.resultado === "serial" ? { ...nuevo, seriales: [...(i.seriales || []), r.serial] } : nuevo;
+      }),
+    );
   };
 
   const quitarSerial = async (itemId: number, serialId: number) => {
@@ -355,13 +489,25 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       setError(j.error || t("error"));
       return;
     }
+    // Se resta en el contenedor donde se habia pistoleado.
+    const cid = Number(j.contenedor_id ?? 0);
+    const enCont = Number(j.cantidad_contenedor) > 0 ? Number(j.cantidad_contenedor) : null;
     setItems((prev) =>
-      prev.map((i) => (i.id === itemId ? { ...i, seriales: (i.seriales || []).filter((x) => x.id !== serialId) } : i)),
+      prev.map((i) =>
+        i.id === itemId
+          ? {
+              ...conFila(i, cid, enCont, Number(j.cantidad) > 0 ? Number(j.cantidad) : null),
+              seriales: (i.seriales || []).filter((x) => x.id !== serialId),
+            }
+          : i,
+      ),
     );
-    setConteo((prev) => ({
-      ...prev,
-      [itemId]: { ...(prev[itemId] || { recibida: "", motivo: "", danos: [], nota: "" }), recibida: j.cantidad ? String(j.cantidad) : "" },
-    }));
+    if (cid === (contenedores.length ? miContenedor : 0)) {
+      setConteo((prev) => ({
+        ...prev,
+        [itemId]: { ...(prev[itemId] || { recibida: "", motivo: "", danos: [], nota: "" }), recibida: enCont === null ? "" : String(enCont) },
+      }));
+    }
   };
 
   // Los seriales en Excel, como los llevaban hasta ahora.
@@ -372,6 +518,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
         Codigo: i.codigo || "",
         Producto: i.producto,
         Serial: x.serial,
+        Contenedor: contenedores.find((c) => c.id === Number(x.contenedor_id))?.numero || "",
         "Pistoleado por": x.escaneado_por || "",
         Fecha: x.created_at ? new Date(x.created_at).toLocaleString("es-VE") : "",
       })),
@@ -459,7 +606,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       if (!c) continue;
       enviado.set(itemId, p.v);
       const fila: Record<string, unknown> = { id: itemId };
-      if (p.campos.has("recibida")) fila.cantidad_recibida = c.recibida === "" ? null : Number(c.recibida);
+      if (p.campos.has("recibida")) {
+        fila.cantidad_recibida = c.recibida === "" ? null : Number(c.recibida);
+        fila.contenedor_id = p.contenedor;
+      }
       if (p.campos.has("motivo")) fila.motivo_diferencia = c.motivo || null;
       if (p.campos.has("dano")) {
         fila.danos = danosANumero(c.danos);
@@ -513,6 +663,60 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
   const trabajando = esAlmacen && rec.etapa !== "cerrado";
   const contando = esAlmacen && rec.etapa === "descargando";
+
+  // Conteo por contenedor. Sin contenedores (por factura) todo va al 0.
+  const sinContenedores = contenedores.length === 0;
+  const contMio = sinContenedores ? 0 : miContenedor;
+  const porCont = contando && !sinContenedores;
+  const contAbiertos = contenedores.filter((c) => c.etapa === "descargando");
+  const contTerminados = contenedores.filter((c) => c.etapa === "cerrado");
+  const descargandoAun = contenedores.some((c) => c.etapa !== "cerrado");
+  const numeroDe = (cid: number) => contenedores.find((c) => c.id === cid)?.numero || t("sin_contenedor");
+  /** Lo contado en un contenedor (el de este telefono, con lo que se esta escribiendo). */
+  const recibidoEn = (i: Item, cid: number): number | null => {
+    const v = cid === contMio ? conteo[i.id]?.recibida : recibidaEn(i, cid);
+    return v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v);
+  };
+  /** Lo que el packing list dice para ese contenedor (con uno solo, todo). */
+  const esperadoEn = (i: Item, cid: number): number | null => {
+    if (contenedores.length === 1 && cid === contenedores[0].id) return Number(i.cantidad_esperada);
+    const f = (i.conteo || []).find((x) => Number(x.contenedor_id) === cid);
+    return f && f.cantidad_esperada !== null ? Number(f.cantidad_esperada) : null;
+  };
+  const contenedoresDe = (i: Item) => {
+    const ids = new Set((i.conteo || []).map((f) => Number(f.contenedor_id)));
+    if (contMio !== null) ids.add(contMio);
+    return [...ids];
+  };
+  /** Total del renglon: la suma de los contenedores (cerrado, lo que guardo el servidor). */
+  const totalDe = (i: Item): number | null => {
+    const servidor = i.cantidad_recibida === null || i.cantidad_recibida === undefined ? null : Number(i.cantidad_recibida);
+    if (rec.etapa === "cerrado" || !(i.conteo || []).length) {
+      if (contMio === null || !conteo[i.id] || conteo[i.id].recibida === "") return servidor;
+    }
+    let hay = false;
+    let suma = 0;
+    for (const cid of contenedoresDe(i)) {
+      const v = recibidoEn(i, cid);
+      if (v !== null) {
+        hay = true;
+        suma += v;
+      }
+    }
+    return hay ? suma : null;
+  };
+  /** Unidades contadas en un contenedor y cuantos productos no dan lo esperado (si se sabe). */
+  const resumenCont = (cid: number) => {
+    const conocido = contenedores.length === 1 || items.some((i) => esperadoEn(i, cid) !== null);
+    let unidades = 0;
+    let difs = 0;
+    for (const i of items) {
+      const r = recibidoEn(i, cid);
+      if (r !== null) unidades += r;
+      if (conocido && (r ?? 0) !== (esperadoEn(i, cid) ?? 0)) difs++;
+    }
+    return { unidades, difs: conocido ? difs : null };
+  };
   const sucursal = SUCURSALES.find((s) => s.cids === Number(rec.cids))?.nombre;
   const llegados = contenedores.filter((c) => c.etapa !== "por_llegar").length;
   const abiertos = contenedores.filter((c) => c.etapa !== "cerrado");
@@ -523,8 +727,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     items.map((i) => ({
       id: i.id,
       cantidad_esperada: Number(i.cantidad_esperada),
-      cantidad_recibida:
-        conteo[i.id]?.recibida === "" || conteo[i.id]?.recibida === undefined ? null : Number(conteo[i.id].recibida),
+      cantidad_recibida: totalDe(i),
       motivo_diferencia: conteo[i.id]?.motivo || null,
       golpeado: (conteo[i.id]?.danos?.length ?? 0) > 0,
       danos: danosANumero(conteo[i.id]?.danos),
@@ -583,8 +786,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
             producto: i.producto,
             codigo: i.codigo,
             esperada: Number(i.cantidad_esperada),
-            recibida:
-              conteo[i.id]?.recibida === "" || conteo[i.id]?.recibida === undefined ? null : Number(conteo[i.id].recibida),
+            recibida: totalDe(i),
             danado: (conteo[i.id]?.danos?.length ?? 0) > 0,
           }))}
           contenedores={contenedores.map((c) => ({ id: c.id, numero: c.numero, etapa: c.etapa }))}
@@ -908,6 +1110,21 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     {/* Cierre del contenedor: foto de como quedo */}
                     {(descargandolo || c.etapa === "cerrado") && (
                       <div className="space-y-3 pt-3 border-t border-slate-100">
+                        {(() => {
+                          // Lo contado en este contenedor contra lo que dice el packing list.
+                          const rs = resumenCont(c.id);
+                          return (
+                            <p className="text-xs text-slate-600">
+                              {t("contenedor_contado", { unidades: fmt(rs.unidades) })}
+                              {rs.difs !== null && rs.difs > 0 && (
+                                <span className="font-semibold text-amber-700">
+                                  {" "}
+                                  · {t("contenedor_diferencias", { count: rs.difs })}
+                                </span>
+                              )}
+                            </p>
+                          );
+                        })()}
                         <FotoCaptura
                           recepcionId={rec.id}
                           tipo="foto_cierre"
@@ -929,13 +1146,17 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                               className={inputClases}
                             />
                             <BotonSecundario
-                              onClick={() =>
+                              onClick={() => {
+                                const rs = resumenCont(c.id);
+                                if (rs.difs && !window.confirm(t("contenedor_confirmar_diferencias", { count: rs.difs }))) {
+                                  return;
+                                }
                                 void accionar(
                                   "cerrar_contenedor",
                                   { contenedor_id: c.id, notas_cierre: notasCont[c.id] || null },
                                   false,
-                                )
-                              }
+                                );
+                              }}
                               disabled={enviando || fotosCierre.length === 0}
                               icon={CheckCircle2}
                               className="w-full"
@@ -954,22 +1175,74 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
             </Card>
             )}
 
-            {/* Conteo contra el packing list (uno solo para todos los contenedores) */}
+            {/* Conteo contra el packing list: cada telefono cuenta en su contenedor y
+                el total de cada renglon es la suma de todos. */}
             <Card className={contando ? "border-violet-200" : ""}>
               <SectionTitle>
                 {t("conteo")} ({items.length})
               </SectionTitle>
               {contando && <p className="text-xs text-slate-500 -mt-1 mb-3">{t("conteo_ayuda")}</p>}
-              {contando && (
+              {porCont && (
+                <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50/40 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-700">{t("conteo_que_contenedor")}</p>
+                  {contAbiertos.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {contAbiertos.map((c) => {
+                        const mio = miContenedor === c.id && !corrigiendoCont;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => void elegirContenedor(c.id)}
+                            aria-pressed={mio}
+                            className={`h-10 px-3 rounded-lg font-mono text-xs font-semibold ${
+                              mio
+                                ? "bg-violet-600 text-white"
+                                : "border border-violet-300 bg-white text-violet-700 hover:bg-violet-50"
+                            }`}
+                          >
+                            {c.numero}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">{t("conteo_sin_abiertos")}</p>
+                  )}
+                  {contTerminados.length > 0 && (
+                    <select
+                      value={corrigiendoCont && miContenedor !== null ? miContenedor : ""}
+                      onChange={(e) =>
+                        void (e.target.value ? elegirContenedor(Number(e.target.value), true) : elegirContenedor(null))
+                      }
+                      aria-label={t("conteo_corregir_terminado")}
+                      className="w-full h-9 px-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-600"
+                    >
+                      <option value="">{t("conteo_corregir_terminado")}</option>
+                      {contTerminados.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.numero}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {miContenedor === null ? (
+                    <p className="text-xs text-amber-700">{t("conteo_elige_contenedor")}</p>
+                  ) : corrigiendoCont ? (
+                    <p className="text-xs text-amber-700">{t("conteo_corrigiendo", { contenedor: numeroDe(miContenedor) })}</p>
+                  ) : null}
+                </div>
+              )}
+              {contando && contMio !== null && (
                 <Pistola
-                  endpoint={`/api/recepcion/${rec.id}/escaneo`}
+                  endpoint={`/api/recepcion/${rec.id}/escaneo?contenedor_id=${contMio}`}
                   items={items.map((i) => ({
                     id: i.id,
                     codigo: i.codigo,
                     producto: i.producto,
                     lleva_serial: !!i.lleva_serial,
                     esperado: Number(i.cantidad_esperada),
-                    recibido: i.lleva_serial ? (i.seriales || []).length : Number(conteo[i.id]?.recibida || 0),
+                    recibido: i.lleva_serial ? (i.seriales || []).length : totalDe(i) ?? 0,
                   }))}
                   seleccionado={seleccionado}
                   onResultado={alEscanear}
@@ -1027,8 +1300,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
               <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_4.5rem] sm:grid-cols-[minmax(0,1fr)_5rem_6rem] gap-x-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 pb-2 border-b border-slate-100">
                 <span>{t("producto")}</span>
-                <span className="text-right">{t("esperado")}</span>
-                <span className="text-right">{t("recibido")}</span>
+                <span className="text-right">{porCont ? t("esperado_contenedor") : t("esperado")}</span>
+                <span className="text-right">{porCont ? t("este_contenedor") : t("recibido")}</span>
               </div>
 
               {filtro.trim() &&
@@ -1044,15 +1317,31 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 .map((i) => {
                 const c = conteo[i.id] || { recibida: "", motivo: "", danos: [], nota: "" };
                 const conDano = c.danos.length > 0;
-                const recibidaNum = c.recibida === "" ? null : Number(c.recibida);
                 const esperado = Number(i.cantidad_esperada);
-                const hayDif = c.recibida !== "" && Number(c.recibida) !== esperado;
+                // El total (todos los contenedores) contra el packing list.
+                const total = totalDe(i);
+                const recibidaNum = total;
+                const hayDif = total !== null && total !== esperado;
+                // Con contenedores todavia descargandose, que falte es normal: el
+                // motivo se pide cuando no queda ninguno (o si ya sobra).
+                const pidoMotivo = hayDif && (!descargandoAun || (total ?? 0) > esperado || !!c.motivo.trim());
+                // Lo de este contenedor contra lo que el packing list dice para el.
+                const espMio = porCont && contMio !== null ? esperadoEn(i, contMio) : null;
+                const marca = porCont
+                  ? espMio !== null && c.recibida !== "" && Number(c.recibida) !== espMio
+                  : hayDif;
+                const puedeEscribir = contando && contMio !== null;
                 const set = (p: Partial<Conteo>) => {
                   setConteo((prev) => ({ ...prev, [i.id]: { ...c, ...p } }));
                   const previo = pendientes.current.get(i.id);
                   const campos = new Set(previo?.campos);
                   for (const k of Object.keys(p) as Array<keyof Conteo>) campos.add(CAMPOS_DE[k]);
-                  pendientes.current.set(i.id, { campos, v: (previo?.v ?? 0) + 1 });
+                  pendientes.current.set(i.id, {
+                    campos,
+                    v: (previo?.v ?? 0) + 1,
+                    // La cantidad escrita es del contenedor de este telefono.
+                    contenedor: p.recibida !== undefined ? contMio : previo?.contenedor ?? null,
+                  });
                   setEditado((n) => n + 1);
                 };
                 const esSeleccionado = seleccionado === i.id;
@@ -1082,6 +1371,33 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                             .filter(Boolean)
                             .join(" · ")}
                         </p>
+                        {!sinContenedores && (() => {
+                          // Total y lo de cada contenedor (contado / esperado, si se sabe).
+                          const partes = contenedoresDe(i)
+                            .map((cid) => ({ cid, r: recibidoEn(i, cid), e: esperadoEn(i, cid) }))
+                            .filter((x) => x.r !== null || (x.e !== null && contenedores.length > 1));
+                          if (!porCont && partes.length < 2) return null;
+                          return (
+                            <p className="text-[11px] text-slate-500 leading-snug">
+                              {porCont && (
+                                <span
+                                  className={`font-semibold ${
+                                    hayDif && !descargandoAun ? "text-red-600" : "text-slate-700"
+                                  }`}
+                                >
+                                  {t("total_de", { total: fmt(total ?? 0), esperado: fmt(esperado) })}
+                                </span>
+                              )}
+                              {partes.map((x) => (
+                                <span key={x.cid} className={x.cid === contMio && porCont ? "text-violet-700 font-medium" : ""}>
+                                  {(porCont || partes.indexOf(x) > 0) && " · "}
+                                  {numeroDe(x.cid)}: {fmt(x.r ?? 0)}
+                                  {x.e !== null && contenedores.length > 1 && `/${fmt(x.e)}`}
+                                </span>
+                              ))}
+                            </p>
+                          );
+                        })()}
                         {i.lleva_serial && (
                           <div className="mt-1 flex flex-wrap items-center gap-2">
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
@@ -1102,13 +1418,20 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           </div>
                         )}
                       </div>
-                      <span className="text-sm font-semibold tabular-nums text-slate-700 text-right">{esperado}</span>
-                      {contando && i.lleva_serial ? (
+                      <span className="text-sm font-semibold tabular-nums text-slate-700 text-right">
+                        {porCont ? (espMio === null ? "—" : fmt(espMio)) : esperado}
+                      </span>
+                      {porCont && contMio === null ? (
+                        // Sin contenedor elegido no se cuenta: no se sabe en cual.
+                        <span className="w-full h-10 px-2 flex items-center justify-end rounded-lg border border-dashed border-slate-200 text-sm text-slate-300">
+                          —
+                        </span>
+                      ) : contando && i.lleva_serial ? (
                         // Con serial: se cuenta pistoleando, no se escribe.
                         <span
                           title={t("cuenta_seriales")}
                           className={`w-full h-10 px-2 flex items-center justify-end rounded-lg border bg-slate-50 text-sm tabular-nums ${
-                            hayDif ? "border-red-300 text-red-700 font-semibold" : "border-slate-200 text-slate-700"
+                            marca ? "border-red-300 text-red-700 font-semibold" : "border-slate-200 text-slate-700"
                           }`}
                         >
                           {c.recibida === "" ? "—" : c.recibida}
@@ -1122,16 +1445,16 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           value={c.recibida}
                           onChange={(e) => set({ recibida: e.target.value })}
                           className={`w-full h-10 px-2 text-right rounded-lg border text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-violet-100 ${
-                            hayDif ? "border-red-300 bg-red-50 text-red-700 font-semibold" : "border-slate-200"
+                            marca ? "border-red-300 bg-red-50 text-red-700 font-semibold" : "border-slate-200"
                           }`}
                         />
                       ) : (
                         <span
                           className={`text-sm tabular-nums text-right ${
-                            hayDif ? "font-semibold text-red-600" : c.recibida === "" ? "text-slate-300" : "text-slate-700"
+                            hayDif ? "font-semibold text-red-600" : total === null ? "text-slate-300" : "text-slate-700"
                           }`}
                         >
-                          {c.recibida === "" ? "—" : c.recibida}
+                          {total === null ? "—" : total}
                         </span>
                       )}
                     </div>
@@ -1148,8 +1471,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                               {verSeriales[i.id] ? t("ocultar_seriales") : t("ver_seriales", { count: seriales.length })}
                             </button>
                           )}
-                          {/* Si no llego ninguno se anota 0 a mano (no hay que pistolear). */}
-                          {contando && seriales.length === 0 && (
+                          {/* Si no llego ninguno (a este contenedor) se anota 0 a mano. */}
+                          {puedeEscribir &&
+                            seriales.filter((x) => Number(x.contenedor_id ?? 0) === contMio).length === 0 && (
                             <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
                               <input
                                 type="checkbox"
@@ -1166,6 +1490,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                             {seriales.map((x) => (
                               <li key={x.id} className="flex items-center gap-2 px-2 py-1 text-[11px]">
                                 <span className="font-mono text-slate-700 flex-1 truncate">{x.serial}</span>
+                                {!sinContenedores && (
+                                  <span className="font-mono text-slate-400 truncate">{numeroDe(Number(x.contenedor_id ?? 0))}</span>
+                                )}
                                 <span className="text-slate-400 truncate hidden sm:inline">{x.escaneado_por}</span>
                                 {contando && (
                                   <button
@@ -1186,6 +1513,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
                     {/* Motivo de la diferencia: obligatorio si falta o sobra */}
                     {hayDif &&
+                      (!contando || pidoMotivo) &&
                       (contando ? (
                         <input
                           value={c.motivo}
