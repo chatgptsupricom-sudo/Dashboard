@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { requireNC, soloPreaprueba } from "@/lib/notas-credito/acceso";
+import { requireNC, veOdoo } from "@/lib/notas-credito/acceso";
 import { ensureTablas } from "@/lib/notas-credito/datos";
 import { notasOdooBorrador, notasOdooDelRango } from "@/lib/notas-credito/odoo";
 import { SEDES } from "@/lib/notas-credito/tipos";
@@ -13,8 +13,8 @@ export const maxDuration = 60;
  * GET ?mes=YYYY-MM[&company_id=]  notas de crédito de cliente de Odoo del mes
  *     ?borradores=1[&company_id=]  las que están en borrador, de cualquier fecha (en curso)
  * Cada una con la solicitud del panel que la generó
- * (`solicitud_id`) o null si se hizo en Odoo sin pasar por el flujo. Cada
- * quien ve las de sus sedes; el SuperAdmin, todas.
+ * (`solicitud_id`) o null si se hizo en Odoo sin pasar por el flujo. Las ven
+ * el SuperAdmin (todas), quien aprueba y quien procesa (las de su sede).
  */
 export async function GET(request: NextRequest) {
   const { acceso, error } = await requireNC(request);
@@ -26,8 +26,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "mes inválido (YYYY-MM)" }, { status: 400 });
   }
 
-  // IT (solo preaprueba) no ve las notas de Odoo: solo lo que pasa por su preaprobacion.
-  const permitidas = (acceso!.sedes ?? SEDES).filter((s) => !soloPreaprueba(acceso!, s));
+  // Las NC de Odoo las ven quien ve todo el flujo y quien procesa; los demás pasos, no.
+  const permitidas = (acceso!.sedes ?? SEDES).filter((s) => veOdoo(acceso!, s));
   const pedida = Number(sp.get("company_id")) || null;
   if (pedida && !permitidas.includes(pedida)) return NextResponse.json({ error: "Sede no permitida" }, { status: 403 });
   const sedes = pedida ? [pedida] : permitidas;

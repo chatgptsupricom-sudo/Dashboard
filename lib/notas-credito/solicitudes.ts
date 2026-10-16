@@ -10,6 +10,7 @@ import {
   leerNotaOdoo,
   montoDeUnaUnidad,
   notaEnChatter,
+  productosDeFactura,
   publicarOdoo,
   type FacturaOdoo,
 } from "@/lib/notas-credito/odoo";
@@ -17,11 +18,14 @@ import { moverEstadoRma } from "@/lib/notas-credito/rma";
 import {
   estadoInicial,
   formatoMonto,
+  resumenProductos,
   type AccionNC,
   type BorradorNC,
   type CandidataNC,
   type EstadoNC,
+  type LineaSolicitud,
   type PasoNC,
+  type ProductoFactura,
   type SolicitudNC,
 } from "@/lib/notas-credito/tipos";
 import type { EstadoProducto } from "@/lib/rma/items";
@@ -68,7 +72,73 @@ async function leer(where: string, params: unknown[], limite = 300): Promise<(So
       WHERE ${where} ORDER BY s.id DESC LIMIT ${Math.max(1, Math.min(500, limite))}`,
     params,
   );
-  return (r.rows as any[]).map(fila);
+  const sols = (r.rows as any[]).map(fila);
+  const directas = sols.filter((s) => s.origen === "directa").map((s) => s.id);
+  if (directas.length) {
+    const lineas = await lineasDe(directas);
+    for (const s of sols) if (lineas.has(s.id)) s.lineas = lineas.get(s.id);
+  }
+  return sols;
+}
+
+/** Los productos de cada solicitud (las directas creadas con productos de la factura). */
+async function lineasDe(ids: number[]): Promise<Map<number, LineaSolicitud[]>> {
+  const r = await query(
+    `SELECT * FROM nc_solicitud_lineas WHERE solicitud_id IN (${ids.map(() => "?").join(",")}) ORDER BY id`,
+    ids,
+  );
+  const out = new Map<number, LineaSolicitud[]>();
+  for (const f of r.rows as any[]) {
+    const lista = out.get(Number(f.solicitud_id)) ?? [];
+    lista.push({
+      linea_factura_id: Number(f.linea_factura_id),
+      product_id: f.product_id == null ? null : Number(f.product_id),
+      producto: f.producto,
+      codigo: f.codigo || "",
+      marca: f.marca || "",
+      cantidad: Number(f.cantidad),
+      precio_unidad: Number(f.precio_unidad),
+      total: Number(f.total),
+      seriales: f.seriales ? String(f.seriales).split("\n").filter(Boolean) : [],
+    });
+    out.set(Number(f.solicitud_id), lista);
+  }
+  return out;
+}
+
+/**
+ * Lo que otras solicitudes ya tienen de la factura: cantidad por línea (las
+ * abiertas que todavía no tienen la NC publicada; las publicadas ya las cuenta
+ * Odoo) y qué solicitud tiene cada serial (cualquiera que no se rechazó).
+ */
+async function ocupadoEnFactura(facturaId: number): Promise<{ reservado: Map<number, number>; serialEn: Map<string, number> }> {
+  await ensureTablas();
+  const r = await query(
+    `SELECT l.solicitud_id, l.linea_factura_id, l.cantidad, l.seriales, s.estado, s.odoo_estado
+       FROM nc_solicitud_lineas l JOIN nc_solicitudes s ON s.id = l.solicitud_id
+      WHERE s.factura_id = ? AND s.estado <> 'rechazada'`,
+    [facturaId],
+  );
+  const reservado = new Map<number, number>();
+  const serialEn = new Map<string, number>();
+  for (const f of r.rows as any[]) {
+    if (f.estado !== "procesada" && f.odoo_estado !== "posted") {
+      const linea = Number(f.linea_factura_id);
+      reservado.set(linea, (reservado.get(linea) || 0) + Number(f.cantidad));
+    }
+    for (const sn of String(f.seriales || "").split("\n").filter(Boolean)) serialEn.set(sn.toUpperCase(), Number(f.solicitud_id));
+  }
+  return { reservado, serialEn };
+}
+
+/** La factura y sus productos para "Nueva nota de crédito". */
+export async function productosParaNota(companyId: number, facturaId: number) {
+  const factura = await leerFactura(companyId, { id: facturaId });
+  if (!factura) throw new ErrorNC("No se encontró la factura publicada en Odoo para esta sede.", 404);
+  const { reservado, serialEn } = await ocupadoEnFactura(factura.id);
+  const productos = await productosDeFactura(factura, reservado, serialEn);
+  const { lineas: _l, ...resto } = factura;
+  return { factura: resto, productos };
 }
 
 export async function obtener(id: number) {
@@ -183,50 +253,124 @@ export async function crearDesdeRma(datos: {
   return id;
 }
 
+type LineaPedida = { linea_id: unknown; cantidad?: unknown; seriales?: unknown };
+
 /**
- * Nota de crédito que no viene de RMA: la crea quien procesa (o el
- * SuperAdmin) y sigue el mismo camino que una de RMA: preaprueba IT, aprueba
- * quien aprueba. Quien preaprueba (IT) solo preaprueba o rechaza: no crea.
+ * Valida los productos elegidos contra la factura en Odoo: que la línea sea
+ * de la factura, que quede por acreditar y, si el producto lleva serial, que
+ * se indique uno por unidad (de los despachados con la factura, sin repetir
+ * los que ya tiene otra solicitud; si Odoo no tiene seriales de esa línea, se
+ * aceptan escritos a mano).
+ */
+function validarLineas(pedidas: LineaPedida[], productos: ProductoFactura[]): LineaSolicitud[] {
+  if (!pedidas.length) throw new ErrorNC("Elige al menos un producto de la factura.");
+  const porLinea = new Map(productos.map((p) => [p.linea_id, p]));
+  const vistas = new Set<number>();
+  const serialesUsados = new Set<string>();
+  const out: LineaSolicitud[] = [];
+  for (const l of pedidas) {
+    const p = porLinea.get(Number(l.linea_id));
+    if (!p) throw new ErrorNC("Uno de los productos no es de esta factura. Vuelve a elegirla.");
+    if (vistas.has(p.linea_id)) throw new ErrorNC(`${p.producto} está dos veces.`);
+    vistas.add(p.linea_id);
+    const seriales = [...new Set((Array.isArray(l.seriales) ? l.seriales : []).map((x) => String(x ?? "").trim()).filter(Boolean))];
+    for (const sn of seriales) {
+      const clave = sn.toUpperCase();
+      if (serialesUsados.has(clave)) throw new ErrorNC(`El serial ${sn} está repetido.`);
+      serialesUsados.add(clave);
+    }
+    let cantidad = Number(l.cantidad);
+    if (p.con_serial) {
+      if (!seriales.length) throw new ErrorNC(`Indica el serial de ${p.producto}.`);
+      cantidad = seriales.length;
+      if (p.seriales.length) {
+        const deOdoo = new Map(p.seriales.map((s) => [s.serial.toUpperCase(), s]));
+        for (const sn of seriales) {
+          const s = deOdoo.get(sn.toUpperCase());
+          if (!s) throw new ErrorNC(`El serial ${sn} no salió con esta factura.`);
+          if (s.nc) throw new ErrorNC(`El serial ${sn} ya está en la nota de crédito NC-${s.nc}.`);
+        }
+      }
+    }
+    if (!Number.isFinite(cantidad) || cantidad <= 0) throw new ErrorNC(`Indica la cantidad de ${p.producto}.`);
+    if (cantidad > p.disponible + 0.0001) {
+      throw new ErrorNC(`De ${p.producto} queda por acreditar ${p.disponible} (se facturó ${p.cantidad}).`);
+    }
+    out.push({
+      linea_factura_id: p.linea_id,
+      product_id: p.product_id,
+      producto: p.producto,
+      codigo: p.codigo,
+      marca: p.marca,
+      cantidad,
+      precio_unidad: p.precio_unidad,
+      total: Math.round(p.precio_unidad * cantidad * 100) / 100,
+      seriales,
+    });
+  }
+  return out;
+}
+
+/**
+ * Nota de crédito que no viene de RMA: la crea quien preaprueba en la sede (o
+ * el SuperAdmin) eligiendo la factura y sus productos. Nace preaprobada por
+ * quien la crea y le llega a quien aprueba. Quien procesa no crea: hace en
+ * Odoo lo aprobado.
  */
 export async function crearDirecta(datos: {
   companyId: number;
   facturaId: number;
-  monto: unknown;
+  lineas: LineaPedida[];
   motivo: string;
   autor: Autor;
   origenPeticion: string;
 }): Promise<number> {
-  if (!esSuperadmin(datos.autor.rol) && !(await tienePaso(datos.autor.email, datos.companyId, "procesa"))) {
-    throw new ErrorNC("Solo quien hace la nota en esta sede (o el SuperAdmin) crea notas de crédito.", 403);
+  if (!esSuperadmin(datos.autor.rol) && !(await tienePaso(datos.autor.email, datos.companyId, "preaprueba"))) {
+    throw new ErrorNC("Solo quien preaprueba en esta sede (o el SuperAdmin) crea notas de crédito.", 403);
   }
   if (!(await sedeConFlujo(datos.companyId))) {
     throw new ErrorNC("A esta sede le falta alguien en aprobar o en hacer la nota: el SuperAdmin lo completa en Responsables.", 409);
   }
   const motivo = datos.motivo.trim();
   if (motivo.length < 10) throw new ErrorNC("Explica el motivo de la nota de crédito (al menos 10 caracteres).");
-  const monto = validarMonto(datos.monto);
-  const factura = await leerFactura(datos.companyId, { id: datos.facturaId });
-  if (!factura) throw new ErrorNC("No se encontró la factura publicada en Odoo para esta sede.", 404);
-  const libre = await disponible(factura, null);
+  const { factura, productos } = await productosParaNota(datos.companyId, datos.facturaId);
+  const lineas = validarLineas(datos.lineas, productos);
+  const monto = Math.round(lineas.reduce((s, l) => s + l.total, 0) * 100) / 100;
+  const libre = await disponible({ ...factura, lineas: [] }, null);
   if (monto > libre + 0.01) {
     throw new ErrorNC(`El monto supera lo que queda por acreditar de la factura ${factura.nombre} (${formatoMonto(libre, factura.moneda)}).`);
   }
+  const seriales = lineas.flatMap((l) => l.seriales);
 
   await ensureTablas();
   const ins = await query(
     `INSERT INTO nc_solicitudes
        (company_id, origen, estado, factura_id, factura_nombre, partner_id, cliente, moneda, monto, total_factura,
-        motivo, creado_por, creado_email)
-     VALUES (?, 'directa', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        producto, serial, odoo_product_id, motivo, creado_por, creado_email, preaprobado_por, preaprobado_at)
+     VALUES (?, 'directa', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
     [
       datos.companyId, estadoInicial("directa"), factura.id, factura.nombre, factura.partner_id, factura.cliente.slice(0, 255),
-      factura.moneda, monto, factura.total, motivo.slice(0, 5000), datos.autor.nombre, datos.autor.email || null,
+      factura.moneda, monto, factura.total, resumenProductos(lineas).slice(0, 500), seriales.join(", ").slice(0, 200) || null,
+      lineas.length === 1 ? lineas[0].product_id : null, motivo.slice(0, 5000), datos.autor.nombre, datos.autor.email || null,
+      datos.autor.nombre,
     ],
   );
   const id = Number((ins.rows as any).insertId);
+  for (const l of lineas) {
+    await query(
+      `INSERT INTO nc_solicitud_lineas
+         (solicitud_id, linea_factura_id, product_id, producto, codigo, marca, cantidad, precio_unidad, total, seriales)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, l.linea_factura_id, l.product_id, l.producto.slice(0, 500), l.codigo.slice(0, 100) || null, l.marca.slice(0, 150) || null,
+        l.cantidad, l.precio_unidad, l.total, l.seriales.join("\n") || null,
+      ],
+    );
+  }
   await registrarEvento(id, "creada", datos.autor, motivo);
+  await registrarEvento(id, "preaprobada", datos.autor, "La creó quien preaprueba: pasa directo a aprobación.");
   const sol = await obtener(id);
-  if (sol) avisarNC("preaprobar", sol, datos.origenPeticion);
+  if (sol) avisarNC("aprobar", sol, datos.origenPeticion);
   return id;
 }
 
@@ -328,10 +472,13 @@ async function rechazar(sol: SolicitudNC, autor: Autor, motivo: string, origen: 
 
 /** Asigna (o corrige) la factura de Odoo. En una de RMA el monto sale de la factura; en una directa se manda. */
 async function asignarFactura(sol: SolicitudNC, autor: Autor, body: any) {
-  // La factura la pone o corrige quien hace la nota; IT solo preaprueba.
+  // La factura la pone o corrige quien hace la nota.
   await exigirPaso(sol, autor, "procesa");
   if (!["por_preaprobar", "por_aprobar", "aprobada"].includes(sol.estado) || sol.odoo_move_id) {
     throw new ErrorNC("La factura ya no se cambia: la nota de crédito ya está en Odoo o terminó.", 409);
+  }
+  if (sol.lineas?.length) {
+    throw new ErrorNC("Esta nota se creó con productos de su factura: si la factura no es esa, se rechaza y se crea otra.", 409);
   }
   const factura = await leerFactura(sol.company_id, { id: Number(body.factura_id) || null, numero: body.numero ?? null });
   if (!factura) throw new ErrorNC("No se encontró esa factura publicada en Odoo para esta sede.", 404);
@@ -423,6 +570,12 @@ async function crearEnOdoo(sol: SolicitudNC & { created_ts: number }, autor: Aut
       companyId: sol.company_id,
       motivo: sol.motivo,
       soloProducto: sol.origen === "rma" ? (sol.odoo_product_id ?? null) : null,
+      lineas: sol.lineas?.map((l) => ({
+        linea_factura_id: l.linea_factura_id,
+        product_id: l.product_id,
+        cantidad: l.cantidad,
+        seriales: l.seriales,
+      })),
     });
     await vincularMove(sol, moveId, autor, "Borrador creado desde el panel");
     if (aviso) await registrarEvento(sol.id, "aviso", { nombre: "Panel" }, aviso);
@@ -618,7 +771,31 @@ export async function detalle(id: number, origen: string) {
       console.error(`[notas-credito] leer NC ${sol.odoo_move_id}:`, e?.message);
     }
   }
-  return { solicitud: sol, eventos: ev.rows as any[], borrador, candidatas };
+  // Lo que RMA mandó con la solicitud (falla, diagnóstico, observaciones, fotos).
+  let rma: Record<string, any> | null = null;
+  if (sol.rma_nota_id) {
+    try {
+      // Import dinámico: lib/rma/notaCredito importa este archivo.
+      const { obtenerNota } = await import("@/lib/rma/notaCredito");
+      const n = await obtenerNota(sol.rma_nota_id);
+      if (n) {
+        rma = {
+          case_number: n.case_number,
+          cliente: n.client_name,
+          factura: n.invoice_number,
+          equipo: [n.hardware, n.brand, n.model].filter(Boolean).join(" · "),
+          serial: n.serial,
+          falla: n.reported_fault || n.detail || "",
+          diagnostico: n.diagnosis || "",
+          observaciones: n.observations || "",
+          imagenes: Array.isArray(n.images) ? n.images : [],
+        };
+      }
+    } catch (e: any) {
+      console.error(`[notas-credito] datos de RMA de NC-${id}:`, e?.message);
+    }
+  }
+  return { solicitud: sol, eventos: ev.rows as any[], borrador, candidatas, rma };
 }
 
 /** Qué puede hacer la sesión con esta solicitud (para los botones; el servidor vuelve a chequear). */
@@ -629,7 +806,7 @@ export async function permisosSobre(sol: SolicitudNC, autor: Autor) {
     preaprobar: sol.estado === "por_preaprobar" && tiene("preaprueba"),
     aprobar: sol.estado === "por_aprobar" && tiene("aprueba"),
     rechazar: (sol.estado === "por_preaprobar" && tiene("preaprueba")) || (sol.estado === "por_aprobar" && tiene("aprueba")),
-    factura: ["por_preaprobar", "por_aprobar", "aprobada"].includes(sol.estado) && !sol.odoo_move_id && tiene("procesa"),
+    factura: ["por_preaprobar", "por_aprobar", "aprobada"].includes(sol.estado) && !sol.odoo_move_id && !sol.lineas?.length && tiene("procesa"),
     odoo: sol.estado === "aprobada" && tiene("procesa"),
     superadmin: esSuperadmin(autor.rol),
   };

@@ -6,6 +6,8 @@ import { flujoCompleto, PASOS, type PasoNC, type UsuarioPanel } from "@/lib/nota
  * sql/notas_credito_flujo.sql):
  *   nc_solicitudes   una fila por nota de crédito, de RMA o directa, con cada
  *                    decisión y el enlace a la NC de Odoo.
+ *   nc_solicitud_lineas  los productos de la factura de una NC directa
+ *                    (cantidad, precio con impuestos y seriales).
  *   nc_eventos       el historial de cada una (quién hizo qué y cuándo).
  *   nc_aprobadores   responsables de cada paso por sede, por correo.
  */
@@ -70,6 +72,23 @@ export async function ensureTablas(): Promise<void> {
       nota TEXT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       KEY idx_nc_eventos (solicitud_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS nc_solicitud_lineas (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      solicitud_id INT NOT NULL,
+      linea_factura_id INT NOT NULL,
+      product_id INT NULL,
+      producto VARCHAR(500) NOT NULL,
+      codigo VARCHAR(100) NULL,
+      marca VARCHAR(150) NULL,
+      cantidad DECIMAL(14,4) NOT NULL,
+      precio_unidad DECIMAL(14,4) NOT NULL,
+      total DECIMAL(14,2) NOT NULL,
+      seriales TEXT NULL,
+      KEY idx_nc_lineas_sol (solicitud_id),
+      KEY idx_nc_lineas_factura (linea_factura_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
   await db.execute(`

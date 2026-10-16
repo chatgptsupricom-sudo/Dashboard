@@ -1,5 +1,5 @@
 import { callOdooRPC, callOdooRPCEstricto } from "@/lib/odoo";
-import type { BorradorNC, CandidataNC, LineaBorrador } from "@/lib/notas-credito/tipos";
+import { SIN_MARCA, type BorradorNC, type CandidataNC, type LineaBorrador, type ProductoFactura } from "@/lib/notas-credito/tipos";
 
 /**
  * La nota de crédito en Odoo. El panel la hace igual que Victor a mano: con
@@ -111,6 +111,118 @@ export async function buscarFacturas(companyId: number, q: string): Promise<Fact
   return Promise.all((r ?? []).map(completarFactura));
 }
 
+/**
+ * Los productos de la factura para "Nueva nota de crédito": marca
+ * (spiff_brand_id), lo que queda por acreditar de cada línea y los seriales
+ * despachados con ella.
+ *   - Seriales: los move lines hechos hacia el cliente de las líneas de venta
+ *     de la factura (sale_line_ids), menos los que el cliente devolvió.
+ *   - Disponible: lo facturado menos lo de NC publicadas de la factura (por
+ *     producto, se descuenta de las líneas en orden) y menos lo que ya pidieron
+ *     otras solicitudes abiertas (`reservado`, por línea de factura).
+ * `serialEn` dice qué solicitud ya tiene cada serial (en mayúsculas).
+ */
+export async function productosDeFactura(
+  f: FacturaOdoo,
+  reservado: Map<number, number>,
+  serialEn: Map<string, number>,
+): Promise<ProductoFactura[]> {
+  const lineas = await callOdooRPC<any[]>(
+    "account.move.line",
+    "search_read",
+    [[["move_id", "=", f.id], ["display_type", "=", "product"]]],
+    { fields: ["product_id", "name", "quantity", "price_total", "sale_line_ids"], order: "sequence, id" },
+  );
+  const productIds = [...new Set((lineas ?? []).map((l) => m2o(l.product_id)?.[0]).filter(Boolean) as number[])];
+  const ventaIds = [...new Set((lineas ?? []).flatMap((l) => l.sale_line_ids || []))] as number[];
+  const conVenta = (extra: any[]) => [["move_id.sale_line_id", "in", ventaIds], ["state", "=", "done"], ["lot_id", "!=", false], extra];
+
+  const [productos, salidas, devueltos, refunds] = await Promise.all([
+    productIds.length
+      ? callOdooRPC<any[]>("product.product", "read", [productIds], { fields: ["name", "default_code", "spiff_brand_id", "tracking"] })
+      : Promise.resolve([]),
+    ventaIds.length
+      ? callOdooRPC<any[]>("stock.move.line", "search_read", [conVenta(["location_dest_id.usage", "=", "customer"])], {
+          fields: ["lot_id", "move_id"],
+          limit: 5000,
+        })
+      : Promise.resolve([]),
+    ventaIds.length
+      ? callOdooRPC<any[]>("stock.move.line", "search_read", [conVenta(["location_id.usage", "=", "customer"])], {
+          fields: ["lot_id"],
+          limit: 5000,
+        })
+      : Promise.resolve([]),
+    callOdooRPC<any[]>(
+      "account.move.line",
+      "search_read",
+      [[
+        ["move_id.move_type", "=", "out_refund"], ["move_id.state", "=", "posted"],
+        ["move_id.reversed_entry_id", "=", f.id], ["display_type", "=", "product"],
+      ]],
+      { fields: ["product_id", "quantity"] },
+    ),
+  ]);
+
+  const prod = new Map((productos ?? []).map((p) => [p.id, p]));
+  // Línea de venta → seriales despachados (sin los que volvieron del cliente).
+  const volvieron = new Set((devueltos ?? []).map((m) => m2o(m.lot_id)?.[1]).filter(Boolean));
+  const moveIds = [...new Set((salidas ?? []).map((m) => m2o(m.move_id)?.[0]).filter(Boolean) as number[])];
+  const ventaDeMove = new Map<number, number>();
+  if (moveIds.length) {
+    const moves = await callOdooRPC<any[]>("stock.move", "read", [moveIds], { fields: ["sale_line_id"] });
+    for (const mv of moves ?? []) {
+      const v = m2o(mv.sale_line_id)?.[0];
+      if (v) ventaDeMove.set(mv.id, v);
+    }
+  }
+  const serialesVenta = new Map<number, string[]>();
+  for (const m of salidas ?? []) {
+    const lote = m2o(m.lot_id)?.[1];
+    const venta = ventaDeMove.get(m2o(m.move_id)?.[0] ?? 0);
+    if (!lote || !venta || volvieron.has(lote)) continue;
+    const lista = serialesVenta.get(venta) ?? [];
+    if (!lista.includes(lote)) lista.push(lote);
+    serialesVenta.set(venta, lista);
+  }
+  // Ya acreditado en NC publicadas, por producto.
+  const acreditado = new Map<number, number>();
+  for (const l of refunds ?? []) {
+    const p = m2o(l.product_id)?.[0];
+    if (p) acreditado.set(p, (acreditado.get(p) || 0) + (Number(l.quantity) || 0));
+  }
+
+  const out: ProductoFactura[] = [];
+  for (const l of lineas ?? []) {
+    const pid = m2o(l.product_id)?.[0] ?? null;
+    const p = pid ? prod.get(pid) : null;
+    const cantidad = Number(l.quantity) || 0;
+    if (cantidad <= 0) continue;
+    let libre = cantidad;
+    const yaAcreditado = pid ? acreditado.get(pid) || 0 : 0;
+    if (pid && yaAcreditado) {
+      const usa = Math.min(libre, yaAcreditado);
+      libre -= usa;
+      acreditado.set(pid, yaAcreditado - usa);
+    }
+    libre = Math.max(0, libre - (reservado.get(l.id) || 0));
+    const seriales: string[] = (l.sale_line_ids || []).flatMap((v: number) => serialesVenta.get(v) ?? []);
+    out.push({
+      linea_id: l.id,
+      product_id: pid,
+      producto: p?.name || m2o(l.product_id)?.[1] || l.name || "",
+      codigo: p?.default_code || "",
+      marca: m2o(p?.spiff_brand_id)?.[1]?.trim() || SIN_MARCA,
+      cantidad,
+      disponible: Math.round(libre * 10000) / 10000,
+      precio_unidad: Math.round((Number(l.price_total) / cantidad) * 10000) / 10000,
+      con_serial: p?.tracking === "serial",
+      seriales: seriales.map((x) => ({ serial: x, nc: serialEn.get(x.toUpperCase()) ?? null })),
+    });
+  }
+  return out;
+}
+
 /** Total con impuestos de UNA unidad del producto en la factura (NC de un equipo de RMA). */
 export function montoDeUnaUnidad(f: FacturaOdoo, productId: number | null): number | null {
   if (!productId) return null;
@@ -212,7 +324,9 @@ function hoyCaracas(): string {
 /**
  * Crea la NC en borrador con el asistente de reversión. Con `soloProducto`
  * (equipo de RMA) deja solo la línea de ese producto, con 1 unidad; si la
- * factura no lo tiene, quedan todas para que se ajusten a mano.
+ * factura no lo tiene, quedan todas para que se ajusten a mano. Con `lineas`
+ * (NC directa con productos elegidos) deja solo esas líneas de la factura, con
+ * la cantidad pedida y los seriales en la descripción.
  */
 export async function crearBorradorOdoo(datos: {
   facturaId: number;
@@ -220,6 +334,7 @@ export async function crearBorradorOdoo(datos: {
   companyId: number;
   motivo: string;
   soloProducto: number | null;
+  lineas?: LineaElegida[];
 }): Promise<{ moveId: number; aviso: string | null }> {
   const contexto = { active_model: "account.move", active_ids: [datos.facturaId], active_id: datos.facturaId };
   const valores: Record<string, any> = {
@@ -241,7 +356,9 @@ export async function crearBorradorOdoo(datos: {
   if (!moveId) throw new Error("Odoo no devolvió la nota de crédito creada.");
 
   let aviso: string | null = null;
-  if (datos.soloProducto) {
+  if (datos.lineas?.length) {
+    aviso = await dejarLineasElegidas(moveId, datos.facturaId, datos.lineas);
+  } else if (datos.soloProducto) {
     const lineas = await callOdooRPC<any[]>(
       "account.move.line",
       "search_read",
@@ -261,6 +378,50 @@ export async function crearBorradorOdoo(datos: {
     }
   }
   return { moveId, aviso };
+}
+
+type LineaElegida = { linea_factura_id: number; product_id: number | null; cantidad: number; seriales: string[] };
+
+/**
+ * Deja en el borrador solo las líneas elegidas. El asistente copia las líneas
+ * de la factura en el mismo orden, así que la n-ésima línea de producto de la
+ * NC es la n-ésima de la factura; si no cuadran (alguien cambió algo), se
+ * empareja por producto.
+ */
+async function dejarLineasElegidas(moveId: number, facturaId: number, elegidas: LineaElegida[]): Promise<string | null> {
+  const campos = { fields: ["product_id", "name"], order: "sequence, id" };
+  const [nc, fac] = await Promise.all([
+    callOdooRPCEstricto<any[]>("account.move.line", "search_read", [[["move_id", "=", moveId], ["display_type", "=", "product"]]], campos),
+    callOdooRPCEstricto<any[]>("account.move.line", "search_read", [[["move_id", "=", facturaId], ["display_type", "=", "product"]]], campos),
+  ]);
+  const lineasNc = nc ?? [];
+  const lineasFac = fac ?? [];
+  const mismoOrden =
+    lineasNc.length === lineasFac.length && lineasNc.every((l, i) => m2o(l.product_id)?.[0] === m2o(lineasFac[i].product_id)?.[0]);
+  const usadas = new Set<number>();
+  const comandos: any[] = [];
+  let faltan = 0;
+  for (const e of elegidas) {
+    let linea: any = null;
+    if (mismoOrden) {
+      const i = lineasFac.findIndex((l) => l.id === e.linea_factura_id);
+      if (i >= 0 && !usadas.has(lineasNc[i].id)) linea = lineasNc[i];
+    }
+    linea ??= lineasNc.find((l) => !usadas.has(l.id) && m2o(l.product_id)?.[0] === e.product_id) ?? null;
+    if (!linea) {
+      faltan++;
+      continue;
+    }
+    usadas.add(linea.id);
+    const nombre = e.seriales.length ? `${linea.name || ""}\nS/N: ${e.seriales.join(", ")}`.trim() : linea.name;
+    comandos.push([1, linea.id, { quantity: e.cantidad, name: nombre }]);
+  }
+  if (!usadas.size) {
+    return "No se encontraron en la nota las líneas de los productos elegidos: quedó con todas, ajústala antes de publicarla.";
+  }
+  for (const l of lineasNc) if (!usadas.has(l.id)) comandos.push([2, l.id]);
+  await callOdooRPCEstricto("account.move", "write", [[moveId], { invoice_line_ids: comandos }]);
+  return faltan ? `${faltan} de los productos elegidos no se encontró en la nota: revísala antes de publicarla.` : null;
 }
 
 /** Cambios al borrador desde el panel: cantidad y precio por línea, quitar líneas, número de control y fecha. */

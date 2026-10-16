@@ -11,26 +11,32 @@ import type { AnteriorNC } from "@/lib/notas-credito/anteriores";
 import type { NotaOdooMes } from "@/lib/notas-credito/odoo";
 import {
   COLOR_ESTADO,
-  ESTADOS_ABIERTOS,
   ETIQUETA_ESTADO,
+  ETIQUETA_ETAPA,
+  ETIQUETA_VISTA,
+  etapasDe,
   formatoMonto,
   NOMBRE_SEDE,
   PASO_DEL_ESTADO,
   SEDES,
+  veOdooDeLaSede,
+  veTodoLaSede,
+  vistasDe,
+  type EtapaNC,
   type PasoNC,
   type SolicitudNC,
+  type VistaNC,
 } from "@/lib/notas-credito/tipos";
 import { ExternalLink, FileCheck2, FileText, Loader2, Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type Pestana = "mias" | "abiertas" | "todas" | "responsables";
 type NotaOdoo = NotaOdooMes & { solicitud_id: number | null };
 
 /**
- * Una fila de la lista. La lista es una sola: las notas de crédito de Odoo y
- * las solicitudes del panel que todavía no llegan a Odoo. Una NC que salió de
- * una solicitud es UNA fila (la solicitud con su nota de Odoo).
+ * Una fila de la lista: una solicitud del panel (con su NC de Odoo si ya la
+ * tiene), una NC de Odoo sin solicitud, o una solicitud de RMA de antes del
+ * flujo. Una NC que salió de una solicitud es UNA fila.
  */
 type Fila =
   | { tipo: "sol"; clave: string; fecha: string; sede: number; sol: SolicitudNC; odoo?: NotaOdoo }
@@ -58,12 +64,13 @@ const mesDe = (v: string | null | undefined) =>
 const mesActual = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit" }).format(new Date());
 /** Para ordenar: YYYY-MM-DD o ISO, lo más nuevo primero. */
 const orden = (v: string) => (v.length === 10 ? `${v}T12:00:00` : v);
+const porFecha = (x: Fila, y: Fila) => orden(y.fecha).localeCompare(orden(x.fecha));
 
 /** Estado de una fila para el filtro (une los del panel, los de Odoo y los anteriores). */
 function estadoFila(f: Fila): EstadoFiltro {
   if (f.tipo === "odoo") return f.odoo.estado === "posted" ? "publicada" : f.odoo.estado === "draft" ? "borrador" : "anulada";
   if (f.tipo === "ant") return f.ant.estado === "pendiente" ? "fuera_flujo" : f.ant.estado === "rechazada" ? "rechazada" : "anterior";
-  if (f.odoo?.estado === "draft") return "borrador";
+  if (f.sol.estado === "aprobada" && (f.odoo?.estado === "draft" || f.sol.odoo_estado === "draft")) return "borrador";
   if (f.odoo?.estado === "cancel") return "anulada";
   return f.sol.estado === "procesada" ? "publicada" : f.sol.estado;
 }
@@ -86,22 +93,39 @@ function textoFila(f: Fila): string {
         : [
             `NC-${f.sol.id}`, f.sol.case_number ? `RMA ${f.sol.case_number}` : "", f.sol.cliente, f.sol.factura_nombre, f.sol.producto,
             f.sol.serial, f.sol.motivo, f.sol.creado_por, f.sol.preaprobado_por, f.sol.aprobado_por, f.sol.odoo_move_nombre, f.odoo?.nombre,
+            ...(f.sol.lineas ?? []).flatMap((l) => [l.producto, l.codigo, l.marca, ...l.seriales]),
           ];
   return sinAcentos(partes.filter(Boolean).join(" "));
 }
 
-const ESTADOS_FILTRO: Record<"mias" | "abiertas" | "todas", EstadoFiltro[]> = {
-  mias: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "fuera_flujo"],
-  abiertas: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "fuera_flujo"],
-  todas: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "publicada", "rechazada", "anulada", "fuera_flujo", "anterior"],
+/** Estados que tiene sentido filtrar en cada pestaña (con uno solo no se muestra el filtro). */
+const ESTADOS_VISTA: Partial<Record<VistaNC, EstadoFiltro[]>> = {
+  mis_creadas: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "publicada", "rechazada"],
+  procesar: ["aprobada", "borrador", "fuera_flujo"],
+  rma: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "publicada", "rechazada"],
+  flujo: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "publicada", "rechazada", "fuera_flujo", "anterior"],
+  odoo: ["por_preaprobar", "por_aprobar", "aprobada", "borrador", "publicada", "rechazada", "anulada", "fuera_flujo", "anterior"],
+};
+
+const VACIO: Record<VistaNC, string> = {
+  preaprobar: "No hay solicitudes de RMA esperando tu preaprobación.",
+  mis_creadas: "Todavía no has creado, preaprobado ni rechazado notas de crédito.",
+  aprobar: "Nada esperando tu aprobación.",
+  procesar: "No hay notas de crédito aprobadas por hacer.",
+  procesadas: "Todavía no hay notas de crédito procesadas.",
+  rma: "No hay solicitudes de RMA.",
+  flujo: "No hay notas de crédito en esta etapa.",
+  odoo: "No hay notas de crédito este mes.",
+  responsables: "",
 };
 
 /**
- * Pantalla de notas de crédito (/notas-credito). Cada quien ve las de las
- * sedes donde tiene un paso (el SuperAdmin, todas).
- *   Por hacer  lo que espera su decisión (o, a quien hace la nota, las aprobadas).
- *   En curso   solicitudes abiertas del panel + NC en borrador en Odoo.
- *   Todas      las NC de Odoo del mes + las solicitudes del mes que todavía no llegan a Odoo.
+ * Pantalla de notas de crédito (/notas-credito). Cada quien ve lo de su paso
+ * (vistasDe en lib/notas-credito/tipos.ts; el servidor ya filtra lo que no le
+ * toca): quien preaprueba, las de RMA por preaprobar y las suyas; quien
+ * aprueba, lo que espera su aprobación; quien procesa, lo aprobado por hacer y
+ * lo procesado. El SuperAdmin y quien aprueba tienen además "Todo el flujo",
+ * filtrado por etapa (RMA, Preaprueba, Aprueba, Procesados).
  */
 export function NotasCredito() {
   const router = useRouter();
@@ -112,21 +136,27 @@ export function NotasCredito() {
   const [borradores, setBorradores] = useState<NotaOdoo[]>([]);
   const [pasos, setPasos] = useState<Record<number, PasoNC[]>>({});
   const [superadmin, setSuperadmin] = useState(false);
+  const [yo, setYo] = useState<{ nombre: string; email: string }>({ nombre: "", email: "" });
   const [sedesActivas, setSedesActivas] = useState<number[]>([]);
   const [filtros, setFiltros] = useState<Filtros>(FILTROS_VACIOS);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [errorOdoo, setErrorOdoo] = useState("");
-  const [pestana, setPestana] = useState<Pestana>("mias");
+  const [vista, setVista] = useState<VistaNC | null>(null);
+  const [etapa, setEtapa] = useState<EtapaNC | "">("");
   const [nueva, setNueva] = useState(false);
   const [pasando, setPasando] = useState<number | null>(null);
   const [avisoAnterior, setAvisoAnterior] = useState<{ id: number; texto: string } | null>(null);
-  // Todas: mes
+  // NC de Odoo: mes
   const [mes, setMes] = useState(mesActual);
   const [odooMes, setOdooMes] = useState<NotaOdoo[]>([]);
   const [cargandoMes, setCargandoMes] = useState(false);
 
+  const vistas = useMemo(() => vistasDe(pasos, superadmin), [pasos, superadmin]);
+  const veAlgoDeOdoo = vistas.includes("odoo");
+
   const cargar = useCallback(async () => {
+    let odoo = false;
     try {
       const r = await fetch("/api/notas-credito");
       const j = await r.json();
@@ -135,13 +165,16 @@ export function NotasCredito() {
       setAnteriores(j.anteriores || []);
       setPasos(j.pasos || {});
       setSuperadmin(!!j.superadmin);
+      setYo(j.yo || { nombre: "", email: "" });
       setSedesActivas(j.sedes_activas || []);
       setError("");
+      odoo = vistasDe(j.pasos || {}, !!j.superadmin).includes("odoo");
     } catch (e: any) {
       setError(e?.message || "No se pudo cargar");
     } finally {
       setCargando(false);
     }
+    if (!odoo) return;
     try {
       const r = await fetch("/api/notas-credito/odoo?borradores=1");
       const j = await r.json().catch(() => ({}));
@@ -157,8 +190,13 @@ export function NotasCredito() {
     cargar();
   }, [cargar]);
 
+  // Primera pestaña: la de su paso.
   useEffect(() => {
-    if (pestana !== "todas" || !/^\d{4}-\d{2}$/.test(mes)) return;
+    if (!cargando && (!vista || !vistas.includes(vista))) setVista(vistas[0] ?? null);
+  }, [cargando, vistas, vista]);
+
+  useEffect(() => {
+    if (vista !== "odoo" || !/^\d{4}-\d{2}$/.test(mes)) return;
     const ctrl = new AbortController();
     setCargandoMes(true);
     fetch(`/api/notas-credito/odoo?mes=${mes}`, { signal: ctrl.signal })
@@ -173,27 +211,24 @@ export function NotasCredito() {
       })
       .finally(() => setCargandoMes(false));
     return () => ctrl.abort();
-  }, [pestana, mes]);
+  }, [vista, mes]);
 
+  const tiene = useCallback((sede: number, paso: PasoNC) => (pasos[sede] ?? []).includes(paso), [pasos]);
+
+  /** Lo que espera a la sesión (resaltado en la lista). */
   const esMia = useCallback(
     (n: SolicitudNC) => {
       const paso = PASO_DEL_ESTADO[n.estado];
-      return !!paso && (pasos[n.company_id] ?? []).includes(paso);
+      return !!paso && tiene(n.company_id, paso) && !(n.estado === "aprobada" && n.odoo_estado === "posted");
     },
-    [pasos],
+    [tiene],
   );
 
-  const tieneAlgunPaso = Object.keys(pasos).length > 0;
   const sedesVisibles = superadmin ? SEDES : Object.keys(pasos).map(Number);
-  // Crea quien hace la nota en la sede (o el SuperAdmin), solo en sedes con el
-  // flujo activo. IT (preaprueba) no crea: solo preaprueba o rechaza.
-  const sedesQueCrean = (superadmin ? SEDES : Object.entries(pasos).filter(([, p]) => p.includes("procesa")).map(([s]) => Number(s))).filter(
-    (s) => sedesActivas.includes(s),
+  // Crea quien preaprueba en la sede (o el SuperAdmin), solo en sedes con el flujo activo.
+  const sedesQueCrean = (superadmin ? SEDES : Object.entries(pasos).filter(([, p]) => p.includes("preaprueba")).map(([s]) => Number(s))).filter((s) =>
+    sedesActivas.includes(s),
   );
-
-  useEffect(() => {
-    if (!cargando && !tieneAlgunPaso && pestana === "mias") setPestana("abiertas");
-  }, [cargando, tieneAlgunPaso, pestana]);
 
   const filaSol = (s: SolicitudNC, odoo?: NotaOdoo): Fila => ({
     tipo: "sol",
@@ -206,42 +241,73 @@ export function NotasCredito() {
   const filaAnt = (a: AnteriorNC): Fila => ({ tipo: "ant", clave: `a${a.rma_nota_id}`, fecha: a.created_at, sede: a.company_id, ant: a });
   const filaOdoo = (o: NotaOdoo): Fila => ({ tipo: "odoo", clave: `o${o.id}`, fecha: o.fecha || "", sede: o.company_id, odoo: o });
 
-  const filasMias = useMemo<Fila[]>(
-    () => [...notas.filter(esMia).map((s) => filaSol(s)), ...anteriores.filter((a) => a.puede_pasar).map(filaAnt)],
-    [notas, anteriores, esMia],
+  const porMove = useMemo(() => new Map(borradores.map((b) => [b.id, b])), [borradores]);
+  const conOdoo = useCallback((s: SolicitudNC) => filaSol(s, s.odoo_move_id ? porMove.get(s.odoo_move_id) : undefined), [porMove]);
+
+  const soyYo = useCallback(
+    (s: SolicitudNC) =>
+      (!!yo.email && (s.creado_email || "").toLowerCase().trim() === yo.email) ||
+      (!!yo.nombre && (s.preaprobado_por === yo.nombre || (s.rechazado_paso === "preaprueba" && s.rechazado_por === yo.nombre))),
+    [yo],
   );
 
-  const filasEnCurso = useMemo<Fila[]>(() => {
-    const porMove = new Map(borradores.map((b) => [b.id, b]));
-    const abiertas = notas.filter((s) => ESTADOS_ABIERTOS.includes(s.estado));
-    const vinculadas = new Set(abiertas.map((s) => s.odoo_move_id).filter(Boolean) as number[]);
-    return [
-      ...abiertas.map((s) => filaSol(s, s.odoo_move_id ? porMove.get(s.odoo_move_id) : undefined)),
-      ...anteriores.filter((a) => a.estado === "pendiente").map(filaAnt),
-      ...borradores.filter((b) => !vinculadas.has(b.id) && !b.solicitud_id).map(filaOdoo),
-    ].sort((x, y) => orden(y.fecha).localeCompare(orden(x.fecha)));
-  }, [notas, anteriores, borradores]);
-
-  const filasTodas = useMemo<Fila[]>(() => {
-    const porSolicitud = new Map(notas.map((s) => [s.id, s]));
-    const enOdoo = new Set<number>();
-    const filas: Fila[] = [];
-    for (const o of odooMes) {
-      const s = o.solicitud_id ? porSolicitud.get(o.solicitud_id) : undefined;
-      if (s) {
-        enOdoo.add(s.id);
-        filas.push(filaSol(s, o));
-      } else {
-        filas.push(filaOdoo(o));
+  /** Las filas de cada pestaña. */
+  const filasDe = useCallback(
+    (v: VistaNC): Fila[] => {
+      switch (v) {
+        case "preaprobar":
+          return notas.filter((s) => s.estado === "por_preaprobar" && tiene(s.company_id, "preaprueba")).map((s) => filaSol(s));
+        case "mis_creadas":
+          return notas.filter((s) => tiene(s.company_id, "preaprueba") && s.estado !== "por_preaprobar" && soyYo(s)).map(conOdoo);
+        case "aprobar":
+          return notas.filter((s) => s.estado === "por_aprobar" && tiene(s.company_id, "aprueba")).map((s) => filaSol(s));
+        case "procesar": {
+          const vinculadas = new Set(notas.map((s) => s.odoo_move_id).filter(Boolean) as number[]);
+          return [
+            ...notas.filter((s) => s.estado === "aprobada" && tiene(s.company_id, "procesa")).map(conOdoo),
+            ...anteriores.filter((a) => a.puede_pasar && tiene(a.company_id, "procesa")).map(filaAnt),
+            // NC en borrador en Odoo hechas sin solicitud: también son de quien las termina.
+            ...borradores.filter((b) => !vinculadas.has(b.id) && !b.solicitud_id && tiene(b.company_id, "procesa")).map(filaOdoo),
+          ].sort(porFecha);
+        }
+        case "procesadas":
+          return notas.filter((s) => s.estado === "procesada" && tiene(s.company_id, "procesa")).map((s) => filaSol(s));
+        case "rma":
+          return notas.filter((s) => s.origen === "rma" && tiene(s.company_id, "rma")).map(conOdoo);
+        case "flujo": {
+          const ve = (sede: number) => veTodoLaSede(pasos[sede], superadmin);
+          const filas: Fila[] = notas.filter((s) => ve(s.company_id) && (!etapa || etapasDe(s).includes(etapa))).map(conOdoo);
+          if (!etapa || etapa === "rma") filas.push(...anteriores.filter((a) => ve(a.company_id)).map(filaAnt));
+          return filas.sort(porFecha);
+        }
+        case "odoo": {
+          const porSolicitud = new Map(notas.map((s) => [s.id, s]));
+          const enOdoo = new Set<number>();
+          const filas: Fila[] = [];
+          for (const o of odooMes) {
+            const s = o.solicitud_id ? porSolicitud.get(o.solicitud_id) : undefined;
+            if (s) {
+              enOdoo.add(s.id);
+              filas.push(filaSol(s, o));
+            } else {
+              filas.push(filaOdoo(o));
+            }
+          }
+          // Solicitudes del mes que no están (o todavía no) entre las NC de Odoo del mes.
+          for (const s of notas) {
+            if (!enOdoo.has(s.id) && mesDe(s.created_at) === mes && veOdooDeLaSede(pasos[s.company_id], superadmin)) filas.push(filaSol(s));
+          }
+          for (const a of anteriores) if (mesDe(a.created_at) === mes) filas.push(filaAnt(a));
+          return filas.sort(porFecha);
+        }
+        default:
+          return [];
       }
-    }
-    // Solicitudes del mes que no están (o todavía no) entre las NC de Odoo del mes.
-    for (const s of notas) if (!enOdoo.has(s.id) && mesDe(s.created_at) === mes) filas.push(filaSol(s));
-    for (const a of anteriores) if (mesDe(a.created_at) === mes) filas.push(filaAnt(a));
-    return filas.sort((x, y) => orden(y.fecha).localeCompare(orden(x.fecha)));
-  }, [notas, anteriores, odooMes, mes]);
+    },
+    [notas, anteriores, borradores, odooMes, mes, etapa, pasos, superadmin, tiene, soyYo, conOdoo],
+  );
 
-  const base: Fila[] = pestana === "mias" ? filasMias : pestana === "abiertas" ? filasEnCurso : pestana === "todas" ? filasTodas : [];
+  const base: Fila[] = useMemo(() => (vista ? filasDe(vista) : []), [vista, filasDe]);
   const visibles = useMemo(() => {
     const q = sinAcentos(filtros.q.trim());
     const palabras = q ? q.split(/\s+/) : [];
@@ -257,22 +323,33 @@ export function NotasCredito() {
     });
   }, [base, filtros]);
 
+  /** Cuántas hay en cada etapa del filtro de "Todo el flujo". */
+  const porEtapa = useMemo(() => {
+    const n: Record<EtapaNC, number> = { rma: 0, preaprueba: 0, aprueba: 0, procesados: 0 };
+    for (const s of notas) {
+      if (!veTodoLaSede(pasos[s.company_id], superadmin)) continue;
+      for (const e of etapasDe(s)) n[e]++;
+    }
+    n.rma += anteriores.filter((a) => veTodoLaSede(pasos[a.company_id], superadmin)).length;
+    return n;
+  }, [notas, anteriores, pasos, superadmin]);
+
   const sinSolicitud = (f: Fila) => f.tipo === "odoo" && f.odoo.estado !== "cancel" && !f.odoo.solicitud_id;
   const resumen = useMemo(() => {
-    const filasTodas = pestana === "todas" ? visibles : [];
-    const vigentes = filasTodas.filter((f) => f.tipo !== "ant" && !(f.tipo === "odoo" && f.odoo.estado === "cancel"));
+    const filas = vista === "odoo" ? visibles : [];
+    const vigentes = filas.filter((f) => f.tipo !== "ant" && !(f.tipo === "odoo" && f.odoo.estado === "cancel"));
     const total = new Map<string, number>();
-    for (const f of filasTodas) {
+    for (const f of filas) {
       const o = f.tipo === "odoo" ? f.odoo : f.tipo === "sol" ? f.odoo : undefined;
       if (o?.estado === "posted") total.set(o.moneda, (total.get(o.moneda) || 0) + o.total);
     }
     return {
-      enOdoo: filasTodas.filter((f) => (f.tipo === "odoo" || (f.tipo === "sol" && f.odoo)) && (f.tipo === "odoo" ? f.odoo.estado : f.odoo?.estado) !== "cancel").length,
-      sin: filasTodas.filter(sinSolicitud).length,
-      porHacer: vigentes.filter((f) => f.tipo === "sol" && !f.odoo && ESTADOS_ABIERTOS.includes(f.sol.estado)).length,
+      enOdoo: filas.filter((f) => (f.tipo === "odoo" || (f.tipo === "sol" && f.odoo)) && (f.tipo === "odoo" ? f.odoo.estado : f.odoo?.estado) !== "cancel").length,
+      sin: filas.filter(sinSolicitud).length,
+      porHacer: vigentes.filter((f) => f.tipo === "sol" && !f.odoo && ["por_preaprobar", "por_aprobar", "aprobada"].includes(f.sol.estado)).length,
       total: [...total.entries()],
     };
-  }, [visibles, pestana]);
+  }, [visibles, vista]);
 
   const abrir = (id: number | null) => router.replace(id ? `?id=${id}` : "?", { scroll: false });
 
@@ -296,28 +373,34 @@ export function NotasCredito() {
     }
   };
 
-  const pestanas: { id: Pestana; t: string; n?: number; ver: boolean }[] = [
-    { id: "mias", t: "Por hacer", n: filasMias.length, ver: tieneAlgunPaso },
-    { id: "abiertas", t: "En curso", n: filasEnCurso.length, ver: true },
-    { id: "todas", t: "Todas", ver: true },
-    { id: "responsables", t: "Responsables", ver: superadmin },
-  ];
+  /** Contador de cada pestaña: solo las que esperan a la sesión. */
+  const contador = (v: VistaNC) => (["preaprobar", "aprobar", "procesar"].includes(v) ? filasDe(v).length : 0);
+
+  /** Si la NC ya está en Odoo: lo que más importa en "Procesados". */
+  const estadoNC = (n: SolicitudNC, o?: NotaOdoo) => {
+    if (n.estado !== "aprobada" && n.estado !== "procesada") return null;
+    const estado = o?.estado || n.odoo_estado;
+    if (!n.odoo_move_id) return <Badge className="border border-rose-200 bg-rose-50 text-[11px] text-rose-700">NC sin crear</Badge>;
+    if (estado === "posted") return <Badge className={`${ESTADO_ODOO.posted.c} border text-[11px]`}>NC creada · {o?.nombre || n.odoo_move_nombre}</Badge>;
+    return <Badge className={`${ESTADO_ODOO.draft.c} border text-[11px]`}>NC creada en borrador</Badge>;
+  };
 
   const tarjeta = (f: Fila) => {
     if (f.tipo === "sol") {
       const n = f.sol;
+      const productos = n.lineas?.length
+        ? n.lineas.map((l) => `${l.cantidad > 1 ? `${l.cantidad} × ` : ""}${l.producto}${l.seriales.length ? ` (${l.seriales.join(", ")})` : ""}`).join(" · ")
+        : n.producto;
       return (
         <button key={f.clave} type="button" onClick={() => abrir(n.id)} className="block w-full text-left">
           <Card className={`rounded-3xl border-none shadow-sm transition hover:shadow-md ${esMia(n) ? "ring-2 ring-orange-300" : ""}`}>
             <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-bold text-slate-900">{f.odoo ? f.odoo.nombre : `NC-${n.id}`}</span>
-                  {f.odoo && <span className="text-xs text-slate-400">NC-{n.id}</span>}
+                  <span className="font-bold text-slate-900">{f.odoo?.estado === "posted" ? f.odoo.nombre : `NC-${n.id}`}</span>
+                  {f.odoo?.estado === "posted" && <span className="text-xs text-slate-400">NC-{n.id}</span>}
                   <Badge className={`${COLOR_ESTADO[n.estado]} border text-[11px]`}>{ETIQUETA_ESTADO[n.estado]}</Badge>
-                  {f.odoo && f.odoo.estado !== "posted" && (
-                    <Badge className={`${ESTADO_ODOO[f.odoo.estado]?.c || ""} border text-[11px]`}>{ESTADO_ODOO[f.odoo.estado]?.t || f.odoo.estado}</Badge>
-                  )}
+                  {estadoNC(n, f.odoo)}
                   <Badge variant="outline" className="text-[11px]">
                     {n.origen === "rma" ? `RMA N.º ${n.case_number}` : "Directa"}
                   </Badge>
@@ -326,8 +409,8 @@ export function NotasCredito() {
                 <p className="truncate text-sm text-slate-700">
                   {n.cliente || "—"}
                   {n.factura_nombre ? <span className="text-slate-400"> · Factura {n.factura_nombre}</span> : null}
-                  {n.producto ? <span className="text-slate-400"> · {n.producto}</span> : null}
                 </p>
+                {productos && <p className="line-clamp-1 text-sm text-slate-600">{productos}</p>}
                 <p className="line-clamp-1 text-sm text-slate-500">{n.motivo}</p>
               </div>
               <div className="shrink-0 text-left sm:text-right">
@@ -408,7 +491,7 @@ export function NotasCredito() {
               </Button>
             ) : a.estado === "pendiente" ? (
               <p className="max-w-[16rem] text-xs text-slate-400 sm:text-right">
-                {superadmin || (pasos[a.company_id] ?? []).includes("procesa")
+                {superadmin || tiene(a.company_id, "procesa")
                   ? "La sede no tiene el flujo activo: completa sus responsables."
                   : "La pasa al flujo el SuperAdmin o quien hace la nota."}
               </p>
@@ -419,6 +502,8 @@ export function NotasCredito() {
     );
   };
 
+  const etapas: (EtapaNC | "")[] = ["", "rma", "preaprueba", "aprueba", "procesados"];
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-8">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -428,7 +513,7 @@ export function NotasCredito() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Notas de crédito</h1>
-            <p className="text-sm text-slate-500">Las de Odoo y las solicitudes del panel, en una sola lista.</p>
+            <p className="text-sm text-slate-500">Cada quien ve lo que le toca en el flujo de aprobación.</p>
           </div>
         </div>
         {sedesQueCrean.length > 0 && (
@@ -439,79 +524,96 @@ export function NotasCredito() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {pestanas
-          .filter((p) => p.ver)
-          .map((p) => (
+        {vistas.map((v) => {
+          const n = contador(v);
+          return (
             <button
-              key={p.id}
+              key={v}
               type="button"
-              onClick={() => setPestana(p.id)}
-              className={`rounded-full px-4 py-1.5 text-sm font-medium ${pestana === p.id ? "bg-slate-900 text-white" : "bg-white text-slate-600 shadow-sm hover:bg-slate-50"}`}
+              onClick={() => {
+                setVista(v);
+                setFiltros(FILTROS_VACIOS);
+              }}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium ${vista === v ? "bg-slate-900 text-white" : "bg-white text-slate-600 shadow-sm hover:bg-slate-50"}`}
             >
-              {p.t}
-              {p.n ? <span className="ml-1.5 rounded-full bg-orange-500 px-1.5 text-[11px] text-white">{p.n}</span> : null}
+              {ETIQUETA_VISTA[v]}
+              {n ? <span className="ml-1.5 rounded-full bg-orange-500 px-1.5 text-[11px] text-white">{n}</span> : null}
             </button>
-          ))}
+          );
+        })}
       </div>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-      {errorOdoo && pestana !== "responsables" && (
+      {errorOdoo && veAlgoDeOdoo && (vista === "odoo" || vista === "procesar") && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           No se pudo leer Odoo ({errorOdoo}): faltan las notas de crédito que están allá.
         </div>
       )}
 
-      {pestana !== "responsables" && (
+      {vista === "flujo" && (
+        <div className="flex flex-wrap gap-2">
+          {etapas.map((e) => (
+            <button
+              key={e || "todas"}
+              type="button"
+              onClick={() => setEtapa(e)}
+              className={`rounded-xl border px-3 py-1.5 text-sm ${etapa === e ? "border-purple-500 bg-purple-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-purple-300"}`}
+            >
+              {e ? ETIQUETA_ETAPA[e] : "Todo"}
+              {e ? <span className={`ml-1.5 text-xs ${etapa === e ? "text-purple-100" : "text-slate-400"}`}>{porEtapa[e]}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {vista && vista !== "responsables" && (
         <FiltrosNC
           filtros={filtros}
           onCambio={setFiltros}
           sedes={sedesVisibles}
-          estados={ESTADOS_FILTRO[pestana]}
+          estados={ESTADOS_VISTA[vista] ?? []}
+          conOrigen={vista === "flujo" || vista === "odoo" || vista === "procesar"}
           total={base.length}
           coinciden={visibles.length}
-          {...(pestana === "todas" ? { mes, onMes: setMes } : {})}
+          {...(vista === "odoo" ? { mes, onMes: setMes } : {})}
         />
       )}
 
-      {pestana === "todas" && (
-        <div className="space-y-4">
-          {!cargandoMes && (
-            <div className="grid gap-3 sm:grid-cols-4">
-              <div className="rounded-2xl bg-white p-4 shadow-sm">
-                <p className="text-xs font-medium text-slate-500">En Odoo</p>
-                <p className="text-2xl font-bold text-slate-900">{resumen.enOdoo}</p>
-                <p className="text-xs text-slate-400">sin contar anuladas</p>
-              </div>
-              <div className="rounded-2xl bg-white p-4 shadow-sm">
-                <p className="text-xs font-medium text-slate-500">Sin solicitud</p>
-                <p className={`text-2xl font-bold ${resumen.sin ? "text-orange-600" : "text-slate-900"}`}>{resumen.sin}</p>
-                <p className="text-xs text-slate-400">hechas en Odoo sin pasar por la aprobación</p>
-              </div>
-              <div className="rounded-2xl bg-white p-4 shadow-sm">
-                <p className="text-xs font-medium text-slate-500">Todavía no en Odoo</p>
-                <p className="text-2xl font-bold text-slate-900">{resumen.porHacer}</p>
-                <p className="text-xs text-slate-400">solicitudes del mes en el flujo</p>
-              </div>
-              <div className="rounded-2xl bg-white p-4 shadow-sm">
-                <p className="text-xs font-medium text-slate-500">Total publicado</p>
-                {resumen.total.length ? (
-                  resumen.total.map(([mon, t]) => (
-                    <p key={mon} className="text-lg font-bold text-slate-900">
-                      {formatoMonto(t, mon)}
-                    </p>
-                  ))
-                ) : (
-                  <p className="text-2xl font-bold text-slate-900">—</p>
-                )}
-              </div>
-            </div>
-          )}
+      {vista === "odoo" && !cargandoMes && (
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-slate-500">En Odoo</p>
+            <p className="text-2xl font-bold text-slate-900">{resumen.enOdoo}</p>
+            <p className="text-xs text-slate-400">sin contar anuladas</p>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-slate-500">Sin solicitud</p>
+            <p className={`text-2xl font-bold ${resumen.sin ? "text-orange-600" : "text-slate-900"}`}>{resumen.sin}</p>
+            <p className="text-xs text-slate-400">hechas en Odoo sin pasar por la aprobación</p>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-slate-500">Todavía no en Odoo</p>
+            <p className="text-2xl font-bold text-slate-900">{resumen.porHacer}</p>
+            <p className="text-xs text-slate-400">solicitudes del mes en el flujo</p>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-slate-500">Total publicado</p>
+            {resumen.total.length ? (
+              resumen.total.map(([mon, t]) => (
+                <p key={mon} className="text-lg font-bold text-slate-900">
+                  {formatoMonto(t, mon)}
+                </p>
+              ))
+            ) : (
+              <p className="text-2xl font-bold text-slate-900">—</p>
+            )}
+          </div>
         </div>
       )}
 
-      {pestana === "responsables" ? (
+      {vista === "responsables" ? (
         <Responsables />
-      ) : cargando || (pestana === "todas" && cargandoMes) ? (
+      ) : cargando || (vista === "odoo" && cargandoMes) ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
         </div>
@@ -519,13 +621,7 @@ export function NotasCredito() {
         <Card className="rounded-3xl border-none shadow-sm">
           <CardContent className="py-12 text-center text-slate-400">
             <FileText className="mx-auto mb-3 h-12 w-12 opacity-50" />
-            <p>
-              {pestana === "mias"
-                ? "Nada esperando por ti."
-                : pestana === "abiertas"
-                  ? "No hay notas de crédito en curso."
-                  : "No hay notas de crédito este mes."}
-            </p>
+            <p>{vista ? VACIO[vista] : "No tienes un paso en el flujo de notas de crédito."}</p>
           </CardContent>
         </Card>
       ) : (

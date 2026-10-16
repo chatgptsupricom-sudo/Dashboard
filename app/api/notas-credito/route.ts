@@ -1,5 +1,5 @@
 import { requireSession } from "@/lib/auth/roles";
-import { accesoNC, puedeVerSolicitud, requireNC, soloPreaprueba } from "@/lib/notas-credito/acceso";
+import { accesoNC, puedeVerSolicitud, requireNC, veAnteriores } from "@/lib/notas-credito/acceso";
 import { listarAnteriores } from "@/lib/notas-credito/anteriores";
 import { sedeConFlujo } from "@/lib/notas-credito/datos";
 import { crearDirecta, ErrorNC, listar, sincronizarAprobadas } from "@/lib/notas-credito/solicitudes";
@@ -33,7 +33,9 @@ export async function GET(request: NextRequest) {
   try {
     const estado = sp.get("estado") as EstadoNC | null;
     if (sp.get("conteo") === "1") {
-      const abiertas = await listar(acceso!.sedes ?? Object.keys(acceso!.pasos).map(Number));
+      const abiertas = (await listar(acceso!.sedes ?? Object.keys(acceso!.pasos).map(Number))).filter((s) =>
+        puedeVerSolicitud(acceso!, s),
+      );
       const mias = abiertas.filter((s) => {
         const paso = PASO_DEL_ESTADO[s.estado];
         return paso && ESTADOS_ABIERTOS.includes(s.estado) && (acceso!.pasos[s.company_id] ?? []).includes(paso);
@@ -49,12 +51,12 @@ export async function GET(request: NextRequest) {
     } catch (e: any) {
       console.error("[notas-credito] sincronizar con Odoo:", e?.message);
     }
-    // IT (solo preaprueba) ve lo que espera su preaprobacion y lo que ya paso por el.
+    // Cada paso ve lo suyo (lib/notas-credito/acceso.ts); el SuperAdmin y quien aprueba, todo.
     notas = notas.filter((s) => puedeVerSolicitud(acceso!, s));
     let anteriores: Awaited<ReturnType<typeof listarAnteriores>> = [];
     try {
       anteriores = (await listarAnteriores(acceso!.sedes, acceso!.autor, acceso!.superadmin)).filter(
-        (a) => !soloPreaprueba(acceso!, a.company_id),
+        (a) => veAnteriores(acceso!, a.company_id),
       );
     } catch (e: any) {
       console.error("[notas-credito] solicitudes anteriores:", e?.message);
@@ -68,6 +70,7 @@ export async function GET(request: NextRequest) {
       anteriores,
       pasos: acceso!.pasos,
       superadmin: acceso!.superadmin,
+      yo: { nombre: acceso!.autor.nombre, email: acceso!.autor.email },
       sedes_activas: activas,
     });
   } catch (e: any) {
@@ -76,7 +79,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** POST { company_id, factura_id, monto, motivo }: nota de crédito que no viene de RMA (la crea quien la hace, o el SuperAdmin; pasa por IT). */
+/**
+ * POST { company_id, factura_id, lineas: [{ linea_id, cantidad, seriales }], motivo }:
+ * nota de crédito que no viene de RMA. La crea quien preaprueba (o el
+ * SuperAdmin) y nace preaprobada: le llega a quien aprueba.
+ */
 export async function POST(request: NextRequest) {
   const { acceso, error } = await requireNC(request);
   if (error) return error;
@@ -85,7 +92,7 @@ export async function POST(request: NextRequest) {
     const id = await crearDirecta({
       companyId: Number(body.company_id),
       facturaId: Number(body.factura_id),
-      monto: body.monto,
+      lineas: Array.isArray(body.lineas) ? body.lineas.slice(0, 200) : [],
       motivo: String(body.motivo ?? ""),
       autor: acceso!.autor,
       origenPeticion: getPublicOrigin(request),

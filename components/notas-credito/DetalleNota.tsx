@@ -22,7 +22,26 @@ import { useCallback, useEffect, useState } from "react";
 
 type Puede = { preaprobar: boolean; aprobar: boolean; rechazar: boolean; factura: boolean; odoo: boolean; superadmin: boolean };
 type Evento = { accion: string; por: string | null; nota: string | null; created_at: string };
-type Detalle = { solicitud: SolicitudNC; eventos: Evento[]; borrador: BorradorNC | null; candidatas: CandidataNC[]; puede: Puede };
+/** Lo que RMA mandó con la solicitud (lib/notas-credito/solicitudes.ts, detalle). */
+type DatosRma = {
+  case_number: string;
+  cliente: string;
+  factura: string;
+  equipo: string;
+  serial: string | null;
+  falla: string;
+  diagnostico: string;
+  observaciones: string;
+  imagenes: { name?: string; url: string }[];
+};
+type Detalle = {
+  solicitud: SolicitudNC;
+  eventos: Evento[];
+  borrador: BorradorNC | null;
+  candidatas: CandidataNC[];
+  puede: Puede;
+  rma: DatosRma | null;
+};
 
 const fecha = (v: string | null | undefined) =>
   v ? new Date(v).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short", timeZone: "America/Caracas" }) : "";
@@ -197,7 +216,9 @@ export function DetalleNota({ id, onCerrar, onCambio }: { id: number; onCerrar: 
                 </p>
               </div>
               <div className="rounded-2xl bg-orange-50/60 p-4 space-y-1">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700/70">Motivo</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700/70">
+                  {s.origen === "rma" ? "Por qué la nota de crédito" : "Motivo"}
+                </p>
                 <p className="whitespace-pre-wrap text-slate-800">{s.motivo}</p>
                 <p className="pt-1 text-xs text-slate-500">
                   {s.creado_por || "—"} · {fecha(s.created_at)}
@@ -205,10 +226,96 @@ export function DetalleNota({ id, onCerrar, onCambio }: { id: number; onCerrar: 
               </div>
             </div>
 
+            {/* Productos de una NC directa */}
+            {!!s.lineas?.length && (
+              <div className="overflow-x-auto rounded-2xl border">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Producto</th>
+                      <th className="px-3 py-2 text-left">Seriales</th>
+                      <th className="px-3 py-2 text-right">Cant.</th>
+                      <th className="px-3 py-2 text-right">C/u con imp.</th>
+                      <th className="px-3 py-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {s.lineas.map((l) => (
+                      <tr key={l.linea_factura_id}>
+                        <td className="px-3 py-2">
+                          <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{l.marca}</span>
+                          {l.codigo ? <span className="font-mono text-slate-500">[{l.codigo}] </span> : null}
+                          {l.producto}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-[11px] text-slate-600">{l.seriales.join(", ") || "—"}</td>
+                        <td className="px-3 py-2 text-right">{l.cantidad}</td>
+                        <td className="px-3 py-2 text-right">{l.precio_unidad.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-medium">{l.total.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Lo que mandó RMA */}
+            {d!.rma && (
+              <div className="space-y-2 rounded-2xl border border-slate-200 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">El caso de RMA</p>
+                <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                  {d!.rma.equipo && (
+                    <p>
+                      <span className="text-slate-500">Equipo:</span> {d!.rma.equipo}
+                    </p>
+                  )}
+                  {d!.rma.serial && (
+                    <p>
+                      <span className="text-slate-500">Serial:</span> <span className="font-mono text-xs">{d!.rma.serial}</span>
+                    </p>
+                  )}
+                  {d!.rma.factura && (
+                    <p>
+                      <span className="text-slate-500">Factura que anotó RMA:</span> {d!.rma.factura}
+                    </p>
+                  )}
+                  {d!.rma.cliente && (
+                    <p>
+                      <span className="text-slate-500">Cliente en el caso:</span> {d!.rma.cliente}
+                    </p>
+                  )}
+                </div>
+                {d!.rma.falla && (
+                  <p className="whitespace-pre-wrap">
+                    <span className="text-slate-500">Falla reportada:</span> {d!.rma.falla}
+                  </p>
+                )}
+                {d!.rma.diagnostico && (
+                  <p className="whitespace-pre-wrap">
+                    <span className="text-slate-500">Diagnóstico del técnico:</span> {d!.rma.diagnostico}
+                  </p>
+                )}
+                {d!.rma.observaciones && (
+                  <p className="whitespace-pre-wrap">
+                    <span className="text-slate-500">Observaciones:</span> {d!.rma.observaciones}
+                  </p>
+                )}
+                {d!.rma.imagenes.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {d!.rma.imagenes.map((img, i) => (
+                      <a key={i} href={img.url} target="_blank" rel="noreferrer" title={img.name || "Imagen"}>
+                        <img src={img.url} alt={img.name || "Imagen del caso"} className="h-20 w-20 rounded-lg border object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Pasos */}
             <ol className="grid gap-2 sm:grid-cols-4">
               {[
                 { t: s.origen === "rma" ? "Solicitada (RMA)" : "Creada", hecho: true, quien: s.creado_por, cuando: s.created_at },
+                // Las directas las crea quien preaprueba: nacen preaprobadas.
                 // Las directas viejas iban directo a aprobar: solo se muestra el
                 // paso si la nota paso (o esta pasando) por la preaprobacion.
                 ...(s.origen === "rma" || s.preaprobado_at || s.estado === "por_preaprobar" || s.rechazado_paso === "preaprueba"
