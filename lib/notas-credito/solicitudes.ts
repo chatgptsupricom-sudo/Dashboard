@@ -62,6 +62,8 @@ function fila(f: any): SolicitudNC & { created_ts: number } {
   const s = { ...f };
   for (const k of NUM) s[k] = s[k] == null ? null : Number(s[k]);
   s.created_ts = Number(f.created_ts) || 0;
+  // El enlace del cliente es suyo: no sale en las respuestas del panel.
+  delete s.tracking_token;
   return s;
 }
 
@@ -73,7 +75,7 @@ async function leer(where: string, params: unknown[], limite = 300): Promise<(So
     params,
   );
   const sols = (r.rows as any[]).map(fila);
-  const directas = sols.filter((s) => s.origen === "directa").map((s) => s.id);
+  const directas = sols.filter((s) => s.origen !== "rma").map((s) => s.id);
   if (directas.length) {
     const lineas = await lineasDe(directas);
     for (const s of sols) if (lineas.has(s.id)) s.lineas = lineas.get(s.id);
@@ -253,7 +255,22 @@ export async function crearDesdeRma(datos: {
   return id;
 }
 
-type LineaPedida = { linea_id: unknown; cantidad?: unknown; seriales?: unknown };
+export type LineaPedida = { linea_id: unknown; cantidad?: unknown; seriales?: unknown };
+
+/** Los productos de una solicitud recién creada (nc_solicitud_lineas). */
+export async function guardarLineas(id: number, lineas: LineaSolicitud[]): Promise<void> {
+  for (const l of lineas) {
+    await query(
+      `INSERT INTO nc_solicitud_lineas
+         (solicitud_id, linea_factura_id, product_id, producto, codigo, marca, cantidad, precio_unidad, total, seriales)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, l.linea_factura_id, l.product_id, l.producto.slice(0, 500), l.codigo.slice(0, 100) || null, l.marca.slice(0, 150) || null,
+        l.cantidad, l.precio_unidad, l.total, l.seriales.join("\n") || null,
+      ],
+    );
+  }
+}
 
 /**
  * Valida los productos elegidos contra la factura en Odoo: que la línea sea
@@ -262,7 +279,7 @@ type LineaPedida = { linea_id: unknown; cantidad?: unknown; seriales?: unknown }
  * los que ya tiene otra solicitud; si Odoo no tiene seriales de esa línea, se
  * aceptan escritos a mano).
  */
-function validarLineas(pedidas: LineaPedida[], productos: ProductoFactura[]): LineaSolicitud[] {
+export function validarLineas(pedidas: LineaPedida[], productos: ProductoFactura[]): LineaSolicitud[] {
   if (!pedidas.length) throw new ErrorNC("Elige al menos un producto de la factura.");
   const porLinea = new Map(productos.map((p) => [p.linea_id, p]));
   const vistas = new Set<number>();
@@ -356,17 +373,7 @@ export async function crearDirecta(datos: {
     ],
   );
   const id = Number((ins.rows as any).insertId);
-  for (const l of lineas) {
-    await query(
-      `INSERT INTO nc_solicitud_lineas
-         (solicitud_id, linea_factura_id, product_id, producto, codigo, marca, cantidad, precio_unidad, total, seriales)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, l.linea_factura_id, l.product_id, l.producto.slice(0, 500), l.codigo.slice(0, 100) || null, l.marca.slice(0, 150) || null,
-        l.cantidad, l.precio_unidad, l.total, l.seriales.join("\n") || null,
-      ],
-    );
-  }
+  await guardarLineas(id, lineas);
   await registrarEvento(id, "creada", datos.autor, motivo);
   await registrarEvento(id, "preaprobada", datos.autor, "La creó quien preaprueba: pasa directo a aprobación.");
   const sol = await obtener(id);

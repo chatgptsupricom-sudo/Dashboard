@@ -16,7 +16,7 @@ export type EstadoFiltro =
   | "anulada"
   | "fuera_flujo"
   | "anterior";
-export type OrigenFiltro = "rma" | "directa" | "odoo";
+export type OrigenFiltro = "rma" | "cliente" | "directa" | "odoo";
 
 export type Filtros = { q: string; sede: number; estado: EstadoFiltro | ""; origen: OrigenFiltro | "" };
 export const FILTROS_VACIOS: Filtros = { q: "", sede: 0, estado: "", origen: "" };
@@ -37,6 +37,7 @@ export const ETIQUETA_ORIGEN: Record<OrigenFiltro, string> = {
   rma: "De RMA",
   directa: "Directa (panel)",
   odoo: "Hecha en Odoo, sin solicitud",
+  cliente: "Pedida por el cliente (portal)",
 };
 
 const TODAS = "todas";

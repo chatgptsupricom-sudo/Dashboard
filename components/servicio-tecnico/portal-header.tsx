@@ -5,26 +5,43 @@ const SITIO = "https://supricom.com.ve";
 const LOGO = `${SITIO}/wp-content/uploads/2025/06/LOGO-SUPRICOM.png`;
 const EMAIL = "soporte.tecnico@supricom.com.ve";
 
-export function PortalHeader({ locale }: { locale: string }) {
+/**
+ * `inicio`: a dónde lleva el logo (por defecto, el portal de servicio técnico).
+ * `email`: el de la franja de contacto; null la oculta (notas de crédito).
+ */
+export function PortalHeader({
+  locale,
+  inicio,
+  email = EMAIL,
+}: {
+  locale: string;
+  inicio?: string;
+  email?: string | null;
+}) {
   return (
     <header>
       {/* Franja de contacto, igual a la del sitio. En móvil se oculta para no
           robarle la pantalla al contenido. */}
-      <div className="portal-topbar hidden sm:block">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-end gap-x-6 gap-y-1 px-5 py-2 text-[13px] text-white">
-          <a
-            href={`mailto:${EMAIL}`}
-            className="flex items-center gap-1.5 hover:underline"
-          >
-            <Mail className="h-3.5 w-3.5" aria-hidden />
-            {EMAIL}
-          </a>
+      {email && (
+        <div className="portal-topbar hidden sm:block">
+          <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-end gap-x-6 gap-y-1 px-5 py-2 text-[13px] text-white">
+            <a
+              href={`mailto:${email}`}
+              className="flex items-center gap-1.5 hover:underline"
+            >
+              <Mail className="h-3.5 w-3.5" aria-hidden />
+              {email}
+            </a>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="border-b border-[color:var(--portal-line)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 py-4">
-          <Link href={`/${locale}/servicio-tecnico`} className="shrink-0">
+          <Link
+            href={inicio ?? `/${locale}/servicio-tecnico`}
+            className="shrink-0"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={LOGO}

@@ -10,6 +10,9 @@
  *   - Cualquier otra: la crea "preaprueba" eligiendo la factura y sus
  *     productos (con serial); nace preaprobada y va directo a "aprueba" →
  *     "procesa". Quien procesa no crea solicitudes: hace la NC en Odoo.
+ *   - Pedida por el cliente en su servicio aparte (NC_HOSTS, /<idioma>/notas-credito):
+ *     factura + RIF, productos con serial y motivo; espera la preaprobación
+ *     como una de RMA, y el cliente la sigue con su enlace (tracking_token).
  *   Si la rechazan en preaprobación o aprobación, no procede.
  *
  * Cada quien ve lo de su paso (vistasDe); el SuperAdmin y quien aprueba ven
@@ -21,7 +24,45 @@
  */
 
 export type EstadoNC = "por_preaprobar" | "por_aprobar" | "aprobada" | "procesada" | "rechazada";
-export type OrigenNC = "rma" | "directa";
+export type OrigenNC = "rma" | "directa" | "cliente";
+
+export const ETIQUETA_ORIGEN_NC: Record<OrigenNC, string> = {
+  rma: "RMA",
+  directa: "Directa",
+  cliente: "Cliente (portal)",
+};
+
+/** Motivos que el cliente elige en el portal (y escribe el detalle). */
+export type MotivoCliente = "devolucion" | "error_precio" | "producto_equivocado" | "faltante" | "otro";
+export const MOTIVOS_CLIENTE: MotivoCliente[] = ["devolucion", "error_precio", "producto_equivocado", "faltante", "otro"];
+export const ETIQUETA_MOTIVO_CLIENTE: Record<MotivoCliente, string> = {
+  devolucion: "Devolución de mercancía",
+  error_precio: "Error en el precio facturado",
+  producto_equivocado: "Llegó un producto distinto al que pedí",
+  faltante: "Faltó mercancía en la entrega",
+  otro: "Otro motivo",
+};
+
+/** Lo que el cliente ve en su enlace de seguimiento (sin montos ni nombres del equipo). */
+export type EtapaCliente = "en_revision" | "aprobada" | "emitida" | "rechazada";
+export type SeguimientoCliente = {
+  numero: string;
+  etapa: EtapaCliente;
+  fecha: string;
+  factura: string;
+  motivo: string;
+  productos: { producto: string; codigo: string; cantidad: number; seriales: string[] }[];
+  nota_odoo: string | null;
+  motivo_rechazo: string | null;
+  actualizado: string | null;
+};
+
+export function etapaCliente(estado: EstadoNC): EtapaCliente {
+  if (estado === "aprobada") return "aprobada";
+  if (estado === "procesada") return "emitida";
+  if (estado === "rechazada") return "rechazada";
+  return "en_revision";
+}
 
 /**
  * Pasos del flujo, cada uno con sus responsables por sede (tabla
@@ -61,11 +102,11 @@ export function flujoCompleto(pasos: Partial<Record<PasoNC, string[]>> | null | 
 export type UsuarioPanel = { email: string; nombre: string; rol: string; cids: number | null; activo: boolean };
 
 /**
- * Las de RMA esperan la preaprobación. Las directas las crea quien preaprueba,
- * así que nacen preaprobadas y esperan a quien aprueba.
+ * Las de RMA y las del cliente esperan la preaprobación. Las directas las
+ * crea quien preaprueba, así que nacen preaprobadas y esperan a quien aprueba.
  */
 export function estadoInicial(origen: OrigenNC): EstadoNC {
-  return origen === "rma" ? "por_preaprobar" : "por_aprobar";
+  return origen === "directa" ? "por_aprobar" : "por_preaprobar";
 }
 
 /** Quién tiene la solicitud en sus manos en cada estado. */
@@ -174,6 +215,10 @@ export type SolicitudNC = {
   odoo_total: number | null;
   procesado_por: string | null;
   procesado_at: string | null;
+  /** Las que pide el cliente en el portal. */
+  motivo_tipo?: MotivoCliente | null;
+  contacto_telefono?: string | null;
+  contacto_email?: string | null;
   lineas?: LineaSolicitud[];
 };
 

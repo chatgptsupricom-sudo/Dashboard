@@ -13,9 +13,12 @@ import { getTranslations } from "next-intl/server";
 export async function SucursalBadge({
   locale,
   nombre,
+  cambiarHref,
 }: {
   locale: string;
   nombre: string;
+  /** A dónde lleva "Cambiar" (por defecto, el selector del portal de servicio técnico). */
+  cambiarHref?: string;
 }) {
   const t = await getTranslations({ locale, namespace: "servicioTecnico" });
 
@@ -27,7 +30,7 @@ export async function SucursalBadge({
           {t("sucursalBadge", { nombre })}
         </span>
         <Link
-          href={`/${locale}/servicio-tecnico`}
+          href={cambiarHref ?? `/${locale}/servicio-tecnico`}
           className="text-[color:var(--portal-muted)] hover:text-[color:var(--portal-primary)] hover:underline"
         >
           {t("sucursalBadgeChange")}
