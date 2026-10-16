@@ -95,6 +95,20 @@ export async function GET(request: NextRequest) {
     totales.eachCell((cell: any) => {
       cell.border = { top: { style: "double", color: { argb: AZUL } } };
     });
+    // Pagina Web va aparte: se ve en el reporte pero no suma al TOTAL.
+    if (data.totales.paginaWeb.ventas > 0) {
+      const web = wsResumen.addRow([
+        "Página Web (no suma al total)",
+        "",
+        "",
+        "",
+        "",
+        data.totales.paginaWeb.ventas,
+        data.totales.paginaWeb.monto,
+        "",
+      ]);
+      web.font = { italic: true };
+    }
 
     // --- Hoja 2: detalle venta por venta ---
     const wsVentas = wb.addWorksheet("Ventas cerradas");

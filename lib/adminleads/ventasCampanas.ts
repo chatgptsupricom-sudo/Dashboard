@@ -57,6 +57,8 @@ export type ReporteVentasCampanas = {
     leadsIngresados: number;
     leadsConvertidos: number;
     conversionPct: number | null;
+    /** Ventas de "Pagina Web": se informan aparte, no suman al total. */
+    paginaWeb: { ventas: number; monto: number };
   };
 };
 
@@ -235,6 +237,7 @@ export async function calcularVentasCampanas({
 
   // Las ventas de "Pagina Web" salen en las tablas pero no suman al total.
   const queSuman = ventas.filter((v) => canalSumaVentas(v.canal));
+  const web = ventas.filter((v) => !canalSumaVentas(v.canal));
   const montoTotal = r2(queSuman.reduce((s, v) => s + v.monto, 0));
   const ingresadosTotal = resumen.reduce((s, c) => s + c.leadsIngresados, 0);
   const convertidosTotal = resumen.reduce((s, c) => s + c.leadsConvertidos, 0);
@@ -251,6 +254,7 @@ export async function calcularVentasCampanas({
       leadsIngresados: ingresadosTotal,
       leadsConvertidos: convertidosTotal,
       conversionPct: pct(convertidosTotal, ingresadosTotal),
+      paginaWeb: { ventas: web.length, monto: r2(web.reduce((s, v) => s + v.monto, 0)) },
     },
   };
 }

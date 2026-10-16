@@ -341,7 +341,7 @@ export default function CampaignMetricsTab({ sede, fechaInicio, fechaFin }: Prop
                   );
                   return (
                     <tr key={c.campaign_name} className="hover:bg-zinc-50/80 transition-colors group">
-                      <td className="px-4 py-3 font-medium text-zinc-900 whitespace-nowrap max-w-[200px] truncate">
+                      <td className="px-4 py-3 font-medium text-zinc-900 min-w-[220px] max-w-[320px] whitespace-normal break-words leading-snug">
                         {c.campaign_name}
                       </td>
                       {isSuperAdmin && (
