@@ -49,6 +49,7 @@ function SolicitarNotaCredito() {
   const [cargandoCaso, setCargandoCaso] = useState(false);
 
   const [motivo, setMotivo] = useState("");
+  const [noReparable, setNoReparable] = useState("");
   const [observaciones, setObservaciones] = useState("");
   const [imagenes, setImagenes] = useState<{ name: string; url: string }[]>([]);
   const [enviando, setEnviando] = useState(false);
@@ -139,6 +140,7 @@ function SolicitarNotaCredito() {
           case_id: caso.id,
           item_id: varios ? itemId : null,
           motivo,
+          no_reparable: noReparable,
           observations: observaciones,
           images: imagenes,
         }),
@@ -307,7 +309,17 @@ function SolicitarNotaCredito() {
                 value={motivo}
                 onChange={(e) => setMotivo(e.target.value)}
                 placeholder={t("nc_motivo_placeholder")}
-                rows={5}
+                rows={4}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium text-slate-700">{t("nc_no_reparable")} *</Label>
+              <Textarea
+                value={noReparable}
+                onChange={(e) => setNoReparable(e.target.value)}
+                placeholder={t("nc_no_reparable_placeholder")}
+                rows={3}
                 className="mt-1"
               />
             </div>
@@ -355,7 +367,7 @@ function SolicitarNotaCredito() {
             <div className="flex justify-end">
               <Button
                 onClick={enviar}
-                disabled={enviando || motivo.trim().length < 10}
+                disabled={enviando || motivo.trim().length < 10 || noReparable.trim().length < 10}
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >
                 {enviando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}

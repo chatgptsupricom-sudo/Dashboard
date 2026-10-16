@@ -7,8 +7,13 @@
  *   - Equipo de RMA que no se puede reparar: RMA la solicita → la preaprueba
  *     "preaprueba" (un filtro, para que a quien aprueba no le lleguen todas) →
  *     la aprueba "aprueba" → le llega a "procesa" como orden de crédito.
- *   - Cualquier otra: la crea "preaprueba" y va directo a "aprueba" → "procesa".
+ *   - Cualquier otra: la crea "preaprueba" eligiendo la factura y sus
+ *     productos (con serial); nace preaprobada y va directo a "aprueba" →
+ *     "procesa". Quien procesa no crea solicitudes: hace la NC en Odoo.
  *   Si la rechazan en preaprobación o aprobación, no procede.
+ *
+ * Cada quien ve lo de su paso (vistasDe); el SuperAdmin y quien aprueba ven
+ * además todo el flujo de la sede.
  *
  * Una sede tiene el flujo activo cuando los tres pasos tienen al menos una
  * persona (flujoCompleto). Mientras no, sus solicitudes de RMA le siguen
@@ -39,7 +44,7 @@ export const ETIQUETA_PASO: Record<PasoNC, string> = {
 
 export const DESCRIPCION_PASO: Record<PasoNC, string> = {
   rma: "Servicio Técnico de la sede: recibe los avisos de sus solicitudes (aprobada, rechazada, hecha). Opcional.",
-  preaprueba: "Filtra las solicitudes de RMA y crea las notas de crédito que no vienen de RMA.",
+  preaprueba: "Filtra las solicitudes de RMA y crea las notas de crédito que no vienen de RMA (nacen preaprobadas).",
   aprueba: "Aprueba o rechaza. Es el único que puede aprobar una nota de crédito.",
   procesa: "Recibe la orden de crédito aprobada y la hace, en el panel o en Odoo.",
 };
@@ -56,12 +61,11 @@ export function flujoCompleto(pasos: Partial<Record<PasoNC, string[]>> | null | 
 export type UsuarioPanel = { email: string; nombre: string; rol: string; cids: number | null; activo: boolean };
 
 /**
- * Toda solicitud nueva empieza esperando la preaprobacion (IT). Antes las
- * directas iban directo a aprobar porque las creaba quien preaprueba; ahora
- * las crea quien procesa, asi que tambien pasan por IT.
+ * Las de RMA esperan la preaprobación. Las directas las crea quien preaprueba,
+ * así que nacen preaprobadas y esperan a quien aprueba.
  */
-export function estadoInicial(_origen: OrigenNC): EstadoNC {
-  return "por_preaprobar";
+export function estadoInicial(origen: OrigenNC): EstadoNC {
+  return origen === "rma" ? "por_preaprobar" : "por_aprobar";
 }
 
 /** Quién tiene la solicitud en sus manos en cada estado. */
@@ -99,6 +103,38 @@ export type AccionNC =
   | "publicar"
   | "vincular"
   | "sincronizar";
+
+/** Un producto de la factura dentro de una NC directa (tabla nc_solicitud_lineas). */
+export type LineaSolicitud = {
+  linea_factura_id: number;
+  product_id: number | null;
+  producto: string;
+  codigo: string;
+  marca: string;
+  cantidad: number;
+  /** Total con impuestos de una unidad, como en la factura. */
+  precio_unidad: number;
+  total: number;
+  seriales: string[];
+};
+
+/** Un producto de la factura para elegir en "Nueva nota de crédito". */
+export type ProductoFactura = {
+  linea_id: number;
+  product_id: number | null;
+  producto: string;
+  codigo: string;
+  marca: string;
+  cantidad: number;
+  /** Lo que queda por acreditar de la línea (facturado − otras NC). */
+  disponible: number;
+  precio_unidad: number;
+  con_serial: boolean;
+  /** Seriales despachados con la factura; `nc` = solicitud que ya lo tiene. */
+  seriales: { serial: string; nc: number | null }[];
+};
+
+export const SIN_MARCA = "Sin marca";
 
 export type SolicitudNC = {
   id: number;
@@ -138,7 +174,92 @@ export type SolicitudNC = {
   odoo_total: number | null;
   procesado_por: string | null;
   procesado_at: string | null;
+  lineas?: LineaSolicitud[];
 };
+
+/**
+ * Pestañas de /notas-credito. Cada paso ve lo suyo:
+ *   rma          las solicitudes de RMA de su sede
+ *   preaprobar   las de RMA que esperan su preaprobación
+ *   mis_creadas  las que creó, preaprobó o rechazó (para seguirlas)
+ *   aprobar      las que esperan su aprobación
+ *   procesar     lo aprobado sin NC publicada (y los borradores de Odoo)
+ *   procesadas   las que ya tienen la NC publicada
+ *   flujo        todo el flujo de la sede, filtrado por paso (SuperAdmin y aprueba)
+ *   odoo         las NC de Odoo del mes (SuperAdmin, aprueba y procesa)
+ *   responsables quién hace cada paso (SuperAdmin)
+ */
+export type VistaNC =
+  | "preaprobar"
+  | "mis_creadas"
+  | "aprobar"
+  | "procesar"
+  | "procesadas"
+  | "rma"
+  | "flujo"
+  | "odoo"
+  | "responsables";
+
+export const ETIQUETA_VISTA: Record<VistaNC, string> = {
+  preaprobar: "Por preaprobar",
+  mis_creadas: "Mis solicitudes",
+  aprobar: "Por aprobar",
+  procesar: "Por hacer la NC",
+  procesadas: "Procesadas",
+  rma: "Solicitudes de RMA",
+  flujo: "Todo el flujo",
+  odoo: "NC de Odoo",
+  responsables: "Responsables",
+};
+
+/** Etapas del filtro de "Todo el flujo". */
+export type EtapaNC = "rma" | "preaprueba" | "aprueba" | "procesados";
+export const ETIQUETA_ETAPA: Record<EtapaNC, string> = {
+  rma: "RMA",
+  preaprueba: "Preaprueba",
+  aprueba: "Aprueba",
+  procesados: "Procesados",
+};
+
+/** En qué etapa del filtro cae una solicitud (las de RMA salen además en "RMA"). */
+export function etapasDe(s: Pick<SolicitudNC, "origen" | "estado" | "rechazado_paso">): EtapaNC[] {
+  const out: EtapaNC[] = s.origen === "rma" ? ["rma"] : [];
+  if (s.estado === "por_preaprobar" || (s.estado === "rechazada" && s.rechazado_paso === "preaprueba")) out.push("preaprueba");
+  if (s.estado === "por_aprobar" || (s.estado === "rechazada" && s.rechazado_paso === "aprueba")) out.push("aprueba");
+  if (s.estado === "aprobada" || s.estado === "procesada") out.push("procesados");
+  return out;
+}
+
+/** Si la sede se ve completa: el SuperAdmin en todas, quien aprueba en la suya. */
+export function veTodoLaSede(pasos: PasoNC[] | undefined, superadmin: boolean): boolean {
+  return superadmin || (pasos ?? []).includes("aprueba");
+}
+
+/** Si ve las NC de Odoo de la sede. */
+export function veOdooDeLaSede(pasos: PasoNC[] | undefined, superadmin: boolean): boolean {
+  return veTodoLaSede(pasos, superadmin) || (pasos ?? []).includes("procesa");
+}
+
+/** Pestañas de la sesión según sus pasos (en cualquier sede). */
+export function vistasDe(pasos: Record<number, PasoNC[]>, superadmin: boolean): VistaNC[] {
+  const todos = new Set(Object.values(pasos).flat());
+  const v: VistaNC[] = [];
+  if (todos.has("preaprueba")) v.push("preaprobar", "mis_creadas");
+  if (todos.has("aprueba")) v.push("aprobar");
+  if (todos.has("procesa")) v.push("procesar", "procesadas");
+  if (todos.has("rma") && !superadmin && !todos.has("aprueba")) v.push("rma");
+  if (superadmin || todos.has("aprueba")) v.push("flujo");
+  if (superadmin || todos.has("aprueba") || todos.has("procesa")) v.push("odoo");
+  if (superadmin) v.push("responsables");
+  return v;
+}
+
+/** Nombre corto de lo que acredita: el producto, o "N productos". */
+export function resumenProductos(lineas: { producto: string; cantidad: number }[]): string {
+  if (!lineas.length) return "";
+  if (lineas.length === 1) return `${lineas[0].cantidad > 1 ? `${lineas[0].cantidad} × ` : ""}${lineas[0].producto}`;
+  return `${lineas.length} productos: ${lineas.map((l) => l.producto).join(" · ")}`;
+}
 
 export type LineaBorrador = {
   id: number;

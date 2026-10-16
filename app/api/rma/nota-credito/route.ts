@@ -92,6 +92,7 @@ export async function POST(request: NextRequest) {
       caseId,
       itemId: parseInt(String(body.item_id ?? ""), 10) || null,
       motivo: String(body.motivo ?? ""),
+      noReparable: String(body.no_reparable ?? ""),
       observations: body.observations ? String(body.observations) : null,
       images: images.length ? images : null,
       opciones: {
