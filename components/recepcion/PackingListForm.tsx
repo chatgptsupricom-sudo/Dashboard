@@ -194,15 +194,22 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
       const d = j.datos || {};
       if (!proveedor.trim() && d.proveedor) setProveedor(d.proveedor);
       if (!referencia.trim() && d.referencia) setReferencia(d.referencia);
-      if (d.contenedor || (d.precintos || []).length) {
+      // Todos los contenedores del documento: los que Compras ya escribio se
+      // quedan (si les faltaba el precinto, se completa) y se suman los demas.
+      const leidos: Array<{ numero: string; precintos: string[] }> = d.contenedores || [];
+      if (leidos.length) {
         setContenedores((prev) => {
-          const yaEsta = prev.some(
-            (c) => c.numero.trim().toUpperCase() === String(d.contenedor || "").toUpperCase(),
-          );
-          if (yaEsta) return prev;
-          const fila = { numero: d.contenedor || "", precintos: (d.precintos || []).join(", ") };
-          const vacios = prev.filter((c) => c.numero.trim() || c.precintos.trim());
-          return vacios.length ? [...vacios, fila] : [fila];
+          const llenos = prev.filter((c) => c.numero.trim() || c.precintos.trim());
+          const sinEspacios = (v: string) => v.toUpperCase().replace(/[\s-]+/g, "");
+          const out = llenos.map((c) => {
+            const igual = leidos.find((l) => sinEspacios(l.numero) === sinEspacios(c.numero));
+            return igual && !c.precintos.trim() ? { ...c, precintos: igual.precintos.join(", ") } : c;
+          });
+          for (const l of leidos) {
+            if (out.some((c) => sinEspacios(c.numero) === sinEspacios(l.numero))) continue;
+            out.push({ numero: l.numero, precintos: l.precintos.join(", ") });
+          }
+          return out.length ? out : [contVacio()];
         });
       }
       if ((d.renglones || []).length === 0) {
@@ -217,7 +224,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           cajas_esperadas: l.cajas_esperadas === null ? "" : String(l.cajas_esperadas),
         })),
       );
-      setAviso(t("documento_leido", { count: d.renglones.length }));
+      setAviso(t("documento_leido", { count: d.renglones.length, contenedores: leidos.length }));
     } catch {
       setError(t("documento_error"));
     } finally {

@@ -3506,7 +3506,7 @@
     "sin_oc": "No approved purchase orders for this branch.",
     "excel_leido": "{count} lines read from the Excel file. Review them before saving.",
     "documento_leyendo": "Reading the document…",
-    "documento_leido": "{count} line(s) read from the document. Check them before saving.",
+    "documento_leido": "{count} line(s) and {contenedores} container(s) read from the document. Check them before saving.",
     "documento_error": "The document could not be read. Add the lines by hand or from an Excel file.",
     "documento_sin_renglones": "No lines found in the document. Add them by hand or from an Excel file.",
     "excel_error": "No lines found in the Excel file. Check it has product and quantity columns, or enter them manually.",
