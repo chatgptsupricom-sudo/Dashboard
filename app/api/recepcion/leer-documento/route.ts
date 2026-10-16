@@ -7,8 +7,13 @@ import { NextRequest, NextResponse } from "next/server";
  * POST /api/recepcion/leer-documento  (multipart: archivo)
  *
  * Lee un packing list en PDF o foto y devuelve lo que trae adentro:
- * renglones, numero de contenedor, precintos, proveedor y referencia. Los
+ * renglones, contenedores con sus precintos, proveedor y referencia. Los
  * Excel NO pasan por aca: esos los lee la pantalla sola (lib/recepcion/leerExcel).
+ *
+ * Un embarque puede venir en varios contenedores, cada uno en su pagina (y
+ * repetido en el dock receipt): se devuelven todos, sin repetir, y los
+ * renglones se juntan por producto, porque los renglones de la recepcion son
+ * del embarque entero, no de cada contenedor.
  *
  * Es una ayuda para no transcribir a mano: lo leido cae en la grilla y
  * Compras lo revisa antes de guardar. Nada se guarda desde esta ruta.
@@ -21,6 +26,8 @@ const MODELO =
   process.env.RECEPCION_IA_MODELO?.trim() || process.env.AGENTE_IA_MODELO?.trim() || "claude-opus-5-5";
 const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_RENGLONES = 300;
+// El mismo tope que acepta la recepcion (lib/recepcion/validacion.ts).
+const MAX_CONTENEDORES = 50;
 const TIPOS: Record<string, "pdf" | "imagen"> = {
   "application/pdf": "pdf",
   "image/jpeg": "imagen",
@@ -30,33 +37,52 @@ const TIPOS: Record<string, "pdf" | "imagen"> = {
 
 const INSTRUCCIONES =
   "Eres un asistente de la gente de Compras de una empresa que importa equipos. " +
-  "Te dan un packing list, una factura o un documento de embarque. " +
-  "Devuelve SOLO los datos que estan en el documento, sin inventar ni completar nada: " +
+  "Te dan un packing list, una factura o un documento de embarque, que puede tener muchas paginas. " +
+  "Lee TODAS las paginas. Devuelve SOLO los datos que estan en el documento, sin inventar ni completar nada: " +
   "si un dato no aparece, dejalo vacio. " +
-  "renglones: una fila por producto, con su codigo (la columna CODE/CODIGO/SKU, vacio si no hay), " +
-  "la descripcion tal cual, la cantidad (QTY) y las cajas si el documento las separa (0 si no). " +
-  "No incluyas totales, fletes, subtotales ni lineas que no sean productos. " +
-  "contenedor: el numero de contenedor (CONTAINER NUMBER), en mayusculas. " +
-  "precintos: los numeros de precinto (SEAL NUMBER). Si vienen varios en el mismo campo, " +
-  "separados por espacio o coma, devuelvelos como elementos distintos de la lista. " +
+  "contenedores: TODOS los contenedores del embarque, uno por cada numero de contenedor distinto " +
+  "(CONTAINER NUMBER, CARRIER ID, TR#, CNTR), en mayusculas, aunque el documento traiga una pagina por contenedor. " +
+  "Si el mismo contenedor aparece en varias paginas (packing list, dock receipt, BL), va una sola vez. " +
+  "Si dice cuantos contenedores son (Num Containers, 7 x 40'), revisa que esten todos. " +
+  "precintos de cada contenedor: los numeros de precinto (SEAL NUMBER, SEAL #) de ese contenedor. " +
+  "Si en una pagina el precinto sale abreviado y en otra completo (013775 y PTC013775), usa el completo una sola vez. " +
+  "Si vienen varios en el mismo campo, separados por espacio o coma, son elementos distintos de la lista. " +
+  "renglones: una fila por producto (ITEM) de cada contenedor, con el contenedor donde viene, su codigo " +
+  "(la columna CODE/CODIGO/SKU/ITEM, vacio si no hay), la descripcion tal cual, la cantidad total de ese producto " +
+  "en ese contenedor (QTY o Item Total) y las cajas o cartones (CTNS) si el documento las dice (0 si no); " +
+  "si el contenedor trae un solo producto y el dock receipt dice los cartones de ese contenedor, esas son sus cajas. " +
+  "Si el detalle trae una linea por pallet, rollo o bulto (Roll/Pkg), NO es un renglon: usa el total del producto. " +
+  "No saques renglones del dock receipt ni de la confirmacion de booking si el packing list ya trae el detalle. " +
+  "No incluyas totales generales, fletes, subtotales ni lineas que no sean productos. " +
   "proveedor: quien emite el documento. referencia: el numero de packing list, factura o BL.";
 
 const ESQUEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["proveedor", "referencia", "contenedor", "precintos", "renglones"],
+  required: ["proveedor", "referencia", "contenedores", "renglones"],
   properties: {
     proveedor: { type: "string" },
     referencia: { type: "string" },
-    contenedor: { type: "string" },
-    precintos: { type: "array", items: { type: "string" } },
+    contenedores: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["numero", "precintos"],
+        properties: {
+          numero: { type: "string" },
+          precintos: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
     renglones: {
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["codigo", "producto", "cantidad", "cajas"],
+        required: ["contenedor", "codigo", "producto", "cantidad", "cajas"],
         properties: {
+          contenedor: { type: "string" },
           codigo: { type: "string" },
           producto: { type: "string" },
           cantidad: { type: "number" },
@@ -76,6 +102,59 @@ const anthropic = () =>
   (cliente ??= new Anthropic(WORKSPACE ? { defaultHeaders: { "anthropic-workspace-id": WORKSPACE } } : {}));
 
 const texto = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
+
+type ContenedorLeido = { numero: string; precintos: string[] };
+
+/**
+ * Los contenedores sin repetir: el mismo numero puede salir en el packing list
+ * y en el dock receipt, a veces con espacios o guiones distintos. Sus
+ * precintos se juntan, y si uno es el otro sin prefijo (013775 / PTC013775)
+ * queda solo el completo.
+ */
+function juntarContenedores(lista: unknown): ContenedorLeido[] {
+  const porNumero = new Map<string, ContenedorLeido>();
+  for (const c of Array.isArray(lista) ? lista : []) {
+    const numero = texto((c as any)?.numero, 50).toUpperCase().replace(/[\s-]+/g, "");
+    if (!numero) continue;
+    const previo = porNumero.get(numero);
+    const precintos = limpiarPrecintos([...(previo?.precintos || []), ...limpiarPrecintos((c as any)?.precintos)]);
+    porNumero.set(numero, { numero, precintos });
+  }
+  return [...porNumero.values()].map((c) => {
+    const llave = (p: string) => p.replace(/[^A-Z0-9]/g, "");
+    const precintos = c.precintos.filter(
+      (p) => !c.precintos.some((q) => q !== p && llave(q).length > llave(p).length && llave(q).endsWith(llave(p))),
+    );
+    return { numero: c.numero, precintos: precintos.slice(0, MAX_PRECINTOS) };
+  });
+}
+
+/**
+ * Un renglon por producto: si el mismo producto viene en varios contenedores,
+ * se suman cantidades y cajas (la recepcion espera el total del embarque).
+ */
+function juntarRenglones(lista: unknown) {
+  const porProducto = new Map<
+    string,
+    { codigo: string; producto: string; cantidad_esperada: number; cajas_esperadas: number | null }
+  >();
+  for (const r of Array.isArray(lista) ? lista : []) {
+    const codigo = texto((r as any)?.codigo, 100);
+    const producto = texto((r as any)?.producto, 300);
+    const cantidad = Number((r as any)?.cantidad);
+    const cajas = Number((r as any)?.cajas) > 0 ? Math.round(Number((r as any).cajas)) : null;
+    if (!producto || !Number.isFinite(cantidad) || cantidad < 0) continue;
+    const llave = (codigo || producto).toUpperCase().replace(/\s+/g, " ");
+    const previo = porProducto.get(llave);
+    if (!previo) {
+      porProducto.set(llave, { codigo, producto, cantidad_esperada: cantidad, cajas_esperadas: cajas });
+      continue;
+    }
+    previo.cantidad_esperada += cantidad;
+    if (cajas !== null) previo.cajas_esperadas = (previo.cajas_esperadas ?? 0) + cajas;
+  }
+  return [...porProducto.values()].slice(0, MAX_RENGLONES);
+}
 
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ["compras"]);
@@ -149,24 +228,13 @@ export async function POST(request: NextRequest) {
 
     // Se limpia aca lo que devuelve el modelo: la pantalla recibe siempre lo
     // mismo que escribiria una persona a mano.
-    const renglones = (Array.isArray(leido.renglones) ? leido.renglones : [])
-      .map((r: any) => ({
-        codigo: texto(r?.codigo, 100),
-        producto: texto(r?.producto, 300),
-        cantidad_esperada: Number(r?.cantidad),
-        cajas_esperadas: Number(r?.cajas) > 0 ? Math.round(Number(r.cajas)) : null,
-      }))
-      .filter((r: any) => r.producto && Number.isFinite(r.cantidad_esperada) && r.cantidad_esperada >= 0)
-      .slice(0, MAX_RENGLONES);
-
     return NextResponse.json({
       success: true,
       datos: {
         proveedor: texto(leido.proveedor, 200),
         referencia: texto(leido.referencia, 100),
-        contenedor: texto(leido.contenedor, 50).toUpperCase(),
-        precintos: limpiarPrecintos(leido.precintos).slice(0, MAX_PRECINTOS),
-        renglones,
+        contenedores: juntarContenedores(leido.contenedores).slice(0, MAX_CONTENEDORES),
+        renglones: juntarRenglones(leido.renglones),
       },
     });
   } catch (e: any) {

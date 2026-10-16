@@ -3495,7 +3495,7 @@
     "sin_oc": "No hay órdenes de compra aprobadas para esta sucursal.",
     "excel_leido": "Se leyeron {count} renglones del Excel. Revísalos antes de guardar.",
     "documento_leyendo": "Leyendo el documento…",
-    "documento_leido": "Se leyeron {count} renglón(es) del documento. Revísalos antes de guardar.",
+    "documento_leido": "Se leyeron {count} renglón(es) y {contenedores} contenedor(es) del documento. Revísalos antes de guardar.",
     "documento_error": "No se pudo leer el documento. Carga los renglones a mano o desde un Excel.",
     "documento_sin_renglones": "No se encontraron renglones en el documento. Cárgalos a mano o desde un Excel.",
     "excel_error": "No se encontraron renglones en el Excel. Revisa que tenga columnas de producto y cantidad, o cárgalos a mano.",
