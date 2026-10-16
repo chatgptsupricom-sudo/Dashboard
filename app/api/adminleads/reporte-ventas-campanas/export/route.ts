@@ -55,15 +55,16 @@ export async function GET(request: NextRequest) {
       [
         "Campaña",
         "Canal",
-        "Leads ingresados",
-        "Leads convertidos",
-        "% Conversión",
-        "Ventas cerradas",
-        "Monto cerrado (USD)",
+        "Leads que entraron en el período",
+        "De esos, vendidos",
+        "% Conversión (vendidos ÷ entraron)",
+        "Ventas cerradas en el período",
+        "Monto cerrado en el período (USD)",
         "Ticket promedio (USD)",
       ],
-      [42, 18, 16, 16, 14, 15, 20, 20],
+      [42, 18, 18, 16, 18, 18, 20, 18],
     );
+    wsResumen.getRow(1).height = 45; // encabezados largos, en dos o tres líneas
     for (const c of data.resumen) {
       wsResumen.addRow([
         c.campana,
@@ -109,6 +110,14 @@ export async function GET(request: NextRequest) {
       ]);
       web.font = { italic: true };
     }
+    wsResumen.addRow([]);
+    const nota = wsResumen.addRow([
+      "Son dos grupos de leads distintos: las columnas C a E miran los leads que entraron en el período (y cuántos de esos ya se vendieron); las columnas F a H, las ventas cerradas en el período aunque el lead haya entrado antes. Por eso una campaña puede tener ventas con 0 leads que entraron.",
+    ]);
+    nota.font = { italic: true, color: { argb: "FF71717A" } };
+    wsResumen.mergeCells(nota.number, 1, nota.number, 8);
+    nota.getCell(1).alignment = { wrapText: true, vertical: "top" };
+    nota.height = 45;
 
     // --- Hoja 2: detalle venta por venta ---
     const wsVentas = wb.addWorksheet("Ventas cerradas");

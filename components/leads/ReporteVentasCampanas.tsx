@@ -384,15 +384,25 @@ export default function ReporteVentasCampanas({
           <Pagina etiqueta="Resumen" titulo="Campaña por campaña">
             <table className="w-full">
               <thead>
+                {/* Dos grupos de leads distintos: los que entraron en el período y las ventas cerradas en él. */}
+                <tr>
+                  <th colSpan={2} />
+                  <th colSpan={3} className={`${TH} text-center bg-zinc-50 rounded-t-md`}>
+                    Leads que entraron en el período
+                  </th>
+                  <th colSpan={3} className={`${TH} text-center bg-blue-50 text-blue-700 rounded-t-md`}>
+                    Ventas cerradas en el período
+                  </th>
+                </tr>
                 <tr className="border-b border-zinc-200">
                   <th className={TH}>Campaña</th>
                   <th className={TH}>Canal</th>
-                  <th className={`${TH} text-right`}>Leads ing.</th>
-                  <th className={`${TH} text-right`}>Convertidos</th>
-                  <th className={`${TH} text-right`}>% Conv.</th>
-                  <th className={`${TH} text-right`}>Ventas</th>
-                  <th className={`${TH} text-right`}>Monto</th>
-                  <th className={`${TH} text-right`}>Ticket prom.</th>
+                  <th className={`${TH} text-right bg-zinc-50`}>Entraron</th>
+                  <th className={`${TH} text-right bg-zinc-50`}>De esos, vendidos</th>
+                  <th className={`${TH} text-right bg-zinc-50`}>% Conv.</th>
+                  <th className={`${TH} text-right bg-blue-50`}>Ventas</th>
+                  <th className={`${TH} text-right bg-blue-50`}>Monto</th>
+                  <th className={`${TH} text-right bg-blue-50`}>Ticket prom.</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
@@ -437,6 +447,12 @@ export default function ReporteVentasCampanas({
                 </tr>
               </tfoot>
             </table>
+            <p className="mt-4 text-[10px] text-zinc-500 leading-relaxed">
+              <b>Son dos grupos de leads distintos.</b> A la izquierda, los leads que <em>entraron</em> en el
+              período y cuántos de esos ya se vendieron (0 % = ninguno se ha cerrado todavía). A la derecha, las
+              ventas <em>cerradas</em> en el período, aunque el lead haya entrado antes: por eso una campaña puede
+              tener ventas con 0 leads que entraron, o más ventas que vendidos.
+            </p>
           </Pagina>
 
           {/* DETALLE */}
