@@ -27,19 +27,27 @@ export const dynamic = "force-dynamic";
  *   POST { restore: <historyId> } -> { success, revision, pieces }
  */
 
-/** Una entrada de pieza valida: { checked?, moved?, colId? }. */
+/** Una entrada de pieza valida: { checked?, moved?, colId?, content? }. */
 function pareceEntradaDePieza(val: unknown): boolean {
   if (!val || typeof val !== "object" || Array.isArray(val)) return false;
   const v: any = val;
-  return "checked" in v || "moved" in v || "colId" in v;
+  return "checked" in v || "moved" in v || "colId" in v || "content" in v;
 }
 
+// Ediciones del modo edición del panel (tema, caption, productos, slides) por pieza.
+const MAX_CONTENIDO = 50_000;
+
 function normalizarPieza(val: any) {
-  return {
+  const pieza: PlanContentState["pieces"][string] = {
     checked: !!val.checked,
     moved: !!val.moved,
     colId: typeof val.colId === "string" ? val.colId.slice(0, 120) : null,
   };
+  // Se conserva tal cual (la app es la dueña de su forma), con tope de tamaño.
+  if (val.content && typeof val.content === "object" && !Array.isArray(val.content) && JSON.stringify(val.content).length <= MAX_CONTENIDO) {
+    pieza.content = val.content;
+  }
+  return pieza;
 }
 
 /**
