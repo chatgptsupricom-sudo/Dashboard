@@ -336,7 +336,15 @@ export async function getCampaignMetrics({
       c.recaudo_usd = parseFloat(ov.recaudo_usd);
   }
 
-  const campaigns: CampaignAggregate[] = Array.from(campaignMap.values()).map(
+  // Una campaña sin ningún dato en el período no es "del mes": entra al mapa
+  // por conversaciones fechadas en el rango sin calificar (ni Calificado ni No
+  // Calificado) y salía como una fila toda en cero, de campañas de otros meses.
+  const conDatos = (c: { [k: string]: any }) =>
+    ["spend_usd", "impressions", "clicks", "leads_from_ads", "total_leads", "ventas_cerradas", "recaudo_usd", "calificados", "no_calificados"].some(
+      (k) => Number(c[k]) > 0,
+    );
+
+  const campaigns: CampaignAggregate[] = Array.from(campaignMap.values()).filter(conDatos).map(
     (c) => {
       const costo_por_lead = c.total_leads > 0 ? c.spend_usd / c.total_leads : 0;
       const costo_por_lead_calificado =
