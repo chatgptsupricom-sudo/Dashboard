@@ -679,7 +679,9 @@ export async function calcularRecompra(opts: {
   for (const [rif, ls] of porRif) {
     ls.sort((a, b) => (a.venta! < b.venta! ? -1 : 1));
     const primero = ls[0];
-    const entrada = ls.map((l) => l.entrada).filter(Boolean).sort()[0] ?? primero.venta;
+    // fecha_ingreso del panel a veces es posterior a la venta (se reescribe al
+    // reasignar o reactivar): nunca se toma una entrada después de la venta.
+    const entrada = [...ls.map((l) => l.entrada), primero.venta].filter(Boolean).sort()[0]!;
     const lista = compras.get(rif) ?? [];
     const limite = sumarDias(primero.venta!, VENTANA_PRIMERA_VENTA);
     const despues = lista.filter((c) => c.fecha > limite);
@@ -693,7 +695,7 @@ export async function calcularRecompra(opts: {
       entrada,
       primeraVenta: primero.venta!,
       montoPrimera: r2(primero.monto),
-      comprasAntes: entrada ? lista.filter((c) => c.fecha < entrada).length : 0,
+      comprasAntes: lista.filter((c) => c.fecha < entrada).length,
       comprasDespues: despues.length,
       montoDespues: r2(despues.reduce((s, c) => s + c.monto, 0)),
       primeraRecompra: despues[0]?.fecha ?? null,

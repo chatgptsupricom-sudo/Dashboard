@@ -207,14 +207,14 @@ export default function RecompraClientes({ onVerSinRif }: { onVerSinRif: () => v
                             <p className="text-[11px] text-zinc-400">{c.campana}</p>
                           </td>
                           <td className="px-3 py-2 text-zinc-600">{c.vendedor || "—"}</td>
-                          <td className="px-3 py-2 text-zinc-600 tabular-nums">
+                          <td className="px-3 py-2 text-zinc-600 tabular-nums whitespace-nowrap">
                             <p>{c.primeraVenta}</p>
                             {c.montoPrimera > 0 && <p className="text-[11px] text-zinc-400">{usd(c.montoPrimera)}</p>}
                           </td>
                           <td className="px-3 py-2 text-right font-bold tabular-nums text-zinc-800">{c.comprasDespues}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-zinc-700">{usd(c.montoDespues)}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{c.diasHastaRecompra ?? "—"}</td>
-                          <td className="px-3 py-2 text-zinc-600 tabular-nums">{c.ultimaCompra ?? "—"}</td>
+                          <td className="px-3 py-2 text-zinc-600 tabular-nums whitespace-nowrap">{c.ultimaCompra ?? "—"}</td>
                         </tr>
                         {ver && c.despues.length > 0 && (
                           <tr className="bg-zinc-50/60">
