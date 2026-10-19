@@ -63,7 +63,9 @@ export default function AdminLeadsLayout({
       />
 
       <div
-        className={`flex-1 flex flex-col transition-all duration-300 ${
+        // min-w-0: sin él una tabla ancha estira toda la página hacia los lados
+        // en vez de desplazarse dentro de su propio recuadro.
+        className={`flex-1 min-w-0 flex flex-col transition-all duration-300 ${
           sidebarOpen ? "md:pl-72" : "pl-0"
         }`}
       >

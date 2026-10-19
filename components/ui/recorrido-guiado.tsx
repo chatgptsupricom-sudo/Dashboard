@@ -7,12 +7,16 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
  * (`selector`, el primero que coincida; sin selector o si no está, la tarjeta
  * va centrada) y explica qué hace.
  *
- * Se abre solo la primera vez por sesión (sessionStorage) salvo que el usuario
- * marque "No volver a mostrar" (localStorage). `abrir` lo reabre a mano.
- * Ambos almacenamientos pueden fallar (modo privado): sin ellos, se muestra.
+ * Se abre solo la primera vez por sesión (sessionStorage), o cada vez que se
+ * monta con `cadaVez`, salvo que el usuario marque "No volver a mostrar"
+ * (localStorage). `abrir` lo reabre a mano. Ambos almacenamientos pueden
+ * fallar (modo privado): sin ellos, se muestra.
+ *
+ * `antes` corre al llegar al paso (p. ej. cambiar de pestaña); si el elemento
+ * todavía no está (se está cargando) se sigue buscando unos segundos.
  */
 
-export type PasoRecorrido = { selector?: string; titulo: string; texto: string };
+export type PasoRecorrido = { selector?: string; titulo: string; texto: string; antes?: () => void };
 
 const leer = (s: Storage | undefined, k: string) => {
   try {
@@ -27,14 +31,15 @@ const guardar = (s: Storage | undefined, k: string, v: string) => {
   } catch {}
 };
 
-export function useRecorrido(clave: string, listo: boolean) {
+export function useRecorrido(clave: string, listo: boolean, { cadaVez = false } = {}) {
   const [abierto, setAbierto] = useState(false);
   useEffect(() => {
     if (!listo || typeof window === "undefined") return;
-    if (leer(window.localStorage, clave) === "nunca" || leer(window.sessionStorage, clave) === "visto") return;
+    if (leer(window.localStorage, clave) === "nunca") return;
+    if (!cadaVez && leer(window.sessionStorage, clave) === "visto") return;
     guardar(window.sessionStorage, clave, "visto");
     setAbierto(true);
-  }, [clave, listo]);
+  }, [clave, listo, cadaVez]);
   const cerrar = useCallback(
     (nuncaMas: boolean) => {
       if (nuncaMas) guardar(window.localStorage, clave, "nunca");
@@ -60,12 +65,19 @@ export function RecorridoGuiado({
   const [i, setI] = useState(0);
   const [nuncaMas, setNuncaMas] = useState(false);
   const [caja, setCaja] = useState<DOMRect | null>(null);
+  const [altoTarjeta, setAltoTarjeta] = useState(240);
   const tarjeta = useRef<HTMLDivElement>(null);
   const paso = pasos[i];
 
   useEffect(() => {
     if (abierto) setI(0);
   }, [abierto]);
+
+  // `antes` del paso (por índice: la lista puede volver a crearse en cada render).
+  useEffect(() => {
+    if (abierto) pasos[i]?.antes?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto, i]);
 
   // Ubica el elemento del paso (y lo trae a la vista) cada vez que cambia el
   // paso, se desplaza la página o cambia el tamaño de la ventana.
@@ -75,14 +87,30 @@ export function RecorridoGuiado({
   }, [paso]);
   useLayoutEffect(() => {
     if (!abierto) return;
-    const el = paso?.selector ? document.querySelector(paso.selector) : null;
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    // Un elemento más alto que media pantalla (una tabla larga) se trae desde
+    // arriba: centrado, su comienzo y la tarjeta quedaban fuera de la vista.
+    const traer = () => {
+      const el = paso?.selector ? document.querySelector(paso.selector) : null;
+      if (!el) return false;
+      const alto = el.getBoundingClientRect().height > window.innerHeight * 0.6;
+      el.scrollIntoView({ block: alto ? "start" : "center", behavior: "smooth" });
+      timers.push(setTimeout(medir, 350));
+      return true;
+    };
     medir();
-    const t = setTimeout(medir, 350);
+    let espera: ReturnType<typeof setInterval> | undefined;
+    if (!traer() && paso?.selector) {
+      let intentos = 0;
+      espera = setInterval(() => {
+        if (traer() || ++intentos > 60) clearInterval(espera);
+      }, 250);
+    }
     window.addEventListener("resize", medir);
     window.addEventListener("scroll", medir, true);
     return () => {
-      clearTimeout(t);
+      timers.forEach(clearTimeout);
+      clearInterval(espera);
       window.removeEventListener("resize", medir);
       window.removeEventListener("scroll", medir, true);
     };
@@ -100,17 +128,29 @@ export function RecorridoGuiado({
     return () => window.removeEventListener("keydown", tecla);
   }, [abierto, i, nuncaMas, onCerrar, pasos.length]);
 
+  // Alto real de la tarjeta (cambia con el texto de cada paso) para ubicarla sin que se salga.
+  useLayoutEffect(() => {
+    const h = tarjeta.current?.offsetHeight;
+    if (h && Math.abs(h - altoTarjeta) > 4) setAltoTarjeta(h);
+  });
+
   if (!abierto || !paso) return null;
 
   const ultimo = i === pasos.length - 1;
   const vw = typeof window !== "undefined" ? window.innerWidth : 1024;
   const vh = typeof window !== "undefined" ? window.innerHeight : 768;
   const ancho = Math.min(ANCHO, vw - 32);
-  // Debajo del elemento si cabe; si no, encima; sin elemento, al centro.
+  // Solo la parte visible del elemento: debajo de ella si cabe la tarjeta, si
+  // no encima, y si el elemento llena la pantalla, abajo sobre él. Sin
+  // elemento, al centro.
   let estilo: React.CSSProperties = { left: (vw - ancho) / 2, top: vh / 2, transform: "translateY(-50%)" };
-  if (caja) {
+  const vis = caja && { top: Math.max(caja.top, MARGEN), bottom: Math.min(caja.bottom, vh - MARGEN) };
+  if (caja && vis) {
     const left = Math.min(Math.max(16, caja.left + caja.width / 2 - ancho / 2), vw - ancho - 16);
-    estilo = caja.bottom + 220 < vh ? { left, top: caja.bottom + 14 } : { left, top: Math.max(16, caja.top - 14), transform: "translateY(-100%)" };
+    const hueco = altoTarjeta + 30;
+    if (vis.bottom + hueco < vh) estilo = { left, top: vis.bottom + 14 };
+    else if (vis.top - hueco > 0) estilo = { left, top: vis.top - 14, transform: "translateY(-100%)" };
+    else estilo = { left, bottom: 16 };
   }
 
   return (
@@ -120,9 +160,9 @@ export function RecorridoGuiado({
           className="absolute rounded-xl ring-2 ring-white/80 transition-all duration-300 pointer-events-none"
           style={{
             left: caja.left - MARGEN,
-            top: caja.top - MARGEN,
+            top: vis!.top - MARGEN,
             width: caja.width + MARGEN * 2,
-            height: caja.height + MARGEN * 2,
+            height: Math.max(0, vis!.bottom - vis!.top) + MARGEN * 2,
             boxShadow: "0 0 0 9999px rgba(15, 23, 42, 0.6)",
           }}
         />
