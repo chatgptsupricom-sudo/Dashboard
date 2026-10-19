@@ -4,13 +4,14 @@
 // Se entra desde Cierres; vive bajo /adminleads para heredar el guard de rol.
 
 import LeadsHistoricos from "@/components/leads/LeadsHistoricos";
+import LeadsPorRevisar from "@/components/leads/LeadsPorRevisar";
 import RecompraClientes from "@/components/leads/RecompraClientes";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState } from "react";
 
 export default function RecompraPage() {
   const [tab, setTab] = useState("recompra");
-  const [filtroExcel, setFiltroExcel] = useState("");
+  const [porRevisar, setPorRevisar] = useState<number | null>(null);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
@@ -24,17 +25,18 @@ export default function RecompraPage() {
         <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 rounded-2xl">
           <TabsTrigger value="recompra" className="rounded-xl">Recompra</TabsTrigger>
           <TabsTrigger value="excel" className="rounded-xl">Leads de Excel</TabsTrigger>
+          <TabsTrigger value="revisar" className="rounded-xl">
+            Por revisar{porRevisar ? ` (${porRevisar})` : ""}
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="recompra">
-          <RecompraClientes
-            onVerSinRif={() => {
-              setFiltroExcel("SIN_RIF");
-              setTab("excel");
-            }}
-          />
+          <RecompraClientes onVerSinRif={() => setTab("revisar")} />
         </TabsContent>
         <TabsContent value="excel">
-          <LeadsHistoricos filtroInicial={filtroExcel} />
+          <LeadsHistoricos />
+        </TabsContent>
+        <TabsContent value="revisar">
+          <LeadsPorRevisar onCambio={setPorRevisar} />
         </TabsContent>
       </Tabs>
     </div>

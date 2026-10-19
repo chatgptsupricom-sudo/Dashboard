@@ -10,6 +10,8 @@ const SEDES: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panam�
 const ORIGEN_RIF: Record<string, string> = {
   factura: "por la factura",
   pedido: "por el pedido de Odoo",
+  telefono: "por el teléfono (Odoo)",
+  confirmado: "venta confirmada a mano",
   nombre: "por el nombre (Smartbit)",
   odoo_nombre: "por el nombre (Odoo)",
   manual: "cargado a mano",
@@ -76,13 +78,13 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
     }
   };
 
-  const guardarRif = async (id: number, rif: string) => {
+  const guardarRif = async (id: number, rif: string, accion?: "deshacer") => {
     setGuardando(true);
     try {
       const r = await fetch("/api/adminleads/recompra/historicos", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, rif }),
+        body: JSON.stringify({ id, rif, accion }),
       }).then((x) => x.json());
       if (r.error) throw new Error(r.error);
       setEditando(null);
@@ -214,6 +216,18 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
                       >
                         {l.estatus || "—"}
                       </span>
+                      {l.estatus_original != null && (
+                        <p className="text-[10px] text-zinc-400 mt-1">
+                          En el Excel: {l.estatus_original || "sin estatus"}{" "}
+                          <button
+                            disabled={guardando}
+                            onClick={() => confirm("¿Volver al estatus del Excel?") && guardarRif(l.id, "", "deshacer")}
+                            className="underline hover:text-zinc-600"
+                          >
+                            deshacer
+                          </button>
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-zinc-700">
                       {l.monto != null ? `$${Number(l.monto).toLocaleString()}` : ""}

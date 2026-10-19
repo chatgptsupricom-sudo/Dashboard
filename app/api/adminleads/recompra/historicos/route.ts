@@ -2,6 +2,10 @@
 //
 //   GET                -> { leads: [...], facturasSmartbit: { [sede]: { facturas, desde, hasta } } }
 //   PATCH { id, rif }  -> corrige el RIF a mano (vacío = que lo vuelva a buscar el panel)
+//   PATCH { id, accion: "confirmar", rif, cliente, fecha, monto }
+//                      -> el lead sí se vendió (quedó como contactado/negociación en el Excel)
+//   PATCH { id, accion: "descartar" } -> no es venta: deja de salir en "Por revisar"
+//   PATCH { id, accion: "deshacer" }  -> vuelve al estatus del Excel
 
 import { asegurarTablas, resolverRifs } from "@/lib/adminleads/recompra";
 import { query } from "@/lib/db";
@@ -24,7 +28,7 @@ export async function GET(request: NextRequest) {
       `SELECT id, company_id, archivo, hoja, red_social, nombre,
               DATE_FORMAT(fecha_interaccion, '%Y-%m-%d') AS fecha, telefono, ubicacion, vendedor, estatus,
               monto, factura_txt, observacion, rif, rif_origen, cliente_rif,
-              DATE_FORMAT(primera_venta, '%Y-%m-%d') AS primera_venta
+              DATE_FORMAT(primera_venta, '%Y-%m-%d') AS primera_venta, estatus_original
          FROM leads_historicos ${soloPanama ? "WHERE company_id = 7" : ""}
         ORDER BY fecha_interaccion DESC, id DESC`,
     );
@@ -55,16 +59,46 @@ export async function PATCH(request: NextRequest) {
     if (rif && (rif.length < 6 || rif.length > 30)) {
       return NextResponse.json({ error: "El RIF no parece válido" }, { status: 400 });
     }
-    const { rows } = await query("SELECT company_id FROM leads_historicos WHERE id = ?", [id]);
+    const { rows } = await query("SELECT company_id, estatus, estatus_original FROM leads_historicos WHERE id = ?", [id]);
     if (!rows.length) return NextResponse.json({ error: "No existe ese lead" }, { status: 404 });
     if (Number(auth.payload!.cids) === 7 && Number(rows[0].company_id) !== 7) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
 
-    if (rif) {
+    const accion = String(body?.accion || "");
+    const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(body?.fecha)) ? String(body.fecha) : null;
+    const cliente = String(body?.cliente || "").slice(0, 255) || null;
+
+    if (accion === "confirmar") {
+      if (!rif || rif.length < 6) return NextResponse.json({ error: "Falta el RIF del cliente" }, { status: 400 });
+      const monto = Number(body?.monto);
+      // estatus_original guarda lo que decía el Excel: re-importar no lo pisa y "deshacer" lo devuelve.
       await query(
-        `UPDATE leads_historicos SET rif = ?, rif_origen = 'manual', cliente_rif = NULL, primera_venta = NULL WHERE id = ?`,
-        [rif, id],
+        `UPDATE leads_historicos
+            SET estatus_original = COALESCE(estatus_original, estatus, ''), estatus = 'CONCRETADO',
+                rif = ?, rif_origen = 'confirmado', cliente_rif = ?, primera_venta = ?,
+                monto = COALESCE(monto, ?), revisado = 1
+          WHERE id = ?`,
+        [rif, cliente, fecha, Number.isFinite(monto) && monto > 0 ? monto : null, id],
+      );
+    } else if (accion === "descartar") {
+      await query(`UPDATE leads_historicos SET revisado = 1 WHERE id = ?`, [id]);
+    } else if (accion === "deshacer") {
+      if (rows[0].estatus_original != null) {
+        await query(
+          `UPDATE leads_historicos
+              SET estatus = NULLIF(estatus_original, ''), estatus_original = NULL, rif = NULL, rif_origen = NULL,
+                  cliente_rif = NULL, primera_venta = NULL, revisado = 0
+            WHERE id = ?`,
+          [id],
+        );
+      } else {
+        await query(`UPDATE leads_historicos SET revisado = 0 WHERE id = ?`, [id]);
+      }
+    } else if (rif) {
+      await query(
+        `UPDATE leads_historicos SET rif = ?, rif_origen = 'manual', cliente_rif = ?, primera_venta = ? WHERE id = ?`,
+        [rif, cliente, fecha, id],
       );
     } else {
       await query(`UPDATE leads_historicos SET rif = NULL, rif_origen = NULL WHERE id = ?`, [id]);

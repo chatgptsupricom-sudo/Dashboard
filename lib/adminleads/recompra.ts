@@ -50,12 +50,23 @@ export function asegurarTablas(): Promise<void> {
         rif_origen VARCHAR(20) NULL,
         cliente_rif VARCHAR(255) NULL,
         primera_venta DATE NULL,
+        estatus_original VARCHAR(40) NULL,
+        revisado TINYINT NOT NULL DEFAULT 0,
         importado_por VARCHAR(160) NULL,
         importado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uq_clave (clave),
         KEY idx_estatus (estatus),
         KEY idx_rif (rif)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    // Columnas que llegaron después de crear la tabla.
+    const { rows: cols } = await query("SHOW COLUMNS FROM leads_historicos");
+    const hay = new Set(cols.map((c: any) => c.Field));
+    if (!hay.has("estatus_original")) {
+      await query("ALTER TABLE leads_historicos ADD COLUMN estatus_original VARCHAR(40) NULL AFTER primera_venta");
+    }
+    if (!hay.has("revisado")) {
+      await query("ALTER TABLE leads_historicos ADD COLUMN revisado TINYINT NOT NULL DEFAULT 0 AFTER estatus_original");
+    }
     await query(`
       CREATE TABLE IF NOT EXISTS ventas_smartbit_facturas (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -300,7 +311,8 @@ export async function importarExcel(
           vendedor, estatus, monto, factura_txt, observacion, importado_por)
        VALUES ?
        ON DUPLICATE KEY UPDATE archivo = VALUES(archivo), hoja = VALUES(hoja), red_social = VALUES(red_social),
-         ubicacion = VALUES(ubicacion), vendedor = VALUES(vendedor), estatus = VALUES(estatus),
+         ubicacion = VALUES(ubicacion), vendedor = VALUES(vendedor),
+         estatus = IF(estatus_original IS NULL, VALUES(estatus), estatus),
          monto = VALUES(monto), factura_txt = VALUES(factura_txt), observacion = VALUES(observacion),
          importado_por = VALUES(importado_por)`,
       [leads.slice(i, i + 500)],
@@ -329,6 +341,47 @@ export async function importarExcel(
 
 type Ubicado = { rif: string; origen: string; cliente: string; primera: string | null };
 
+/**
+ * Teléfonos del lead en el formato de `res.partner.phone_sanitized` de Odoo
+ * (+58…, +507…). Una celda puede traer dos números ("0412-… o 0414-…").
+ */
+export function telefonosE164(txt: string | null, companyId: number): string[] {
+  const out: string[] = [];
+  for (const parte of String(txt || "").split(/[^\d\s().+.-]+/)) {
+    const d = parte.replace(/\D/g, "");
+    if (companyId === 7) {
+      if (/^507\d{7,8}$/.test(d)) out.push(`+${d}`);
+      else if (/^\d{7,8}$/.test(d)) out.push(`+507${d}`);
+    } else if (/^58\d{10}$/.test(d)) out.push(`+${d}`);
+    else if (/^0\d{10}$/.test(d)) out.push(`+58${d.slice(1)}`);
+    else if (/^[24]\d{9}$/.test(d)) out.push(`+58${d}`);
+  }
+  return [...new Set(out)];
+}
+
+/** Clientes de Odoo (con RIF) por teléfono normalizado. */
+async function partnersPorTelefono(tels: string[]): Promise<Map<string, { rif: string; nombre: string }[]>> {
+  const out = new Map<string, { rif: string; nombre: string }[]>();
+  const unicos = [...new Set(tels)];
+  for (let i = 0; i < unicos.length; i += 500) {
+    const ps =
+      (await callOdooRPCEstricto<any[]>(
+        "res.partner",
+        "search_read",
+        [[["phone_sanitized", "in", unicos.slice(i, i + 500)], ["vat", "!=", false]]],
+        { fields: ["vat", "name", "phone_sanitized"], context: { active_test: false } },
+      )) || [];
+    for (const p of ps) {
+      const rif = normalizarRif(String(p.vat));
+      if (!rif) continue;
+      const lista = out.get(p.phone_sanitized) ?? [];
+      if (!lista.some((x) => x.rif === rif)) lista.push({ rif, nombre: p.name });
+      out.set(p.phone_sanitized, lista);
+    }
+  }
+  return out;
+}
+
 /** Partners de Odoo → { vat normalizado, nombre }. `read` también trae los archivados. */
 async function vatsDePartners(ids: number[]): Promise<Map<number, { rif: string; nombre: string }>> {
   const out = new Map<number, { rif: string; nombre: string }>();
@@ -350,16 +403,18 @@ async function vatsDePartners(ids: number[]): Promise<Map<number, { rif: string;
  *    con nombre parecido (la columna mezcla pedido y factura, y el número de
  *    pedido choca con facturas de otros clientes: el nombre desempata);
  * 2) un pedido S-xxxxx de Odoo de esa sede;
- * 3) una factura de Smartbit, hasta 120 días después del lead, de un cliente
+ * 3) el teléfono del lead, si es el de un solo cliente de Odoo;
+ * 4) una factura de Smartbit, hasta 120 días después del lead, de un cliente
  *    con todas las palabras propias del nombre;
- * 4) un cliente de Odoo con ese nombre, si es uno solo.
- * Los que corrigió una persona (`manual`) no se tocan.
+ * 5) un cliente de Odoo con ese nombre, si es uno solo.
+ * Los que corrigió o confirmó una persona (`manual`, `confirmado`) no se tocan.
  */
 export async function resolverRifs(companyId: number): Promise<{ resueltos: number; sinRif: number }> {
   await asegurarTablas();
   const { rows: leads } = await query(
-    `SELECT id, nombre, fecha_interaccion, factura_txt FROM leads_historicos
-      WHERE company_id = ? AND estatus = 'CONCRETADO' AND (rif_origen IS NULL OR rif_origen <> 'manual')`,
+    `SELECT id, nombre, fecha_interaccion, factura_txt, telefono FROM leads_historicos
+      WHERE company_id = ? AND estatus = 'CONCRETADO'
+        AND (rif_origen IS NULL OR rif_origen NOT IN ('manual', 'confirmado'))`,
     [companyId],
   );
   if (!leads.length) return { resueltos: 0, sinRif: 0 };
@@ -410,7 +465,16 @@ export async function resolverRifs(companyId: number): Promise<{ resueltos: numb
     }
   }
 
-  // 3) nombre en Smartbit, cerca de la fecha del lead
+  // 3) teléfono del lead = teléfono de un cliente de Odoo (uno solo)
+  const sinUbicar = leads.filter((l: any) => !ubicados.has(l.id));
+  const porTel = await partnersPorTelefono(sinUbicar.flatMap((l: any) => telefonosE164(l.telefono, companyId)));
+  for (const l of sinUbicar) {
+    const ps = telefonosE164(l.telefono, companyId).flatMap((t) => porTel.get(t) ?? []);
+    const rifs = [...new Set(ps.map((p) => p.rif))];
+    if (rifs.length === 1) ubicados.set(l.id, { rif: rifs[0], origen: "telefono", cliente: ps[0].nombre, primera: null });
+  }
+
+  // 4) nombre en Smartbit, cerca de la fecha del lead
   for (const l of leads) {
     if (ubicados.has(l.id) || !l.fecha_interaccion) continue;
     const d0 = fechaISO(l.fecha_interaccion)!;
@@ -422,7 +486,7 @@ export async function resolverRifs(companyId: number): Promise<{ resueltos: numb
     if (cand.length) ubicados.set(l.id, { rif: cand[0].rif, origen: "nombre", cliente: cand[0].cliente, primera: cand[0].fecha });
   }
 
-  // 4) nombre en Odoo
+  // 5) nombre en Odoo
   for (const l of leads) {
     if (ubicados.has(l.id)) continue;
     const base = String(l.nombre).split("/")[0].replace(/,?\s*(C\.?\s?A|F\.?\s?P|S\.?\s?A)\.?\s*$/i, "").trim();
@@ -745,4 +809,141 @@ export function filtrosRecompra(sp: URLSearchParams) {
     hasta: f("hasta"),
     origen: o === "Excel" || o === "Panel" ? (o as "Excel" | "Panel") : null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Por revisar: leads de Excel que hay que mirar a mano
+
+export type Candidato = {
+  rif: string;
+  cliente: string;
+  via: "telefono" | "factura" | "nombre";
+  fecha: string; // primera compra después del lead
+  documento: string;
+  sistema: "Smartbit" | "Odoo";
+  monto: number;
+  compras: number; // compras en la ventana
+  compraba: boolean; // ya compraba en los 180 días antes del lead
+};
+
+export type LeadPorRevisar = {
+  id: number;
+  company_id: number;
+  tipo: "sin_rif" | "posible_venta";
+  nombre: string;
+  fecha: string;
+  telefono: string;
+  vendedor: string;
+  estatus: string | null;
+  factura_txt: string | null;
+  observacion: string | null;
+  candidatos: Candidato[];
+};
+
+/** Días después del lead en que una compra cuenta como venta del lead. */
+export const VENTANA_POSIBLE_VENTA = 90;
+
+/**
+ * Dos listas para revisar a mano en los leads de Excel:
+ * - `sin_rif`: vendidos a los que no se les ubicó el cliente;
+ * - `posible_venta`: quedaron como contactado, negociación, etc., pero el
+ *   cliente compró en los 90 días siguientes (el vendedor cerró y no se anotó).
+ * Candidatos por teléfono (Odoo), por un número de la columna Factura/Pedido
+ * (Smartbit, cualquier nombre) o por nombre (todas sus palabras propias). Solo
+ * entran los que tienen una compra real en la ventana. Los descartados
+ * (`revisado = 1`) no vuelven a salir.
+ */
+export async function revisarLeads(soloSede: number | null): Promise<LeadPorRevisar[]> {
+  await asegurarTablas();
+  const { rows: leads } = await query(
+    `SELECT id, company_id, nombre, DATE_FORMAT(fecha_interaccion, '%Y-%m-%d') AS fecha, telefono, vendedor,
+            estatus, factura_txt, observacion, rif
+       FROM leads_historicos
+      WHERE revisado = 0 AND fecha_interaccion IS NOT NULL
+        AND ((estatus = 'CONCRETADO' AND rif IS NULL) OR estatus IS NULL OR estatus <> 'CONCRETADO')
+        ${soloSede ? "AND company_id = ?" : ""}`,
+    soloSede ? [soloSede] : [],
+  );
+  if (!leads.length) return [];
+
+  const [{ rows: sb }, odoo] = await Promise.all([
+    query(
+      `SELECT company_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, numero, rif, cliente, venta
+         FROM ventas_smartbit_facturas WHERE venta > 0 AND rif IS NOT NULL`,
+    ),
+    facturasOdoo(),
+  ]);
+
+  type C = { fecha: string; documento: string; sistema: "Smartbit" | "Odoo"; monto: number };
+  const compras = new Map<string, C[]>();
+  const nombres = new Map<string, string>();
+  const agregar = (rif: string, nombre: string, c: C) => {
+    (compras.get(rif) ?? compras.set(rif, []).get(rif)!).push(c);
+    if (!nombres.has(rif)) nombres.set(rif, nombre);
+  };
+  // Smartbit hasta el corte y Odoo desde ahí, igual que el reporte.
+  for (const r of sb) {
+    if (r.fecha < CORTE_ODOO) agregar(r.rif, r.cliente, { fecha: r.fecha, documento: String(r.numero), sistema: "Smartbit", monto: Number(r.venta) });
+  }
+  for (const f of odoo) agregar(f.rif, f.cliente, { fecha: f.fecha, documento: f.documento, sistema: "Odoo", monto: f.monto });
+  for (const l of compras.values()) l.sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
+
+  const porNumero = new Map<string, any>(sb.map((r: any) => [`${r.company_id}|${r.numero}`, r]));
+  const indice = [...nombres].map(([rif, n]) => ({
+    rif,
+    palabras: new Set(normNombre(n).split(" ").filter((w) => !GENERICAS.has(w))),
+  }));
+  const porTel = await partnersPorTelefono(leads.flatMap((l: any) => telefonosE164(l.telefono, l.company_id)));
+
+  const out: LeadPorRevisar[] = [];
+  for (const l of leads) {
+    const tipo = l.estatus === "CONCRETADO" ? "sin_rif" : "posible_venta";
+    const vias = new Map<string, Candidato["via"]>();
+    for (const t of telefonosE164(l.telefono, l.company_id)) {
+      for (const p of porTel.get(t) ?? []) if (!vias.has(p.rif)) vias.set(p.rif, "telefono");
+    }
+    for (const t of String(l.factura_txt || "").match(/(?<![\w-])\d{4,6}(?!\d)/g) || []) {
+      const r = porNumero.get(`${l.company_id}|${t}`);
+      if (r && !vias.has(r.rif)) vias.set(r.rif, "factura");
+    }
+    // Por nombre: todas las palabras propias del lead en el cliente; con una
+    // sola palabra, que sea larga (evita "Marco", "Carlos"…).
+    for (const parte of String(l.nombre).split(/[/()]/)) {
+      const ta = normNombre(parte).split(" ").filter((w) => w && !GENERICAS.has(w));
+      if (!ta.length || (ta.length === 1 && ta[0].length < 6)) continue;
+      for (const c of indice) if (!vias.has(c.rif) && ta.every((w) => c.palabras.has(w))) vias.set(c.rif, "nombre");
+    }
+
+    const desde = sumarDias(l.fecha, -VENTANA_PRIMERA_VENTA);
+    const hasta = sumarDias(l.fecha, tipo === "sin_rif" ? 120 : VENTANA_POSIBLE_VENTA);
+    const antes = sumarDias(l.fecha, -180);
+    const candidatos: Candidato[] = [];
+    for (const [rif, via] of vias) {
+      const lista = compras.get(rif) ?? [];
+      const en = lista.filter((c) => c.fecha >= desde && c.fecha <= hasta);
+      if (!en.length) continue;
+      candidatos.push({
+        rif,
+        cliente: nombres.get(rif) || "",
+        via,
+        fecha: en[0].fecha,
+        documento: en[0].documento,
+        sistema: en[0].sistema,
+        monto: r2(en[0].monto),
+        compras: en.length,
+        compraba: lista.some((c) => c.fecha >= antes && c.fecha < desde),
+      });
+    }
+    if (!candidatos.length) continue;
+    const orden = { telefono: 0, factura: 1, nombre: 2 };
+    candidatos.sort((a, b) => orden[a.via] - orden[b.via] || (a.fecha < b.fecha ? -1 : 1));
+    out.push({
+      id: l.id, company_id: l.company_id, tipo, nombre: l.nombre, fecha: l.fecha, telefono: l.telefono || "",
+      vendedor: l.vendedor || "", estatus: l.estatus, factura_txt: l.factura_txt, observacion: l.observacion,
+      candidatos: candidatos.slice(0, 3),
+    });
+  }
+  // Primero los vendidos sin cliente, después las posibles ventas con teléfono, factura y nombre.
+  const peso = (x: LeadPorRevisar) => (x.tipo === "sin_rif" ? 0 : 1) * 10 + { telefono: 0, factura: 1, nombre: 2 }[x.candidatos[0].via];
+  return out.sort((a, b) => peso(a) - peso(b) || (a.fecha < b.fecha ? 1 : -1));
 }

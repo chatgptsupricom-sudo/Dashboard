@@ -143,7 +143,7 @@ export default function RecompraClientes({ onVerSinRif }: { onVerSinRif: () => v
                 <p className="text-amber-700">
                   {data.sinRif.length} lead(s) vendidos no entran porque no se les ubicó el RIF.{" "}
                   <button onClick={onVerSinRif} className="underline font-semibold">
-                    Revisar los de Excel
+                    Revisar los de Excel en &quot;Por revisar&quot;
                   </button>
                   ; los del panel se corrigen cargando el RIF en el lead.
                 </p>
