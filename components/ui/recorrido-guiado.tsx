@@ -65,6 +65,7 @@ export function RecorridoGuiado({
   const [i, setI] = useState(0);
   const [nuncaMas, setNuncaMas] = useState(false);
   const [caja, setCaja] = useState<DOMRect | null>(null);
+  const [altoTarjeta, setAltoTarjeta] = useState(240);
   const tarjeta = useRef<HTMLDivElement>(null);
   const paso = pasos[i];
 
@@ -127,6 +128,12 @@ export function RecorridoGuiado({
     return () => window.removeEventListener("keydown", tecla);
   }, [abierto, i, nuncaMas, onCerrar, pasos.length]);
 
+  // Alto real de la tarjeta (cambia con el texto de cada paso) para ubicarla sin que se salga.
+  useLayoutEffect(() => {
+    const h = tarjeta.current?.offsetHeight;
+    if (h && Math.abs(h - altoTarjeta) > 4) setAltoTarjeta(h);
+  });
+
   if (!abierto || !paso) return null;
 
   const ultimo = i === pasos.length - 1;
@@ -140,8 +147,9 @@ export function RecorridoGuiado({
   const vis = caja && { top: Math.max(caja.top, MARGEN), bottom: Math.min(caja.bottom, vh - MARGEN) };
   if (caja && vis) {
     const left = Math.min(Math.max(16, caja.left + caja.width / 2 - ancho / 2), vw - ancho - 16);
-    if (vis.bottom + 240 < vh) estilo = { left, top: vis.bottom + 14 };
-    else if (vis.top - 240 > 0) estilo = { left, top: vis.top - 14, transform: "translateY(-100%)" };
+    const hueco = altoTarjeta + 30;
+    if (vis.bottom + hueco < vh) estilo = { left, top: vis.bottom + 14 };
+    else if (vis.top - hueco > 0) estilo = { left, top: vis.top - 14, transform: "translateY(-100%)" };
     else estilo = { left, bottom: 16 };
   }
 
