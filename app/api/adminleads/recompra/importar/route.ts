@@ -5,7 +5,7 @@
 
 import { importarExcel, SEDES } from "@/lib/adminleads/recompra";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRoles } from "@/lib/auth/roles";
+import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -13,7 +13,7 @@ export const maxDuration = 120;
 const MAX_BYTES = 15 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {

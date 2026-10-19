@@ -1,4 +1,4 @@
-import { requireRoles } from "@/lib/auth/roles";
+import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { agregar, cambiar, leerRotacion, quitar } from "@/lib/adminleads/rotacionEstados";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -15,7 +15,7 @@ export const runtime = "nodejs";
 // Cada cambio queda en audit_logs (ROTACION_ESTADO): lo ve el SuperAdmin en Auditoría.
 
 async function guardia(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return { error: auth.error };
   if (Number(auth.payload?.cids) === 7)
     return { error: NextResponse.json({ error: "Panamá no usa la rotación por estados." }, { status: 403 }) };

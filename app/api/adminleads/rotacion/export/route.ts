@@ -5,7 +5,7 @@ import {
   type FilaRotacion,
 } from "@/lib/adminleads/rotacion";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRoles } from "@/lib/auth/roles";
+import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -24,7 +24,7 @@ const ESTADO_LABEL: Record<EstadoRotacion, string> = {
  * mismos filtros que la tabla (se pasan por query). Solo cantidades físicas.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {
