@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cadenaDeMando, hijosPorPadre, type Nodo } from "@/lib/organigrama/tipos";
+import { cadenaDeMando, hijosPorPadre, ORGANIGRAMAS, type Nodo, type Organigrama as Org } from "@/lib/organigrama/tipos";
 import { cn } from "@/lib/utils";
 import {
   ChevronDown,
@@ -24,8 +24,10 @@ import {
   Maximize2,
   Minus,
   Network,
+  Pencil,
   Plus,
   Search,
+  Check,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -35,6 +37,9 @@ const limitarZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, +z.toFi
 const esperarPintado = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
 export default function OrganigramaPage() {
+  // Pestañas: un organigrama por pestaña. Se entra en solo lectura; «Editar» habilita los cambios.
+  const [org, setOrg] = useState<Org>("actual");
+  const [editando, setEditando] = useState(false);
   const [nodos, setNodos] = useState<Nodo[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,17 +62,28 @@ export default function OrganigramaPage() {
   const suprimirClic = useRef(false);
 
   const recargar = useCallback(async () => {
-    const r = await fetch("/api/organigrama");
+    const r = await fetch(`/api/organigrama?organigrama=${org}`);
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error || "No se pudo cargar el organigrama");
     setNodos(j.nodos || []);
-  }, []);
+  }, [org]);
 
   useEffect(() => {
+    setCargando(true);
+    setError(null);
     recargar()
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
   }, [recargar]);
+
+  const cambiarOrganigrama = (o: Org) => {
+    if (o === org) return;
+    setSeleccion(null);
+    setEditando(false);
+    setNodos([]);
+    ajustado.current = false; // el otro organigrama se vuelve a ajustar al ancho
+    setOrg(o);
+  };
 
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => setCtrl(e.ctrlKey);
@@ -207,7 +223,8 @@ export default function OrganigramaPage() {
     }
   };
 
-  const nombreArchivo = (ext: string) => `organigrama-supricom-${new Date().toISOString().slice(0, 10)}.${ext}`;
+  const nombreArchivo = (ext: string) =>
+    `organigrama-${org === "actual" ? "supricom" : `${org}-supricom`}-${new Date().toISOString().slice(0, 10)}.${ext}`;
 
   const bajar = (href: string, nombre: string) => {
     const a = document.createElement("a");
@@ -293,7 +310,7 @@ export default function OrganigramaPage() {
     recorrer(null);
     const csv = filas.map((f) => f.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
-    bajar(url, `organigrama-actividades-${new Date().toISOString().slice(0, 10)}.csv`);
+    bajar(url, `organigrama-${org}-actividades-${new Date().toISOString().slice(0, 10)}.csv`);
     URL.revokeObjectURL(url);
   };
 
@@ -312,7 +329,7 @@ export default function OrganigramaPage() {
           <div>
             <h1 className="text-2xl font-black text-slate-900">Organigrama</h1>
             <p className="text-sm text-slate-500">
-              Clic: actividades del cargo · Doble clic: editar nombre y personas
+              {editando ? "Editando · Clic: actividades del cargo · Doble clic: editar nombre y personas" : "Solo lectura · Clic: ver las actividades del cargo"}
               {nodos.length > 0 && (
                 <span className="text-slate-400">
                   {" "}
@@ -383,16 +400,49 @@ export default function OrganigramaPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            {editando && (
+              <button
+                onClick={() =>
+                  crear({ parentId: null, cargo: "Nuevo cargo", tipo: "direccion", disposicion: "fila", organigrama: org })
+                }
+                disabled={creando}
+                className={boton}
+                title="Un cargo que no reporta a nadie (ej. Junta Directiva). Para ponerlo encima de la cabeza, en el panel de esta usa «Agregar superior»."
+              >
+                <Plus className="h-4 w-4" /> Cargo sin superior
+              </button>
+            )}
             <button
-              onClick={() => crear({ parentId: null, cargo: "Nuevo cargo", tipo: "direccion", disposicion: "fila" })}
-              disabled={creando}
-              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-              title="Un cargo que no reporta a nadie (ej. Junta Directiva). Para ponerlo encima del Gerente General, en el panel de este usa «Agregar superior»."
+              onClick={() => setEditando((e) => !e)}
+              aria-pressed={editando}
+              className={cn(
+                "flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold",
+                editando ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-blue-600 text-white hover:bg-blue-700",
+              )}
+              title={editando ? "Volver a solo lectura" : "Habilitar la edición de este organigrama"}
             >
-              <Plus className="h-4 w-4" /> Cargo sin superior
+              {editando ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+              {editando ? "Terminar edición" : "Editar"}
             </button>
           </div>
         )}
+      </div>
+
+      <div className="flex gap-1 rounded-2xl bg-slate-100 p-1 w-fit" role="tablist" aria-label="Organigramas">
+        {(Object.keys(ORGANIGRAMAS) as Org[]).map((o) => (
+          <button
+            key={o}
+            role="tab"
+            aria-selected={org === o}
+            onClick={() => cambiarOrganigrama(o)}
+            className={cn(
+              "rounded-xl px-4 py-1.5 text-sm font-semibold transition",
+              org === o ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800",
+            )}
+          >
+            {ORGANIGRAMAS[o]}
+          </button>
+        ))}
       </div>
 
       {error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -401,22 +451,24 @@ export default function OrganigramaPage() {
       {!cargando && !error && nodos.length === 0 && (
         <div className="mx-auto mt-6 max-w-lg rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
           <Network className="mx-auto h-10 w-10 text-slate-300" />
-          <h2 className="mt-3 text-lg font-bold text-slate-800">El organigrama está vacío</h2>
+          <h2 className="mt-3 text-lg font-bold text-slate-800">El {ORGANIGRAMAS[org].toLowerCase()} está vacío</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Puedes cargar el organigrama actual de SUPRICOM (octubre 2026) y ajustarlo, o empezar desde cero.
+            {org === "actual"
+              ? "Puedes cargar el organigrama actual de SUPRICOM (octubre 2026) y ajustarlo, o empezar desde cero."
+              : "Puedes cargar el organigrama propuesto (estructura hacia el futuro) y ajustarlo, o empezar desde cero."}
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <button
-              onClick={() => crear({ inicial: true })}
+              onClick={() => crear({ inicial: true, organigrama: org })}
               disabled={creando}
               className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {creando && <Loader2 className="h-4 w-4 animate-spin" />}
-              Cargar organigrama actual
+              Cargar {ORGANIGRAMAS[org].toLowerCase()}
             </button>
             <button
               onClick={() =>
-                crear({ parentId: null, area: "Gerencia General", cargo: "Gerente General", tipo: "direccion", disposicion: "fila" })
+                crear({ parentId: null, area: "Gerencia General", cargo: "Gerente General", tipo: "direccion", disposicion: "fila", organigrama: org })
               }
               disabled={creando}
               className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-blue-300 disabled:opacity-50"
@@ -451,7 +503,7 @@ export default function OrganigramaPage() {
             <div ref={objetivoExportar} className="w-max min-w-full bg-transparent">
               {exportando && (
                 <div className="flex items-baseline justify-between px-8 pt-6">
-                  <p className="text-xl font-black text-[#1e3a5f]">Organigrama SUPRICOM</p>
+                  <p className="text-xl font-black text-[#1e3a5f]">{org === "actual" ? "Organigrama SUPRICOM" : `${ORGANIGRAMAS[org]} SUPRICOM`}</p>
                   <p className="text-xs text-slate-500">{new Date().toLocaleDateString("es-VE", { dateStyle: "long" })}</p>
                 </div>
               )}
@@ -462,6 +514,7 @@ export default function OrganigramaPage() {
                 onSeleccionar={(id) => setSeleccion({ id })}
                 onAgregarSubordinado={(padre) => crear({ parentId: padre, cargo: "Nuevo cargo" })}
                 onEditar={editarRapido}
+                soloLectura={!editando}
               />
             </div>
           </div>
@@ -475,6 +528,7 @@ export default function OrganigramaPage() {
         onCerrar={() => setSeleccion(null)}
         onSeleccionar={(id, tab) => setSeleccion({ id, tab })}
         onRecargar={recargar}
+        soloLectura={!editando}
       />
     </div>
   );

@@ -16,6 +16,8 @@ type Props = {
   onAgregarSubordinado: (padre: number) => void;
   /** Guarda lo editado en el mismo recuadro; devuelve false si no se pudo. */
   onEditar: (id: number, cambios: EdicionRapida) => Promise<boolean>;
+  /** Solo lectura: el clic abre el cargo, pero no se edita ni se agregan subordinados. */
+  soloLectura?: boolean;
 };
 
 const ESTILO_CAJA: Record<Nodo["tipo"], string> = {
@@ -34,7 +36,15 @@ const campo =
  * Dibuja el organigrama completo. Un clic abre el panel del cargo; doble clic
  * (o el lápiz) edita área, cargo, nota y personas en el mismo recuadro.
  */
-export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAgregarSubordinado, onEditar }: Props) {
+export function Organigrama({
+  nodos,
+  seleccionado,
+  busqueda,
+  onSeleccionar,
+  onAgregarSubordinado,
+  onEditar,
+  soloLectura = false,
+}: Props) {
   const mapa = hijosPorPadre(nodos);
   const q = busqueda.trim().toLowerCase();
   const raices = mapa.get(null) || [];
@@ -46,6 +56,7 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
   const clicPendiente = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const empezarEdicion = (n: Nodo) => {
+    if (soloLectura) return;
     if (clicPendiente.current) clearTimeout(clicPendiente.current);
     setBorrador({ area: n.area, cargo: n.cargo, nota: n.nota, personas: n.personas.join("\n") });
     setEditando(n.id);
@@ -133,7 +144,7 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
   const caja = (n: Nodo, ancho: string) => {
     const oscuro = n.tipo === "direccion";
     const atenuado = q !== "" && !coincide(n, q);
-    const enEdicion = editando === n.id;
+    const enEdicion = !soloLectura && editando === n.id;
     return (
       <div
         role="button"
@@ -141,7 +152,7 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
         data-nodo={n.id}
         onClick={(e) => {
           if (enEdicion) return;
-          if (e.detail > 1) return;
+          if (e.detail > 1 && !soloLectura) return;
           if (clicPendiente.current) clearTimeout(clicPendiente.current);
           clicPendiente.current = setTimeout(() => onSeleccionar(n.id), 220);
         }}
@@ -154,7 +165,7 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
           }
           if (e.key === "F2") empezarEdicion(n);
         }}
-        title={enEdicion ? undefined : "Clic: actividades · Doble clic: editar nombre y personas"}
+        title={enEdicion ? undefined : soloLectura ? "Clic: ver actividades del cargo" : "Clic: actividades · Doble clic: editar nombre y personas"}
         className={cn(
           "group relative rounded-lg border px-3 py-2.5 text-center transition",
           enEdicion
@@ -202,6 +213,7 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
                 {n.actividades.length}
               </span>
             )}
+            {!soloLectura && (
             <div
               data-exportar="no"
               className="absolute -bottom-3 left-1/2 z-10 hidden -translate-x-1/2 gap-1 group-hover:flex print:hidden"
@@ -231,6 +243,7 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
+            )}
           </>
         )}
       </div>

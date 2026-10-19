@@ -130,3 +130,87 @@ export const ORGANIGRAMA_INICIAL: Semilla = {
     { area: "Auditoría", cargo: "Auditor", tipo: "area", personas: ["Carlos Urrutia"] },
   ],
 };
+
+// Organigrama propuesto (estructura hacia el futuro, oct-2026). Sin personas:
+// es la estructura, no quién ocupa cada cargo. La Vicepresidencia de Finanzas
+// lleva Administración y Finanzas; el resto de las áreas cuelga de la
+// Dirección General.
+export const ORGANIGRAMA_PROPUESTO: Semilla = {
+  area: "Presidencia",
+  cargo: "Presidente",
+  tipo: "direccion",
+  disposicion: "fila",
+  hijos: [
+    { area: "Staff de Presidencia", cargo: "Seguridad y Control de Acceso", staff: true },
+    {
+      area: "Vicepresidencia",
+      cargo: "Vicepresidenta de Finanzas",
+      tipo: "area",
+      hijos: [
+        {
+          area: "Administración y Finanzas",
+          cargo: "Coordinador Contable-Administrativo",
+          tipo: "area",
+          hijos: [
+            { cargo: "Administrador(a)", hijos: [{ cargo: "Asistente Administrativo" }] },
+            { cargo: "Asistente de Facturación" },
+            { cargo: "Jefe(a) de Crédito y Cobranzas", hijos: [{ cargo: "Asistente de Crédito y Cobranzas" }] },
+          ],
+        },
+      ],
+    },
+    {
+      area: "Dirección General",
+      cargo: "Director General",
+      tipo: "area",
+      disposicion: "fila",
+      hijos: [
+        { area: "Staff de Dirección General", cargo: "Auditor", staff: true },
+        {
+          area: "Compras",
+          cargo: "Gerente de Compras",
+          tipo: "area",
+          hijos: [{ cargo: "Especialista en Compras", nota: "Nuevo ingreso" }],
+        },
+        {
+          area: "Servicios Generales",
+          cargo: "Gerente de Servicios Generales",
+          tipo: "area",
+          hijos: [{ cargo: "Servicio Técnico" }, { cargo: "Servicios Generales" }],
+        },
+        {
+          area: "Ventas",
+          cargo: "Gerente de Ventas",
+          tipo: "area",
+          hijos: [{ cargo: "Representante de Ventas" }, { cargo: "Asistente de Ventas" }, { cargo: "Técnico en Capacitación" }],
+        },
+        {
+          area: "Almacén",
+          cargo: "Jefe de Almacén",
+          tipo: "area",
+          hijos: [{ cargo: "Chofer" }, { cargo: "Chofer-Almacenista" }, { cargo: "Almacenista" }],
+        },
+        {
+          area: "Marketing",
+          cargo: "Gerente de Marketing",
+          nota: "Por definir",
+          tipo: "area",
+          hijos: [{ cargo: "Mercadólogo" }, { cargo: "Diseñador(a) Gráfico(a)" }],
+        },
+        {
+          area: "Programación",
+          cargo: "Coordinador de Programación",
+          tipo: "area",
+          hijos: [{ cargo: "Analista de Automatización de Aplicaciones" }, { cargo: "Diseñador Web" }],
+        },
+        { area: "IT", cargo: "Especialista de IT", tipo: "area" },
+        {
+          area: "Recursos Humanos",
+          cargo: "Gerente de Recursos Humanos",
+          tipo: "area",
+          hijos: [{ cargo: "Asistente de Recursos Humanos" }],
+        },
+      ],
+    },
+  ],
+};

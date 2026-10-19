@@ -4,10 +4,12 @@ import {
   hijosPorPadre,
   type Actividad,
   type Disposicion,
+  organigramaDe,
   type Nodo,
+  type Organigrama,
   type TipoNodo,
 } from "@/lib/organigrama/tipos";
-import { ORGANIGRAMA_INICIAL, type Semilla } from "@/lib/organigrama/inicial";
+import { ORGANIGRAMA_INICIAL, ORGANIGRAMA_PROPUESTO, type Semilla } from "@/lib/organigrama/inicial";
 
 /**
  * Organigrama de la empresa (sección "Organigrama", SuperAdmin y Procesos).
@@ -17,6 +19,10 @@ import { ORGANIGRAMA_INICIAL, type Semilla } from "@/lib/organigrama/inicial";
  * misma fila. La tabla se crea sola; DDL de referencia en sql/organigrama.sql.
  * Arranca vacía: la pantalla ofrece cargar el organigrama de oct-2026
  * (`ORGANIGRAMA_INICIAL`) o empezar en blanco.
+ *
+ * Hay más de un organigrama (columna `organigrama`: el actual y el propuesto,
+ * `ORGANIGRAMAS` en tipos.ts), cada uno con su árbol: un cargo solo puede
+ * colgar de otro del mismo organigrama.
  */
 
 let tablaLista = false;
@@ -42,6 +48,13 @@ async function ensureTabla() {
       INDEX (parent_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  // Columna nueva: lo que ya estaba es el organigrama actual.
+  const [cols] = await db.execute("SHOW COLUMNS FROM organigrama_nodos LIKE 'organigrama'");
+  if (!(cols as any[]).length) {
+    await db.execute(
+      "ALTER TABLE organigrama_nodos ADD COLUMN organigrama VARCHAR(20) NOT NULL DEFAULT 'actual' AFTER id, ADD INDEX idx_organigrama (organigrama)",
+    );
+  }
   tablaLista = true;
 }
 
@@ -64,6 +77,7 @@ const texto = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
 
 const aNodo = (f: any): Nodo => ({
   id: Number(f.id),
+  organigrama: organigramaDe(f.organigrama),
   parentId: f.parent_id == null ? null : Number(f.parent_id),
   orden: Number(f.orden) || 0,
   tipo: tipoDe(f.tipo),
@@ -79,9 +93,12 @@ const aNodo = (f: any): Nodo => ({
   updatedAt: f.updated_at ? new Date(f.updated_at).toISOString() : null,
 });
 
-export async function listarNodos(): Promise<Nodo[]> {
+export async function listarNodos(org: Organigrama): Promise<Nodo[]> {
   await ensureTabla();
-  const [filas] = await db.execute("SELECT * FROM organigrama_nodos ORDER BY parent_id, orden, id");
+  const [filas] = await db.execute(
+    "SELECT * FROM organigrama_nodos WHERE organigrama = ? ORDER BY parent_id, orden, id",
+    [org],
+  );
   return (filas as any[]).map(aNodo);
 }
 
@@ -111,23 +128,29 @@ async function reordenar(ids: number[]) {
     await db.execute("UPDATE organigrama_nodos SET orden = ? WHERE id = ?", [i * 10, ids[i]]);
 }
 
-async function hermanos(parentId: number | null): Promise<Nodo[]> {
-  const nodos = await listarNodos();
+async function hermanos(org: Organigrama, parentId: number | null): Promise<Nodo[]> {
+  const nodos = await listarNodos(org);
   return hijosPorPadre(nodos).get(parentId) || [];
 }
 
 export async function crearNodo(b: any, por: string): Promise<number> {
   await ensureTabla();
   const parentId = b?.parentId == null ? null : Number(b.parentId);
-  if (parentId != null && !(await obtenerNodo(parentId))) throw new Error("El superior no existe.");
+  const padre = parentId != null ? await obtenerNodo(parentId) : null;
+  if (parentId != null && !padre) throw new Error("El superior no existe.");
+  // El subordinado va en el organigrama de su superior; el que se agrega como
+  // superior de otro, en el de ese otro; si no, en el pedido.
+  const debajoDe = b?.encimaDe == null ? null : await obtenerNodo(Number(b.encimaDe));
+  const org = padre?.organigrama ?? debajoDe?.organigrama ?? organigramaDe(b?.organigrama);
   const cargo = texto(b?.cargo, 150) || "Nuevo cargo";
-  const lista = await hermanos(parentId);
+  const lista = await hermanos(org, parentId);
   const orden = lista.length ? Math.max(...lista.map((n) => n.orden)) + 10 : 0;
   const [r] = await db.execute(
     `INSERT INTO organigrama_nodos
-       (parent_id, orden, tipo, staff, disposicion, area, cargo, nota, personas, proposito, actividades, updated_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (organigrama, parent_id, orden, tipo, staff, disposicion, area, cargo, nota, personas, proposito, actividades, updated_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
+      org,
       parentId,
       orden,
       tipoDe(b?.tipo),
@@ -189,12 +212,12 @@ export async function actualizarNodo(id: number, b: any, por: string): Promise<v
     nuevoPadre = b.parentId == null || b.parentId === "" ? null : Number(b.parentId);
     if (nuevoPadre !== nodo.parentId) {
       if (nuevoPadre != null) {
-        const nodos = await listarNodos();
-        if (!nodos.some((n) => n.id === nuevoPadre)) throw new Error("El superior no existe.");
+        const nodos = await listarNodos(nodo.organigrama);
+        if (!nodos.some((n) => n.id === nuevoPadre)) throw new Error("El superior no existe en este organigrama.");
         if (descendientes(nodos, id).has(nuevoPadre))
           throw new Error("Un cargo no puede reportar a sí mismo ni a uno de sus subordinados.");
       }
-      const lista = await hermanos(nuevoPadre);
+      const lista = await hermanos(nodo.organigrama, nuevoPadre);
       poner("parent_id", nuevoPadre);
       poner("orden", lista.length ? Math.max(...lista.map((n) => n.orden)) + 10 : 0);
     }
@@ -210,7 +233,7 @@ export async function actualizarNodo(id: number, b: any, por: string): Promise<v
   const mover = Number(b?.mover);
   if (mover === -1 || mover === 1) {
     const actual = await obtenerNodo(id);
-    const lista = await hermanos(actual!.parentId);
+    const lista = await hermanos(actual!.organigrama, actual!.parentId);
     const i = lista.findIndex((n) => n.id === id);
     const j = i + mover;
     if (i >= 0 && j >= 0 && j < lista.length) {
@@ -225,7 +248,7 @@ export async function borrarNodo(id: number): Promise<void> {
   await ensureTabla();
   const nodo = await obtenerNodo(id);
   if (!nodo) return;
-  const nodos = await listarNodos();
+  const nodos = await listarNodos(nodo.organigrama);
   const mapa = hijosPorPadre(nodos);
   const hijos = mapa.get(id) || [];
   const lista = mapa.get(nodo.parentId) || [];
@@ -240,16 +263,21 @@ export async function borrarNodo(id: number): Promise<void> {
   await reordenar(nuevos);
 }
 
-/** Carga `ORGANIGRAMA_INICIAL`. Solo con la tabla vacía, para no duplicar nada. */
-export async function cargarOrganigramaInicial(por: string): Promise<boolean> {
+const SEMILLAS: Record<Organigrama, Semilla> = {
+  actual: ORGANIGRAMA_INICIAL,
+  propuesto: ORGANIGRAMA_PROPUESTO,
+};
+
+/** Carga la semilla de ese organigrama. Solo si está vacío, para no duplicar nada. */
+export async function cargarOrganigramaInicial(org: Organigrama, por: string): Promise<boolean> {
   await ensureTabla();
-  const [filas] = await db.execute("SELECT COUNT(*) AS n FROM organigrama_nodos");
+  const [filas] = await db.execute("SELECT COUNT(*) AS n FROM organigrama_nodos WHERE organigrama = ?", [org]);
   if (Number((filas as any[])[0]?.n) > 0) return false;
   const insertar = async (s: Semilla, parentId: number | null, orden: number) => {
-    const id = await crearNodo({ ...s, parentId }, por);
+    const id = await crearNodo({ ...s, parentId, organigrama: org }, por);
     await db.execute("UPDATE organigrama_nodos SET orden = ? WHERE id = ?", [orden, id]);
     for (const [i, h] of (s.hijos || []).entries()) await insertar(h, id, i * 10);
   };
-  await insertar(ORGANIGRAMA_INICIAL, null, 0);
+  await insertar(SEMILLAS[org], null, 0);
   return true;
 }
