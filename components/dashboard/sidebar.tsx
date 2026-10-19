@@ -456,7 +456,8 @@ export function Sidebar({
   const hasAuditPermission =
     allowedSections.includes("audit") ||
     allowedSections.includes("auditoria_panel") ||
-    allowedSections.includes("auditoria_nc");
+    allowedSections.includes("auditoria_nc") ||
+    allowedSections.includes("calidad_odoo");
   const hasComprasPermission =
     allowedSections.includes("compras") ||
     allowedSections.includes("sugeridos") ||
@@ -833,6 +834,11 @@ export function Sidebar({
                           label: t("auditoria_nc"),
                           href: `${basePath}/auditoria-nc`,
                           permission: "auditoria_nc",
+                        },
+                        {
+                          label: t("calidad_odoo"),
+                          href: `${basePath}/calidad-odoo`,
+                          permission: "calidad_odoo",
                         },
                       ].map((subItem, index) => {
                         if (!allowedSections.includes(subItem.permission))
