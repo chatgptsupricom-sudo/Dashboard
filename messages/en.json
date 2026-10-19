@@ -220,6 +220,7 @@
     "auditoria_odoo": "Odoo Audit",
     "auditoria_panel": "Panel Audit",
     "auditoria_nc": "Credit Notes & Voids",
+    "calidad_odoo": "Odoo Data Quality",
     "por_vendedor": "By Seller",
     "por_cliente": "By Client",
     "cerrar_sesion": "Sign Out",

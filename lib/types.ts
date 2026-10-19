@@ -64,6 +64,7 @@ export const rolePermissions: RolePermissions = {
       "audit",
       "auditoria_panel", // Auditoría de acciones
       "auditoria_nc", // Auditoría de notas de crédito, facturas anuladas y reabiertas
+      "calidad_odoo", // Calidad de datos de Odoo: errores y desorden a corregir (para el auditor)
       "brand_management", // Gestión de marcas
       "marketing_management", // Gestión de marketing
       "marketing", // Marketing operativo
