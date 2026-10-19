@@ -921,15 +921,18 @@ export async function revisarLeads(soloSede: number | null): Promise<LeadPorRevi
     for (const [rif, via] of vias) {
       const lista = compras.get(rif) ?? [];
       const en = lista.filter((c) => c.fecha >= desde && c.fecha <= hasta);
-      if (!en.length) continue;
+      // Un vendido sin cliente con el mismo teléfono se muestra aunque compre fuera
+      // de la ventana (la venta pudo facturarse con otro nombre): decide una persona.
+      const ref = en[0] ?? (tipo === "sin_rif" && via === "telefono" ? lista.find((c) => c.fecha >= desde) ?? lista[0] : null);
+      if (!ref) continue;
       candidatos.push({
         rif,
         cliente: nombres.get(rif) || "",
         via,
-        fecha: en[0].fecha,
-        documento: en[0].documento,
-        sistema: en[0].sistema,
-        monto: r2(en[0].monto),
+        fecha: ref.fecha,
+        documento: ref.documento,
+        sistema: ref.sistema,
+        monto: r2(ref.monto),
         compras: en.length,
         compraba: lista.some((c) => c.fecha >= antes && c.fecha < desde),
       });

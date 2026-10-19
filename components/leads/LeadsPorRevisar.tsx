@@ -166,7 +166,7 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
                     <p className="text-sm font-semibold text-zinc-700">{c.cliente}</p>
                     <p className="text-[11px] text-zinc-400">
                       {c.rif} · primera compra {c.fecha} ({c.sistema} {c.documento}) por {usd(c.monto)} ·{" "}
-                      {c.compras} compra(s) en la ventana
+                      {c.compras ? `${c.compras} compra(s) en la ventana` : "ninguna compra en la ventana del lead"}
                       {c.compraba && (
                         <span className="text-amber-600 ml-1">
                           <AlertTriangle className="inline w-3 h-3" /> ya compraba
