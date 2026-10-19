@@ -5,6 +5,7 @@
 
 import { Check, Loader2, Pencil, Search, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import CampanasExcel, { type CampanaHoja } from "@/components/leads/CampanasExcel";
 
 const SEDES: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 const ORIGEN_RIF: Record<string, string> = {
@@ -21,6 +22,7 @@ const campo = "py-2 px-3 bg-zinc-50 rounded-xl text-sm border-none focus:ring-2 
 export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?: string }) {
   const [leads, setLeads] = useState<any[]>([]);
   const [facturas, setFacturas] = useState<any[]>([]);
+  const [campanas, setCampanas] = useState<CampanaHoja[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [buscar, setBuscar] = useState("");
@@ -44,6 +46,7 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
       if (r.error) throw new Error(r.error);
       setLeads(r.leads);
       setFacturas(r.facturasSmartbit);
+      setCampanas(r.campanas || []);
       setError(null);
     } catch (e: any) {
       setError(e.message);
@@ -103,7 +106,7 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
       (l) =>
         (!estatus ||
           (estatus === "SIN_RIF" ? l.estatus === "CONCRETADO" && !l.rif : l.estatus === estatus)) &&
-        (!q || `${l.nombre} ${l.vendedor} ${l.rif ?? ""} ${l.factura_txt ?? ""} ${l.ubicacion ?? ""}`.toLowerCase().includes(q)),
+        (!q || `${l.nombre} ${l.vendedor} ${l.rif ?? ""} ${l.factura_txt ?? ""} ${l.ubicacion ?? ""} ${l.campana ?? ""}`.toLowerCase().includes(q)),
     );
   }, [leads, buscar, estatus]);
   const vendidos = leads.filter((l) => l.estatus === "CONCRETADO");
@@ -151,6 +154,8 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
         )}
       </div>
 
+      <CampanasExcel campanas={campanas} onCambio={cargar} />
+
       <div data-tour="excel-tabla" className="bg-white rounded-2xl border border-zinc-100 shadow-sm">
         <div className="p-4 flex flex-col md:flex-row gap-3 md:items-center border-b border-zinc-100">
           <div className="relative flex-1 max-w-sm">
@@ -187,7 +192,7 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
                 <tr>
                   <th className="text-left px-3 py-2">Fecha</th>
                   <th className="text-left px-3 py-2">Cliente</th>
-                  <th className="text-left px-3 py-2">Red</th>
+                  <th className="text-left px-3 py-2">Campaña</th>
                   <th className="text-left px-3 py-2">Ubicación</th>
                   <th className="text-left px-3 py-2">Vendedor</th>
                   <th className="text-left px-3 py-2">Estatus</th>
@@ -207,7 +212,10 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
                         {SEDES[l.company_id]} · {l.telefono}
                       </p>
                     </td>
-                    <td className="px-3 py-2 text-zinc-600">{l.red_social}</td>
+                    <td className="px-3 py-2 text-zinc-600 text-xs min-w-[180px]">
+                      {l.campana || l.hoja}
+                      <p className="text-[10px] text-zinc-400">{l.red_social}</p>
+                    </td>
                     <td className="px-3 py-2 text-zinc-600">{l.ubicacion}</td>
                     <td className="px-3 py-2 text-zinc-600">{l.vendedor}</td>
                     <td className="px-3 py-2">

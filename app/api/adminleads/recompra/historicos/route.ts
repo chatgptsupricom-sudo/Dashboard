@@ -6,6 +6,8 @@
 //                      -> el lead sí se vendió (quedó como contactado/negociación en el Excel)
 //   PATCH { id, accion: "descartar" } -> no es venta: deja de salir en "Por revisar"
 //   PATCH { id, accion: "deshacer" }  -> vuelve al estatus del Excel
+//   PATCH { accion: "campana", company_id, hoja, campana }
+//                      -> nombre de la campaña de una hoja (vacío = el que sale de la hoja)
 
 import { asegurarTablas, resolverRifs } from "@/lib/adminleads/recompra";
 import { query } from "@/lib/db";
@@ -25,7 +27,7 @@ export async function GET(request: NextRequest) {
     // Panamá solo ve lo de Panamá, como en el resto de los leads.
     const soloPanama = Number(auth.payload!.cids) === 7;
     const { rows: leads } = await query(
-      `SELECT id, company_id, archivo, hoja, red_social, nombre,
+      `SELECT id, company_id, archivo, hoja, red_social, nombre, COALESCE(campana_editada, campana) AS campana,
               DATE_FORMAT(fecha_interaccion, '%Y-%m-%d') AS fecha, telefono, ubicacion, vendedor, estatus,
               monto, factura_txt, observacion, rif, rif_origen, cliente_rif,
               DATE_FORMAT(primera_venta, '%Y-%m-%d') AS primera_venta, estatus_original
@@ -37,7 +39,16 @@ export async function GET(request: NextRequest) {
               DATE_FORMAT(MIN(fecha), '%Y-%m-%d') AS desde, DATE_FORMAT(MAX(fecha), '%Y-%m-%d') AS hasta
          FROM ventas_smartbit_facturas GROUP BY company_id`,
     );
-    return NextResponse.json({ leads, facturasSmartbit: fact });
+    // Una fila por hoja = una campaña.
+    const { rows: campanas } = await query(
+      `SELECT company_id, hoja, MAX(campana) AS campana_hoja, MAX(campana_editada) AS campana_editada,
+              COUNT(*) AS leads, SUM(estatus = 'CONCRETADO') AS vendidos,
+              DATE_FORMAT(MIN(fecha_interaccion), '%Y-%m-%d') AS desde, DATE_FORMAT(MAX(fecha_interaccion), '%Y-%m-%d') AS hasta
+         FROM leads_historicos ${soloPanama ? "WHERE company_id = 7" : ""}
+        GROUP BY company_id, hoja
+        ORDER BY MIN(fecha_interaccion)`,
+    );
+    return NextResponse.json({ leads, facturasSmartbit: fact, campanas });
   } catch (error: any) {
     console.error("GET /api/adminleads/recompra/historicos error:", error?.message);
     return NextResponse.json({ error: "No se pudieron leer los leads" }, { status: 500 });
@@ -51,6 +62,20 @@ export async function PATCH(request: NextRequest) {
   try {
     await asegurarTablas();
     const body = await request.json().catch(() => null);
+    if (body?.accion === "campana") {
+      const companyId = Number(body.company_id);
+      const hoja = String(body.hoja || "").slice(0, 120);
+      if (!hoja || !Number.isInteger(companyId)) return NextResponse.json({ error: "Falta la hoja" }, { status: 400 });
+      if (Number(auth.payload!.cids) === 7 && companyId !== 7) {
+        return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+      }
+      const campana = String(body.campana ?? "").trim().slice(0, 160);
+      await query(
+        `UPDATE leads_historicos SET campana_editada = NULLIF(?, '') WHERE company_id = ? AND hoja = ?`,
+        [campana, companyId, hoja],
+      );
+      return NextResponse.json({ success: true });
+    }
     const id = Number(body?.id);
     const rif = normalizarRif(String(body?.rif ?? ""));
     if (!Number.isInteger(id) || id <= 0) {
