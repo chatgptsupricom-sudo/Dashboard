@@ -85,6 +85,7 @@ export function ReporteDiarioVentas() {
   const { user } = useAuthStore();
   const [data, setData] = useState<ReporteData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [fecha, setFecha] = useState(() => {
     const now = new Date();
     return format(now, "yyyy-MM-dd");
@@ -103,13 +104,24 @@ export function ReporteDiarioVentas() {
         url += `&sede=${sede}`;
       }
       fetch(url)
-        .then((res) => res.json())
-        .then((json) => {
+        .then(async (res) => {
+          const json = await res.json().catch(() => null);
+          // Un 403/500 trae `{ error }`, no el reporte: no se dibuja como datos.
+          if (!res.ok) {
+            throw new Error(json?.error || `Error ${res.status}`);
+          }
           setData(json);
-          if (!silent) setLoading(false);
+          setError(null);
         })
         .catch((err) => {
           console.error("Error:", err);
+          // En el refresco silencioso se deja a la vista lo último que cargó.
+          if (!silent) {
+            setData(null);
+            setError(err.message || "Error al cargar el reporte");
+          }
+        })
+        .finally(() => {
           if (!silent) setLoading(false);
         });
     },
@@ -215,6 +227,7 @@ export function ReporteDiarioVentas() {
     return (
       <div className="flex flex-col items-center justify-center h-[80vh] text-slate-400">
         <p>No se pudieron cargar los datos</p>
+        {error && <p className="text-sm mt-1">{error}</p>}
       </div>
     );
   }
