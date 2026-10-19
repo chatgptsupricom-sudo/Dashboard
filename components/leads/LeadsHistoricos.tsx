@@ -110,7 +110,7 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm space-y-3">
+      <div data-tour="importar" className="bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm space-y-3">
         <p className="text-sm font-bold text-zinc-700">Importar Excel</p>
         <p className="text-xs text-zinc-500">
           Sirve el Excel de leads de redes (una hoja por semana, con &quot;Nombre del Cliente&quot;, &quot;Estatus&quot; y
@@ -151,7 +151,7 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
         )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm">
+      <div data-tour="excel-tabla" className="bg-white rounded-2xl border border-zinc-100 shadow-sm">
         <div className="p-4 flex flex-col md:flex-row gap-3 md:items-center border-b border-zinc-100">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
@@ -193,7 +193,7 @@ export default function LeadsHistoricos({ filtroInicial = "" }: { filtroInicial?
                   <th className="text-left px-3 py-2">Estatus</th>
                   <th className="text-right px-3 py-2">Monto</th>
                   <th className="text-left px-3 py-2">Factura / pedido</th>
-                  <th className="text-left px-3 py-2">RIF</th>
+                  <th className="text-left px-3 py-2" data-tour="excel-rif">RIF</th>
                   <th className="text-left px-3 py-2">Observación</th>
                 </tr>
               </thead>

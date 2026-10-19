@@ -101,7 +101,7 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div data-tour="revisar-filtros" className="flex items-center gap-2">
         {([
           ["", `Todos (${leads.length})`],
           ["sin_rif", `Vendidos sin cliente (${nSinRif})`],
@@ -125,7 +125,7 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
       )}
 
       {visibles.map((l) => (
-        <div key={l.id} className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-4 space-y-3">
+        <div key={l.id} data-tour="revisar-tarjeta" className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-4 space-y-3">
           <div className="flex flex-col md:flex-row md:items-start gap-2">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -144,6 +144,7 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
             </div>
             <button
               disabled={ocupado === l.id}
+              data-tour="revisar-descartar"
               onClick={() => enviar(l, { accion: "descartar" })}
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-zinc-200 text-xs text-zinc-500 hover:bg-zinc-50 shrink-0"
             >
@@ -157,6 +158,7 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
               return (
                 <div
                   key={c.rif}
+                  data-tour="revisar-candidato"
                   className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 bg-zinc-50 rounded-xl px-3 py-2"
                 >
                   <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg w-fit ${v.clase}`}>
@@ -176,6 +178,7 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
                   </div>
                   <button
                     disabled={ocupado === l.id}
+                    data-tour="revisar-elegir"
                     onClick={() => elegir(l, c)}
                     className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-40 shrink-0"
                   >
