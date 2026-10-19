@@ -20,6 +20,13 @@ export type CampanaHoja = {
   hasta: string | null;
 };
 
+/** Cuántos días de la hoja ("DEL 04 AL 08") aparecen en el nombre de la campaña de Meta: las que coinciden van primero. */
+export function coincidencia(hoja: string, campana: string): number {
+  const dias = (hoja.match(/\b\d{1,2}\b/g) || []).map(Number);
+  const enNombre = new Set((campana.match(/\b\d{1,2}\b/g) || []).map(Number));
+  return dias.filter((d) => enNombre.has(d)).length;
+}
+
 const correrDias = (iso: string, dias: number) =>
   new Date(Date.parse(iso + "T00:00:00Z") + dias * 86400000).toISOString().slice(0, 10);
 
@@ -43,8 +50,8 @@ export default function CampanasExcel({ campanas, onCambio }: { campanas: Campan
     try {
       const p = new URLSearchParams({ fecha_inicio: correrDias(c.desde, -5), fecha_fin: correrDias(c.hasta, 5) });
       const r = await fetch(`/api/adminleads/meta-campaigns?${p}`).then((x) => x.json());
-      const nombres = (r.campaigns || []).map((x: any) => String(x.campaign_name || "")).filter(Boolean);
-      setSugeridas([...new Set<string>(nombres)].sort());
+      const nombres = [...new Set<string>((r.campaigns || []).map((x: any) => String(x.campaign_name || "")).filter(Boolean))];
+      setSugeridas(nombres.sort((a, b) => coincidencia(c.hoja, b) - coincidencia(c.hoja, a) || a.localeCompare(b)));
     } catch {
       setSugeridas([]);
     } finally {
