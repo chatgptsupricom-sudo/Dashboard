@@ -32,6 +32,7 @@ import {
   Boxes,
   BrainCircuit,
   Network,
+  ScrollText,
   Calendar,
   Camera,
   Car,
@@ -284,6 +285,8 @@ export function Sidebar({
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
     // Organigrama con las actividades de cada cargo (SuperAdmin y Procesos).
     { id: "organigrama", label: "Organigrama", icon: Network, slug: "/organigrama", absoluteHref: true },
+    // Políticas, acuerdos y circulares de la empresa (lib/politicas/permisos.ts).
+    { id: "politicas", label: "Políticas y Acuerdos", icon: ScrollText, slug: "/politicas", absoluteHref: true },
     {
       id: "notas_credito",
       label: `Notas de crédito${notasCredito.pendientes ? ` (${notasCredito.pendientes})` : ""}`,

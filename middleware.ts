@@ -6,6 +6,7 @@ import { routing } from "./i18n.config";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
 import { esHostNC, RUTA_INTERNA, RUTA_PUBLICA } from "@/lib/notas-credito/hostCliente";
+import { puedeEditarPoliticas, puedeVerPoliticas } from "@/lib/politicas/permisos";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -158,6 +159,9 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/manuales") ||
     // Organigrama con las actividades de cada cargo (SuperAdmin y Procesos).
     pathname.includes("/organigrama") ||
+    // Políticas y Acuerdos: publican Procesos y SuperAdmin, leen los roles
+    // administrativos (lib/politicas/permisos.ts).
+    pathname.includes("/politicas") ||
     // Notas de crédito: entra quien sea responsable de un paso, por correo
     // (lib/notas-credito/acceso.ts); aquí solo se exige la sesión.
     pathname.includes("/notas-credito");
@@ -365,6 +369,15 @@ export default async function middleware(request: NextRequest) {
       // 10c. Organigrama: SuperAdmin y Procesos (los dos lo editan).
       if (pathname.includes("/organigrama") && !isProcesos && !isSuperAdmin) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
+      // 10d. Políticas y Acuerdos: leen los roles administrativos; crear y
+      // editar, solo Procesos y SuperAdmin.
+      if (pathname.includes("/politicas")) {
+        if (!puedeVerPoliticas(userRole))
+          return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+        if (/\/politicas\/(nuevo|\d+\/editar)(\/|$)/.test(pathname) && !puedeEditarPoliticas(userRole))
+          return NextResponse.redirect(new URL(`/${locale}/politicas`, request.url));
       }
 
       // 11. Lógica para Seguridad (Almacén / Control de acceso)
