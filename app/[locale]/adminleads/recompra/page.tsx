@@ -6,6 +6,7 @@
 import LeadsHistoricos from "@/components/leads/LeadsHistoricos";
 import LeadsPorRevisar from "@/components/leads/LeadsPorRevisar";
 import RecompraClientes from "@/components/leads/RecompraClientes";
+import { ABRIR_CAMPANAS } from "@/components/leads/CampanasExcel";
 import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CircleHelp } from "lucide-react";
@@ -15,7 +16,11 @@ type Tab = "recompra" | "excel" | "revisar";
 
 // Cada paso dice en qué pestaña está: el recorrido cambia de pestaña solo.
 const pasosDe = (ir: (t: Tab) => void): PasoRecorrido[] => {
-  const en = (t: Tab, pasos: PasoRecorrido[]) => pasos.map((p) => ({ ...p, antes: () => ir(t) }));
+  const en = (t: Tab, pasos: PasoRecorrido[]) =>
+    pasos.map((p) => ({ ...p, antes: () => { ir(t); p.antes?.(); } }));
+  // El recuadro de Campañas arranca cerrado: estos pasos lo abren (unas veces, por si la pestaña todavía se está montando).
+  const abrirCampanas = () =>
+    [0, 300, 900].forEach((ms) => setTimeout(() => window.dispatchEvent(new Event(ABRIR_CAMPANAS)), ms));
   return [
     ...en("recompra", [
       {
@@ -39,13 +44,13 @@ const pasosDe = (ir: (t: Tab) => void): PasoRecorrido[] => {
         selector: '[data-tour="tabla"]',
         titulo: "Cliente por cliente",
         texto:
-          "Cada fila es un cliente, con el vendedor, la primera venta, las compras después, el monto y los días hasta la segunda compra. Haz clic en un cliente para ver cada compra con su fecha, sede y factura.",
+          "Cada fila es un cliente, con la campaña de la que vino (debajo de «Lead»), el vendedor, la primera venta, las compras después, el monto y los días hasta la segunda compra. Haz clic en un cliente para ver cada compra con su fecha, sede y factura.",
       },
       {
         selector: '[data-tour="exportar"]',
         titulo: "Exportar a Excel",
         texto:
-          "Baja lo que estás viendo, con los mismos filtros: resumen, clientes, cada compra posterior y los leads vendidos a los que no se les ubicó el cliente.",
+          "Baja lo que estás viendo, con los mismos filtros: resumen, clientes con su campaña, cada compra posterior y los leads vendidos a los que no se les ubicó el cliente.",
       },
     ]),
     ...en("excel", [
@@ -64,7 +69,22 @@ const pasosDe = (ir: (t: Tab) => void): PasoRecorrido[] => {
         selector: '[data-tour="excel-campanas"]',
         titulo: "Campañas",
         texto:
-          "Cada hoja del Excel es una campaña: el nombre sale de la hoja. Ábrelo y con el lápiz lo cambias por el de la campaña de Meta de esas fechas. Ese nombre es el que sale en la Recompra y en el Excel.",
+          "Cada hoja del Excel es una campaña. El nombre sale de la hoja: como Excel lo corta a 31 letras, se completa el mes y se quita el día cortado; si la hoja tiene título (el video), va delante. Aquí ves sus fechas, cuántos leads trajo y cuántos se vendieron.",
+        antes: abrirCampanas,
+      },
+      {
+        selector: '[data-tour="campana-editar"]',
+        titulo: "Ponerle el nombre de Meta",
+        texto:
+          "Con el lápiz cambias el nombre: salen las campañas de Meta de esas fechas, primero las que coinciden con los días de la hoja. Elige una o escribe el nombre. Es el que se ve en la Recompra, en el Excel exportado y en la tabla de leads.",
+        antes: abrirCampanas,
+      },
+      {
+        selector: '[data-tour="campana-meta"]',
+        titulo: "Campañas con nombre de Meta",
+        texto:
+          "Las que ya tienen el nombre de Meta lo dicen debajo. Volver a subir el Excel no lo borra; la flechita de al lado lo devuelve al nombre de la hoja.",
+        antes: abrirCampanas,
       },
       {
         selector: '[data-tour="excel-tabla"]',

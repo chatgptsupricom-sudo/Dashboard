@@ -5,9 +5,12 @@
 // por el de la campaña de Meta de esas fechas.
 
 import { Check, ChevronDown, ChevronRight, Loader2, Megaphone, Pencil, RotateCcw, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const SEDES: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
+
+/** Evento con el que el recorrido guiado abre el recuadro. */
+export const ABRIR_CAMPANAS = "recompra:abrir-campanas";
 
 export type CampanaHoja = {
   company_id: number;
@@ -32,6 +35,11 @@ const correrDias = (iso: string, dias: number) =>
 
 export default function CampanasExcel({ campanas, onCambio }: { campanas: CampanaHoja[]; onCambio: () => void }) {
   const [abierto, setAbierto] = useState(false);
+  useEffect(() => {
+    const abrir = () => setAbierto(true);
+    window.addEventListener(ABRIR_CAMPANAS, abrir);
+    return () => window.removeEventListener(ABRIR_CAMPANAS, abrir);
+  }, []);
   const [editando, setEditando] = useState<string | null>(null);
   const [valor, setValor] = useState("");
   const [sugeridas, setSugeridas] = useState<string[]>([]);
@@ -119,7 +127,7 @@ export default function CampanasExcel({ campanas, onCambio }: { campanas: Campan
                 {campanas.map((c) => {
                   const k = clave(c);
                   return (
-                    <tr key={k} className="border-t border-zinc-100 align-top">
+                    <tr key={k} className="border-t border-zinc-100 align-top" data-tour={c.campana_editada ? "campana-meta" : undefined}>
                       <td className="px-3 py-2 min-w-[320px]">
                         {editando === k ? (
                           <div className="space-y-1">
@@ -182,10 +190,15 @@ export default function CampanasExcel({ campanas, onCambio }: { campanas: Campan
                           </div>
                         ) : (
                           <div className="flex items-start gap-1">
-                            <button onClick={() => editar(c)} className="group text-left" title="Cambiar el nombre de la campaña">
+                            <button
+                              data-tour="campana-editar"
+                              onClick={() => editar(c)}
+                              className="group text-left"
+                              title="Cambiar el nombre de la campaña"
+                            >
                               <span className="font-semibold text-zinc-700">{c.campana_editada ?? c.campana_hoja ?? c.hoja}</span>
                               <Pencil className="inline w-3 h-3 ml-1 text-zinc-300 group-hover:text-zinc-500" />
-                              {c.campana_editada && <p className="text-[10px] text-blue-600">nombre elegido a mano</p>}
+                              {c.campana_editada && <p className="text-[10px] text-blue-600">nombre de Meta o elegido a mano</p>}
                             </button>
                             {c.campana_editada && (
                               <button
