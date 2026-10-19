@@ -1,11 +1,14 @@
 "use client";
 
 import { canalSumaVentas, normalizarCanal } from "@/lib/canales";
-import { Archive, FileBarChart, Pencil, RotateCcw, Search, X } from "lucide-react";
+import { Archive, FileBarChart, Pencil, Repeat, RotateCcw, Search, X } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 export default function AdminCierresPage() {
+  const pathname = usePathname();
   const [leads, setLeads] = useState<any[]>([]);
   const [sellers, setSellers] = useState<any[]>([]);
   const [statuses, setStatuses] = useState<any[]>([]);
@@ -180,6 +183,13 @@ export default function AdminCierresPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-black text-slate-900">Cierre de Leads</h1>
         <div className="flex items-center gap-3">
+          <Link
+            href={pathname.replace(/\/cierres\/?$/, "/recompra")}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-zinc-200 text-zinc-700 text-xs font-bold hover:bg-zinc-50 transition-colors"
+            title="Cuántas veces volvió a comprar cada cliente que llegó por un lead, y los leads de los Excel de antes del panel"
+          >
+            <Repeat className="w-3.5 h-3.5" /> Recompra de clientes
+          </Link>
           <button
             onClick={abrirReporteVentas}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors"
