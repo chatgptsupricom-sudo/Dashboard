@@ -52,6 +52,8 @@ export function asegurarTablas(): Promise<void> {
         primera_venta DATE NULL,
         estatus_original VARCHAR(40) NULL,
         revisado TINYINT NOT NULL DEFAULT 0,
+        campana VARCHAR(160) NULL,
+        campana_editada VARCHAR(160) NULL,
         importado_por VARCHAR(160) NULL,
         importado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uq_clave (clave),
@@ -66,6 +68,13 @@ export function asegurarTablas(): Promise<void> {
     }
     if (!hay.has("revisado")) {
       await query("ALTER TABLE leads_historicos ADD COLUMN revisado TINYINT NOT NULL DEFAULT 0 AFTER estatus_original");
+    }
+    if (!hay.has("campana")) {
+      await query("ALTER TABLE leads_historicos ADD COLUMN campana VARCHAR(160) NULL AFTER revisado");
+    }
+    // campana = la que sale de la hoja (se recalcula al importar); campana_editada = la que eligió una persona.
+    if (!hay.has("campana_editada")) {
+      await query("ALTER TABLE leads_historicos ADD COLUMN campana_editada VARCHAR(160) NULL AFTER campana");
     }
     await query(`
       CREATE TABLE IF NOT EXISTS ventas_smartbit_facturas (
@@ -205,6 +214,40 @@ export type ResultadoImportacion = {
 
 const normEncabezado = (s: string) => sinAcentos(s).toLowerCase().replace(/\s+/g, " ").trim();
 
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const mesDe = (pref?: string) => {
+  const p = sinAcentos(pref || "").toLowerCase();
+  return p.length >= 2 ? MESES.find((m) => m.startsWith(p)) : undefined;
+};
+const capitalizar = (t: string) => (t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : t);
+
+/**
+ * Nombre de la campaña de una hoja del Excel de leads (cada hoja es una
+ * campaña). Excel corta el nombre de la hoja a 31 letras ("PUBLICIDAD DEL 29
+ * DE JULIO AL 0", "…DEL 17 AL 22 DE SE"): se completa el mes y se deja fuera el
+ * día cortado. Si la hoja trae un título arriba ("VIDEO PROTECCIÓN
+ * ELECTRICA"), va delante. `anio` = el de los leads de la hoja.
+ */
+export function campanaDeHoja(hoja: string, titulo: string | null, anio: number | null): string {
+  const h = hoja.trim().replace(/\s+/g, " ");
+  const a = anio ? ` ${anio}` : "";
+  const m = h.match(/^PUBLICIDAD(?:ES)?\s+(?:DEL?\s+)?(\d{1,2})(?:\s+DE\s+([A-ZÁÉÍÓÚÑ]+))?(?:\s+AL?(?:\s+(\d{1,2}))?(?:\s+DE\s+([A-ZÁÉÍÓÚÑ]*))?)?/i);
+  let base = capitalizar(h);
+  if (m) {
+    const [, d1, m1, d2, m2] = m;
+    const mesFin = mesDe(m2) ?? mesDe(m1);
+    const mesIni = mesDe(m1);
+    // El día final está cortado si es lo último del nombre y quedó de una cifra en una hoja de 31 letras.
+    const finCortado = !d2 || (h.length >= 31 && h.endsWith(d2) && d2.length < 2);
+    base = !finCortado && mesFin
+      ? `Publicidad del ${d1}${mesIni && mesIni !== mesFin ? ` de ${mesIni}` : ""} al ${d2} de ${mesFin}${a}`
+      : `Publicidad desde el ${d1}${mesIni ? ` de ${mesIni}` : ""}${a}`;
+  } else if (anio && !/\b20\d{2}\b/.test(h)) {
+    base += a;
+  }
+  return (titulo ? `${capitalizar(titulo.trim())} · ${base}` : base).slice(0, 160);
+}
+
 /** Lee el Excel sin tocar la base: filas listas para insertar. */
 export async function leerExcel(buffer: ArrayBuffer, archivo: string, companyId: number, usuario: string) {
   const ExcelJS = (await import("exceljs")).default;
@@ -219,11 +262,13 @@ export async function leerExcel(buffer: ArrayBuffer, archivo: string, companyId:
     // El encabezado puede no estar en la primera fila (título arriba).
     let col: Record<string, number> | null = null;
     let filaEnc = 0;
+    let titulo: string | null = null;
     for (let i = 1; i <= Math.min(8, ws.rowCount) && !col; i++) {
       const vals = (ws.getRow(i).values as any[]) || [];
       const enc: Record<string, number> = {};
       vals.forEach((v, j) => { const t = normEncabezado(texto(v)); if (t) enc[t] = j; });
       if ("nombre del cliente" in enc || ("numero" in enc && "cuenta" in enc)) { col = enc; filaEnc = i; }
+      else titulo ??= vals.map(texto).find(Boolean) || null; // título de la hoja, arriba del encabezado
     }
     if (!col) continue;
     hojas++;
@@ -239,6 +284,7 @@ export async function leerExcel(buffer: ArrayBuffer, archivo: string, companyId:
         estatus: busca("estatus"), monto: busca("monto"), fact: busca("factura"), obs: busca("observacion"),
       };
       const de = (vals: any[], j: number) => (j >= 0 ? vals[j] : null);
+      const desde = leads.length;
       ws.eachRow((row, n) => {
         if (n <= filaEnc) return;
         const v = (row.values as any[]) || [];
@@ -256,6 +302,15 @@ export async function leerExcel(buffer: ArrayBuffer, archivo: string, companyId:
           monto(de(v, c.monto)), texto(de(v, c.fact)).slice(0, 255) || null, texto(de(v, c.obs)) || null, usuario,
         ]);
       });
+      // Año de la campaña = el que más se repite en los leads de la hoja (hay fechas mal tipeadas, ej. 2022).
+      const filas = leads.slice(desde);
+      const anios = new Map<number, number>();
+      for (const f of filas) {
+        if (f[6]) anios.set(Number(f[6].slice(0, 4)), (anios.get(Number(f[6].slice(0, 4))) ?? 0) + 1);
+      }
+      const anio = [...anios].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null;
+      const campana = campanaDeHoja(ws.name, titulo, anio);
+      for (const f of filas) f.push(campana);
     } else {
       const c = {
         fecha: col["fecha"], num: col["numero"], cuenta: col["cuenta"], cliente: busca("cliente"),
@@ -308,13 +363,14 @@ export async function importarExcel(
     await db.query(
       `INSERT INTO leads_historicos
          (clave, company_id, archivo, hoja, red_social, nombre, fecha_interaccion, telefono, ubicacion,
-          vendedor, estatus, monto, factura_txt, observacion, importado_por)
+          vendedor, estatus, monto, factura_txt, observacion, importado_por, campana)
        VALUES ?
        ON DUPLICATE KEY UPDATE archivo = VALUES(archivo), hoja = VALUES(hoja), red_social = VALUES(red_social),
          ubicacion = VALUES(ubicacion), vendedor = VALUES(vendedor),
          estatus = IF(estatus_original IS NULL, VALUES(estatus), estatus),
          monto = VALUES(monto), factura_txt = VALUES(factura_txt), observacion = VALUES(observacion),
-         importado_por = VALUES(importado_por)`,
+         importado_por = VALUES(importado_por),
+         campana = VALUES(campana)`,
       [leads.slice(i, i + 500)],
     );
   }
@@ -665,7 +721,7 @@ export async function calcularRecompra(opts: {
         WHERE ${ES_VENTA} AND l.fecha_venta IS NOT NULL`,
     ),
     query(
-      `SELECT id, nombre, rif, company_id, vendedor, red_social, monto, factura_txt,
+      `SELECT id, nombre, rif, company_id, vendedor, red_social, COALESCE(campana_editada, campana) AS campana, monto, factura_txt,
               DATE_FORMAT(fecha_interaccion, '%Y-%m-%d') AS entrada,
               DATE_FORMAT(primera_venta, '%Y-%m-%d') AS primera
          FROM leads_historicos WHERE estatus = 'CONCRETADO'`,
@@ -704,7 +760,7 @@ export async function calcularRecompra(opts: {
   for (const l of excel) {
     const lead: LeadVenta = {
       origen: "Excel", id: l.id, rif: l.rif || "", nombre: l.nombre, sede: l.company_id, vendedor: l.vendedor || "",
-      campana: l.red_social || "", entrada: l.entrada, venta: l.primera, monto: Number(l.monto) || 0,
+      campana: l.campana || l.red_social || "", entrada: l.entrada, venta: l.primera, monto: Number(l.monto) || 0,
       factura: String(l.factura_txt || ""),
     };
     if (lead.rif) leads.push(lead);

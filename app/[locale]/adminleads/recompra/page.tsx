@@ -61,6 +61,12 @@ const pasosDe = (ir: (t: Tab) => void): PasoRecorrido[] => {
           "Sube el Excel de leads de redes o el reporte de facturas de Smartbit «Ventas / Devoluciones», eligiendo la sede. El panel reconoce cuál es. Se puede subir de nuevo: lo repetido se actualiza, no se duplica.",
       },
       {
+        selector: '[data-tour="excel-campanas"]',
+        titulo: "Campañas",
+        texto:
+          "Cada hoja del Excel es una campaña: el nombre sale de la hoja. Ábrelo y con el lápiz lo cambias por el de la campaña de Meta de esas fechas. Ese nombre es el que sale en la Recompra y en el Excel.",
+      },
+      {
         selector: '[data-tour="excel-tabla"]',
         titulo: "Todos los leads del Excel",
         texto:
