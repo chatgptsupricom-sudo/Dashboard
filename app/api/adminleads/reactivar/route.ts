@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { verifyToken } from "@/lib/jwt";
 import { NextResponse } from "next/server";
 
-const ADMIN_ROLES = ["adminLeads", "superAdmin", "programmers"];
+const ADMIN_ROLES = ["adminLeads", "superAdmin", "programmers", "Gerente de Operaciones"];
 
 export async function POST(request: Request) {
   try {

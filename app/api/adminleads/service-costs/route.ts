@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRoles } from "@/lib/auth/roles";
+import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 
 let hayPeriodo = false;
 
@@ -26,7 +26,7 @@ async function asegurarPeriodo(): Promise<boolean> {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {
@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {
@@ -280,7 +280,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {

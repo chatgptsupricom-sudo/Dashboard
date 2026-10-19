@@ -23,7 +23,7 @@ import {
 } from "@/lib/instagram";
 import { filterByCids, getAdAccounts } from "@/lib/meta";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRoles } from "@/lib/auth/roles";
+import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -505,7 +505,7 @@ function construirPrioridades(datos: {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {
@@ -913,7 +913,7 @@ export async function GET(request: NextRequest) {
  * metricas que hoy la app de Meta no puede leer (origen = 'manual').
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {

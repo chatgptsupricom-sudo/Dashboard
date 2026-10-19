@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRoles } from "@/lib/auth/roles";
+import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 
 // Crea la tabla si no existe
 async function ensureTable() {
@@ -37,7 +37,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {
@@ -94,7 +94,7 @@ export async function DELETE(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {

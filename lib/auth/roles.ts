@@ -41,6 +41,14 @@ async function verificarSesion(
   return { payload };
 }
 
+/**
+ * Roles que manejan Leads: AdminLeads y Gerencia de Operaciones, que el
+ * middleware deja entrar a /adminleads y tiene el desplegable "Leads" en el
+ * menú. Las APIs de esas pantallas tienen que aceptar a los dos: con solo
+ * "adminleads", Gerencia de Operaciones veía "Error 403" en el Dashboard Leads.
+ */
+export const ROLES_LEADS = ["adminleads", "gerente de operaciones"];
+
 export async function requireRoles(
   request: NextRequest,
   roles: string[],

@@ -1,7 +1,7 @@
 import { canalNormalizadoSql, canalSumaVentasSql, SIN_CANAL } from "@/lib/canales";
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRoles } from "@/lib/auth/roles";
+import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -9,7 +9,7 @@ export const maxDuration = 60;
 const SEDES: Record<string, string> = { "7": "Panama", "9": "Valencia", "10": "Caracas" };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {
