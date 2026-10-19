@@ -11,7 +11,13 @@ const SEDES: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "PanamÃ
 const usd = (n: number) => `$${n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const campo = "py-2 px-3 bg-zinc-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-blue-500 text-zinc-600";
 
-export default function RecompraClientes({ onVerSinRif }: { onVerSinRif: () => void }) {
+export default function RecompraClientes({
+  onVerSinRif,
+  onListo,
+}: {
+  onVerSinRif: () => void;
+  onListo?: () => void;
+}) {
   const [sede, setSede] = useState("");
   const [origen, setOrigen] = useState("");
   const [desde, setDesde] = useState("");
@@ -40,6 +46,7 @@ export default function RecompraClientes({ onVerSinRif }: { onVerSinRif: () => v
       .then((r) => {
         if (r.error) throw new Error(r.detail || r.error);
         setData(r);
+        onListo?.();
       })
       .catch((e) => e.name !== "AbortError" && setError(e.message))
       .finally(() => !ctrl.signal.aborted && setCargando(false));
@@ -59,7 +66,7 @@ export default function RecompraClientes({ onVerSinRif }: { onVerSinRif: () => v
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row gap-3 bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm md:items-center flex-wrap">
+      <div data-tour="filtros" className="flex flex-col md:flex-row gap-3 bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm md:items-center flex-wrap">
         <select className={campo} value={sede} onChange={(e) => setSede(e.target.value)} aria-label="Sede">
           <option value="">Todas las sedes</option>
           {Object.entries(SEDES).map(([id, n]) => (
@@ -80,6 +87,7 @@ export default function RecompraClientes({ onVerSinRif }: { onVerSinRif: () => v
           <input type="date" className={campo} value={hasta} onChange={(e) => setHasta(e.target.value)} />
         </label>
         <a
+          data-tour="exportar"
           href={`/api/adminleads/recompra/export?${qs}`}
           className="md:ml-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
         >
@@ -96,7 +104,7 @@ export default function RecompraClientes({ onVerSinRif }: { onVerSinRif: () => v
 
       {r && data && (
         <div className={cargando ? "opacity-50 pointer-events-none transition-opacity" : ""}>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div data-tour="resumen" className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             {[
               ["Clientes de leads", r.clientes.toLocaleString()],
               ["Volvieron a comprar", `${r.conRecompra.toLocaleString()}${r.pctRecompra != null ? ` (${r.pctRecompra}%)` : ""}`],
@@ -151,7 +159,7 @@ export default function RecompraClientes({ onVerSinRif }: { onVerSinRif: () => v
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm mt-4">
+          <div data-tour="tabla" className="bg-white rounded-2xl border border-zinc-100 shadow-sm mt-4">
             <div className="p-4 flex items-center gap-3 border-b border-zinc-100">
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" />
