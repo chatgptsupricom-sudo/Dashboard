@@ -1,4 +1,5 @@
 // import { callOdooRPC } from "@/lib/odoo";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 // import { NextRequest, NextResponse } from "next/server";
 
 // // Fuerza a que la ruta sea dinámica y no se guarde en caché
@@ -236,7 +237,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
+  const auth = await requireRoles(request, ["superadmin", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {

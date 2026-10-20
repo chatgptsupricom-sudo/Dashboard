@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { MES_VALIDO, TITULO_MAX, esSedeSorteo } from "@/lib/sorteo/config";
 import { guardarConfig, leerConfig } from "@/lib/sorteo/configuracion";
@@ -11,7 +12,7 @@ import { guardarConfig, leerConfig } from "@/lib/sorteo/configuracion";
  * PUT { companyId: 9|10|7, mes: 'YYYY-MM', montoPorTicket, titulo? }
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, []);
+  const auth = await requireRoles(request, [ROL_BI]);
   if (auth.error) return auth.error;
   return NextResponse.json({ success: true, data: await leerConfig() });
 }

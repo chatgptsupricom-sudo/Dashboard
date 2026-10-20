@@ -1,4 +1,5 @@
 import { callOdooRPC, OdooUnreachableError } from "@/lib/odoo";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
@@ -43,7 +44,7 @@ function getAgingBand(daysOverdue: number): string {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin", "gerente de operaciones"]);
+  const auth = await requireRoles(request, ["superadmin", "gerente de operaciones", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {

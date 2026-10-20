@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { productosParaFrecuencia, sedeDeUsuario } from "@/lib/customView/inventarioOdoo";
@@ -14,7 +15,7 @@ import { productosParaFrecuencia, sedeDeUsuario } from "@/lib/customView/inventa
  * El HTML guarda en localStorage; para que todo el equipo vea el mismo plan,
  * el panel le siembra el último guardado al servirlo (custom-view, `semillaFrecuencia`).
  */
-const ROLES = ["adminleads", "diseñador"];
+const ROLES = ["adminleads", "diseñador", ROL_BI];
 const MAX_BYTES = 5 * 1024 * 1024;
 
 let tablaLista = false;

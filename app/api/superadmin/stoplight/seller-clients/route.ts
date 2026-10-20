@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
+import { veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 import { sinIntercompania } from "@/lib/intercompania";
 
 export async function GET(request: NextRequest) {
@@ -21,8 +22,8 @@ export async function GET(request: NextRequest) {
 
     const userId = parseInt(seller_user_id);
 
-    // Fuera de superadmin, solo vendedores de la propia empresa.
-    if (rol !== "superadmin") {
+    // Fuera de superadmin y BI, solo vendedores de la propia empresa.
+    if (!veTodasLasSedes(rol)) {
       const propio = await query("SELECT 1 FROM sellers WHERE user_id = ? AND cids = ? LIMIT 1", [userId, companyId]);
       if ((propio.rows as any[]).length === 0) {
         return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });

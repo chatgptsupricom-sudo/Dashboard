@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -6,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 // (busqueda generica de categorias de producto en Odoo, no algo exclusivo
 // de RMA) — ver app/[locale]/adminleads/banco-imagenes/page.tsx.
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["rma", "adminleads", "diseñador"]);
+  const auth = await requireRoles(request, ["rma", "adminleads", "diseñador", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError, callOdooRPC } from "@/lib/odoo";
 import { calcularMetasMarca } from "@/lib/metas-marca/calculo";
@@ -21,7 +22,7 @@ export const maxDuration = 60;
  * para la meta en unidades. Si el inventario falla, la página sigue sin él.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, []);
+  const auth = await requireRoles(request, [ROL_BI]);
   if (auth.error) return auth.error;
 
   const sp = request.nextUrl.searchParams;

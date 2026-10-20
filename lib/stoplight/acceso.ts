@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_BI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 
 /**
  * Roles (además de superadmin) que pueden abrir los modales de detalle del
@@ -9,14 +10,16 @@ import { requireRoles } from "@/lib/auth/roles";
  * más usa estos detalles. Cuando se cerró el IDOR de estas rutas (83176726)
  * quedó afuera por error y todos sus modales de Ventas devolvían 403 -> "No
  * hay datos disponibles".
+ *
+ * Inteligencia de Negocio los lee de las tres sedes (lib/auth/inteligenciaNegocio.ts).
  */
-export const ROLES_DETALLE_VENTAS = ["gerente de operaciones", "gerencia de ventas"];
+export const ROLES_DETALLE_VENTAS = ["gerente de operaciones", "gerencia de ventas", ROL_BI];
 
 export interface AccesoStoplight {
   payload: any;
   rol: string;
   /**
-   * Empresa a consultar. Solo superadmin puede elegirla con `?company_id=`;
+   * Empresa a consultar. Solo superadmin (y BI, que solo lee) puede elegirla con `?company_id=`;
    * el resto queda fijo en la empresa de su token, igual que la ruta
    * principal del Stoplight (si no, cualquiera podría leer otra sede
    * cambiando el parámetro).
@@ -35,7 +38,7 @@ export async function accesoStoplight(
   const payload = auth.payload;
   const rol = String(payload.role || "").toLowerCase().trim();
   const param = parseInt(request.nextUrl.searchParams.get("company_id") || "", 10);
-  const companyId = rol === "superadmin" && Number.isFinite(param) ? param : Number(payload.cids);
+  const companyId = veTodasLasSedes(rol) && Number.isFinite(param) ? param : Number(payload.cids);
 
   return { payload, rol, companyId };
 }

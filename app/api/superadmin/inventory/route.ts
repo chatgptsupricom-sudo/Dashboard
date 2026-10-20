@@ -1,11 +1,12 @@
 // Bypass SSL para subdominios multi-nivel de Odoo Sh, escopeado por-request
 // via callOdooRPCInsecure (ver lib/odoo.ts) — nunca process.env global.
 import { callOdooRPCInsecure as callOdooRPC } from "@/lib/odoo";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
+  const auth = await requireRoles(request, ["superadmin", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {

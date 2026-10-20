@@ -1,4 +1,5 @@
 import { jwtVerify } from "jose";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { NextRequest } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 
@@ -10,7 +11,8 @@ export interface AuthUser {
 }
 
 // Mismos roles que el middleware deja ver las páginas de Plan de Contenido
-// (superadmin, adminleads, gerente de operaciones, diseñador).
+// (superadmin, adminleads, gerente de operaciones, diseñador, Inteligencia de
+// Negocio).
 export async function getAuthUser(request: NextRequest): Promise<AuthUser | null> {
   try {
     const token = request.cookies.get("token")?.value;
@@ -30,8 +32,15 @@ export function canViewCustomPlan(user: AuthUser | null): boolean {
     user.role === "superadmin" ||
     user.role === "adminleads" ||
     user.role === "gerente de operaciones" ||
-    user.role === "diseñador"
+    user.role === "diseñador" ||
+    esRolBI(user.role)
   );
+}
+
+// Guardar lo que se marca o escribe dentro del plan (estado, checks): todos
+// los que lo ven menos Inteligencia de Negocio, que solo lee.
+export function canEditCustomPlan(user: AuthUser | null): boolean {
+  return canViewCustomPlan(user) && !esRolBI(user?.role);
 }
 
 // Solo quien tiene el botón "Actualizar HTML" en la UI (superadmin o

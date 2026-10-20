@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
 import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
@@ -16,7 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 const COMPANY_MAP: Record<string, number> = { valencia: 9, caracas: 10, panama: 7 };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar", "gerente de operaciones"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
   try {

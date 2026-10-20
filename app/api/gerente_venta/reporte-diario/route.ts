@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
@@ -64,6 +65,7 @@ export async function GET(req: NextRequest) {
     "gerencia de ventas",
     "asistente de ventas",
     "gerente de operaciones",
+    ROL_BI,
   ]);
   if (auth.error) return auth.error;
 
@@ -72,8 +74,9 @@ export async function GET(req: NextRequest) {
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
     const userCids = payload.cids as number;
 
+    // Inteligencia de Negocio elige sede como el SuperAdmin (solo lee).
     const isSuperAdmin =
-      userRole === "superadmin" || userRole === "super admin";
+      userRole === "superadmin" || userRole === "super admin" || esRolBI(userRole);
 
     const { searchParams } = new URL(req.url);
     const dateParam =

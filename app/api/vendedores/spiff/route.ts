@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireSession } from "@/lib/auth/roles";
 import { calcularSpiffDelMes } from "@/lib/spiff/calculo";
 
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     const mes = parseInt(sp.get("month") || "", 10) || now.getMonth() + 1;
     const anio = parseInt(sp.get("year") || "", 10) || now.getFullYear();
 
-    const puedeElegirSede = ["superadmin", "gerencia de ventas", "gerente de operaciones"].includes(role);
+    const puedeElegirSede = ["superadmin", "gerencia de ventas", "gerente de operaciones", ROL_BI].includes(role);
     const param = parseInt(sp.get("company_id") || "", 10);
     const companyId = puedeElegirSede && Number.isFinite(param) ? param : Number(payload.cids) || 9;
 

@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROL_BI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 import { ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
@@ -27,8 +28,8 @@ const MIN_TEXTO = 10;
 const MAX_TEXTO = 2000;
 
 function sedesPermitidas(payload: any, empresa: string | null): number[] {
-  const esSuperadmin = String(payload?.role || "").toLowerCase().trim() === "superadmin";
-  if (esSuperadmin) return empresa && COMPANY_MAP[empresa] ? [COMPANY_MAP[empresa]] : TODAS;
+  // SuperAdmin y BI (que solo lee) eligen sede o ven todas.
+  if (veTodasLasSedes(payload?.role)) return empresa && COMPANY_MAP[empresa] ? [COMPANY_MAP[empresa]] : TODAS;
   const propias = String(payload?.cids ?? "")
     .split(",")
     .map((c) => parseInt(c, 10))
@@ -39,7 +40,7 @@ function sedesPermitidas(payload: any, empresa: string | null): number[] {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar"]);
   if (auth.error) return auth.error;
 
   try {

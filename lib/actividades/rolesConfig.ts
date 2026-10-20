@@ -7,6 +7,10 @@ export const ROLE_HIERARCHY: Record<string, { canView: string[] | "all" }> = {
   audit: {
     canView: "all",
   },
+  // Inteligencia de Negocio: mira las actividades de todos (no asigna: solo lee).
+  "inteligencia de negocio": {
+    canView: "all",
+  },
   gerenteOperaciones: {
     canView: [
       "gerenteVentas",

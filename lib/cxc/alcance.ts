@@ -5,11 +5,12 @@
  * una sede lee la cartera de otra pasando `?empresa=`, o directamente con
  * `empresa=todas`, que es el valor por defecto de las pantallas.
  *
- * Solo `superadmin` ve las tres sedes. El resto queda clavado a su `cids`;
+ * Solo `superadmin` e Inteligencia de Negocio (que solo lee) ven las tres sedes. El resto queda clavado a su `cids`;
  * un `cids` ausente o inválido (usuarios viejos sin sede asignada) cae al
  * alcance completo para no romperles la pantalla.
  */
 import { limitarSedesPorRol } from "@/lib/auth/sedeRol";
+import { veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 
 export const COMPANY_MAP: Record<string, number> = { valencia: 9, caracas: 10, panama: 7 };
 export const COMPANY_NAMES: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
@@ -24,7 +25,7 @@ export function companyIdsEnAlcance(payload: any, empresa: string): number[] {
   const rol = String(payload?.role || "").toLowerCase().trim();
   const cids = Number(payload?.cids);
   const alcance =
-    rol === "superadmin" || !COMPANY_IDS_ALL.includes(cids)
+    veTodasLasSedes(rol) || !COMPANY_IDS_ALL.includes(cids)
       ? COMPANY_IDS_ALL
       : [cids];
   const pedida = COMPANY_MAP[(empresa || "").toLowerCase().trim()];

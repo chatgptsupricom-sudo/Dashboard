@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 
 /**
@@ -7,17 +8,18 @@ import { requireRoles } from "@/lib/auth/roles";
  * Acceso exclusivo para:
  * - superAdmin
  * - adminLeads con cids = 9 (Valencia)
+ * - Inteligencia de Negocio, solo lectura (requireRoles le corta lo que escribe)
  */
 export async function requireAdminLeadsValencia(
   request: NextRequest,
 ): Promise<{ payload?: any; error?: NextResponse }> {
-  const auth = await requireRoles(request, ["adminleads"]);
+  const auth = await requireRoles(request, ["adminleads", ROL_BI]);
   if (auth.error) return auth;
 
   const payload = auth.payload!;
   const userRole = String(payload.role || "").toLowerCase().trim();
 
-  if (userRole === "superadmin") {
+  if (veTodasLasSedes(userRole)) {
     return { payload };
   }
 
@@ -36,12 +38,12 @@ export async function requireAdminLeadsValencia(
 
 /**
  * Resuelve el cids de la sesión.
- * superAdmin => null (ve todo).
+ * superAdmin y BI => null (ven todo).
  * adminLeads => 9.
  */
 export function resolveMaterialPopCids(payload: any): number | null {
   const userRole = String(payload.role || "").toLowerCase().trim();
-  if (userRole === "superadmin") return null;
+  if (veTodasLasSedes(userRole)) return null;
   return 9;
 }
 

@@ -848,6 +848,8 @@ const PRIVILEGED_ROLES = [
   "superadmin",
   "gerente de operaciones",
   "gerencia de ventas",
+  // Ve las actividades de cualquiera; asignar o editar le da 403 (solo lectura).
+  "inteligencia de negocio",
 ];
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());

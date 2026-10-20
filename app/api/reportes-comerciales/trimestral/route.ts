@@ -1,4 +1,5 @@
 import { jwtVerify } from "jose";
+import { esEscrituraBI, MENSAJE_SOLO_LECTURA_BI } from "@/lib/auth/inteligenciaNegocio";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { query } from "@/lib/db";
@@ -27,6 +28,10 @@ async function sesion(request: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     if (!puedeVerReportesComerciales({ role: payload.role as string, email: payload.email as string })) {
       return { error: NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 }) };
+    }
+    // BI ve el reporte; generar el trimestre (POST) es escribir.
+    if (esEscrituraBI(payload.role, request.method)) {
+      return { error: NextResponse.json({ error: MENSAJE_SOLO_LECTURA_BI }, { status: 403 }) };
     }
     return { payload };
   } catch {
