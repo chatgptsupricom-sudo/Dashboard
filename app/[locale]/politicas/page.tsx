@@ -10,7 +10,7 @@ import {
   type TipoPolitica,
 } from "@/lib/politicas/permisos";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { ChevronRight, Loader2, Paperclip, Plus, ScrollText } from "lucide-react";
+import { ChevronRight, FileSignature, Loader2, Paperclip, Plus, ScrollText } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -104,6 +104,23 @@ export default function PoliticasPage() {
           </button>
         )}
       </div>
+
+      <section className="space-y-3">
+        <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">Formatos para llenar</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Link
+            href={`/${locale}/politicas/carta-envio`}
+            className="group flex items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm transition hover:border-blue-400 hover:shadow-md"
+          >
+            <FileSignature className="h-5 w-5 shrink-0 text-blue-600" />
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-slate-900">Carta de autorización de envío</p>
+              <p className="text-sm text-slate-500">Con los datos del cliente de Odoo, para imprimir o bajar en Word</p>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-blue-500" />
+          </Link>
+        </div>
+      </section>
 
       {cargando && <Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-400" />}
       {error && <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
