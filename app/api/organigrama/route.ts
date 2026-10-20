@@ -1,5 +1,11 @@
 import { requireRoles } from "@/lib/auth/roles";
-import { cargarOrganigramaInicial, crearNodo, listarNodos } from "@/lib/organigrama/datos";
+import {
+  acomodarSolo,
+  cargarOrganigramaInicial,
+  crearNodo,
+  guardarPosiciones,
+  listarNodos,
+} from "@/lib/organigrama/datos";
 import { organigramaDe, ROLES_ORGANIGRAMA } from "@/lib/organigrama/tipos";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -9,6 +15,8 @@ export const runtime = "nodejs";
 //   GET ?organigrama=actual|propuesto   -> { nodos }
 //   POST {cargo, parentId, organigrama…} -> { id }   crea un cargo (encimaDe = lo inserta como superior de otro)
 //   POST {inicial: true, organigrama}    -> { cargado }  carga la semilla de ese organigrama si está vacío
+//   POST {posiciones: [{id, x, y}]}      -> { guardadas }  dónde quedó cada recuadro en el lienzo
+//   POST {acomodar: true, organigrama}   -> { ok }  vuelve al acomodo automático
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ORGANIGRAMA);
@@ -23,6 +31,11 @@ export async function POST(request: NextRequest) {
   const por = String(auth.payload?.email ?? "");
   try {
     const b = await request.json();
+    if (b?.posiciones) return NextResponse.json({ guardadas: await guardarPosiciones(b.posiciones, por) });
+    if (b?.acomodar) {
+      await acomodarSolo(organigramaDe(b.organigrama));
+      return NextResponse.json({ ok: true });
+    }
     if (b?.inicial) {
       return NextResponse.json({ cargado: await cargarOrganigramaInicial(organigramaDe(b.organigrama), por) });
     }

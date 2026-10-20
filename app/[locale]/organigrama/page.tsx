@@ -28,6 +28,7 @@ import {
   Plus,
   Search,
   Check,
+  LayoutGrid,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -223,6 +224,40 @@ export default function OrganigramaPage() {
     }
   };
 
+  /** Dónde quedaron los recuadros arrastrados. */
+  const guardarPosiciones = async (posiciones: { id: number; x: number; y: number }[]) => {
+    setError(null);
+    try {
+      const r = await fetch("/api/organigrama", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ posiciones }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || "No se pudo guardar la posición");
+      await recargar();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  /** Borra las posiciones guardadas: el organigrama vuelve a acomodarse solo. */
+  const ordenarSolo = async () => {
+    if (!window.confirm("¿Acomodar todo automáticamente? Se pierde dónde moviste cada recuadro en este organigrama.")) return;
+    setError(null);
+    try {
+      const r = await fetch("/api/organigrama", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acomodar: true, organigrama: org }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error || "No se pudo acomodar");
+      await recargar();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
   const nombreArchivo = (ext: string) =>
     `organigrama-${org === "actual" ? "supricom" : `${org}-supricom`}-${new Date().toISOString().slice(0, 10)}.${ext}`;
 
@@ -329,7 +364,9 @@ export default function OrganigramaPage() {
           <div>
             <h1 className="text-2xl font-black text-slate-900">Organigrama</h1>
             <p className="text-sm text-slate-500">
-              {editando ? "Editando · Clic: actividades del cargo · Doble clic: editar nombre y personas" : "Solo lectura · Clic: ver las actividades del cargo"}
+              {editando
+                ? "Editando · Arrastra los recuadros dentro de su nivel (Mayús: con sus subordinados) · Doble clic: editar nombre y personas"
+                : "Solo lectura · Clic: ver las actividades del cargo"}
               {nodos.length > 0 && (
                 <span className="text-slate-400">
                   {" "}
@@ -400,6 +437,15 @@ export default function OrganigramaPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            {editando && (
+              <button
+                onClick={ordenarSolo}
+                className={boton}
+                title="Vuelve a acomodar todos los recuadros solos (se pierde dónde los moviste)"
+              >
+                <LayoutGrid className="h-4 w-4" /> Ordenar automáticamente
+              </button>
+            )}
             {editando && (
               <button
                 onClick={() =>
@@ -515,6 +561,9 @@ export default function OrganigramaPage() {
                 onAgregarSubordinado={(padre) => crear({ parentId: padre, cargo: "Nuevo cargo" })}
                 onEditar={editarRapido}
                 soloLectura={!editando}
+                arrastrable={editando && !mano && !exportando}
+                zoom={zoom}
+                onMover={guardarPosiciones}
               />
             </div>
           </div>

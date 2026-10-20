@@ -36,6 +36,9 @@ export type Nodo = {
   personas: string[];
   proposito: string;
   actividades: Actividad[];
+  /** Posición en el lienzo (px): x absoluta, y dentro de la franja de su nivel. null = acomodo automático. */
+  posX: number | null;
+  posY: number | null;
   updatedBy: string | null;
   updatedAt: string | null;
 };

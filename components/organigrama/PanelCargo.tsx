@@ -10,6 +10,7 @@ import {
   type Actividad,
   type Nodo,
 } from "@/lib/organigrama/tipos";
+import { niveles } from "@/lib/organigrama/lienzo";
 import {
   ArrowDown,
   ArrowLeft,
@@ -444,15 +445,13 @@ function Contenido({ nodo, nodos, tabInicial, onCerrar, onSeleccionar, onRecarga
               </select>
             </div>
             <div>
-              <label className={etiqueta}>Subordinados en</label>
-              <select
-                value={datos.disposicion}
-                onChange={(e) => set("disposicion", e.target.value as Nodo["disposicion"])}
-                className={input}
-              >
-                <option value="columna">Columna (lista hacia abajo)</option>
-                <option value="fila">Fila (uno al lado del otro)</option>
-              </select>
+              <label className={etiqueta}>Nivel</label>
+              <p className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                Nivel {(niveles(nodos).get(nodo.id) ?? 0) + 1}
+                <span className="block text-[11px] text-slate-500">
+                  Sale de a quién reporta. Para subir o bajar de nivel, cambia «Reporta a».
+                </span>
+              </p>
             </div>
             <div className="sm:col-span-2">
               <label className={etiqueta}>Reporta a</label>

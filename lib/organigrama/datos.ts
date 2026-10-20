@@ -48,12 +48,16 @@ async function ensureTabla() {
       INDEX (parent_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
-  // Columna nueva: lo que ya estaba es el organigrama actual.
-  const [cols] = await db.execute("SHOW COLUMNS FROM organigrama_nodos LIKE 'organigrama'");
-  if (!(cols as any[]).length) {
+  // Columnas nuevas: lo que ya estaba es el organigrama actual, acomodado solo.
+  const [cols] = await db.execute("SHOW COLUMNS FROM organigrama_nodos");
+  const hay = new Set((cols as any[]).map((c) => c.Field));
+  if (!hay.has("organigrama")) {
     await db.execute(
       "ALTER TABLE organigrama_nodos ADD COLUMN organigrama VARCHAR(20) NOT NULL DEFAULT 'actual' AFTER id, ADD INDEX idx_organigrama (organigrama)",
     );
+  }
+  if (!hay.has("pos_x")) {
+    await db.execute("ALTER TABLE organigrama_nodos ADD COLUMN pos_x INT NULL AFTER actividades, ADD COLUMN pos_y INT NULL AFTER pos_x");
   }
   tablaLista = true;
 }
@@ -89,6 +93,8 @@ const aNodo = (f: any): Nodo => ({
   personas: json<string[]>(f.personas, []),
   proposito: f.proposito || "",
   actividades: json<Actividad[]>(f.actividades, []),
+  posX: f.pos_x == null ? null : Number(f.pos_x),
+  posY: f.pos_y == null ? null : Number(f.pos_y),
   updatedBy: f.updated_by ?? null,
   updatedAt: f.updated_at ? new Date(f.updated_at).toISOString() : null,
 });
@@ -241,6 +247,35 @@ export async function actualizarNodo(id: number, b: any, por: string): Promise<v
       await reordenar(lista.map((n) => n.id));
     }
   }
+}
+
+/**
+ * Guarda dónde quedó cada recuadro en el lienzo (arrastrar en modo Editar).
+ * Solo cambia la posición: el nivel sale de a quién reporta, no de aquí.
+ */
+export async function guardarPosiciones(lista: unknown, por: string): Promise<number> {
+  await ensureTabla();
+  if (!Array.isArray(lista)) throw new Error("Faltan las posiciones.");
+  const entero = (v: unknown) => Math.max(0, Math.min(100_000, Math.round(Number(v) || 0)));
+  let n = 0;
+  for (const p of lista.slice(0, 500) as any[]) {
+    const id = Number(p?.id);
+    if (!Number.isInteger(id) || id <= 0) continue;
+    await db.execute("UPDATE organigrama_nodos SET pos_x = ?, pos_y = ?, updated_by = ? WHERE id = ?", [
+      entero(p.x),
+      entero(p.y),
+      por,
+      id,
+    ]);
+    n++;
+  }
+  return n;
+}
+
+/** Borra las posiciones de un organigrama: vuelve al acomodo automático. */
+export async function acomodarSolo(org: Organigrama): Promise<void> {
+  await ensureTabla();
+  await db.execute("UPDATE organigrama_nodos SET pos_x = NULL, pos_y = NULL WHERE organigrama = ?", [org]);
 }
 
 /** Borra el cargo; sus subordinados suben a su superior, en el lugar que él ocupaba. */
