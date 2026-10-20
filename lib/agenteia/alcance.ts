@@ -127,6 +127,9 @@ export function configPorDefecto(rol: string): ConfigRol {
     return { sede: "todas", propio: false, areas: ["ventas", "cobranza", "compras", "contabilidad", "costos", "inventario"] };
   if (/operaciones/.test(r)) return { sede: "todas", propio: false, areas: ["inventario", "compras", "ventas", "rma", "seguridad"] };
   if (/^rma$/.test(r)) return { sede: "propia", propio: false, areas: ["rma", "inventario"] };
+  // Inteligencia de Negocio: las tres sedes y lo que ve en sus tableros.
+  if (/inteligencia de negocio/.test(r))
+    return { sede: "todas", propio: false, areas: ["ventas", "cobranza", "inventario", "compras", "costos", "leads"] };
   if (/seguridad|almacen/.test(r)) return { sede: "propia", propio: false, areas: ["seguridad", "inventario"] };
   return { sede: "propia", propio: false, areas: ["inventario"] };
 }

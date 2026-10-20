@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -9,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 // El diseñador tambien administra el banco completo: su pantalla
 // /disenador/banco-imagenes reexporta la de adminleads, asi que necesita
 // lectura y escritura. Sin el en estas listas la pantalla no cargaba nada.
-const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador"];
+const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador", ROL_BI];
 const ROLES_ESCRITURA = ["adminleads", "gerente de operaciones", "diseñador"];
 
 // Tamano maximo por archivo.

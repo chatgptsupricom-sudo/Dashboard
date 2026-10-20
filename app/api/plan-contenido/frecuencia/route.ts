@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { esMarcaPlan, marcaDeVista } from "@/lib/customView/marcas";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  * llama directo a esta ruta desde el iframe, con la cookie de sesion: un plan
  * por marca+año+mes, guardado tal cual lo manda la app.
  */
-const ROLES = ["adminleads", "diseñador"];
+const ROLES = ["adminleads", "diseñador", ROL_BI];
 const MAX_BYTES = 5 * 1024 * 1024;
 
 let tablaLista = false;

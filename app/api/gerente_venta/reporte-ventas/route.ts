@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import {
   cargarFiltros,
@@ -50,7 +51,8 @@ function normalizarRango(desdeRaw: string | null, hastaRaw: string | null) {
 
 function resolverCompanyIds(payload: any, sedeParam: string | null) {
   const role = ((payload.role as string) || "").toLowerCase().trim();
-  const isSuper = role === "superadmin" || role === "super admin";
+  // Inteligencia de Negocio elige sede como el SuperAdmin (solo lee).
+  const isSuper = role === "superadmin" || role === "super admin" || esRolBI(role);
   if (isSuper) {
     if (sedeParam && sedeParam !== "all" && /^\d+$/.test(sedeParam)) {
       return { companyIds: [parseInt(sedeParam, 10)], isSuper };
@@ -68,7 +70,7 @@ function sedesPayload(isSuper: boolean) {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = await requireRoles(req, ["gerencia de ventas"]);
+  const auth = await requireRoles(req, ["gerencia de ventas", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {

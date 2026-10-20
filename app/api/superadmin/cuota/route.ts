@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
@@ -12,7 +13,7 @@ const COMPANY_MAP: Record<number, string> = {
 };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
+  const auth = await requireRoles(request, ["superadmin", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {

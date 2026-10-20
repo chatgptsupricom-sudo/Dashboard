@@ -5,7 +5,7 @@
  * (necesita las funciones normales de vendedor), pero NO todos los vendedores
  * deben ver esta seccion. Por eso el acceso no se puede resolver solo por rol:
  *
- *   - `superadmin` y `gerencia de ventas`: siempre.
+ *   - `superadmin`, `gerencia de ventas` e Inteligencia de Negocio: siempre.
  *   - Cualquier otro: solo si su correo esta en la lista de la env
  *     REPORTES_COMERCIALES_EMAILS (separado por comas).
  *
@@ -20,8 +20,9 @@
  */
 
 import { COMPANY_IDS_REPORTE } from "@/lib/reportes-comerciales/sedes";
+import { ROL_BI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 
-const ROLES_CON_ACCESO = ["superadmin", "gerencia de ventas"];
+const ROLES_CON_ACCESO = ["superadmin", "gerencia de ventas", ROL_BI];
 
 export function correosAutorizados(): string[] {
   const crudo =
@@ -62,7 +63,7 @@ export function marcaFijaDe(usuario: {
 
 /**
  * Sedes (company_id) que el usuario puede consultar en el reporte:
- *   - superadmin: todas
+ *   - superadmin e Inteligencia de Negocio: todas
  *   - gerencia de ventas / correo en la lista: solo su propia sede (`cids`)
  *   - cualquier otro: ninguna
  */
@@ -72,7 +73,7 @@ export function sedesPermitidas(usuario: {
   cids?: number | string | null;
 }): number[] {
   const rol = (usuario.role || "").toLowerCase().trim();
-  if (rol === "superadmin") return [...COMPANY_IDS_REPORTE];
+  if (veTodasLasSedes(rol)) return [...COMPANY_IDS_REPORTE];
 
   if (!puedeVerReportesComerciales(usuario)) return [];
 
