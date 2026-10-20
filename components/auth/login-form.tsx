@@ -272,6 +272,8 @@ export function LoginForm() {
       } else if (role === "it") {
         // IT preaprueba notas de credito: entra directo ahi.
         router.push(`/${locale}/notas-credito`);
+      } else if (role === "inteligencia de negocio") {
+        router.push(`/${locale}/inteligencia_negocio`);
       } else {
         console.log("Redirigiendo a /dashboard por fallo de coincidencia");
         router.push(`/${locale}/dashboard`);

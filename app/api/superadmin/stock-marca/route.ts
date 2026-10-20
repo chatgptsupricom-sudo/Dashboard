@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError } from "@/lib/odoo";
 import { partnersIntercompania } from "@/lib/intercompania";
@@ -18,7 +19,7 @@ export const maxDuration = 60;
  * GET ...&productos=1 → además, todos los productos (para el Excel).
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, []);
+  const auth = await requireRoles(request, [ROL_BI]);
   if (auth.error) return auth.error;
 
   const sp = request.nextUrl.searchParams;

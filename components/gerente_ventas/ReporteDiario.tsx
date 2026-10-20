@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -94,7 +95,8 @@ export function ReporteDiarioVentas() {
 
   const isSuperAdmin =
     user?.role?.toLowerCase().trim() === "superadmin" ||
-    user?.role?.toLowerCase().trim() === "super admin";
+    user?.role?.toLowerCase().trim() === "super admin" ||
+    esRolBI(user?.role);
 
   const cargar = useCallback(
     (silent = false) => {

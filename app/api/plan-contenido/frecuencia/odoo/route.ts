@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { productosParaFrecuencia, sedeDeUsuario } from "@/lib/customView/inventarioOdoo";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  * en la sede del usuario (superadmin: Valencia).
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["adminleads", "diseñador"]);
+  const auth = await requireRoles(request, ["adminleads", "diseñador", ROL_BI]);
   if (auth.error) return auth.error;
 
   const tipo = request.nextUrl.searchParams.get("tipo");

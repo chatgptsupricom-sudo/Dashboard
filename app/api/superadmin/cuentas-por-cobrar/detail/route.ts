@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
@@ -26,7 +27,7 @@ async function fetchPaginated(model: string, domain: any[], fields: string[], or
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, 
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, 
     "cuentas por cobrar",
     "gerente de operaciones",
     "gerencia de ventas",

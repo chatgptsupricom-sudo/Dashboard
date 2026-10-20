@@ -21,6 +21,7 @@ export enum UserRole {
   ALMACEN = "almacen",
   PROCESOS = "procesos",
   IT = "it",
+  INTELIGENCIA_NEGOCIO = "inteligencia de negocio",
 }
 
 // Permisos por rol
@@ -459,6 +460,52 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: ["notas_credito"],
+  },
+  // Inteligencia de Negocio (BI): ve los tableros de las tres sedes (Panamá 7,
+  // Valencia 9, Caracas 10) y no cambia nada. Sus páginas viven en
+  // /inteligencia_negocio (las mismas del SuperAdmin) y las APIs le cortan
+  // todo lo que escribe (lib/auth/inteligenciaNegocio.ts).
+  [UserRole.INTELIGENCIA_NEGOCIO]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: [
+      "dashboard",
+      "actividad",
+      "stoplight_reports",
+      "inventory",
+      "agenteia",
+      // Desplegable Leads
+      "adminleads",
+      "monitoreo_leads",
+      "cierres_adminleads",
+      "recompra_adminleads",
+      "configuracion_leads",
+      // Desplegable Ventas
+      "reporte_diario",
+      "reporte_ventas",
+      "cuota",
+      "metas_marca",
+      "stock_marca",
+      "reportes_comerciales",
+      "seller_map",
+      "spiff",
+      // Desplegable Marketing
+      "vista_custom",
+      "frecuencia_cpm",
+      "banco_imagenes",
+      "catalogo_disenos",
+      "material_pop",
+      "sorteo_caracas",
+      "opiniones",
+      // Cuentas por Cobrar (solo estas cuatro)
+      "cxc_contado_credito",
+      "cxc_incobrables",
+      "cxc_tiempo_cobro",
+      "cxc_sobregiro",
+    ],
   },
 };
 

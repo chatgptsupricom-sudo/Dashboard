@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -9,6 +10,7 @@ export async function GET(request: NextRequest) {
     "vendedor",
     "seller",
     "diseñador",
+    ROL_BI,
   ]);
   if (auth.error) return auth.error;
 

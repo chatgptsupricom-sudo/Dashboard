@@ -1,6 +1,6 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
+import { canEditCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
 
 /**
  * Endpoint HEREDADO. El guardado del Plan de Contenido vive ahora en
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    if (!canViewCustomPlan(user)) {
+    if (!canEditCustomPlan(user)) {
       return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 });
     }
 

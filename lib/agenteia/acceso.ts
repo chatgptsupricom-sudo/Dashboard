@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/auth/roles";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -10,6 +11,9 @@ import { NextRequest, NextResponse } from "next/server";
  *   - editor: además prepara y confirma cambios en Odoo.
  * Se guarda en agenteia_permisos (un correo por fila, en minúsculas); la tabla
  * se crea sola. agenteia_acceso (por rol) quedó sin uso.
+ *
+ * Excepción por rol: Inteligencia de Negocio tiene el agente en su menú, así
+ * que entra sin estar en la lista, y siempre como consultor (solo lee).
  */
 
 export type Nivel = "consultor" | "editor";
@@ -65,6 +69,7 @@ export async function guardarPermiso(email: string, nivel: Nivel | null, por: st
 /** Nivel de la sesión en el agente: null = sin acceso. El SuperAdmin es editor. */
 export async function nivelAgente(payload: any): Promise<Nivel | null> {
   if (esSuperadmin(payload?.role)) return "editor";
+  if (esRolBI(payload?.role)) return "consultor";
   try {
     return (await permisosAgente()).get(normCorreo(payload?.email)) ?? null;
   } catch (e: any) {
@@ -77,7 +82,9 @@ export async function nivelAgente(payload: any): Promise<Nivel | null> {
 export async function requireAgente(
   request: NextRequest,
 ): Promise<{ payload?: any; nivel?: Nivel; error?: NextResponse }> {
-  const s = await requireSession(request);
+  // Conversar y guardar sus chats no cambia la operación: BI también puede.
+  // Lo que escribe en Odoo exige nivel editor, y BI es consultor.
+  const s = await requireSession(request, { escrituraPropia: true });
   if (s.error) return s;
   const nivel = await nivelAgente(s.payload);
   if (!nivel) return { error: NextResponse.json({ error: "No tienes acceso al Agente IA." }, { status: 403 }) };

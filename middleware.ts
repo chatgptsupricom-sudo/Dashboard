@@ -145,6 +145,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/gerente_venta") ||
     pathname.includes("/gerente_operaciones") ||
     pathname.includes("/recursos_humanos") ||
+    // Inteligencia de Negocio (lib/auth/inteligenciaNegocio.ts).
+    pathname.includes("/inteligencia_negocio") ||
     pathname.includes("/compras") ||
     pathname.includes("/rma") ||
     pathname.includes("/disenador") ||
@@ -206,6 +208,8 @@ export default async function middleware(request: NextRequest) {
       const isProcesos = userRole === "procesos";
       // Rol IT: entra a Notas de credito (preaprueba).
       const isIt = userRole === "it";
+      // Inteligencia de Negocio: tableros de las tres sedes, solo lectura.
+      const isBI = userRole === "inteligencia de negocio";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -267,8 +271,14 @@ export default async function middleware(request: NextRequest) {
         );
       }
 
-      // 5. Lógica para AdminLeads
-      if (pathname.includes("/adminleads") && !isAdminLeads && !isSuperAdmin && !isGerenciaOperaciones) {
+      // 4b. Inteligencia de Negocio: sus páginas son las del SuperAdmin, en
+      // /inteligencia_negocio.
+      if (pathname.includes("/inteligencia_negocio") && !isBI && !isSuperAdmin) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
+      // 5. Lógica para AdminLeads (BI entra a leer: desplegable Leads y Material POP)
+      if (pathname.includes("/adminleads") && !isAdminLeads && !isSuperAdmin && !isGerenciaOperaciones && !isBI) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
@@ -297,7 +307,7 @@ export default async function middleware(request: NextRequest) {
       // 5c. Lógica para Material POP (acceso: adminleads de Valencia cids=9, superAdmin)
       if (pathname.includes("/adminleads/material-pop")) {
         const userCids = Number(payload.cids);
-        if (!isSuperAdmin && !(isAdminLeads && userCids === 9)) {
+        if (!isSuperAdmin && !isBI && !(isAdminLeads && userCids === 9)) {
           return NextResponse.redirect(
             new URL(`/${locale}/dashboard`, request.url),
           );
@@ -343,7 +353,9 @@ export default async function middleware(request: NextRequest) {
       // 9. Lógica para Cuentas por Cobrar
       // Administracion tambien tiene todas las secciones de CxC (sus APIs la
       // dejan en la sede de su cids, lib/auth/sedeRol.ts).
-      if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin && !isGerenciaOperaciones && !isAdministracion) {
+      // Inteligencia de Negocio solo tiene cuatro de sus secciones.
+      const esCxCDeBI = /\/cuentas-por-cobrar\/(contado-credito|incobrables|tiempo-cobro|sobregiro)(\/|$)/.test(pathname);
+      if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin && !isGerenciaOperaciones && !isAdministracion && !(isBI && esCxCDeBI)) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
@@ -430,6 +442,10 @@ export default async function middleware(request: NextRequest) {
       // IT no tiene dashboard: su inicio es Notas de credito.
       if (esDashboardComun && isIt) {
         return NextResponse.redirect(new URL(`/${locale}/notas-credito`, request.url));
+      }
+      // Inteligencia de Negocio tiene su Dashboard en /inteligencia_negocio.
+      if (esDashboardComun && isBI) {
+        return NextResponse.redirect(new URL(`/${locale}/inteligencia_negocio`, request.url));
       }
       if (esDashboardComun && isDisenador) {
         return NextResponse.redirect(

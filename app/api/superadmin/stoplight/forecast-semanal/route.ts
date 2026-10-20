@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -29,7 +30,7 @@ async function ensureTable() {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin", "gerencia de ventas", "compras", "gerente de operaciones"]);
+  const auth = await requireRoles(request, ["superadmin", "gerencia de ventas", "compras", "gerente de operaciones", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {

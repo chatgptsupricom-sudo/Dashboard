@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { NextRequest, NextResponse } from "next/server";
 
 // Usado tambien por SpiffManager (gerente_venta y gerente_operaciones), no
@@ -10,6 +11,7 @@ export async function GET(request: NextRequest) {
     "gerencia de ventas",
     "asistente de ventas",
     "gerente de operaciones",
+    ROL_BI,
   ]);
   if (auth.error) return auth.error;
 

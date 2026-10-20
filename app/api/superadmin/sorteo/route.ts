@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { partnersIntercompania } from "@/lib/intercompania";
 import { leerConfig } from "@/lib/sorteo/configuracion";
@@ -15,7 +16,7 @@ export const maxDuration = 60;
  * GET ?refrescar=1 relee Odoo.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, []);
+  const auth = await requireRoles(request, [ROL_BI]);
   if (auth.error) return auth.error;
 
   const refrescar = request.nextUrl.searchParams.get("refrescar") === "1";

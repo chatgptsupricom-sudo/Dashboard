@@ -2,6 +2,7 @@
 
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { rolePermissions, UserRole } from "@/lib/types";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   DndContext,
@@ -435,6 +436,9 @@ export function Sidebar({
         return `/${locale}/seguridad`;
       case "cuentas por cobrar":
         return `/${locale}/cuentas-por-cobrar`;
+      // Inteligencia de Negocio: las mismas pantallas del SuperAdmin, en solo lectura.
+      case "inteligencia de negocio":
+        return `/${locale}/inteligencia_negocio`;
       case "it":
         return `/${locale}/notas-credito`;
       case "diseñador":
@@ -472,17 +476,22 @@ export function Sidebar({
   const isComprasRole = userRole === "compras";
   const comprasDropdownIds = ["ordenes_compra", "recepcion_packing", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
   const isSuperAdminRole = userRole === "superAdmin";
+  // Inteligencia de Negocio tiene los desplegables del SuperAdmin (Ventas,
+  // Marketing, parte de CxC) sobre sus propias páginas.
+  const isBIRole = esRolBI(userRole);
   const normalizedUserRole = userRole?.toLowerCase().trim();
   const isGerenteOperaciones = normalizedUserRole === "gerente_operaciones" || normalizedUserRole === "gerente de operaciones";
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas", "metas_marca", "stock_marca"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
   const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables", "cxc_sobregiro"];
-  const showVentasDropdown = isSuperAdminRole || (isGerenteOperaciones && hasVentasPermission);
+  const showVentasDropdown = isSuperAdminRole || isBIRole || (isGerenteOperaciones && hasVentasPermission);
   const isAdministracionRole = ["administración", "administracion"].includes(normalizedUserRole || "");
   // Administracion tambien: sus items de CxC tienen slugs relativos al basePath
   // del rol CxC, asi que en la lista plana saldrian rotos (/administracion/...).
-  const showCxCDropdown = (isSuperAdminRole || isGerenteOperaciones || isAdministracionRole) && hasCxCPermission;
+  const showCxCDropdown =
+    ((isSuperAdminRole || isGerenteOperaciones || isAdministracionRole) && hasCxCPermission) ||
+    (isBIRole && cxcDropdownIds.some((id) => allowedSections.includes(id)));
   // SuperAdmin: Salud Administrativa y Gastos y Presupuesto viven en un
   // desplegable "Administración", y KPI de Diseños dentro del de Marketing, en vez
   // de quedar sueltos en la lista plana.
@@ -517,7 +526,7 @@ export function Sidebar({
         // coincide. superAdmin (sin cids) siempre lo ve.
         ((item as any).cidsOnly == null || userRole === "superAdmin" || Number(userCids) === (item as any).cidsOnly) &&
         !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads", "recompra_adminleads"].includes(item.id)) &&
-        !(userRole === "superAdmin" && ["banco_imagenes", "banco_imagenes_seller", "vista_custom", "frecuencia_cpm"].includes(item.id)) &&
+        !((userRole === "superAdmin" || isBIRole) && ["banco_imagenes", "banco_imagenes_seller", "vista_custom", "frecuencia_cpm"].includes(item.id)) &&
         // El item del vendedor duplicaria a "material_pop" para superAdmin, y
         // con un basePath que no existe (/superadmin/material-pop).
         !(userRole === "superAdmin" && item.id === "material_pop_seller") &&
@@ -536,6 +545,7 @@ export function Sidebar({
         (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
         !(isSuperAdminRole &&
           [...administracionDropdownIds, ...itSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+        !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
     )
@@ -1337,7 +1347,7 @@ export function Sidebar({
                           permission: "cuota",
                         },
                         // Solo existe en /superadmin (el gerente de operaciones comparte este menú).
-                        ...(isSuperAdminRole
+                        ...(isSuperAdminRole || isBIRole
                           ? [{
                               label: t("metas_marca"),
                               href: `${basePath}/metas-marca`,
@@ -1350,7 +1360,7 @@ export function Sidebar({
                           : []),
                         // El Sorteo pasó a Marketing. Reportes Comerciales vive
                         // en /reportes-comerciales (fuera de /superadmin).
-                        ...(isSuperAdminRole && allowedSections.includes("reportes_comerciales")
+                        ...((isSuperAdminRole || isBIRole) && allowedSections.includes("reportes_comerciales")
                           ? [{
                               label: t("reportes_comerciales"),
                               href: `/${locale}/reportes-comerciales`,
@@ -1496,10 +1506,14 @@ export function Sidebar({
                         // Administracion ve solo lo que su rol tiene en lib/types.ts;
                         // superadmin y Gerencia de Operaciones siguen viendo la lista
                         // de siempre (Estado de cuenta ya lo tienen en otro lado).
+                        // Inteligencia de Negocio, solo las de CxC de su rol (el
+                        // Stoplight ya lo tiene suelto en el menú).
                         .filter((subItem: { permission: string; soloAdministracion?: boolean }) =>
                           isAdministracionRole
                             ? allowedSections.includes(subItem.permission)
-                            : !subItem.soloAdministracion,
+                            : isBIRole
+                              ? subItem.permission.startsWith("cxc_") && allowedSections.includes(subItem.permission)
+                              : !subItem.soloAdministracion,
                         )
                         .map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
@@ -1587,8 +1601,8 @@ export function Sidebar({
               </div>
             )}
 
-            {/* Submenú Desplegable de MARKETING (solo superadmin) */}
-            {userRole === "superAdmin" && (
+            {/* Submenú Desplegable de MARKETING (superadmin e Inteligencia de Negocio) */}
+            {(userRole === "superAdmin" || isBIRole) && (
               <div className="space-y-1">
                 <button
                   onClick={() => setIsMarketingOpen(!isMarketingOpen)}
