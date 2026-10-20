@@ -86,7 +86,6 @@ export function Organigrama({
 
   // Posiciones mientras se arrastra (todavía sin guardar).
   const [mover, setMover] = useState<Map<number, { x: number; y: number }> | null>(null);
-  const arrastre = useRef<Arrastre | null>(null);
   const recienArrastrado = useRef(false);
   const lienzo = useMemo(() => armarLienzo(nodos, altos, mover ?? undefined), [nodos, altos, mover]);
 
@@ -292,6 +291,8 @@ export function Organigrama({
   };
 
   // ---- Arrastrar recuadros (modo Editar) ----
+  // El arrastre sigue al puntero en toda la ventana: si se mueve rápido y sale
+  // del recuadro, igual lo lleva (escuchar solo en el recuadro lo perdía).
   const empezarArrastre = (e: React.PointerEvent<HTMLDivElement>, n: Nodo) => {
     if (!arrastrable || soloLectura || e.button !== 0 || e.ctrlKey || editando === n.id) return;
     if ((e.target as HTMLElement).closest("button, input, textarea, select")) return;
@@ -302,41 +303,43 @@ export function Organigrama({
       const f = lienzo.franjas[c.nivel];
       return [{ id, x: c.x, y: c.y - f.top, max: yRelativaMax(f, c.h) }];
     });
-    arrastre.current = { puntero: e.pointerId, x0: e.clientX, y0: e.clientY, movio: false, piezas };
+    const a: Arrastre = { puntero: e.pointerId, x0: e.clientX, y0: e.clientY, movio: false, piezas };
+    let movido: Map<number, { x: number; y: number }> | null = null;
     e.stopPropagation(); // que el lienzo no lo tome como desplazamiento
-  };
-  const alMover = (e: React.PointerEvent<HTMLDivElement>) => {
-    const a = arrastre.current;
-    if (!a || a.puntero !== e.pointerId) return;
-    const dx = (e.clientX - a.x0) / zoom;
-    const dy = (e.clientY - a.y0) / zoom;
-    if (!a.movio) {
-      if (Math.hypot(dx, dy) < 4) return;
+    e.preventDefault(); // sin esto el arrastre selecciona el texto de los recuadros (el clic igual llega)
+
+    const alMover = (ev: PointerEvent) => {
+      if (ev.pointerId !== a.puntero) return;
+      const dx = (ev.clientX - a.x0) / zoom;
+      const dy = (ev.clientY - a.y0) / zoom;
+      if (!a.movio && Math.hypot(dx, dy) < 4) return;
       a.movio = true;
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        // el puntero ya se soltó
-      }
-    }
-    setMover(
-      new Map(
+      movido = new Map(
         a.piezas.map((p) => [p.id, { x: Math.max(0, p.x + dx), y: Math.min(p.max, Math.max(0, p.y + dy)) }]),
-      ),
-    );
-  };
-  const soltar = async () => {
-    const a = arrastre.current;
-    arrastre.current = null;
-    if (!a?.movio || !mover) return;
-    recienArrastrado.current = true; // que el clic de soltar no abra el panel
-    setTimeout(() => (recienArrastrado.current = false), 0);
-    const posiciones = [...mover].map(([id, p]) => ({ id, x: Math.round(p.x), y: Math.round(p.y) }));
-    try {
-      await onMover?.(posiciones);
-    } finally {
-      setMover(null);
-    }
+      );
+      setMover(movido);
+    };
+    const soltar = async (ev: PointerEvent) => {
+      if (ev.pointerId !== a.puntero) return;
+      window.removeEventListener("pointermove", alMover);
+      window.removeEventListener("pointerup", soltar);
+      window.removeEventListener("pointercancel", soltar);
+      if (ev.type === "pointercancel" || !a.movio || !movido) {
+        setMover(null);
+        return;
+      }
+      recienArrastrado.current = true; // que el clic de soltar no abra el panel
+      setTimeout(() => (recienArrastrado.current = false), 0);
+      const posiciones = [...movido].map(([id, p]) => ({ id, x: Math.round(p.x), y: Math.round(p.y) }));
+      try {
+        await onMover?.(posiciones);
+      } finally {
+        setMover(null);
+      }
+    };
+    window.addEventListener("pointermove", alMover);
+    window.addEventListener("pointerup", soltar);
+    window.addEventListener("pointercancel", soltar);
   };
 
   return (
@@ -377,13 +380,7 @@ export function Organigrama({
               else refs.current.delete(n.id);
             }}
             onPointerDown={(e) => empezarArrastre(e, n)}
-            onPointerMove={alMover}
-            onPointerUp={soltar}
-            onPointerCancel={() => {
-              arrastre.current = null;
-              setMover(null);
-            }}
-            className={cn("absolute", arrastrable && editando !== n.id && "cursor-move touch-none")}
+            className={cn("absolute", arrastrable && editando !== n.id && "cursor-move touch-none select-none")}
             style={{ left: c.x, top: c.y, width: c.w, zIndex: editando === n.id || mover?.has(n.id) ? 30 : undefined }}
             title={arrastrable ? "Arrastra para moverlo dentro de su nivel · Mayús + arrastrar: con sus subordinados" : undefined}
           >

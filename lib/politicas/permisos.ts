@@ -10,6 +10,8 @@ export const ROLES_EDITAN_POLITICAS = ["superadmin", "procesos"];
 export const ROLES_LEEN_POLITICAS = [
   "administración",
   "administracion",
+  "administración y finanzas",
+  "administracion y finanzas",
   "cuentas por cobrar",
   "gerencia de ventas",
   "gerente de operaciones",

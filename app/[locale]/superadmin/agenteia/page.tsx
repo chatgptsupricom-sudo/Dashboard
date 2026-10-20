@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
   Copy,
   Download,
   FileIcon,
@@ -45,6 +46,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import PanelSupervision from "@/components/agenteia/PanelSupervision";
+import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 import remarkGfm from "remark-gfm";
 
 interface AttachedFile {
@@ -731,6 +733,90 @@ const SUGERENCIAS: { clave: "sugerencia_1" | "sugerencia_2" | "sugerencia_3" | "
   { clave: "sugerencia_4", icono: PackageX },
 ];
 
+// Recorrido guiado de la pantalla. Sale cada vez que se entra, hasta "No volver a mostrar".
+// Las sugerencias solo existen en una conversación vacía y la tuerca solo para el SuperAdmin.
+function pasosAgente({
+  vacio,
+  editor,
+  superadmin,
+  abrirChats,
+}: {
+  vacio: boolean;
+  editor: boolean;
+  superadmin: boolean;
+  abrirChats: () => void;
+}): PasoRecorrido[] {
+  return [
+    {
+      titulo: "Conoce a Supri",
+      texto:
+        "Supri es el asistente del panel: le preguntas por ventas, clientes, cobranza o inventario y te responde con los datos de la empresa, de tu área y tu sede.",
+    },
+    ...(vacio
+      ? [
+          {
+            selector: '[data-tour="agente-sugerencias"]',
+            titulo: "Preguntas para empezar",
+            texto: "Toca una de estas preguntas y Supri la responde al momento.",
+          },
+        ]
+      : []),
+    {
+      selector: '[data-tour="agente-pregunta"]',
+      titulo: "Pregúntale como a un compañero",
+      texto:
+        "Escribe lo que necesitas con tus palabras. Enter envía y Mayús + Enter hace un salto de línea. También puedes pedirle un Excel, un Word o un PDF: lo ves al lado y lo descargas.",
+    },
+    {
+      selector: '[data-tour="agente-adjuntar"]',
+      titulo: "Adjunta un archivo",
+      texto: "Súbele un Excel, un PDF o una imagen y pregúntale sobre lo que dice.",
+    },
+    {
+      selector: '[data-tour="agente-dictar"]',
+      titulo: "Díctale",
+      texto: "Con el micrófono escribe lo que dices; revisas el texto y lo envías.",
+    },
+    {
+      selector: '[data-tour="agente-voz"]',
+      titulo: "Háblale",
+      texto: "Activa la voz para conversar con Supri sin escribir: te escucha y te responde en voz alta.",
+    },
+    {
+      selector: '[data-tour="agente-nuevo"]',
+      titulo: "Nuevo chat",
+      texto: "Empieza una conversación nueva cuando cambies de tema.",
+      antes: abrirChats,
+    },
+    {
+      selector: '[data-tour="agente-chats"]',
+      titulo: "Tus conversaciones",
+      texto:
+        "Quedan guardadas por fecha para retomarlas cuando quieras. Búscalas por nombre; al pasar el ratón puedes renombrarlas o borrarlas.",
+      antes: abrirChats,
+    },
+    {
+      titulo: "Respuestas claras",
+      texto: editor
+        ? "Las tablas traen «Descargar en Excel». Y nada cambia sin tu permiso: si le pides un cambio, Supri te lo muestra primero y solo se hace cuando pulsas «Confirmar»."
+        : "Las tablas traen «Descargar en Excel» y los archivos que te arma se abren al lado con «Descargar». Supri solo consulta: no cambia nada.",
+    },
+    ...(superadmin
+      ? [
+          {
+            selector: '[data-tour="agente-config"]',
+            titulo: "Configuración",
+            texto: "Quién usa el agente, qué ve cada rol, el consumo, el historial de cambios y las conversaciones de otros usuarios.",
+          },
+        ]
+      : []),
+    {
+      titulo: "Listo",
+      texto: "Este recorrido sale cada vez que entras, hasta que marques «No volver a mostrar». También lo abres con el botón de ayuda (?) de arriba.",
+    },
+  ];
+}
+
 // La lista de conversaciones se agrupa por antigüedad, como en Claude/ChatGPT.
 type GrupoFecha = "hoy" | "ayer" | "semana" | "mes" | "antes";
 function agruparPorFecha(chats: Chat[]): [GrupoFecha, Chat[]][] {
@@ -753,9 +839,11 @@ function BotonAccion({
   disabled,
   grande,
   activo,
+  tour,
   children,
 }: {
   etiqueta: string;
+  tour?: string;
   onClick: () => void;
   disabled?: boolean;
   grande?: boolean;
@@ -769,6 +857,7 @@ function BotonAccion({
       disabled={disabled}
       title={etiqueta}
       aria-label={etiqueta}
+      data-tour={tour}
       className={`grid place-items-center rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
         grande ? "h-8 w-8" : "h-7 w-7"
       } ${activo ? "bg-red-50 text-red-600 animate-pulse" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}
@@ -982,6 +1071,7 @@ export default function AgenteIAPage() {
   // ¿Puede usar el agente y es SuperAdmin? (null = cargando)
   const [acceso, setAcceso] = useState<{ puede: boolean; superadmin: boolean; editor: boolean } | null>(null);
   const [configuracion, setConfiguracion] = useState(false);
+  const recorrido = useRecorrido("tour-agente-ia-v1", !!acceso?.puede, { cadaVez: true });
   // SuperAdmin: alertas de uso del agente que todavía no abrió.
   const [alertasUso, setAlertasUso] = useState(0);
   useEffect(() => {
@@ -1719,6 +1809,12 @@ export default function AgenteIAPage() {
     antes: t("anteriores"),
   };
   const puedeEnviar = (!!input.trim() || attachedFiles.length > 0) && !isGenerating && !isConversationMode;
+  const pasosRecorrido = pasosAgente({
+    vacio: messages.length === 0,
+    editor: !!acceso?.editor,
+    superadmin: !!acceso?.superadmin,
+    abrirChats: () => setSidebarOpen(true),
+  });
 
   if (acceso && !acceso.puede) {
     return (
@@ -1761,9 +1857,11 @@ export default function AgenteIAPage() {
                 </button>
               </div>
 
+              <div data-tour="agente-chats" className="flex-1 min-h-0 flex flex-col">
               <div className="px-3 pb-2 space-y-2 shrink-0">
                 <button
                   type="button"
+                  data-tour="agente-nuevo"
                   onClick={createChat}
                   className="w-full flex items-center gap-2 px-3 h-9 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-[13px] font-medium transition-colors shadow-[0_1px_2px_rgba(37,99,235,0.35)]"
                 >
@@ -1851,6 +1949,7 @@ export default function AgenteIAPage() {
                   ))
                 )}
               </nav>
+              </div>
 
               {faltaMcp && (
                 <a
@@ -1911,6 +2010,7 @@ export default function AgenteIAPage() {
               <button
                 type="button"
                 onClick={() => setConfiguracion(true)}
+                data-tour="agente-config"
                 title={
                   alertasUso > 0
                     ? `Configuración: ${alertasUso} ${alertasUso === 1 ? "alerta de uso" : "alertas de uso"} sin revisar`
@@ -1929,7 +2029,17 @@ export default function AgenteIAPage() {
             )}
             <button
               type="button"
+              onClick={recorrido.abrir}
+              title="¿Cómo funciona?"
+              aria-label="¿Cómo funciona?"
+              className="flex items-center justify-center size-8 rounded-lg text-slate-600 hover:bg-slate-200/60 transition-colors"
+            >
+              <CircleHelp size={16} />
+            </button>
+            <button
+              type="button"
               onClick={toggleConversationMode}
+              data-tour="agente-voz"
               aria-pressed={isConversationMode}
               title={isConversationMode ? t("voz_activa") : t("activar_voz")}
               className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[13px] font-medium transition-colors ${
@@ -2002,7 +2112,7 @@ export default function AgenteIAPage() {
                   {nombre ? `, ${nombre}` : ""}
                 </h2>
                 <p className="mt-2 text-[15px] leading-relaxed text-slate-600 max-w-xl">{t("subtitulo_vacio")}</p>
-                <div className="mt-7 flex flex-wrap gap-2">
+                <div data-tour="agente-sugerencias" className="mt-7 flex flex-wrap gap-2">
                   {SUGERENCIAS.map(({ clave, icono: Icono }) => (
                     <button
                       key={clave}
@@ -2165,6 +2275,7 @@ export default function AgenteIAPage() {
               </div>
             )}
             <form
+              data-tour="agente-pregunta"
               onSubmit={handleSend}
               className={`w-full max-w-3xl mx-auto bg-white rounded-2xl border transition-[border-color,box-shadow] shadow-[0_4px_20px_-8px_rgba(15,23,42,0.12)] ${
                 isConversationMode
@@ -2214,6 +2325,7 @@ export default function AgenteIAPage() {
               <div className="flex items-center gap-1 px-2 pb-2">
                 <BotonAccion
                   etiqueta={t("adjuntar")}
+                  tour="agente-adjuntar"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isGenerating || isConversationMode}
                   grande
@@ -2222,6 +2334,7 @@ export default function AgenteIAPage() {
                 </BotonAccion>
                 <BotonAccion
                   etiqueta={t("dictar")}
+                  tour="agente-dictar"
                   onClick={toggleListening}
                   disabled={isGenerating || isConversationMode}
                   grande
@@ -2256,6 +2369,8 @@ export default function AgenteIAPage() {
           </div>
         </div>
       </div>
+
+      <RecorridoGuiado pasos={pasosRecorrido} abierto={recorrido.abierto} onCerrar={recorrido.cerrar} />
 
       {acceso?.superadmin && <DialogoConfiguracion
           abierto={configuracion}

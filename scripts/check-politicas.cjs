@@ -70,4 +70,16 @@ assert.strictEqual(l.requiereAcuse, true);
 assert.strictEqual(datos.limpiarPolitica({ sede: "10", requiereAcuse: false }).sede, 10);
 assert.strictEqual(datos.limpiarPolitica({ requiereAcuse: false }).requiereAcuse, false);
 
+// Carta de envío: lo escrito va escapado, lo vacío sale como línea, sin tercera persona.
+const carta = cargar("lib/politicas/cartaEnvio.ts", {});
+const empresa = { sede: 9, nombre: "OFFICE SOLUTIONS CENTER 2004, C.A.", rif: "J-31163115-1", direccion: "", ciudad: "Valencia", telefono: "", email: "", web: "", logo: "" };
+const html = carta.htmlCarta({ ...carta.CARTA_VACIA, cliente: '<img src=x onerror="alert(1)">', fecha: "2026-10-20" }, empresa);
+assert.ok(!html.includes("<img src=x"), "el cliente debe ir escapado");
+assert.ok(html.includes("&lt;img src=x"));
+assert.ok(html.includes("border-bottom:1px solid #000"), "campo vacío = línea para llenar");
+assert.ok(html.includes("RIF: J-31163115-1"));
+assert.ok(!/EL CLIENTE|el cliente declara/i.test(html), "toda la carta en primera persona");
+assert.ok(carta.htmlCarta(carta.CARTA_VACIA, { ...empresa, sede: 7 }).includes("RUC"));
+assert.ok(carta.documentoCarta(carta.CARTA_VACIA, empresa).startsWith("<!doctype html>"));
+
 console.log("check-politicas: ok");

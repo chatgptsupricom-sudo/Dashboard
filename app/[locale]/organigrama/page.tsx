@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 import { cadenaDeMando, hijosPorPadre, ORGANIGRAMAS, type Nodo, type Organigrama as Org } from "@/lib/organigrama/tipos";
 import { cn } from "@/lib/utils";
 import {
@@ -28,21 +29,87 @@ import {
   Plus,
   Search,
   Check,
+  CircleHelp,
   LayoutGrid,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 1.5;
 const limitarZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, +z.toFixed(2)));
 const esperarPintado = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
+// Recorrido guiado: sale cada vez que se entra, hasta "No volver a mostrar".
+// Los pasos de edición prenden el modo Editar para que se vean sus botones.
+function pasosOrganigrama(setEditando: (v: boolean) => void): PasoRecorrido[] {
+  const lectura = () => setEditando(false);
+  return [
+    {
+      selector: '[data-tour="org-pestanas"]',
+      titulo: "Dos organigramas",
+      texto: "«Organigrama actual» es cómo está hoy la empresa; «Organigrama propuesto», la estructura hacia la que se quiere ir. Cada uno se edita por separado.",
+      antes: lectura,
+    },
+    {
+      selector: '[data-tour="org-lienzo"]',
+      titulo: "Cada recuadro es un cargo",
+      texto: "Las franjas son los niveles: el nivel sale de a quién reporta cada cargo. Haz clic en un recuadro para ver su propósito y sus actividades.",
+      antes: lectura,
+    },
+    {
+      selector: '[data-tour="org-buscar"]',
+      titulo: "Buscar",
+      texto: "Escribe un cargo o el nombre de una persona y se resalta en el organigrama.",
+    },
+    {
+      selector: '[data-tour="org-vista"]',
+      titulo: "Moverse y acercar",
+      texto: "Con la manito (o Ctrl + arrastrar) te mueves por el organigrama. Los botones o Ctrl + rueda acercan y alejan; el último lo ajusta al ancho de la pantalla.",
+    },
+    {
+      selector: '[data-tour="org-descargar"]',
+      titulo: "Descargar",
+      texto: "Sácalo en imagen o en PDF tal como se ve, o baja las actividades de todos los cargos en Excel.",
+    },
+    {
+      selector: '[data-tour="org-editar"]',
+      titulo: "Editar",
+      texto: "Al entrar está en solo lectura para que nada se mueva por accidente. «Editar» habilita los cambios y «Terminar edición» vuelve a solo lectura.",
+      antes: lectura,
+    },
+    {
+      selector: '[data-tour="org-lienzo"]',
+      titulo: "Mover y cambiar cargos",
+      texto: "Editando, arrastra un recuadro dentro de su franja (Mayús: con sus subordinados). Doble clic edita el nombre y las personas; el clic abre el panel con «Reporta a», que es la única forma de cambiarlo de nivel.",
+      antes: () => setEditando(true),
+    },
+    {
+      selector: '[data-tour="org-ordenar"]',
+      titulo: "Ordenar y agregar",
+      texto: "«Ordenar automáticamente» vuelve a acomodar todo solo (se pierde dónde moviste los recuadros). «Cargo sin superior» agrega uno que no reporta a nadie.",
+      antes: () => setEditando(true),
+    },
+    {
+      titulo: "Listo",
+      texto: "Este recorrido sale cada vez que entras, hasta que marques «No volver a mostrar». También lo abres con «¿Cómo funciona?».",
+      antes: lectura,
+    },
+  ];
+}
+
 export default function OrganigramaPage() {
   // Pestañas: un organigrama por pestaña. Se entra en solo lectura; «Editar» habilita los cambios.
   const [org, setOrg] = useState<Org>("actual");
   const [editando, setEditando] = useState(false);
+  // El recorrido arranca la primera vez que hay organigrama (no al cambiar de pestaña).
+  const [listoTour, setListoTour] = useState(false);
+  const recorrido = useRecorrido("tour-organigrama-v1", listoTour, { cadaVez: true });
+  const pasosTour = useMemo(() => pasosOrganigrama(setEditando), []);
   const [nodos, setNodos] = useState<Nodo[]>([]);
   const [cargando, setCargando] = useState(true);
+  useEffect(() => {
+    if (!cargando && nodos.length) setListoTour(true);
+  }, [cargando, nodos.length]);
   const [error, setError] = useState<string | null>(null);
   const [seleccion, setSeleccion] = useState<{ id: number; tab?: "actividades" | "datos" } | null>(null);
   const [busqueda, setBusqueda] = useState("");
@@ -362,7 +429,16 @@ export default function OrganigramaPage() {
             <Network className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-900">Organigrama</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-black text-slate-900">
+              Organigrama
+              <button
+                type="button"
+                onClick={recorrido.abrir}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold text-slate-500 hover:bg-blue-50 hover:text-blue-700"
+              >
+                <CircleHelp className="h-4 w-4" /> ¿Cómo funciona?
+              </button>
+            </h1>
             <p className="text-sm text-slate-500">
               {editando
                 ? "Editando · Arrastra los recuadros dentro de su nivel (Mayús: con sus subordinados) · Doble clic: editar nombre y personas"
@@ -378,7 +454,7 @@ export default function OrganigramaPage() {
         </div>
         {nodos.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
+            <div data-tour="org-buscar" className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 value={busqueda}
@@ -387,6 +463,7 @@ export default function OrganigramaPage() {
                 className="w-56 rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-sm"
               />
             </div>
+            <div data-tour="org-vista" className="flex items-center gap-2">
             <button
               onClick={() => setMano((m) => !m)}
               aria-pressed={mano}
@@ -412,9 +489,10 @@ export default function OrganigramaPage() {
                 <Maximize2 className="h-4 w-4" />
               </button>
             </div>
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className={boton} disabled={!!exportando}>
+                <button className={boton} disabled={!!exportando} data-tour="org-descargar">
                   {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                   Descargar
                   <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
@@ -440,6 +518,7 @@ export default function OrganigramaPage() {
             {editando && (
               <button
                 onClick={ordenarSolo}
+                data-tour="org-ordenar"
                 className={boton}
                 title="Vuelve a acomodar todos los recuadros solos (se pierde dónde los moviste)"
               >
@@ -460,6 +539,7 @@ export default function OrganigramaPage() {
             )}
             <button
               onClick={() => setEditando((e) => !e)}
+              data-tour="org-editar"
               aria-pressed={editando}
               className={cn(
                 "flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold",
@@ -474,7 +554,7 @@ export default function OrganigramaPage() {
         )}
       </div>
 
-      <div className="flex gap-1 rounded-2xl bg-slate-100 p-1 w-fit" role="tablist" aria-label="Organigramas">
+      <div data-tour="org-pestanas" className="flex gap-1 rounded-2xl bg-slate-100 p-1 w-fit" role="tablist" aria-label="Organigramas">
         {(Object.keys(ORGANIGRAMAS) as Org[]).map((o) => (
           <button
             key={o}
@@ -528,6 +608,7 @@ export default function OrganigramaPage() {
       {nodos.length > 0 && (
         <div
           ref={contenedor}
+          data-tour="org-lienzo"
           onPointerDown={alPresionar}
           onPointerMove={alMover}
           onPointerUp={alSoltar}
@@ -578,6 +659,15 @@ export default function OrganigramaPage() {
         onSeleccionar={(id, tab) => setSeleccion({ id, tab })}
         onRecargar={recargar}
         soloLectura={!editando}
+      />
+
+      <RecorridoGuiado
+        pasos={pasosTour}
+        abierto={recorrido.abierto}
+        onCerrar={(nuncaMas) => {
+          recorrido.cerrar(nuncaMas);
+          setEditando(false);
+        }}
       />
     </div>
   );
