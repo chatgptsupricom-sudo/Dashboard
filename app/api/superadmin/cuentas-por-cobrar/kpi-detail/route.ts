@@ -12,6 +12,7 @@ import { VENCIMIENTO_DESDE } from "@/lib/cxc/carteraVieja";
 import { bandaDeDias } from "@/lib/cxc/bandas";
 import { idsIncobrablesManuales } from "@/lib/cxc/incobrablesManuales";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
 
 const COMPANY_MAP: Record<string, number> = {
   valencia: 9,
@@ -39,7 +40,7 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
   return result;
 }
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
@@ -207,6 +208,7 @@ export async function GET(request: NextRequest) {
         ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
         ["partner_id.name", "not ilike", "supricom"],
         ["commercial_partner_id.name", "not ilike", RELACIONADA],
+        ...terminosSinIC(),
         ...sinManuales,
       ];
       const camposFactura = ["id", "name", "partner_id", "company_id", "invoice_date",
@@ -225,6 +227,7 @@ export async function GET(request: NextRequest) {
             ["invoice_date_due", ">=", VENCIMIENTO_DESDE],
             ["partner_id.name", "not ilike", "supricom"],
             ["commercial_partner_id.name", "not ilike", RELACIONADA],
+            ...terminosSinIC(),
             ...sinManuales,
           ],
         }),
@@ -318,3 +321,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

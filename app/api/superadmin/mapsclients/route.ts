@@ -1,5 +1,4 @@
 // // // // import { callOdooRPC } from "@/lib/odoo";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 // // // // import { NextResponse } from "next/server";
 
 // // // // export async function GET(request: Request) {
@@ -770,9 +769,11 @@ import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 // }
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin", ROL_BI]);
   if (auth.error) return auth.error;
 
@@ -838,6 +839,8 @@ export async function GET(request: NextRequest) {
         ["invoice_date", ">=", startDate],
         ["invoice_date", "<=", endDate],
         ["partner_id", "in", countryPartners],
+        // Con Inteligencia de Negocio, sin clientes del grupo (lib/intercompania.ts).
+        ...terminosSinIC(),
       ];
 
       if (vendorId && vendorId !== "all") {
@@ -974,6 +977,7 @@ export async function GET(request: NextRequest) {
         ["state", "=", "posted"],
         ["move_type", "=", "out_invoice"],
         ["partner_id", "in", countryPartners],
+        ...terminosSinIC(),
       ];
 
       if (vendorId && vendorId !== "all") {
@@ -1125,3 +1129,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

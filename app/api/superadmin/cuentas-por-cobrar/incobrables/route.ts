@@ -6,6 +6,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
 
 /**
  * Incobrables marcados a mano (tabla `cxc_incobrables`, sql/cxc_incobrables.sql).
@@ -39,7 +40,7 @@ function sedesPermitidas(payload: any, empresa: string | null): number[] {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar"]);
   if (auth.error) return auth.error;
 
@@ -116,6 +117,7 @@ export async function GET(request: NextRequest) {
           ["company_id", "in", companyIds],
           ["amount_residual", ">", 0],
           ["partner_id.name", "not ilike", "supricom"],
+          ...terminosSinIC(),
           "|", ["name", "ilike", buscar], ["partner_id.name", "ilike", buscar],
         ]],
         {
@@ -248,3 +250,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

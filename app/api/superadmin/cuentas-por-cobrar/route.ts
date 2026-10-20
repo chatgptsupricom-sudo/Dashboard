@@ -12,6 +12,7 @@ import { esResponsableExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
 import { ensureKpiTargetsPeso, pesoDeFila } from "@/lib/kpiTargets";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI, esICExcluido, terminosSinIC } from "@/lib/intercompania";
 
 // La lectura de `digiflex.cxc.report` es paginada y puede traer miles de
 // renglones: sin esto el request se cortaba a los ~15s y el grupo de CxC del
@@ -54,7 +55,7 @@ async function fetchPaginated(model: string, domain: any[], fields: string[]): P
   return result;
 }
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
@@ -161,7 +162,8 @@ export async function GET(request: NextRequest) {
     // S.A. = -545), asi que sumarlas con signo resta correctamente del saldo
     // del cliente en vez de excluirlas o contarlas como deuda.
     const reportInvoices = reportData.filter((r: any) =>
-      r.amount_residual !== 0 && !((r.partner_name || "").toLowerCase().includes("supricom"))
+      r.amount_residual !== 0 && !((r.partner_name || "").toLowerCase().includes("supricom")) &&
+      !esICExcluido(r.partner_id?.[0])
     );
 
     // Aging distribution (rangos del reporte Odoo: corriente, 1-30, 31-60, 61-90, 91+)
@@ -303,6 +305,7 @@ export async function GET(request: NextRequest) {
           ["amount_residual", "!=", 0],
           ["partner_id.name", "not ilike", "supricom"],
           ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
+          ...terminosSinIC("move_id.commercial_partner_id"),
         ], ["amount_residual:sum"], []],
         { lazy: false },
       ),
@@ -505,3 +508,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

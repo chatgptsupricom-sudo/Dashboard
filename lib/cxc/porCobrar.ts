@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { esInterno } from "@/lib/cxc/cobros";
+import { esICExcluido } from "@/lib/intercompania";
 
 /**
  * "Por cobrar" de Contado/Crédito: lo que quedó abierto al cierre del mes
@@ -80,7 +81,7 @@ export async function porCobrarAlCierre(
   const moves: any[] = [];
   for (let i = 0; i < ids.length; i += 5000) {
     const page = await callOdooRPC<any[]>("account.move", "read", [ids.slice(i, i + 5000)], {
-      fields: ["id", "name", "partner_id", "invoice_date", "invoice_date_due", "move_type", "invoice_payment_term_id",
+      fields: ["id", "name", "partner_id", "commercial_partner_id", "invoice_date", "invoice_date_due", "move_type", "invoice_payment_term_id",
         "reversed_entry_id", "invoice_user_id", "company_id"],
     });
     moves.push(...(page || []));
@@ -98,7 +99,7 @@ export async function porCobrarAlCierre(
 
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const renglones = moves
-    .filter((m) => m.partner_id && !esInterno(m.partner_id[1] || ""))
+    .filter((m) => m.partner_id && !esInterno(m.partner_id[1] || "") && !esICExcluido(m.commercial_partner_id?.[0]))
     .filter((m) => partnerId === undefined || m.partner_id[0] === partnerId)
     .filter((m) => {
       if (!proyeccion) return true;

@@ -9,6 +9,7 @@ import {
   COMPANY_IDS_ALL,
   COMPANY_NAME,
 } from "@/lib/gerente_venta/reporteVentas";
+import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
 
 /**
  * Reporte de Ventas del Gerente de Ventas (equivalente a la vista de Smartbitt).
@@ -69,7 +70,7 @@ function sedesPayload(isSuper: boolean) {
     : [];
 }
 
-export async function GET(req: NextRequest) {
+async function leerGET(req: NextRequest) {
   const auth = await requireRoles(req, ["gerencia de ventas", ROL_BI]);
   if (auth.error) return auth.error;
 
@@ -149,3 +150,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

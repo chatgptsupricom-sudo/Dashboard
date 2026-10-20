@@ -8,6 +8,7 @@ import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
 import { RELACIONADA } from "@/lib/cxc/cobros";
 import { nombresPlazos } from "@/lib/cxc/credito";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI, esICExcluido, terminosSinIC } from "@/lib/intercompania";
 
 const COMPANY_MAP: Record<string, number> = {
   valencia: 9,
@@ -72,11 +73,11 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
       ["invoice_date", ">=", monthStart.toISOString().split("T")[0]],
       ["invoice_date", "<=", monthEnd.toISOString().split("T")[0]],
     ],
-    ["id", "name", "partner_id", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id", "invoice_date"],
+    ["id", "name", "partner_id", "commercial_partner_id", "move_type", "amount_untaxed", "invoice_payment_term_id", "invoice_user_id", "company_id", "invoice_date"],
   );
 
   return invoicesRaw
-    .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id)
+    .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id && !esICExcluido(inv.commercial_partner_id?.[0]))
     .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv.invoice_user_id?.[1], inv.company_id?.[0]))
     .map((inv) => ({
       // amount_untaxed (sin IVA), igual que "Ventas del Mes" -- antes esta
@@ -166,7 +167,7 @@ async function renglonesPorCobrar(
   };
 }
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
@@ -253,6 +254,7 @@ export async function GET(request: NextRequest) {
           ["amount_residual", "!=", 0],
           ["partner_id.name", "not ilike", "supricom"],
           ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
+          ...terminosSinIC("move_id.commercial_partner_id"),
         ], ["amount_residual:sum"], []],
         { lazy: false },
       );
@@ -492,3 +494,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

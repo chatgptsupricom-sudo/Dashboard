@@ -27,6 +27,7 @@ import {
   type Trimestre,
 } from "@/lib/reportes-comerciales/trimestres";
 import { nombreSede } from "@/lib/reportes-comerciales/sedes";
+import { esICExcluido, terminosSinIC } from "@/lib/intercompania";
 
 /**
  * Sede por defecto cuando una llamada no especifica `companyId`.
@@ -246,6 +247,8 @@ function dominioLineas(
     ["move_id.invoice_date", "<=", hasta],
     ["display_type", "=", "product"],
     ["product_id", "!=", false],
+    // Con Inteligencia de Negocio, todo el grupo fuera (lib/intercompania.ts).
+    ...terminosSinIC("move_id.commercial_partner_id"),
   ];
   if (idsProducto) dom.push(["product_id", "in", idsProducto]);
   return dom;
@@ -565,8 +568,10 @@ const TTL_CLIENTES_MS = 30 * 60 * 1000;
 export async function listarClientesPanama(
   companyId: number = COMPANY_ID_PANAMA,
 ): Promise<ClientePanama[]> {
+  // La caché guarda la lista de todos; lo del grupo se saca al devolverla
+  // (solo con Inteligencia de Negocio), así no se mezcla entre roles.
   const hit = cacheClientes.get(companyId);
-  if (hit && Date.now() - hit.ts < TTL_CLIENTES_MS) return hit.data;
+  if (hit && Date.now() - hit.ts < TTL_CLIENTES_MS) return hit.data.filter((c) => !esICExcluido(c.id));
 
   const [grupos, nombresVendedores] = await Promise.all([
     callOdooRPC<any[]>("account.move", "read_group", [
@@ -597,7 +602,7 @@ export async function listarClientesPanama(
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
   cacheClientes.set(companyId, { data, ts: Date.now() });
-  return data;
+  return data.filter((c) => !esICExcluido(c.id));
 }
 
 /** Nombres (normalizados) de los vendedores, para no ofrecerlos como clientes. */

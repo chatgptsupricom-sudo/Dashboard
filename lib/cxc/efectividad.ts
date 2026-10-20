@@ -3,6 +3,7 @@ import type { CarteraCEI } from "@/lib/cxc/seriesSemanales";
 import { callOdooRPC } from "@/lib/odoo";
 import { fechaDePago } from "@/lib/cxc/fechaConfirmacion";
 import { idsACredito } from "@/lib/cxc/credito";
+import { esICExcluido } from "@/lib/intercompania";
 
 /**
  * KPI "Efectividad Cobranza" — criterio ESTRICTO (issue #188).
@@ -276,7 +277,8 @@ export async function facturasDelPeriodo(companyIds: number[], desde: string, ha
   }
   // Solo ventas a crédito (lib/cxc/credito.ts), sin internos ni relacionadas.
   const propias = out.filter((f) =>
-    f.partner_id && !esSupricom(f.partner_id[1] || "") && !esRelacionada(f.commercial_partner_id?.[1] || ""));
+    f.partner_id && !esSupricom(f.partner_id[1] || "") && !esRelacionada(f.commercial_partner_id?.[1] || "") &&
+    !esICExcluido(f.commercial_partner_id?.[0]));
   const aCredito = await idsACredito(propias);
   return propias.filter((f) => aCredito.has(f.id));
 }
@@ -311,7 +313,7 @@ async function pagosRegistrados(companyIds: number[], desde: string, hasta: stri
     if (page.length < 5000) break;
   }
   return out
-    .filter((p) => !esSupricom(p.partner_id?.[1] || "") && !esRelacionada(p.partner_id?.[1] || ""))
+    .filter((p) => !esSupricom(p.partner_id?.[1] || "") && !esRelacionada(p.partner_id?.[1] || "") && !esICExcluido(p.partner_id?.[0]))
     .map((p) => ({
       fecha: fechaDePago(p) || desde,
       monto: Math.abs(Number(p.amount_company_currency_signed) || 0),
