@@ -663,7 +663,8 @@ export default function UserManagement() {
                       label: r.displayName || r.name,
                     }))}
                     onSelect={(opt: any) => setSelectedRole(opt.key)}
-                    searchable={false}
+                    // Son muchos roles: con buscador se encuentra sin recorrer la lista.
+                    searchable={true}
                   />
                 </div>
               )}
