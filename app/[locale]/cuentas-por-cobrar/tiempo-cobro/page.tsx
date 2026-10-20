@@ -259,6 +259,29 @@ export default function TiempoCobroPage() {
     [data, q],
   );
 
+  // Cliente buscado que no sale: el servidor explica por qué (contado, pagó en otro mes…).
+  const [ausencias, setAusencias] = useState<{ q: string; items: { cliente: string; motivo: string }[] | null } | null>(null);
+  const sinClientes = tab === "clientes" && !!data && q.length >= 3 && clientesFiltrados.length === 0;
+  useEffect(() => {
+    if (!sinClientes) return setAusencias(null);
+    const ctrl = new AbortController();
+    const t = setTimeout(async () => {
+      setAusencias({ q, items: null });
+      const params = new URLSearchParams({ startDate: desde, endDate: hasta, explicar: busqueda.trim() });
+      if (empresa) params.set("empresa", empresa);
+      else if (userCids) params.set("userCids", String(userCids));
+      try {
+        const res = await fetch(`/api/superadmin/cuentas-por-cobrar/tiempo-cobro?${params}`, { signal: ctrl.signal });
+        const json = await res.json();
+        setAusencias({ q, items: res.ok && json.success ? json.data.ausencias : [] });
+      } catch {
+        if (!ctrl.signal.aborted) setAusencias({ q, items: [] });
+      }
+    }, 500);
+    return () => { clearTimeout(t); ctrl.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sinClientes, q, desde, hasta, empresa, userCids]);
+
   const exportarTodo = () => {
     if (!data || !r) return;
     descargar(`Tiempo_de_cobro_${periodo}`, [
@@ -494,7 +517,24 @@ export default function TiempoCobroPage() {
                   />
                 )}
                 {(tab === "clientes" ? clientesFiltrados : vendedoresFiltrados).length === 0 && (
-                  <p className="text-center text-sm text-slate-400 py-6">Sin resultados para "{busqueda}"</p>
+                  <div className="text-center text-sm text-slate-400 py-6 space-y-2">
+                    <p>Sin resultados para "{busqueda}"</p>
+                    {sinClientes && ausencias?.q === q && (
+                      ausencias.items === null ? (
+                        <p className="text-xs">Buscando por qué no aparece…</p>
+                      ) : ausencias.items.length === 0 ? (
+                        <p className="text-xs text-slate-500">No hay facturas de un cliente con ese nombre en esta sede.</p>
+                      ) : (
+                        <ul className="mx-auto max-w-2xl space-y-1.5 text-left">
+                          {ausencias.items.map((a) => (
+                            <li key={a.cliente} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                              <span className="font-semibold text-slate-800">{a.cliente}:</span> {a.motivo}
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                    )}
+                  </div>
                 )}
               </div>
 

@@ -1,6 +1,6 @@
 import { requireRoles } from "@/lib/auth/roles";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
-import { calcularTiempoCobro } from "@/lib/cxc/tiempoCobro";
+import { calcularTiempoCobro, explicarAusencia } from "@/lib/cxc/tiempoCobro";
 import { NextRequest, NextResponse } from "next/server";
 
 // Tiempo de cobro (lib/cxc/tiempoCobro.ts): días desde la emisión hasta el
@@ -40,6 +40,13 @@ export async function GET(request: NextRequest) {
       const month = (parseInt(searchParams.get("month") || "", 10) || now.getMonth() + 1) - 1;
       desde = fechaLocal(new Date(year, month, 1));
       hasta = fechaLocal(new Date(year, month + 1, 0));
+    }
+
+    // ?explicar=<texto>: por qué un cliente buscado no sale en el período.
+    const explicar = searchParams.get("explicar")?.trim() || "";
+    if (explicar) {
+      if (explicar.length < 3 || explicar.length > 80) return NextResponse.json({ error: "Escribe entre 3 y 80 letras." }, { status: 400 });
+      return NextResponse.json({ success: true, data: { ausencias: await explicarAusencia(companyIds, desde, hasta, explicar) } });
     }
 
     const data = await calcularTiempoCobro(companyIds, desde, hasta);
