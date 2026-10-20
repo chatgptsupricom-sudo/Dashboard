@@ -86,6 +86,8 @@ export function Organigrama({
 
   // Posiciones mientras se arrastra (todavía sin guardar).
   const [mover, setMover] = useState<Map<number, { x: number; y: number }> | null>(null);
+  // Lo último que se movió: al soltar se lee de aquí, no del estado (puede no haberse pintado todavía).
+  const ultimoMovido = useRef<Map<number, { x: number; y: number }> | null>(null);
   const arrastre = useRef<Arrastre | null>(null);
   const recienArrastrado = useRef(false);
   const lienzo = useMemo(() => armarLienzo(nodos, altos, mover ?? undefined), [nodos, altos, mover]);
@@ -303,7 +305,9 @@ export function Organigrama({
       return [{ id, x: c.x, y: c.y - f.top, max: yRelativaMax(f, c.h) }];
     });
     arrastre.current = { puntero: e.pointerId, x0: e.clientX, y0: e.clientY, movio: false, piezas };
+    ultimoMovido.current = null;
     e.stopPropagation(); // que el lienzo no lo tome como desplazamiento
+    e.preventDefault(); // sin esto el arrastre selecciona el texto de los recuadros (el clic igual llega)
   };
   const alMover = (e: React.PointerEvent<HTMLDivElement>) => {
     const a = arrastre.current;
@@ -319,19 +323,21 @@ export function Organigrama({
         // el puntero ya se soltó
       }
     }
-    setMover(
-      new Map(
-        a.piezas.map((p) => [p.id, { x: Math.max(0, p.x + dx), y: Math.min(p.max, Math.max(0, p.y + dy)) }]),
-      ),
+    const nuevo = new Map(
+      a.piezas.map((p) => [p.id, { x: Math.max(0, p.x + dx), y: Math.min(p.max, Math.max(0, p.y + dy)) }]),
     );
+    ultimoMovido.current = nuevo;
+    setMover(nuevo);
   };
   const soltar = async () => {
     const a = arrastre.current;
     arrastre.current = null;
-    if (!a?.movio || !mover) return;
+    const movido = ultimoMovido.current;
+    ultimoMovido.current = null;
+    if (!a?.movio || !movido) return;
     recienArrastrado.current = true; // que el clic de soltar no abra el panel
     setTimeout(() => (recienArrastrado.current = false), 0);
-    const posiciones = [...mover].map(([id, p]) => ({ id, x: Math.round(p.x), y: Math.round(p.y) }));
+    const posiciones = [...movido].map(([id, p]) => ({ id, x: Math.round(p.x), y: Math.round(p.y) }));
     try {
       await onMover?.(posiciones);
     } finally {
@@ -383,7 +389,7 @@ export function Organigrama({
               arrastre.current = null;
               setMover(null);
             }}
-            className={cn("absolute", arrastrable && editando !== n.id && "cursor-move touch-none")}
+            className={cn("absolute", arrastrable && editando !== n.id && "cursor-move touch-none select-none")}
             style={{ left: c.x, top: c.y, width: c.w, zIndex: editando === n.id || mover?.has(n.id) ? 30 : undefined }}
             title={arrastrable ? "Arrastra para moverlo dentro de su nivel · Mayús + arrastrar: con sus subordinados" : undefined}
           >
