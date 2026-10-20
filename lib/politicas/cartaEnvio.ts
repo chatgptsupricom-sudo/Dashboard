@@ -1,4 +1,5 @@
-// Carta de autorización de envío de mercancía por transportista (Políticas y
+// Carta de autorización GENERAL de envío de mercancía por transportista: una por
+// cliente, vale para todos los envíos desde que se firma hasta que se revoque (Políticas y
 // Acuerdos › formatos). Sin MySQL ni Odoo: la usan la pantalla (vista previa,
 // imprimir/PDF y Word) y scripts/check-politicas.cjs. Todo en primera persona
 // de quien firma por el cliente. Un campo vacío sale como línea para llenar a mano.
@@ -27,7 +28,6 @@ export type DatosCarta = {
   representanteLegal: string; // de la empresa cliente; puede ser otra persona
   cedula: string;
   cargo: string;
-  facturas: string;
   destino: string;
   transportista: string;
   rifTransportista: string;
@@ -49,7 +49,6 @@ export const CARTA_VACIA: DatosCarta = {
   representanteLegal: "",
   cedula: "",
   cargo: "",
-  facturas: "",
   destino: "",
   transportista: "",
   rifTransportista: "",
@@ -138,28 +137,26 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
       </td>
     </tr></table>
 
-    <p style="text-align:center;font-size:12pt;font-weight:bold;text-decoration:underline;margin:12px 0 10px">CARTA DE AUTORIZACIÓN DE ENVÍO DE MERCANCÍA POR TRANSPORTISTA</p>
+    <p style="text-align:center;font-size:12pt;font-weight:bold;text-decoration:underline;margin:12px 0 10px">CARTA DE AUTORIZACIÓN GENERAL DE ENVÍO DE MERCANCÍA POR TRANSPORTISTA</p>
 
     <p style="margin:0 0 8px">Señores<br><b>${osc}</b>${e?.rif ? `<br>${fiscal}: ${escaparHtml(e.rif)}` : ""}<br>Presente.</p>
 
     <p style="${parrafo}">Yo, ${v(d.representante, 190)}, titular de la cédula de identidad N.° ${v(d.cedula, 100)},
     en mi carácter de ${v(d.cargo, 120)} de la empresa ${v(d.cliente, 200)}, ${fiscal} ${v(d.rifCliente, 100)},
     representada legalmente por ${v(d.representanteLegal, 190)},
-    con domicilio fiscal en ${v(d.direccionCliente, 240)}, autorizo a <b>${osc}</b> a entregar a la empresa de transporte
-    que indico abajo la mercancía correspondiente al siguiente envío:</p>
-
-    <p style="${titulo}">Datos del envío</p>
-    <p style="margin:0 0 0 48px">Factura(s) / Pedido(s) N.°: ${v(d.facturas, 260)}<br>Destino: ${v(d.destino, 380)}</p>
+    con domicilio fiscal en ${v(d.direccionCliente, 240)}, autorizo a <b>${osc}</b> a entregar al transportista que indico abajo
+    <b>toda la mercancía que la empresa que represento le compre</b>, en las condiciones de esta carta.</p>
 
     <p style="${titulo}">Datos del transportista</p>
     <p style="margin:0 0 0 48px">Empresa: ${v(d.transportista, 260)} &nbsp; ${fiscal}: ${v(d.rifTransportista, 120)}<br>
-    Flete a cargo de: ${d.flete === "cliente" ? "<b>la empresa que represento</b>" : v(d.fleteOtro, 200)}</p>
+    Flete a cargo de: ${d.flete === "cliente" ? "<b>la empresa que represento</b>" : v(d.fleteOtro, 200)}<br>
+    Dirección de entrega habitual: ${v(d.destino, 340)}</p>
 
-    <p style="text-indent:48px;margin:8px 0 2px">Favor indicar con una equis (X) la condición del envío:</p>
+    <p style="text-indent:48px;margin:8px 0 2px">Favor indicar con una equis (X) la condición de los envíos:</p>
     <ul style="margin:0 0 6px;padding-left:72px">
-      <li style="text-align:justify;margin-bottom:3px">${marca(!d.asegurado)} Envío no asegurado. Asumo, en nombre de la empresa que represento,
+      <li style="text-align:justify;margin-bottom:3px">${marca(!d.asegurado)} Envíos no asegurados. Asumo, en nombre de la empresa que represento,
       todos los riesgos (robos, deterioros, pérdidas) involucrados en el transporte.</li>
-      <li>${marca(d.asegurado)} Envío asegurado. Compañía aseguradora: ${d.asegurado ? v(d.aseguradora, 150) : v("", 150)}<br>
+      <li>${marca(d.asegurado)} Envíos asegurados. Compañía aseguradora: ${d.asegurado ? v(d.aseguradora, 150) : v("", 150)}<br>
       Póliza N.°: ${d.asegurado ? v(d.poliza, 110) : v("", 110)} &nbsp; Monto asegurado: ${d.asegurado ? v(d.montoAsegurado, 100) : v("", 100)}</li>
     </ul>
 
@@ -168,7 +165,9 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
     por cuenta y riesgo de la empresa que represento. Por lo tanto, libero a <b>${osc}</b> de toda responsabilidad por la
     recolección, el almacenaje, la manipulación, el transporte y la entrega que haga el transportista.</p>
 
-    <p style="${parrafo}">Esta autorización vale <b>solo para el envío descrito arriba</b>.</p>
+    <p style="${parrafo}">Esta autorización vale para <b>todos los envíos que se despachen desde la fecha de su firma</b> y hasta que
+    la revoque por escrito. Si cambio de transportista, de dirección de entrega o de condición del seguro, lo notificaré por
+    escrito a <b>${osc}</b> antes del siguiente despacho; mientras tanto, rige lo indicado en esta carta.</p>
 
     ${word ? "<p>&nbsp;</p>" : ""}
     <table align="center" style="margin:22px auto 0;border-collapse:collapse"><tr>
@@ -177,13 +176,6 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
         Nombre: ${v(d.representante, 220)}<br>C.I.: ${v(d.cedula, 100)} &nbsp; Cargo: ${v(d.cargo, 110)}
       </td>
     </tr></table>
-
-    <div style="margin-top:12px;border:1px solid #000;padding:5px 10px;font-size:9.5pt;background:#fff">
-      <b>CONSTANCIA DE ENTREGA AL TRANSPORTISTA</b> (la llena el almacén al despachar)<br>
-      Estado de la mercancía: ${marca(false)} En buen estado &nbsp; ${marca(false)} Con observaciones: ${v("", 200)}<br>
-      Fecha y hora: ${v("", 160)}<br>
-      Entrega por ${osc}: ${v("", 160)} (firma) &nbsp; Recibe por el transportista: ${v("", 160)} (nombre, C.I. y firma)
-    </div>
 
     ${pie.length ? `<p style="margin:10px 0 0;border-top:1px solid #999;padding-top:4px;font-family:Calibri,Arial,sans-serif;font-size:8pt;line-height:1.2;text-align:center;color:#444">${pie.join(" | ")}</p>` : ""}
   </div>
@@ -202,10 +194,10 @@ export function documentoCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opcione
   const { margenV, margenH } = HOJA_CARTA;
   if (o.word)
     return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>Carta de autorización de envío</title>
+<head><meta charset="utf-8"><title>Carta de autorización general de envío</title>
 <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
 <style>@page WordSection1{size:8.5in 11in;margin:0.5in 0.7in 0.5in 0.7in}div.WordSection1{page:WordSection1}</style></head>
 <body><div class="WordSection1">${htmlCarta(d, e, o)}</div></body></html>`;
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Carta de autorización de envío</title>
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Carta de autorización general de envío</title>
 <style>@page{size:letter;margin:0}html,body{margin:0}body{padding:${margenV}px ${margenH}px;box-sizing:border-box}</style></head><body>${htmlCarta(d, e, o)}</body></html>`;
 }

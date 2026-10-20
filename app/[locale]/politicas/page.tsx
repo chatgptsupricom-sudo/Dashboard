@@ -114,8 +114,8 @@ export default function PoliticasPage() {
           >
             <FileSignature className="h-5 w-5 shrink-0 text-blue-600" />
             <div className="min-w-0 flex-1">
-              <p className="font-bold text-slate-900">Carta de autorización de envío</p>
-              <p className="text-sm text-slate-500">Con los datos del cliente de Odoo, para imprimir o bajar en Word</p>
+              <p className="font-bold text-slate-900">Carta de autorización general de envío</p>
+              <p className="text-sm text-slate-500">Una sola por cliente, para todos sus envíos; con los datos de Odoo</p>
             </div>
             <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-blue-500" />
           </Link>

@@ -24,7 +24,7 @@ function Bloque({ titulo, children }: { titulo: string; children: React.ReactNod
   );
 }
 
-/** Carta de autorización de envío: datos del cliente desde Odoo, el resto a mano; se imprime (PDF) o baja en Word. */
+/** Carta de autorización general de envío (vale para todos los envíos desde que se firma): datos del cliente desde Odoo, el resto a mano; se imprime (PDF) o baja en Word. */
 export default function CartaEnvioPage() {
   const { locale } = useParams<{ locale: string }>();
   const { user } = useAuthStore();
@@ -110,7 +110,7 @@ export default function CartaEnvioPage() {
     const blob = new Blob(["﻿", documentoCarta(d, empresa, { origen: location.origin, word: true })], { type: "application/msword" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `Carta autorizacion envio${d.cliente ? ` - ${d.cliente.replace(/[\\/:*?"<>|]/g, "")}` : ""}.doc`;
+    a.download = `Carta autorizacion general envio${d.cliente ? ` - ${d.cliente.replace(/[\\/:*?"<>|]/g, "")}` : ""}.doc`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -151,7 +151,7 @@ export default function CartaEnvioPage() {
       </div>
 
       <div>
-        <h1 className="text-2xl font-black text-slate-900">Carta de autorización de envío</h1>
+        <h1 className="text-2xl font-black text-slate-900">Carta de autorización general de envío</h1>
         <p className="text-sm text-slate-500">
           Busca al cliente en Odoo y llena el resto. Lo que dejes vacío sale como línea para llenar a mano.
         </p>
@@ -253,13 +253,9 @@ export default function CartaEnvioPage() {
             )}
           </Bloque>
 
-          <Bloque titulo="Envío">
+          <Bloque titulo="Entrega">
             <div>
-              <label className={etiqueta} htmlFor="ce-fact">Factura(s) / Pedido(s)</label>
-              <input id="ce-fact" value={d.facturas} onChange={(e) => set("facturas", e.target.value)} placeholder="Ej. F-001234, S-05678" className={campo} />
-            </div>
-            <div>
-              <label className={etiqueta} htmlFor="ce-dest">Dirección de entrega</label>
+              <label className={etiqueta} htmlFor="ce-dest">Dirección de entrega habitual</label>
               <textarea id="ce-dest" rows={2} value={d.destino} onChange={(e) => set("destino", e.target.value)} className={campo} />
               {(direcciones.length > 0 || d.direccionCliente) && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -314,7 +310,7 @@ export default function CartaEnvioPage() {
             </fieldset>
           </Bloque>
 
-          <Bloque titulo="Condición del envío">
+          <Bloque titulo="Condición de los envíos">
             <fieldset className="space-y-1 text-sm text-slate-700">
               <legend className="sr-only">Condición del envío</legend>
               <label className="flex items-center gap-2">
