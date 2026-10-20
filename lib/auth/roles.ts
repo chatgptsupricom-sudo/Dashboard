@@ -2,6 +2,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { respuestaSesionTerminada, sesionVigente } from "@/lib/auth/vigencia";
+import { esEscrituraBI, MENSAJE_SOLO_LECTURA_BI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 
 /**
  * Guard genérico por rol para las rutas de API.
@@ -46,12 +47,18 @@ async function verificarSesion(
  * middleware deja entrar a /adminleads y tiene el desplegable "Leads" en el
  * menú. Las APIs de esas pantallas tienen que aceptar a los dos: con solo
  * "adminleads", Gerencia de Operaciones veía "Error 403" en el Dashboard Leads.
+ * Inteligencia de Negocio también tiene el desplegable, solo para leer
+ * (requireRoles le corta lo que escribe).
  */
-export const ROLES_LEADS = ["adminleads", "gerente de operaciones"];
+export const ROLES_LEADS = ["adminleads", "gerente de operaciones", ROL_BI];
 
 export async function requireRoles(
   request: NextRequest,
   roles: string[],
+  opciones: {
+    /** El handler no escribe aunque sea POST (ej. armar un .zip): BI puede llamarlo. */
+    soloLee?: boolean;
+  } = {},
 ): Promise<{ payload?: any; error?: NextResponse }> {
   const sesion = await verificarSesion(request);
   if (sesion.error) return sesion;
@@ -63,8 +70,17 @@ export async function requireRoles(
       error: NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 }),
     };
   }
+  // Inteligencia de Negocio entra a leer: aunque la ruta lo liste (el mismo
+  // guard suele cubrir GET y POST), nunca escribe.
+  if (!opciones.soloLee && esEscrituraBI(userRole, request.method)) {
+    return { error: respuestaSoloLecturaBI() };
+  }
 
   return sesion;
+}
+
+export function respuestaSoloLecturaBI() {
+  return NextResponse.json({ error: MENSAJE_SOLO_LECTURA_BI }, { status: 403 });
 }
 
 /**
@@ -81,6 +97,20 @@ export async function requireRoles(
  */
 export async function requireSession(
   request: NextRequest,
+  opciones: {
+    /**
+     * Lo que se guarda es del propio usuario (ej. el orden de su menú), no de
+     * la operación: Inteligencia de Negocio también puede.
+     */
+    escrituraPropia?: boolean;
+  } = {},
 ): Promise<{ payload?: any; error?: NextResponse }> {
-  return verificarSesion(request);
+  const sesion = await verificarSesion(request);
+  if (sesion.error) return sesion;
+  // Inteligencia de Negocio es de solo lectura también en las rutas abiertas
+  // a cualquier sesión (actividades, leads del vendedor...).
+  if (!opciones.escrituraPropia && esEscrituraBI(sesion.payload?.role, request.method)) {
+    return { error: respuestaSoloLecturaBI() };
+  }
+  return sesion;
 }

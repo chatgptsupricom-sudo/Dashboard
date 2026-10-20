@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
@@ -130,7 +131,7 @@ async function porCobrarDelCliente(
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar", "gerente de operaciones"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
   try {

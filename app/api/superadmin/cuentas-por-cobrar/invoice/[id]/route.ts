@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { ROLES_ADMINISTRACION, limitarSedesPorRol, respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
@@ -13,7 +14,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, 
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, 
     "cuentas por cobrar",
     "gerente de operaciones",
     "gerencia de ventas",

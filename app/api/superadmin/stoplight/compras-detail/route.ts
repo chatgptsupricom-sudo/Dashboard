@@ -1,4 +1,5 @@
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
 import { detalleKpiCompras, type KpiCompras } from "@/lib/compras/kpis";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
@@ -13,7 +14,7 @@ const KPIS: KpiCompras[] = ["variacion_costo", "rotacion", "quiebre", "inventari
  * mes, así el modal y la fila no se contradicen.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["compras", "gerencia de ventas", "gerente de operaciones"]);
+  const auth = await requireRoles(request, ["compras", "gerencia de ventas", "gerente de operaciones", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {

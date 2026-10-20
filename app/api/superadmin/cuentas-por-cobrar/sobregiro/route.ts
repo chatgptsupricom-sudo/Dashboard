@@ -1,4 +1,5 @@
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { companyIdsEnAlcance } from "@/lib/cxc/alcance";
 import { calcularSobregiro } from "@/lib/cxc/sobregiro";
@@ -8,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 // por sede, con los que se pasan del límite primero. Es una foto de hoy.
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, "cuentas por cobrar", "gerente de operaciones"]);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
   try {

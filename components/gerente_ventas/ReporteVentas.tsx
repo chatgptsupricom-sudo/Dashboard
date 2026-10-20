@@ -20,6 +20,7 @@
  */
 
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import {
   BarChart3,
   Download,
@@ -88,7 +89,8 @@ export function ReporteVentas() {
   const { user } = useAuthStore();
   const isSuperAdmin =
     user?.role?.toLowerCase().trim() === "superadmin" ||
-    user?.role?.toLowerCase().trim() === "super admin";
+    user?.role?.toLowerCase().trim() === "super admin" ||
+    esRolBI(user?.role);
 
   const [tab, setTab] = useState<"desglose" | "inactivos">("desglose");
 

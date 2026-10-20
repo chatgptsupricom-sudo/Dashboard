@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
 import { requireRoles } from "@/lib/auth/roles";
 import { CATEGORIAS_DISENO, esCategoriaValida } from "@/lib/disenos/categorias";
@@ -7,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 // El matcher del middleware excluye /api, asi que el guard va aqui.
 // superadmin siempre pasa via requireRoles.
-const ROLES = ["diseñador"];
+const ROLES = ["diseñador", ROL_BI]; // BI: solo GET (requireRoles)
 
 // Catálogo de diseños del Diseñador. Las imágenes viven en MySQL (LONGBLOB) para
 // que sobrevivan a los deploys, igual que el Banco de Flyers (product_images).

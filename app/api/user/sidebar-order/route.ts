@@ -45,7 +45,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await requireSession(request);
+  // El orden del menú es del propio usuario: Inteligencia de Negocio también lo guarda.
+  const auth = await requireSession(request, { escrituraPropia: true });
   if (auth.error) return auth.error;
 
   try {

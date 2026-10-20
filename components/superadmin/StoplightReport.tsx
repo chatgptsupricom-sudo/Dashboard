@@ -44,7 +44,9 @@ import {
 import type { Nivel } from "@/lib/stoplight/scoring";
 import type { SellerData, KpiData, SellerDetail } from "@/lib/stoplight/types";
 
-export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, gerenteOpsMode = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; gerenteOpsMode?: boolean; companyId?: number } = {}) {
+// biMode: Inteligencia de Negocio ve el Stoplight del SuperAdmin y elige sede,
+// pero no edita metas ni pesos (isSuperAdmin queda en false).
+export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, gerenteOpsMode = false, biMode = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; gerenteOpsMode?: boolean; biMode?: boolean; companyId?: number } = {}) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
   const [activeTab, setActiveTab] = useState("Summary");
@@ -1147,7 +1149,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {!vendorMode && !cxCMode && !gerenteOpsMode && (
       <div className="mb-6 flex flex-wrap justify-between items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3">
         <div className="flex gap-3">
-          {isSuperAdmin ? (
+          {isSuperAdmin || biMode ? (
           <div
             onClick={() => setTeamDropdownOpen(!teamDropdownOpen)}
             className="flex items-center gap-2 h-9 px-3 border border-slate-200 bg-white rounded-lg text-sm hover:bg-slate-50 transition-colors relative cursor-pointer"
