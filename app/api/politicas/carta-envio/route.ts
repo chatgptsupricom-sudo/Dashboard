@@ -29,15 +29,17 @@ export async function GET(request: NextRequest) {
         (await callOdooRPCEstricto<any[]>(
           "res.company",
           "read",
-          [[sede], ["name", "vat", "street", "street2", "city", "state_id", "country_id", "phone", "email", "website", "logo"]],
+          [[sede], ["name", "vat", "rif", "street", "street2", "city", "state_id", "country_id", "phone", "email", "website", "logo"]],
           contexto,
         )) ?? [];
       if (!c) return NextResponse.json({ error: "No se encontró la sede en Odoo." }, { status: 404 });
       return NextResponse.json({
         empresa: {
           sede,
-          nombre: c.name || "",
-          rif: c.vat || "",
+          // En Odoo las sedes de Venezuela se llaman "<razón social> - B"; la carta lleva la razón social.
+          nombre: String(c.name || "").replace(/\s+-\s+B$/, ""),
+          // Valencia no tiene `vat`: su RIF está en `rif` (l10n_ve). En Panamá `rif` es el RUC completo con DV.
+          rif: c.rif || c.vat || "",
           direccion: direccion(c),
           ciudad: c.city || "",
           telefono: c.phone || "",
