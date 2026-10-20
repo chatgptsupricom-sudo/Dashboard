@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
 
 const COMPANY_MAP: Record<string, number> = { valencia: 9, caracas: 10, panama: 7 };
 
@@ -22,7 +23,7 @@ function getAgingBand(daysOverdue: number): string {
   return "90+";
 }
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin", "gerente de operaciones", ROL_BI]);
   if (auth.error) return auth.error;
 
@@ -46,6 +47,8 @@ export async function GET(request: NextRequest) {
       ["move_type", "in", ["in_invoice", "in_refund"]],
       ["state", "=", "posted"],
       ["company_id", "=", companyId],
+      // Con Inteligencia de Negocio, sin lo que se le debe al grupo.
+      ...terminosSinIC(),
     ];
 
     if (kpiId === "pagos_a_tiempo") {
@@ -150,3 +153,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

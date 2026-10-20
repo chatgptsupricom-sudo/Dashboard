@@ -3,6 +3,7 @@ import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI, esICExcluido } from "@/lib/intercompania";
 
 const COMPANY_MAP: Record<string, number> = {
   valencia: 9,
@@ -26,7 +27,7 @@ async function fetchPaginated(model: string, domain: any[], fields: string[], or
   return result;
 }
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, 
     "cuentas por cobrar",
     "gerente de operaciones",
@@ -102,6 +103,7 @@ export async function GET(request: NextRequest) {
     }
 
     const results = records
+      .filter((r: any) => !esICExcluido(r.partner_id?.[0]))
       .map((r: any) => ({
         id: r.id,
         moveId: Array.isArray(r.move_id) ? r.move_id[0] : (typeof r.move_id === "number" ? r.move_id : 0),
@@ -167,3 +169,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

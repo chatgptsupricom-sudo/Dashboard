@@ -114,3 +114,20 @@ export async function requireSession(
   }
   return sesion;
 }
+
+/**
+ * Rol del token de la sesión ("" sin token o con firma inválida), sin el
+ * resto de los chequeos: sirve para decidir *cómo* responder (ej. sin
+ * intercompañía para BI, lib/intercompania.ts) antes de que el handler haga
+ * su propio requireRoles, que es el que decide si entra.
+ */
+export async function rolDelToken(request: NextRequest): Promise<string> {
+  const token = request.cookies.get("token")?.value;
+  if (!token) return "";
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    return String(payload.role || "").toLowerCase().trim();
+  } catch {
+    return "";
+  }
+}

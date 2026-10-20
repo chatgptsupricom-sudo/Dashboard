@@ -1,4 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { callOdooRPC } from "@/lib/odoo";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
+import { rolDelToken } from "@/lib/auth/roles";
+import type { NextRequest } from "next/server";
 
 /**
  * Ventas intercompañía: facturas y cotizaciones entre empresas del grupo
@@ -79,4 +83,51 @@ async function leerIntercompania(): Promise<Map<number, string>> {
 export async function sinIntercompania(campo = "commercial_partner_id"): Promise<any[]> {
   const ic = await partnersIntercompania();
   return [campo, "not in", [...ic.keys()]];
+}
+
+/**
+ * Inteligencia de Negocio no ve intercompañía en ninguna de sus pantallas
+ * (pedido del 2026-10-20); los demás roles siguen viendo lo de siempre en
+ * cada una.
+ *
+ * Funciona por request: la ruta envuelve su trabajo en `conSinIntercompaniaBI`
+ * y, solo si el rol es BI, las consultas de adentro excluyen a los contactos
+ * del grupo con `terminosSinIC()` (dominio de Odoo) o `esICExcluido()` (al
+ * filtrar lo leído). Así las librerías de CxC (lib/cxc/*), que hoy sacan solo
+ * a "Supricom" por nombre, también dejan fuera Office Solutions Center,
+ * Ofimaster y los RIF del grupo sin cambiar su firma. Fuera de BI no cambia
+ * nada. Ninguna de esas librerías cachea, así que lo de BI no se mezcla con
+ * lo de otros roles.
+ */
+const excluirIC = new AsyncLocalStorage<Set<number>>();
+
+export async function conSinIntercompaniaBI<T>(rol: unknown, fn: () => Promise<T>): Promise<T> {
+  if (!esRolBI(rol)) return fn();
+  const ids = new Set((await partnersIntercompania()).keys());
+  return excluirIC.run(ids, fn);
+}
+
+/** Términos de dominio para esta request: `[]` fuera de BI. `campo` = ruta al partner. */
+export function terminosSinIC(campo = "commercial_partner_id"): any[] {
+  const ids = excluirIC.getStore();
+  return ids ? [[campo, "not in", [...ids]]] : [];
+}
+
+/** ¿Este partner queda fuera en esta request? Siempre false fuera de BI. */
+export function esICExcluido(partnerId: unknown): boolean {
+  const ids = excluirIC.getStore();
+  return !!ids && partnerId != null && ids.has(Number(partnerId));
+}
+
+/**
+ * Envuelve el handler de una ruta: con sesión de BI corre todo dentro de
+ * `conSinIntercompaniaBI`. Uso: `async function leer(req) {...}` +
+ * `export const GET = conSinIntercompaniaParaBI(leer);` (el handler sigue
+ * haciendo su propio requireRoles).
+ */
+export function conSinIntercompaniaParaBI<A extends any[], R>(
+  handler: (request: NextRequest, ...resto: A) => Promise<R>,
+): (request: NextRequest, ...resto: A) => Promise<R> {
+  return async (request, ...resto) =>
+    conSinIntercompaniaBI(await rolDelToken(request), () => handler(request, ...resto));
 }

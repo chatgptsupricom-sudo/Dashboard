@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { clienteExcluido } from "@/lib/gerente_venta/reporteVentas";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
+import { terminosSinIC } from "@/lib/intercompania";
 
 /**
  * Top de clientes que compran las marcas del catálogo Material POP.
@@ -207,6 +208,8 @@ function dominioLineas(opts: OpcionesConsulta, productIds: number[], partnerId?:
     ["move_id.invoice_date", "<=", opts.hasta],
     ["display_type", "=", "product"],
     ["product_id", "in", productIds],
+    // Con Inteligencia de Negocio, todo el grupo fuera (lib/intercompania.ts).
+    ...terminosSinIC("move_id.commercial_partner_id"),
   ];
   if (partnerId) dom.push(["partner_id", "=", partnerId]);
   return dom;

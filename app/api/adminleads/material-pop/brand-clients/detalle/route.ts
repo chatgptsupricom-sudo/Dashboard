@@ -4,6 +4,7 @@ import {
 } from "@/lib/adminleads/material-pop/auth";
 import { detalleClienteMarca } from "@/lib/adminleads/material-pop/clientesMarca";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -11,7 +12,7 @@ export const maxDuration = 60;
 const esFecha = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 /** Productos y facturas de un cliente, detrás de las cifras del listado. */
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   try {
     const auth = await requireAdminLeadsValencia(request);
     if (auth.error) return auth.error;
@@ -44,3 +45,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

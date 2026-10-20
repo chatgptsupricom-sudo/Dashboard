@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { esSuperadmin, normRol } from "@/lib/agenteia/acceso";
 import { callOdooRPCEstricto } from "@/lib/odoo";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
+import { partnersIntercompania } from "@/lib/intercompania";
 
 /**
  * Qué información ve el Agente IA según el rol de quien pregunta. El
@@ -198,6 +200,11 @@ export type Alcance = {
   costos: boolean;
   /** Consulta libre a la MySQL del panel, sobre las tablas de sus áreas. */
   panel: boolean;
+  /**
+   * Partners del grupo que se sacan de todo (Inteligencia de Negocio no ve
+   * intercompañía, lib/intercompania.ts); null = no se sacan.
+   */
+  sinIntercompania: number[] | null;
 };
 
 const SEDES = [9, 10, 7];
@@ -235,6 +242,7 @@ export async function alcanceDe(payload: any): Promise<Alcance | null> {
     propio,
     costos: areas.has("costos"),
     panel: !propio && c.sede === "todas" && c.areas.some((a) => AREAS[a].tablas),
+    sinIntercompania: esRolBI(rol) ? [...(await partnersIntercompania()).keys()] : null,
   };
 }
 
@@ -270,6 +278,20 @@ export function modeloPermitido(a: Alcance, model: string): boolean {
 // explícita en el dominio.
 const CON_COMPANIA =
   /^(sale\.(order|order\.line|report)|account\.(move|move\.line|invoice\.report|payment|bank\.statement\.line|analytic\.line)|purchase\.(order|order\.line|report)|stock\.(quant|move|move\.line|picking|valuation\.layer)|crm\.lead|hr\.employee)$/;
+
+// Ruta al partner comercial en cada modelo, para sacar la intercompañía.
+const PARTNER_COMERCIAL: Record<string, string> = {
+  "account.move": "commercial_partner_id",
+  "account.invoice.report": "commercial_partner_id",
+  "account.move.line": "move_id.commercial_partner_id",
+  "account.payment": "partner_id.commercial_partner_id",
+  "sale.order": "partner_id.commercial_partner_id",
+  "sale.report": "partner_id.commercial_partner_id",
+  "sale.order.line": "order_id.partner_id.commercial_partner_id",
+  "purchase.order": "partner_id.commercial_partner_id",
+  "purchase.order.line": "order_id.partner_id.commercial_partner_id",
+  "res.partner": "commercial_partner_id",
+};
 
 // Catálogo que un vendedor puede ver entero aunque solo vea "lo suyo".
 const COMPARTIDOS_PROPIO = /^(product\.(product|template|category|pricelist|pricelist\.item)|spiff\.brand|stock\.(quant|warehouse|location)|uom\.uom|res\.(company|currency|currency\.rate|country|country\.state)|crm\.(stage|tag)|account\.payment\.term)$/;
@@ -314,6 +336,8 @@ export function dominioConAlcance(a: Alcance, model: string, domain: any[]): any
     if (!f) return `Error: este usuario solo ve su propia información y ${model} no se filtra por vendedor.`;
     extra.push(...f);
   }
+  const campoPartner = PARTNER_COMERCIAL[model];
+  if (a.sinIntercompania?.length && campoPartner) extra.push([campoPartner, "not in", a.sinIntercompania]);
   return [...extra, ...domain];
 }
 
@@ -437,5 +461,9 @@ ${
           .join(", ")}.`
       : "No tiene consultas libres a la base del panel."
   }
-Las herramientas ya aplican estos límites y devuelven error fuera de ellos. Sus resultados traen \`limites_aplicados\`: la cifra corresponde SOLO a eso (ej. "solo Caracas; solo registros del vendedor X"); dilo así en la respuesta, sin presentarla como el total de la empresa ni dudar de qué incluye. Si pide algo fuera de su alcance, dile con claridad que su acceso no lo incluye (el SuperAdmin puede ampliarlo) y no intentes conseguirlo por otro camino ni lo estimes. No tiene SQL directo a Odoo.`;
+${
+    a.sinIntercompania
+      ? "No ve intercompañía: las herramientas de Odoo ya dejan fuera ventas, cobros y deudas con las empresas del grupo (Supricom de cada sede, Supricom USA/LLC, Office Solutions Center, Ofimaster). En consultar_panel sobre ventas_smartbit agrega siempre `LOWER(COALESCE(cliente,'')) NOT REGEXP 'supricom|office solutions? center|ofimaster'`. Presenta las cifras como sin intercompañía.\n"
+      : ""
+  }Las herramientas ya aplican estos límites y devuelven error fuera de ellos. Sus resultados traen \`limites_aplicados\`: la cifra corresponde SOLO a eso (ej. "solo Caracas; solo registros del vendedor X"); dilo así en la respuesta, sin presentarla como el total de la empresa ni dudar de qué incluye. Si pide algo fuera de su alcance, dile con claridad que su acceso no lo incluye (el SuperAdmin puede ampliarlo) y no intentes conseguirlo por otro camino ni lo estimes. No tiene SQL directo a Odoo.`;
 }

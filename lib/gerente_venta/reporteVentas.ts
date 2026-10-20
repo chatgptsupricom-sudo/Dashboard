@@ -22,6 +22,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { marcasDeSede } from "@/lib/reportes-comerciales/reporteTrimestral";
 import { CORTE_ODOO, normalizarRif, RIF_SQL, SQL_SIN_INTERCOMPANIA } from "@/lib/smartbit";
+import { esICExcluido, terminosSinIC } from "@/lib/intercompania";
 
 export const COMPANY_NAME: Record<number, string> = {
   9: "Valencia",
@@ -168,7 +169,7 @@ export async function cargarFiltros(
     : [];
 
   const clientes = partners
-    .filter((p: any) => p.name && !clienteExcluido(p.name))
+    .filter((p: any) => p.name && !clienteExcluido(p.name) && !esICExcluido(p.id))
     .map((p: any) => ({
       id: p.id as number,
       nombre: String(p.name),
@@ -232,6 +233,8 @@ export async function cargarDesglose(opts: {
     ["move_id.invoice_date", "<=", opts.hasta],
     ["display_type", "=", "product"],
     ["product_id", "!=", false],
+    // Con Inteligencia de Negocio, todo el grupo fuera (lib/intercompania.ts).
+    ...terminosSinIC("move_id.commercial_partner_id"),
   ];
   if (opts.vendedorUserId) dom.push(["move_id.invoice_user_id", "=", opts.vendedorUserId]);
   if (opts.clienteId) dom.push(["partner_id", "=", opts.clienteId]);
@@ -356,6 +359,7 @@ export async function cargarComparativo(opts: {
     ["display_type", "=", "product"],
     ["product_id", "!=", false],
     ...CLIENTES_EXCLUIDOS_SUBSTR.map((s) => ["partner_id.name", "not ilike", s]),
+    ...terminosSinIC("move_id.commercial_partner_id"),
   ];
   if (opts.vendedorUserId) dom.push(["move_id.invoice_user_id", "=", opts.vendedorUserId]);
   if (opts.clienteId) dom.push(["partner_id", "=", opts.clienteId]);
@@ -467,7 +471,7 @@ export async function clientesInactivos(opts: {
     ], { fields: ["name", "user_id"], limit: 0 })) || [];
 
   const cartera = partners.filter(
-    (p: any) => p.name && !clienteExcluido(p.name),
+    (p: any) => p.name && !clienteExcluido(p.name) && !esICExcluido(p.id),
   );
   if (cartera.length === 0) return [];
 
