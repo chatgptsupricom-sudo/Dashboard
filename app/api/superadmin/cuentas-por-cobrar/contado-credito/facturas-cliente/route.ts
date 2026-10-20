@@ -7,6 +7,7 @@ import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
 import { nombresPlazos } from "@/lib/cxc/credito";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
 
 const COMPANY_MAP: Record<string, number> = {
   valencia: 9,
@@ -130,7 +131,7 @@ async function porCobrarDelCliente(
     .sort((a, b) => (b.invoiceDate || "").localeCompare(a.invoiceDate || ""));
 }
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
@@ -230,3 +231,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

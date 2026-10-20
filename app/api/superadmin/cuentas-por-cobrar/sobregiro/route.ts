@@ -4,11 +4,12 @@ import { ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { companyIdsEnAlcance } from "@/lib/cxc/alcance";
 import { calcularSobregiro } from "@/lib/cxc/sobregiro";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
 
 // Sobregiro (lib/cxc/sobregiro.ts): uso del límite de crédito de cada cliente,
 // por sede, con los que se pasan del límite primero. Es una foto de hoy.
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
@@ -29,3 +30,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

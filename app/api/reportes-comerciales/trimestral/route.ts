@@ -15,6 +15,7 @@ import {
 } from "@/lib/reportes-comerciales/reporteTrimestral";
 import { generarYGuardarTrimestre } from "@/lib/reportes-comerciales/snapshot";
 import { ensureTablasReportesComerciales } from "@/lib/reportes-comerciales/tablas";
+import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -43,7 +44,7 @@ function anioDeTrimestre(trimestre: string): number {
   return parseInt(trimestre.slice(0, 4), 10);
 }
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const s = await sesion(request);
   if (s.error) return s.error;
 
@@ -137,3 +138,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error?.message || String(error) }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

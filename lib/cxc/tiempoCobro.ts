@@ -3,6 +3,7 @@ import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
 import { RELACIONADA } from "@/lib/cxc/cobros";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { esPlazoCredito } from "@/lib/cxc/credito";
+import { terminosSinIC } from "@/lib/intercompania";
 
 /**
  * "Tiempo de cobro": cuántos días pasan desde que se emite una factura a
@@ -134,6 +135,7 @@ export async function calcularTiempoCobro(companyIds: number[], desde: string, h
       ["debit_move_id.move_id.amount_residual", "=", 0],
       ["debit_move_id.move_id.partner_id.name", "not ilike", "supricom"],
       ["debit_move_id.move_id.commercial_partner_id.name", "not ilike", RELACIONADA],
+      ...terminosSinIC("debit_move_id.move_id.commercial_partner_id"),
       ...dominioFechaEfectiva(">=", desde),
     ],
     ["id", "max_date", "debit_move_id", "credit_move_id"],

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError } from "@/lib/odoo";
 import { auditarSede } from "@/lib/metas-marca/auditoria";
@@ -34,7 +34,10 @@ export async function GET(request: NextRequest) {
     const ventas = await Promise.all(sedes.map((s) => ventasDelMes(s, mes, fresco)));
 
     if (exportar) {
-      const lineas = ventas.flatMap((v) => v.lineas.map((l) => ({ ...l, companyId: v.companyId })));
+      // Inteligencia de Negocio no ve las líneas intercompañía.
+      const sinIC = esRolBI(auth.payload?.role);
+      const lineas = ventas.flatMap((v) =>
+        v.lineas.filter((l) => !sinIC || !l.intercompania).map((l) => ({ ...l, companyId: v.companyId })));
       const facturas = new Map(ventas.flatMap((v) => v.facturas).map((f) => [f.id, f.numero]));
       const inventarios = await Promise.all(sedes.map((s) => inventarioSede(s)));
       return NextResponse.json({

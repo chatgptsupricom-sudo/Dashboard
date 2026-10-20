@@ -11,6 +11,8 @@ const js = ts.transpileModule(fuente, { compilerOptions: { module: ts.ModuleKind
 const stubs = {
   "@/lib/db": { db: {} },
   "@/lib/odoo": { callOdooRPCEstricto: async () => 0 },
+  "@/lib/auth/inteligenciaNegocio": { esRolBI: (r) => String(r ?? "").toLowerCase().trim() === "inteligencia de negocio" },
+  "@/lib/intercompania": { partnersIntercompania: async () => new Map([[5, "SUPRICOM CCS 21"]]) },
   "@/lib/agenteia/acceso": {
     normRol: (r) => String(r ?? "").toLowerCase().trim(),
     esSuperadmin: (r) => String(r ?? "").toLowerCase().trim() === "superadmin",
@@ -49,6 +51,13 @@ assert.deepStrictEqual(dominioConAlcance(ventas, "sale.order", [["state", "=", "
 ]);
 assert.match(dominioConAlcance(ventas, "hr.employee", []), /no tiene acceso/);
 assert.match(dominioConAlcance(ventas, "stock.picking", []), /no tiene acceso/);
+// Inteligencia de Negocio: sin intercompañía en los modelos con partner, por la ruta de cada uno.
+const bi = alcance({ areas: new Set(["ventas", "cobranza"]), companias: [7, 9, 10], panel: false, sinIntercompania: [5, 6] });
+assert.deepStrictEqual(dominioConAlcance(bi, "account.move", [])
+  .find((t) => t[0] === "commercial_partner_id"), ["commercial_partner_id", "not in", [5, 6]]);
+assert.ok(dominioConAlcance(bi, "account.move.line", []).some((t) => t[0] === "move_id.commercial_partner_id" && t[1] === "not in"));
+assert.ok(dominioConAlcance(bi, "sale.order", []).some((t) => t[0] === "partner_id.commercial_partner_id"));
+assert.ok(!dominioConAlcance(alcance({ sinIntercompania: null, areas: new Set(["ventas"]) }), "account.move", []).some((t) => String(t[0]).includes("commercial_partner_id")));
 assert.match(dominioConAlcance(ventas, "account.move", [["line_ids.product_id.standard_price", ">", 0]]), /costos/);
 assert.deepStrictEqual(sinCostos([{ name: "a", standard_price: 3, margin: 1 }]), [{ name: "a" }]);
 

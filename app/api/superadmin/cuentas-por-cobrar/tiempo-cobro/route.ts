@@ -3,6 +3,7 @@ import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { calcularTiempoCobro } from "@/lib/cxc/tiempoCobro";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
 
 // Tiempo de cobro (lib/cxc/tiempoCobro.ts): días desde la emisión hasta el
 // pago completo de las facturas a crédito que se terminaron de pagar en el
@@ -13,7 +14,7 @@ const COMPANY_MAP: Record<string, number> = { valencia: 9, caracas: 10, panama: 
 const fechaLocal = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
@@ -53,3 +54,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

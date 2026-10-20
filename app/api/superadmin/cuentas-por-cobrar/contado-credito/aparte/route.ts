@@ -5,6 +5,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
 import { RELACIONADA } from "@/lib/cxc/cobros";
 import { NextRequest, NextResponse } from "next/server";
+import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
 
 /**
  * Detalle de lo que "Por cobrar" (Contado/Crédito) deja fuera del total:
@@ -16,7 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = { valencia: 9, caracas: 10, panama: 7 };
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_BI, "cuentas por cobrar", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
@@ -50,6 +51,7 @@ export async function GET(request: NextRequest) {
           ["amount_residual", "!=", 0],
           ["partner_id.name", "not ilike", "supricom"],
           ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
+          ...terminosSinIC("move_id.commercial_partner_id"),
         ]],
         { fields: ["id", "move_id", "partner_id", "date", "journal_id", "ref", "amount_residual"], order: "date desc", limit: 2000 },
       );
@@ -101,3 +103,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError, callOdooRPC } from "@/lib/odoo";
 import { calcularMetasMarca } from "@/lib/metas-marca/calculo";
@@ -29,7 +29,8 @@ export async function GET(request: NextRequest) {
   const sedes = sedesDe(sp.get("company_id"));
   if (!sedes) return NextResponse.json({ error: "Sede inválida" }, { status: 400 });
   const mes = mesValido(sp.get("mes")) || mesActual();
-  const incluirIC = sp.get("ic") === "1";
+  // Inteligencia de Negocio nunca ve intercompañía, aunque pida ?ic=1.
+  const incluirIC = sp.get("ic") === "1" && !esRolBI(auth.payload?.role);
   const refrescar = sp.get("refrescar") === "1";
 
   try {

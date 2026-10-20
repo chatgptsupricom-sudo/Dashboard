@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError } from "@/lib/odoo";
 import { partnersIntercompania } from "@/lib/intercompania";
@@ -30,7 +30,9 @@ export async function GET(request: NextRequest) {
 
   try {
     if (refrescar) await partnersIntercompania(true);
-    const r = await stockPorMarca(sedes, periodo, sp.get("ic") === "1", refrescar);
+    // Inteligencia de Negocio nunca ve intercompañía, aunque pida ?ic=1.
+    const incluirIC = sp.get("ic") === "1" && !esRolBI(auth.payload?.role);
+    const r = await stockPorMarca(sedes, periodo, incluirIC, refrescar);
     const marca = sp.get("marca");
     const productos = sp.get("productos") === "1"
       ? r.productos

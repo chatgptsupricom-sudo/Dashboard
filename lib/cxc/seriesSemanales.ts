@@ -5,6 +5,7 @@ import { idsACredito } from "@/lib/cxc/credito";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { agingVacio, bandaDeDias, type Banda } from "@/lib/cxc/bandas";
 import { idsIncobrablesManuales } from "@/lib/cxc/incobrablesManuales";
+import { terminosSinIC } from "@/lib/intercompania";
 
 /**
  * Series semanales de Cartera Vencida y Recuperación de Vencidos.
@@ -178,7 +179,8 @@ export async function calcularSeriesCxC(
   if (semanas.length === 0) return vacio;
 
   const desde = iso(semanas[0].inicio);
-  const noInterno: any[] = [["partner_id.name", "not ilike", "supricom"]];
+  // Con Inteligencia de Negocio, además, todo el grupo (lib/intercompania.ts).
+  const noInterno: any[] = [["partner_id.name", "not ilike", "supricom"], ...terminosSinIC()];
 
   const hastaSerie = iso(semanas[semanas.length - 1].fin > hoy ? hoy : semanas[semanas.length - 1].fin);
   const [abiertasHoy, conciliaciones, cobros, manuales] = await Promise.all([
@@ -204,6 +206,7 @@ export async function calcularSeriesCxC(
         ["debit_move_id.move_id.state", "=", "posted"],
         ["company_id", "in", companyIds],
         ["debit_move_id.move_id.partner_id.name", "not ilike", "supricom"],
+        ...terminosSinIC("debit_move_id.move_id.commercial_partner_id"),
         ...dominioFechaEfectiva(">=", desde),
       ],
       ["id", "amount", "max_date", "debit_move_id", "credit_move_id"],
@@ -212,7 +215,7 @@ export async function calcularSeriesCxC(
     obtenerCobros(companyIds, {
       desde,
       hasta: hastaSerie,
-      dominioFactura: [["move_type", "=", "out_invoice"], ["partner_id.name", "not ilike", "supricom"]],
+      dominioFactura: [["move_type", "=", "out_invoice"], ["partner_id.name", "not ilike", "supricom"], ...terminosSinIC()],
     }),
     // Incobrables marcados a mano: se tratan como cartera vieja.
     idsIncobrablesManuales(companyIds),
@@ -370,6 +373,7 @@ export async function calcularSeriesCxC(
     ["company_id", "in", companyIds],
     ["partner_id.name", "not ilike", "supricom"],
     ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
+    ...terminosSinIC("move_id.commercial_partner_id"),
   ];
   const carteraCEI: CarteraCEI = async (corte, companyId) => {
     const sede: any[] = companyId !== undefined ? [["company_id", "=", companyId]] : [];

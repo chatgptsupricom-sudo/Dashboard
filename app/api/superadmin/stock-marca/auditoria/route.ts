@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError } from "@/lib/odoo";
 import { auditarSede } from "@/lib/stock-marca/auditoria";
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   try {
     // Una sede a la vez: cada auditoría hace decenas de consultas a Odoo.
     const auditorias = [];
-    const ic = sedes.length === 1 && sp.get("ic") === "1";
+    const ic = sedes.length === 1 && sp.get("ic") === "1" && !esRolBI(auth.payload?.role);
     for (const s of sedes) auditorias.push(await auditarSede(s, periodo, ic));
     return NextResponse.json({ success: true, data: { periodo, auditorias } });
   } catch (error: any) {

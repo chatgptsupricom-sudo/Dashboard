@@ -3,6 +3,7 @@ import { dominioFechaEfectiva } from "@/lib/cxc/fechaConfirmacion";
 import { obtenerCobros, RELACIONADA } from "@/lib/cxc/cobros";
 import { VENCIMIENTO_DESDE } from "@/lib/cxc/carteraVieja";
 import { idsIncobrablesManuales } from "@/lib/cxc/incobrablesManuales";
+import { terminosSinIC } from "@/lib/intercompania";
 
 /**
  * KPI "Recuperación Vencidos" (issue #189).
@@ -114,6 +115,7 @@ export async function calcularRecuperacion(
   const noInterno = (prefijo: string): any[] => [
     [`${prefijo}partner_id.name`, "not ilike", "supricom"],
     [`${prefijo}commercial_partner_id.name`, "not ilike", RELACIONADA],
+    ...terminosSinIC(`${prefijo}commercial_partner_id`),
     ...(manuales.length ? [[prefijo ? prefijo.slice(0, -1) : "id", "not in", manuales]] : []),
   ];
 
