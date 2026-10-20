@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { X, RefreshCw } from "lucide-react";
+import ResumenKpi, { type ResumenKpiProps } from "./ResumenKpi";
 
 interface CxPDetailModalProps {
   isOpen: boolean;
@@ -12,6 +13,8 @@ interface CxPDetailModalProps {
   apiPrefix: string;
   empresaLabel: string;
   mes: string;
+  /** Encabezado hoy vs meta + meta/peso del mes (ResumenKpi); solo se pinta en el mes del Stoplight. */
+  resumen?: ResumenKpiProps | null;
 }
 
 const EMPRESA_MAP: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "panama" };
@@ -19,7 +22,7 @@ const EMPRESA_MAP: Record<number, string> = { 9: "valencia", 10: "caracas", 7: "
 // Modal de detalle de un KPI de Cuentas por Pagar (pagos a tiempo, vencidas,
 // procesamiento oportuno, DPO): tarjetas de resumen + tabla de facturas de
 // proveedor. Se fetchea solo al abrir. Extraído de StoplightReport.tsx (audit #23).
-export default function CxPDetailModal({ isOpen, onClose, kpiId, companyId, apiPrefix, empresaLabel, mes }: CxPDetailModalProps) {
+export default function CxPDetailModal({ resumen, isOpen, onClose, kpiId, companyId, apiPrefix, empresaLabel, mes }: CxPDetailModalProps) {
   const t = useTranslations("stoplight");
 
   const [loading, setLoading] = useState(false);
@@ -73,6 +76,8 @@ export default function CxPDetailModal({ isOpen, onClose, kpiId, companyId, apiP
         </div>
 
         <div className="flex-1 overflow-auto p-5">
+
+          {resumen && mes === resumen.mes && <ResumenKpi {...resumen} />}
           {loading ? (
             <div className="flex items-center justify-center py-20 text-slate-400">
               <RefreshCw size={24} className="animate-spin mr-2" /> {t("loading_detail")}

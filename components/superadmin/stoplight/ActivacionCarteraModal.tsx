@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { X, Check, UserCheck } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
 import { nivelContraMeta, NIVEL_CHIP, type Nivel } from "@/lib/stoplight/scoring";
+import ResumenKpi, { type ResumenKpiProps } from "./ResumenKpi";
+import { BarraMeta } from "./lecturaUI";
 
 interface ActivacionCarteraModalProps {
   isOpen: boolean;
@@ -13,6 +15,8 @@ interface ActivacionCarteraModalProps {
   /** company_id a enviar, o null en los modos que no lo mandan. */
   companyId: number | null;
   defaultMes: string;
+  /** Encabezado hoy vs meta + meta/peso del mes (ResumenKpi); solo se pinta en el mes del Stoplight. */
+  resumen?: ResumenKpiProps | null;
 }
 
 type Periodo = "mes" | "trimestre" | "anio" | "todo";
@@ -20,7 +24,7 @@ type Periodo = "mes" | "trimestre" | "anio" | "todo";
 // Modal "Activación de cartera": resumen global + tabla por vendedor + detalle
 // semanal (con drill-down), con selector de período. Autocontenido. Extraído de
 // StoplightReport.tsx (audit #23).
-export default function ActivacionCarteraModal({ isOpen, onClose, apiPrefix, companyId, defaultMes }: ActivacionCarteraModalProps) {
+export default function ActivacionCarteraModal({ resumen, isOpen, onClose, apiPrefix, companyId, defaultMes }: ActivacionCarteraModalProps) {
   const t = useTranslations("stoplight");
 
   const [mes, setMes] = useState(defaultMes);
@@ -59,11 +63,22 @@ export default function ActivacionCarteraModal({ isOpen, onClose, apiPrefix, com
     return () => { cancelled = true; };
   }, [isOpen, mes, periodo, companyId, apiPrefix]);
 
-  if (!isOpen) return null;
-
   // Semáforo contra la meta de la fila (`metaActivacion`, en % de la cartera),
   // no contra un 60/40 fijo. Sin meta: neutro y sin "Cumple / No cumple".
   const meta = Number(data?.metaActivacion) || 0;
+  // % de la meta cumplida por un vendedor (el mismo cociente que usa `nivelContraMeta`).
+  const pctMeta = (v: number | null | undefined) => (v == null || meta <= 0 ? null : (v / meta) * 100);
+
+  // Primero quien está más lejos de la meta; sin activación al final. Sin meta, el orden de la API.
+  const sellers = useMemo<any[]>(() => {
+    const lista: any[] = data?.sellers ?? [];
+    if (meta <= 0) return lista;
+    const clave = (s: any) => (s.activacion == null ? Infinity : s.activacion);
+    return [...lista].sort((a, b) => clave(a) - clave(b));
+  }, [data, meta]);
+
+  if (!isOpen) return null;
+
   const nivel = (v: number | null | undefined): Nivel => nivelContraMeta(v, meta);
   const Chip = ({ valor }: { valor: number | null | undefined }) => (
     <span className={`inline-flex min-w-[52px] justify-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${NIVEL_CHIP[nivel(valor)]}`}>
@@ -143,6 +158,7 @@ export default function ActivacionCarteraModal({ isOpen, onClose, apiPrefix, com
 
         {/* Modal Body */}
         <div className="flex-1 overflow-auto p-5">
+          {resumen && mes === resumen.mes && <ResumenKpi {...resumen} />}
           {loading ? (
             <div className="flex items-center justify-center py-20 text-slate-400">
               {t("loading")}
@@ -185,35 +201,43 @@ export default function ActivacionCarteraModal({ isOpen, onClose, apiPrefix, com
                   )}
 
                   {/* Seller table */}
-                  <div className="border rounded-xl overflow-x-auto">
-                    <table className="w-full text-sm min-w-[560px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b">
-                          <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
-                          <th className="p-3 text-center font-medium text-orange-600">{t("total_clientes")}</th>
-                          <th className="p-3 text-center font-medium text-green-600">{t("clientes_activos")}</th>
-                          <th className="p-3 text-center font-medium text-purple-600">{t("activacion_pct")}</th>
-                          <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.sellers.map((seller: any) => {
-                          return (
-                            <tr
-                              key={seller.nombre}
-                              className="border-b hover:bg-orange-50/40 transition-colors cursor-pointer"
-                              onClick={() => { setSelectedSeller(seller); setTab("semanal"); }}
-                            >
-                              <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
-                              <td className="p-3 text-center text-orange-600 font-bold">{seller.totalClientes}</td>
-                              <td className="p-3 text-center text-green-600 font-bold">{seller.clientesActivos}</td>
-                              <td className="p-3 text-center"><Chip valor={seller.activacion} /></td>
-                              <td className="p-3 text-center"><Estado valor={seller.activacion} /></td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  <div>
+                    {meta > 0 && <p className="text-xs text-slate-500 mb-2">{t("lista_ordenada")}</p>}
+                    <div className="border rounded-xl overflow-x-auto">
+                      <table className="w-full text-sm min-w-[560px]">
+                        <thead>
+                          <tr className="bg-slate-50 border-b">
+                            <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
+                            <th className="p-3 text-center font-medium text-orange-600">{t("total_clientes")}</th>
+                            <th className="p-3 text-center font-medium text-green-600">{t("clientes_activos")}</th>
+                            <th className="p-3 text-center font-medium text-purple-600">{t("activacion_pct")}</th>
+                            <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sellers.map((seller: any) => {
+                            return (
+                              <tr
+                                key={seller.nombre}
+                                className="border-b hover:bg-orange-50/40 transition-colors cursor-pointer"
+                                onClick={() => { setSelectedSeller(seller); setTab("semanal"); }}
+                              >
+                                <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
+                                <td className="p-3 text-center text-orange-600 font-bold">{seller.totalClientes}</td>
+                                <td className="p-3 text-center text-green-600 font-bold">{seller.clientesActivos}</td>
+                                <td className="p-3 text-center">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <Chip valor={seller.activacion} />
+                                    {meta > 0 && <BarraMeta pct={pctMeta(seller.activacion)} className="w-20" />}
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center"><Estado valor={seller.activacion} /></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
@@ -224,8 +248,9 @@ export default function ActivacionCarteraModal({ isOpen, onClose, apiPrefix, com
                   {!selectedSeller ? (
                     <div className="space-y-3">
                       <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_activacion")}</p>
+                      {meta > 0 && <p className="text-xs text-slate-500 mb-2">{t("lista_ordenada")}</p>}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {data.sellers.map((seller: any) => (
+                        {sellers.map((seller: any) => (
                           <button
                             key={seller.nombre}
                             onClick={() => setSelectedSeller(seller)}
@@ -235,7 +260,10 @@ export default function ActivacionCarteraModal({ isOpen, onClose, apiPrefix, com
                               <span className="font-medium text-slate-800">{seller.nombre}</span>
                               <p className="text-xs text-slate-500">{seller.clientesActivos}/{seller.totalClientes}{t("clientes_activos_suffix")}</p>
                             </div>
-                            <Chip valor={seller.activacion} />
+                            <div className="flex shrink-0 items-center gap-2">
+                              {meta > 0 && <BarraMeta pct={pctMeta(seller.activacion)} className="w-20" />}
+                              <Chip valor={seller.activacion} />
+                            </div>
                           </button>
                         ))}
                       </div>

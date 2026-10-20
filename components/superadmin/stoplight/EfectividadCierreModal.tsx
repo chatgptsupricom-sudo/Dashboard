@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { X, Check, ArrowLeft } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
 import { nivelContraMeta, NIVEL_CHIP, type Nivel } from "@/lib/stoplight/scoring";
+import ResumenKpi, { type ResumenKpiProps } from "./ResumenKpi";
+import { BarraMeta } from "./lecturaUI";
 
 interface EfectividadCierreModalProps {
   isOpen: boolean;
@@ -13,6 +15,8 @@ interface EfectividadCierreModalProps {
   /** company_id a enviar, o null en los modos que no lo mandan. */
   companyId: number | null;
   defaultMes: string;
+  /** Encabezado hoy vs meta + meta/peso del mes (ResumenKpi); solo se pinta en el mes del Stoplight. */
+  resumen?: ResumenKpiProps | null;
 }
 
 type Periodo = "mes" | "trimestre" | "anio" | "todo";
@@ -20,7 +24,7 @@ type Periodo = "mes" | "trimestre" | "anio" | "todo";
 // Modal "Efectividad de cierre": embudo global + tabla por vendedor + detalle
 // semanal (con drill-down), con selector de período (mes / trimestre / año /
 // todo). Autocontenido. Extraído de StoplightReport.tsx (audit #23).
-export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, companyId, defaultMes }: EfectividadCierreModalProps) {
+export default function EfectividadCierreModal({ resumen, isOpen, onClose, apiPrefix, companyId, defaultMes }: EfectividadCierreModalProps) {
   const t = useTranslations("stoplight");
 
   const [mes, setMes] = useState(defaultMes);
@@ -59,12 +63,22 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
     return () => { cancelled = true; };
   }, [isOpen, mes, periodo, companyId, apiPrefix]);
 
+  // Vendedores del más lejos de la meta al más cerca (efectividad / meta; sin
+  // meta, efectividad de menor a mayor); sin efectividad y "otros" al final.
+  const vendedoresOrdenados = useMemo(() => {
+    const lista: any[] = data?.sellers ?? [];
+    const clave = (v: any) => (v.efectividad == null ? Infinity : Number(v.efectividad));
+    return [...lista].sort((a, b) => Number(!!a.esOtros) - Number(!!b.esOtros) || clave(a) - clave(b));
+  }, [data]);
+
   if (!isOpen) return null;
 
   // Semáforo contra la meta de la fila (`metaEfectividad`, en %), no contra un
   // 60/40 fijo. Sin meta: neutro y sin "Cumple / No cumple".
   const meta = Number(data?.metaEfectividad) || 0;
   const nivel = (v: number | null | undefined): Nivel => nivelContraMeta(v, meta);
+  // % de la meta cumplido por un vendedor (null sin meta o sin efectividad).
+  const pctMeta = (v: number | null | undefined) => (meta > 0 && v != null ? (Number(v) / meta) * 100 : null);
   const Chip = ({ valor }: { valor: number | null | undefined }) => (
     <span className={`inline-flex min-w-[52px] justify-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${NIVEL_CHIP[nivel(valor)]}`}>
       {valor == null ? "–" : `${valor}%`}
@@ -148,6 +162,7 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
 
         {/* Modal Body */}
         <div className="flex-1 overflow-auto p-5">
+          {resumen && mes === resumen.mes && <ResumenKpi {...resumen} />}
           {loading ? (
             <div className="flex items-center justify-center py-20 text-slate-400">
               {t("loading")}
@@ -202,8 +217,10 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                   )}
 
                   {/* Seller table */}
+                  <div>
+                  <p className="text-xs text-slate-500 mb-2">{t("lista_ordenada")}</p>
                   <div className="border rounded-xl overflow-x-auto">
-                    <table className="w-full text-sm min-w-[680px]">
+                    <table className="w-full text-sm min-w-[760px]">
                       <thead>
                         <tr className="bg-slate-50 border-b">
                           <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
@@ -212,11 +229,12 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                           <th className="p-3 text-center font-medium text-slate-500">{t("cot_pendientes")}</th>
                           <th className="p-3 text-center font-medium text-red-500">{t("cot_canceladas")}</th>
                           <th className="p-3 text-center font-medium text-purple-600">{t("efectividad_pct")}</th>
+                          <th className="w-24" />
                           <th className="p-3 text-center font-medium text-slate-600">{t("estado")}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {data.sellers.map((seller: any) => {
+                        {vendedoresOrdenados.map((seller: any) => {
                           return (
                             <tr
                               key={seller.nombre}
@@ -229,12 +247,14 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                               <td className="p-3 text-center text-slate-500">{seller.pendientes ?? "–"}</td>
                               <td className="p-3 text-center text-red-500">{seller.canceladas ?? "–"}</td>
                               <td className="p-3 text-center"><Chip valor={seller.efectividad} /></td>
+                              <td className="p-3"><BarraMeta pct={pctMeta(seller.efectividad)} className="w-20" /></td>
                               <td className="p-3 text-center"><Estado valor={seller.efectividad} /></td>
                             </tr>
                           );
                         })}
                       </tbody>
                     </table>
+                  </div>
                   </div>
                 </div>
               )}
@@ -244,16 +264,20 @@ export default function EfectividadCierreModal({ isOpen, onClose, apiPrefix, com
                 <div>
                   {!selectedSeller ? (
                     <div className="space-y-3">
-                      <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_semanal")}</p>
+                      <p className="text-sm text-slate-500">{t("selecciona_vendedor_semanal")}</p>
+                      <p className="text-xs text-slate-500 mb-3">{t("lista_ordenada")}</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {data.sellers.map((seller: any) => (
+                        {vendedoresOrdenados.map((seller: any) => (
                           <button
                             key={seller.nombre}
                             onClick={() => setSelectedSeller(seller)}
                             className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
                           >
                             <span className="font-medium text-slate-800">{seller.nombre}</span>
-                            <Chip valor={seller.efectividad} />
+                            <span className="flex items-center gap-2 shrink-0">
+                              <BarraMeta pct={pctMeta(seller.efectividad)} className="w-16" />
+                              <Chip valor={seller.efectividad} />
+                            </span>
                           </button>
                         ))}
                       </div>

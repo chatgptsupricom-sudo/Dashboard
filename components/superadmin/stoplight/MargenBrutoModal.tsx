@@ -5,6 +5,8 @@ import { useTranslations, useLocale } from "next-intl";
 import { X, ArrowLeft, Percent, Search, AlertTriangle, ChevronRight } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
 import { nivelContraMeta, NIVEL_CHIP, type Nivel } from "@/lib/stoplight/scoring";
+import ResumenKpi, { type ResumenKpiProps } from "./ResumenKpi";
+import { BarraMeta } from "./lecturaUI";
 
 interface MargenBrutoModalProps {
   isOpen: boolean;
@@ -17,6 +19,8 @@ interface MargenBrutoModalProps {
    *  (issue #178). La API ya no manda esos montos a ese rol; esto solo decide
    *  las columnas. */
   ocultarCostoGanancia?: boolean;
+  /** Encabezado hoy vs meta + meta/peso del mes (ResumenKpi); solo se pinta en el mes del Stoplight. */
+  resumen?: ResumenKpiProps | null;
 }
 
 type Tab = "vendedor" | "producto" | "semanal";
@@ -45,7 +49,7 @@ const NIVEL_TEXTO: Record<Nivel, string> = {
 
 // Modal "Margen bruto": resumen del mes + tabs por vendedor / por producto /
 // detalle semanal (con drill-down a un vendedor). Autocontenido.
-export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId, defaultMes, ocultarCostoGanancia = false }: MargenBrutoModalProps) {
+export default function MargenBrutoModal({ resumen, isOpen, onClose, apiPrefix, companyId, defaultMes, ocultarCostoGanancia = false }: MargenBrutoModalProps) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
 
@@ -95,8 +99,25 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
   const productosFiltrados = useMemo(() => {
     const q = filtroProducto.trim().toLowerCase();
     if (!data) return [];
-    return q ? data.products.filter((p) => p.nombre.toLowerCase().includes(q)) : data.products;
+    const lista = q ? data.products.filter((p) => p.nombre.toLowerCase().includes(q)) : data.products;
+    // Menor margen primero; los que no tienen margen, al final.
+    return [...lista].sort((a, b) => (a.margen ?? Infinity) - (b.margen ?? Infinity));
   }, [data, filtroProducto]);
+
+  // % de la meta de margen de cada vendedor (null sin meta o sin margen).
+  const pctMeta = (v: Vendedor) => {
+    const m = data?.meta ?? 0;
+    return m > 0 && v.margen != null ? (v.margen / m) * 100 : null;
+  };
+
+  // Vendedores del más lejos de la meta al más cerca (sin meta: margen de menor
+  // a mayor); sin margen y "otros" al final.
+  const vendedoresOrdenados = useMemo(() => {
+    if (!data) return [];
+    const m = data.meta ?? 0;
+    const clave = (v: Vendedor) => (v.margen == null ? Infinity : m > 0 ? v.margen / m : v.margen);
+    return [...data.sellers].sort((a, b) => Number(a.esOtros) - Number(b.esOtros) || clave(a) - clave(b));
+  }, [data]);
 
   if (!isOpen) return null;
 
@@ -181,6 +202,7 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
 
         {/* Body */}
         <div className="flex-1 overflow-auto p-4 sm:p-5">
+          {resumen && mes === resumen.mes && <ResumenKpi {...resumen} />}
           {loading ? (
             <div className="space-y-4 animate-pulse">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -248,8 +270,10 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
 
               {/* POR VENDEDOR */}
               {tab === "vendedor" && (
+                <div>
+                <p className="text-xs text-slate-500 mb-2">{t("lista_ordenada")}</p>
                 <div className="border border-slate-200 rounded-xl overflow-x-auto">
-                  <table className="w-full text-sm min-w-[560px]">
+                  <table className="w-full text-sm min-w-[640px]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200">
                         <th className={`${th} text-left`}>{t("vendedor")}</th>
@@ -257,11 +281,12 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
                         {conCosto && <th className={`${th} text-right`}>{t("costo")}</th>}
                         {conCosto && <th className={`${th} text-right`}>{t("ganancia")}</th>}
                         <th className={`${th} text-center`}>{t("margen_pct")}</th>
+                        <th className="w-24" />
                         <th className="w-8" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {data.sellers.map((seller) => (
+                      {vendedoresOrdenados.map((seller) => (
                         <tr
                           key={seller.nombre ?? "otros"}
                           className="hover:bg-violet-50/40 transition-colors cursor-pointer"
@@ -278,11 +303,13 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
                             </td>
                           )}
                           <td className="px-3 py-2.5 text-center"><MargenChip margen={seller.margen} /></td>
+                          <td className="px-3 py-2.5"><BarraMeta pct={pctMeta(seller)} className="w-20" /></td>
                           <td className="pr-3 text-slate-300"><ChevronRight size={16} /></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                </div>
                 </div>
               )}
 
@@ -342,9 +369,10 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
               {tab === "semanal" && (
                 !selectedSeller ? (
                   <div>
-                    <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_margen")}</p>
+                    <p className="text-sm text-slate-500 mb-1">{t("selecciona_vendedor_margen")}</p>
+                    <p className="text-xs text-slate-500 mb-3">{t("lista_ordenada")}</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {data.sellers.map((seller) => (
+                      {vendedoresOrdenados.map((seller) => (
                         <button
                           key={seller.nombre ?? "otros"}
                           onClick={() => setSelectedSeller(seller)}
@@ -353,7 +381,10 @@ export default function MargenBrutoModal({ isOpen, onClose, apiPrefix, companyId
                           <span className={`font-medium truncate ${seller.esOtros ? "text-slate-500 italic" : "text-slate-800"}`}>
                             {nombreVendedor(seller)}
                           </span>
-                          <MargenChip margen={seller.margen} />
+                          <span className="flex items-center gap-2 shrink-0">
+                            <BarraMeta pct={pctMeta(seller)} className="w-16" />
+                            <MargenChip margen={seller.margen} />
+                          </span>
                         </button>
                       ))}
                     </div>

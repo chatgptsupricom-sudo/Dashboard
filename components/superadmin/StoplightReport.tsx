@@ -31,6 +31,8 @@ import ActivacionCarteraModal from "./stoplight/ActivacionCarteraModal";
 import VisitasSemanalesModal from "./stoplight/VisitasSemanalesModal";
 import ModalMonthPicker from "./stoplight/ModalMonthPicker";
 import KpiCard from "./stoplight/KpiCard";
+import KpiDetalleModal from "./stoplight/KpiDetalleModal";
+import type { ResumenKpiProps } from "./stoplight/ResumenKpi";
 import { leerKpi } from "@/lib/stoplight/lectura";
 import {
   getCellColor,
@@ -95,6 +97,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [cppModalOpen, setCppModalOpen] = useState(false);
   const [cppModalKpi, setCppModalKpi] = useState<string>("");
   const [cppSelectedBill, setCppSelectedBill] = useState<any>(null);
+  // KPI sin modal propio abierto en el detalle básico (KpiDetalleModal).
+  const [detalleKpi, setDetalleKpi] = useState<string | null>(null);
   const [kpiInfoModal, setKpiInfoModal] = useState<{ open: boolean; kpiId: string; title: string }>({ open: false, kpiId: "", title: "" });
 
   const [margenModalOpen, setMargenModalOpen] = useState(false);
@@ -264,7 +268,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     clientesModalOpen || modalOpen || cxcModalOpen || cppModalOpen ||
     margenModalOpen || efectividadModalOpen || coberturaModalOpen ||
     activacionModalOpen || visitasModalOpen || comprasModalOpen ||
-    kpiInfoModal.open;
+    kpiInfoModal.open || detalleKpi !== null;
   useEffect(() => {
     document.body.style.overflow = algunModalAbierto ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
@@ -447,9 +451,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       ? kpiData.diasUtilesTranscurridos / kpiData.totalDiasUtilesMes
       : 1;
 
-  // Qué modal de detalle abre cada KPI (fila de la tabla o tarjeta del Resumen).
-  const abrirDetalle = (kpi: any): (() => void) | undefined =>
-    kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? () => setCoberturaModalOpen(true) : kpi.id === "activacion_cartera" ? () => setActivacionModalOpen(true) : kpi.id === "visitas_semanales" ? () => setVisitasModalOpen(true) : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined;
+  // Qué modal de detalle abre cada KPI (fila de la tabla o tarjeta del
+  // Resumen). Los que no tienen modal propio abren el detalle básico.
+  const abrirDetalle = (kpi: any): (() => void) => {
+    const propio: (() => void) | undefined =
+      kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? () => setCoberturaModalOpen(true) : kpi.id === "activacion_cartera" ? () => setActivacionModalOpen(true) : kpi.id === "visitas_semanales" ? () => setVisitasModalOpen(true) : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined;
+    return propio ?? (() => setDetalleKpi(kpi.id));
+  };
 
   const numWeeks = kpiData?.numSemanas || 5;
   const defaultWeeks = Array(numWeeks).fill(null);
@@ -1037,6 +1045,37 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     : gruposBase;
   const mesTitulo = mesLabel(selectedMes).charAt(0).toUpperCase() + mesLabel(selectedMes).slice(1);
 
+  // Encabezado de los modales de detalle (ResumenKpi): la lectura del KPI en
+  // el mes del Stoplight y la meta/peso editables, con los mismos handlers
+  // que la pestaña Semanal.
+  const todosLosKpis: any[] = gruposBase.flatMap((g: any) => g.kpis || []);
+  const resumenDe = (kpiId: string | null | undefined): ResumenKpiProps | null => {
+    const kpi = kpiId ? todosLosKpis.find((k) => k.id === kpiId) : undefined;
+    if (!kpi) return null;
+    const grupo = gruposBase.find((g: any) => (g.kpis || []).some((k: any) => k.id === kpiId)) as any;
+    return {
+      kpi,
+      lectura: leerKpi(kpi, kpiData?.reales, avanceMes),
+      weekHeaders: grupo?.weekHeaders || [],
+      locale,
+      mes: selectedMes,
+      editable: isSuperAdmin,
+      meta: getGoal(kpi.id, kpi.goalDefault),
+      peso: pesoValues[kpi.id] ?? String(parseFloat(kpi.peso) || 0),
+      onMetaChange: (v) => handleGoalChange(kpi.id, v),
+      onMetaBlur: (v) => handleGoalBlur(kpi.id, v),
+      onPesoChange: (v) => handlePesoChange(kpi.id, v),
+      onPesoBlur: (v) => handlePesoBlur(kpi.id, parseFloat(kpi.peso) || 0, v),
+    };
+  };
+  const COMPRAS_TIPO_A_KPI: Record<string, string> = {
+    variacion_costo: "variacion_costo_compra",
+    rotacion: "rotacion_saludable",
+    quiebre: "quiebre_inventario",
+    inventario_90: "inventario_90_dias",
+    forecast: "forecast_semanal",
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1483,7 +1522,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       return (
                       <tr
                         key={kpi.id}
-                        className={`border-t border-slate-100 group ${kpi.isClickable ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
+                        className="border-t border-slate-100 group cursor-pointer hover:bg-slate-50/70"
                         onClick={abrirDetalle(kpi)}
                       >
                         <td className="py-3 pl-4 pr-2 align-top">
@@ -1508,11 +1547,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                               </span>
                             )}
                           </span>
-                          {kpi.isClickable && (
-                            <span className="ml-2 text-[10px] text-slate-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">
-                              {t("click_detail")}
-                            </span>
-                          )}
+                          <span className="ml-2 text-[10px] text-slate-400 font-normal opacity-0 group-hover:opacity-100 transition-opacity">
+                            {t("click_detail")}
+                          </span>
                           {(kpi.hint || kpi.subtitle) && (
                             <div className="text-[10px] font-normal text-slate-400 mt-0.5">{kpi.hint || kpi.subtitle}</div>
                           )}
@@ -1646,6 +1683,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE CUMPLIMIENTO DE CUOTA */}
       <CuotaDetailModal
+        resumen={resumenDe("cumplimiento_cuota_ventas")}
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         apiPrefix={apiPrefix}
@@ -1655,6 +1693,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE CLIENTES NUEVOS */}
       <ClientesNuevosModal
+        resumen={resumenDe("clientes_nuevos")}
         isOpen={clientesModalOpen}
         onClose={() => setClientesModalOpen(false)}
         apiPrefix={apiPrefix}
@@ -1664,6 +1703,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE MARGEN BRUTO */}
       <MargenBrutoModal
+        resumen={resumenDe("margen_bruto")}
         isOpen={margenModalOpen}
         onClose={() => setMargenModalOpen(false)}
         apiPrefix={apiPrefix}
@@ -1675,6 +1715,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* MODAL DE EFECTIVIDAD DE CIERRE */}
       <EfectividadCierreModal
+        resumen={resumenDe("efectividad_cierre")}
         isOpen={efectividadModalOpen}
         onClose={() => setEfectividadModalOpen(false)}
         apiPrefix={apiPrefix}
@@ -1684,6 +1725,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Cobertura Marcas Modal */}
       <CoberturaMarcasModal
+        resumen={resumenDe("cobertura_marcas")}
         isOpen={coberturaModalOpen}
         onClose={() => setCoberturaModalOpen(false)}
         apiPrefix={apiPrefix}
@@ -1697,6 +1739,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Activacion Cartera Modal */}
       <ActivacionCarteraModal
+        resumen={resumenDe("activacion_cartera")}
         isOpen={activacionModalOpen}
         onClose={() => setActivacionModalOpen(false)}
         apiPrefix={apiPrefix}
@@ -1706,6 +1749,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Visitas Semanales Modal */}
       <VisitasSemanalesModal
+        resumen={resumenDe("visitas_semanales")}
         isOpen={visitasModalOpen}
         onClose={() => setVisitasModalOpen(false)}
         apiPrefix={apiPrefix}
@@ -1717,6 +1761,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       />
       {/* MODAL DE COMPRAS KPIs */}
       <ComprasDetailModal
+        resumen={resumenDe(COMPRAS_TIPO_A_KPI[comprasKpiType])}
         isOpen={comprasModalOpen}
         onClose={() => setComprasModalOpen(false)}
         kpiType={comprasKpiType}
@@ -1726,6 +1771,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         onMesChange={onModalMesChange}
       />
       <CxCDetailModal
+        resumen={resumenDe(cxcModalKpi)}
         isOpen={cxcModalOpen}
         onClose={() => { setCxcModalOpen(false); setCxcModalKpi(""); }}
         kpiId={cxcModalKpi}
@@ -1735,6 +1781,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       />
 
       <CxPDetailModal
+        resumen={resumenDe(cppModalKpi)}
         isOpen={cppModalOpen}
         onClose={() => { setCppModalOpen(false); setCppModalKpi(""); }}
         kpiId={cppModalKpi}
@@ -1742,6 +1789,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         apiPrefix={apiPrefix}
         empresaLabel={empresaLabel}
         mes={selectedMes}
+      />
+
+      <KpiDetalleModal
+        resumen={detalleKpi ? resumenDe(detalleKpi) : null}
+        subtitulo={`${empresaLabel} · ${mesTitulo}`}
+        onClose={() => setDetalleKpi(null)}
       />
 
       <KpiInfoModal
