@@ -83,6 +83,13 @@ export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
           <p><strong>{t("info_semaforo")}</strong> Verde ≥100% (al día o adelantado) | Amarillo 70%–99.99% | Rojo &lt;70%</p>
         </>
       )}
+      {kpiId === "visitas_semanales" && (
+        <>
+          <p><strong>{t("info_que_mide")}</strong> Cuántas visitas a clientes registró el equipo en el mes.</p>
+          <p><strong>Meta:</strong> desde octubre 2026, la cantidad de visitas del mes para todo el equipo de la sede. Cada semana se compara contra la parte de la meta que le toca por días hábiles, y el vendedor ve su parte: la meta dividida entre los vendedores de la sede. Hasta septiembre 2026 la meta era semanal.</p>
+          <p><strong>Con planes de visita en el mes</strong> el KPI pasa a ser Cobertura territorial: visitas foráneas realizadas ÷ planificadas.</p>
+        </>
+      )}
       {kpiId === "clientes_nuevos" && (
         <>
           <p><strong>{t("info_que_mide")}</strong> Cantidad de clientes nuevos captados por los vendedores en el mes.</p>
@@ -129,7 +136,7 @@ export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
           <p><strong>Antigüedad:</strong> FIFO por recepción de compra: lo que queda en el almacén es lo último que se recibió; lo que no alcanzan a cubrir las recepciones de los últimos 90 días tiene más de 90 días. Lo devuelto al proveedor se descuenta de la recepción.</p>
         </>
       )}
-      {!["efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota_ventas", "clientes_nuevos", "ciclo_reposicion", "variacion_costo_compra", "rotacion_saludable", "quiebre_inventario", "inventario_90_dias"].includes(kpiId) && (
+      {!["visitas_semanales", "efectividad_cobranza", "cartera_vencida", "recuperacion_vencidos", "dso", "cumplimiento_cuota_ventas", "clientes_nuevos", "ciclo_reposicion", "variacion_costo_compra", "rotacion_saludable", "quiebre_inventario", "inventario_90_dias"].includes(kpiId) && (
         <p>{t("info_default")}</p>
       )}
     </div>

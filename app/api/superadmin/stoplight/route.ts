@@ -13,6 +13,7 @@ import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
 import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 import type { ValorReal } from "@/lib/stoplight/types";
+import { metaVisitasMes, metaVisitasSemana } from "@/lib/stoplight/visitas";
 import { sinIntercompania } from "@/lib/intercompania";
 
 const JWT_SECRET = jwtSecretBytes();
@@ -423,7 +424,9 @@ export async function GET(request: NextRequest) {
         return `${pct}%`;
       });
 
-    const metaVisitasSemanal = metasMap["visitas_semanales"] || 0;
+    // Meta de visitas tal como se guardó: mensual del equipo desde
+    // VISITAS_META_MENSUAL_DESDE, semanal antes (lib/stoplight/visitas).
+    const metaVisitasGuardada = metasMap["visitas_semanales"] || 0;
     const metaMargen = metasMap["margen_bruto"] || 0;
     const metaEfectividad = metasMap["efectividad_cierre"] || 0;
     const metaActivacion = metasMap["activacion_cartera"] || 0;
@@ -737,16 +740,16 @@ export async function GET(request: NextRequest) {
     const semanaVisitas = semanas.map((semana, i) => {
       const esFuturo = semana.inicio > now;
       if (esFuturo) return null;
+      const goal = metaVisitasSemana(metaVisitasGuardada, mes, semana.diasUtiles, totalDiasUtilesMes);
       const saved = savedMap["visitas_semanales"]?.[i];
       if (saved) {
-        const goal = metasMap["visitas_semanales"] || 0;
         if (goal <= 0) return `${Math.round(saved.valor)}%`;
         const pct = saved.valor > 0 ? Math.round((saved.valor / goal) * 100) : 0;
         return `${pct}%`;
       }
       const total = visitasPorSemana[i];
-      if (metaVisitasSemanal > 0) {
-        const pct = Math.round((total / metaVisitasSemanal) * 100);
+      if (goal > 0) {
+        const pct = Math.round((total / goal) * 100);
         return `${pct}%`;
       }
       return total > 0 ? String(total) : null;
@@ -840,7 +843,7 @@ export async function GET(request: NextRequest) {
     if (coberturaTerr) {
       reales.visitas_semanales = { valor: coberturaTerr.realizadas, meta: metaONull(coberturaTerr.planificadas), unidad: "" };
     } else if (!hayManual("visitas_semanales")) {
-      reales.visitas_semanales = { valor: visitasPorSemana.reduce((a, b) => a + b, 0), meta: metaONull(metaVisitasSemanal * semanas.length), unidad: "", acumulado: true };
+      reales.visitas_semanales = { valor: visitasPorSemana.reduce((a, b) => a + b, 0), meta: metaONull(metaVisitasMes(metaVisitasGuardada, mes, semanas.length)), unidad: "", acumulado: true };
     }
     if (coberturaMarcas) {
       reales.cobertura_marcas = { valor: coberturaMarcas.mes, meta: 100, unidad: "%" };
