@@ -80,19 +80,22 @@ export default function CartaEnvioPage() {
     document.body.appendChild(iframe);
     const doc = iframe.contentDocument!;
     doc.open();
-    doc.write(documentoCarta(d, empresa));
+    doc.write(documentoCarta(d, empresa, { origen: location.origin }));
     doc.close();
-    // Espera a que cargue el logo antes de abrir el diálogo ("Guardar como PDF").
-    setTimeout(() => {
+    // Espera a que carguen el logo y la marca de agua (máx. 3 s) antes de abrir el diálogo ("Guardar como PDF").
+    const cargadas = [...doc.images].map((img) =>
+      img.complete ? null : new Promise((ok) => ((img.onload = ok), (img.onerror = ok))),
+    );
+    Promise.race([Promise.all(cargadas), new Promise((ok) => setTimeout(ok, 3000))]).then(() => {
       iframe.contentWindow!.focus();
       iframe.contentWindow!.print();
       setTimeout(() => iframe.remove(), 60_000);
-    }, 300);
+    });
   };
 
   const descargarWord = () => {
-    // Word abre HTML como documento editable; el logo en base64 no lo muestra, va el nombre.
-    const blob = new Blob(["﻿", documentoCarta(d, empresa, false)], { type: "application/msword" });
+    // Word abre HTML como documento editable; el logo va por URL completa, sin marca de agua.
+    const blob = new Blob(["﻿", documentoCarta(d, empresa, { origen: location.origin, word: true })], { type: "application/msword" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `Carta autorizacion envio${d.cliente ? ` - ${d.cliente.replace(/[\\/:*?"<>|]/g, "")}` : ""}.doc`;
