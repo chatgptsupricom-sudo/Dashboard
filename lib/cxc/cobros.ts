@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { fechasDePagos } from "@/lib/cxc/fechaConfirmacion";
+import { esICExcluido } from "@/lib/intercompania";
 
 /**
  * Fuente ÚNICA de "cobrado" para todo Cuentas por Cobrar.
@@ -200,7 +201,7 @@ export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros):
 
   const [facturas, pagoMoves, fechaPago, diarios] = await Promise.all([
     leerPorIds("account.move", Array.from(facturaIds), [
-      "id", "name", "move_type", "partner_id", "invoice_user_id", "company_id",
+      "id", "name", "move_type", "partner_id", "commercial_partner_id", "invoice_user_id", "company_id",
       "invoice_date", "invoice_date_due", "invoice_payment_term_id",
     ]),
     leerPorIds("account.move", Array.from(pagoMoveIds), ["id", "name", "state"]),
@@ -219,6 +220,8 @@ export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros):
     const cr = linea.get(idDe(c.credit_move_id)!);
     const f = factura.get(idDe(d?.move_id)!);
     if (!f || !cr) continue;
+    // Inteligencia de Negocio no ve cobros a empresas del grupo (lib/intercompania.ts).
+    if (esICExcluido(idDe(f.commercial_partner_id))) continue;
 
     const paymentId = idDe(cr.payment_id);
     const fecha = (paymentId !== undefined ? fechaPago.get(paymentId) : undefined) ?? soloFecha(cr.date);

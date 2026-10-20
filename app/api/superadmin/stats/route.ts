@@ -1,5 +1,4 @@
 // import { callOdooRPC } from "@/lib/odoo";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 // import { NextRequest, NextResponse } from "next/server";
 
 // // Fuerza a que la ruta sea dinámica y no se guarde en caché
@@ -220,6 +219,7 @@ import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 //   }
 // }
 import { callOdooRPC } from "@/lib/odoo";
+import { conSinIntercompaniaBI, terminosSinIC } from "@/lib/intercompania";
 import {
   crecimientoVsMesAnterior,
   desdeOdoo,
@@ -231,6 +231,7 @@ import {
   sumarVendedores,
 } from "@/lib/smartbit";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { NextRequest, NextResponse } from "next/server";
 
 // Fuerza a que la ruta sea dinámica y no se guarde en caché
@@ -239,7 +240,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin", ROL_BI]);
   if (auth.error) return auth.error;
+  return conSinIntercompaniaBI(auth.payload?.role, () => estadisticas(request));
+}
 
+async function estadisticas(request: NextRequest) {
   try {
     // 1. OBTENER PARÁMETRO DE SEDE
     const { searchParams } = new URL(request.url);
@@ -289,6 +293,11 @@ export async function GET(request: NextRequest) {
     const odooDesdeMes = desdeOdoo(firstDayOfMonth);
     const odooDesdeHistoria = desdeOdoo(historiaDesde);
 
+    // Inteligencia de Negocio no ve intercompañía (conSinIntercompaniaBI más
+    // abajo). Lo de Smartbit ya viene sin ella (SQL_SIN_INTERCOMPANIA).
+    const icLineas = terminosSinIC("move_id.commercial_partner_id");
+    const icFacturas = terminosSinIC();
+
     // FILTROS BASE
     const baseFilters = [
       ["move_id.move_type", "=", "out_invoice"],
@@ -296,6 +305,7 @@ export async function GET(request: NextRequest) {
       ["display_type", "=", "product"],
       ["product_id", "!=", false],
       companyFilter,
+      ...icLineas,
     ];
 
     const currentMonthFilters = [
@@ -419,6 +429,7 @@ export async function GET(request: NextRequest) {
           ["invoice_date", ">=", odooDesdeMes],
           ["invoice_date", "<=", lastDayOfMonth],
           companyFilter,
+          ...icFacturas,
         ],
         ["amount_untaxed", "partner_id"],
         ["partner_id"],
@@ -431,6 +442,7 @@ export async function GET(request: NextRequest) {
           ["move_type", "in", ["out_invoice", "out_refund"]],
           ["state", "=", "posted"],
           companyFilter,
+          ...icFacturas,
         ],
         ["partner_id"],
         ["partner_id"],
@@ -443,6 +455,7 @@ export async function GET(request: NextRequest) {
       ["invoice_date", ">=", odooDesdeMes],
       ["invoice_date", "<=", lastDayOfMonth],
       companyFilter,
+      ...icFacturas,
     ];
 
     const historyDomain: any[] = [
@@ -451,6 +464,7 @@ export async function GET(request: NextRequest) {
       ["invoice_date", ">=", odooDesdeHistoria],
       ["invoice_date", "<=", today],
       companyFilter,
+      ...icFacturas,
     ];
 
     const [sellersInvoices, historyInvoices] = await Promise.all([

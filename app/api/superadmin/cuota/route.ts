@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { requireRoles } from "@/lib/auth/roles";
 import { cuotasVigentes, leerRangoCuota } from "@/lib/cuota/rango";
+import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
 
 const COMPANY_MAP: Record<number, string> = {
   7: "Panamá",
@@ -12,7 +13,7 @@ const COMPANY_MAP: Record<number, string> = {
   10: "Caracas",
 };
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin", ROL_BI]);
   if (auth.error) return auth.error;
 
@@ -34,6 +35,8 @@ export async function GET(request: NextRequest) {
       ["state", "=", "posted"],
       ["invoice_date", ">=", rango.desde],
       ["invoice_date", "<=", rango.hasta],
+      // Con Inteligencia de Negocio, sin ventas al grupo (lib/intercompania.ts).
+      ...terminosSinIC(),
     ];
 
     const allInvoices =
@@ -187,3 +190,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

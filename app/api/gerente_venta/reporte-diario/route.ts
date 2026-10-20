@@ -3,6 +3,7 @@ import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
+import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
 
 const COMPANY_IDS_ALL = [9, 10, 7];
 const COMPANY_NAME_MAP: Record<number, string> = {
@@ -60,7 +61,7 @@ const normalize = (s: string) =>
     .trim()
     .replace(/\s+/g, " ");
 
-export async function GET(req: NextRequest) {
+async function leerGET(req: NextRequest) {
   const auth = await requireRoles(req, [
     "gerencia de ventas",
     "asistente de ventas",
@@ -186,6 +187,8 @@ export async function GET(req: NextRequest) {
             ["invoice_date", "<=", dateStr],
             ["invoice_user_id", "in", odooUserIds],
             ["company_id", "in", companyIds],
+            // Con Inteligencia de Negocio, sin ventas al grupo.
+            ...terminosSinIC(),
           ],
         ],
         {
@@ -234,6 +237,7 @@ export async function GET(req: NextRequest) {
             ["company_id", "in", companyIds],
             ["partner_id.name", "not ilike", "office solution"],
             ["partner_id.name", "not ilike", "supricom"],
+            ...terminosSinIC("partner_id.commercial_partner_id"),
           ],
         ],
         { fields: ["amount_total", "user_id"] },
@@ -327,3 +331,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

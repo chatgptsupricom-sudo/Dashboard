@@ -2,6 +2,7 @@ import { callOdooRPCEstricto } from "@/lib/odoo";
 import { esInterno, esRelacionada } from "@/lib/cxc/cobros";
 import { COMPANY_NAMES } from "@/lib/cxc/alcance";
 import { nombresPlazos } from "@/lib/cxc/credito";
+import { esICExcluido } from "@/lib/intercompania";
 
 /**
  * Sobregiro: cuánto del límite de crédito usa cada cliente, sede por sede.
@@ -132,7 +133,7 @@ async function sobregiroDeSede(cid: number): Promise<ClienteSobregiro[]> {
   const restringidos = ids
     .filter((id) => !vistos.has(id))
     .map((id) => ({ id, name: nombreEnLibro.get(id) || `Contacto ${id}`, vat: "", credit_limit: 0, user_id: false, property_payment_term_id: false }));
-  const partners = [...leidos, ...restringidos].filter((p) => !esInterno(p.name || "") && !esRelacionada(p.name || ""));
+  const partners = [...leidos, ...restringidos].filter((p) => !esInterno(p.name || "") && !esRelacionada(p.name || "") && !esICExcluido(p.id));
 
   const plazos = await nombresPlazos(
     Array.from(new Set(partners.map((p) => idDe(p.property_payment_term_id)).filter((id): id is number => Boolean(id)))),
