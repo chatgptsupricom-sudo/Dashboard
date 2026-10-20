@@ -27,17 +27,16 @@ SELECT id, name, display_name FROM supricom_panel.roles WHERE name = 'inteligenc
 -- 3. Ver qué rol tiene hoy Wuilker ANTES de cambiarlo (se reemplaza: deja de
 --    ver lo que le daba su rol anterior). Si no sale ninguna fila, todavía no
 --    está en users_config: hay que darlo de alta en Usuarios primero.
---    cids: las pantallas eligen la sede igual que el SuperAdmin, pero el
---    módulo de Leads separa Panamá (7) de Venezuela (9/10) por el cids; con 9
---    o 10 ve Valencia y Caracas, como el SuperAdmin.
 SELECT uc.id, uc.email, uc.name, r.name AS rol_actual, uc.cids
   FROM supricom_panel.users_config uc
   LEFT JOIN supricom_panel.roles r ON r.id = uc.role_id
  WHERE uc.email = 'wuilker.escalona@supricom.com.ve';
 
--- 4. Asignarle el rol
+-- 4. Asignarle el rol, sin sede: ve las tres, como el SuperAdmin (Usuarios
+--    tampoco le pide ciudad a este rol).
 UPDATE supricom_panel.users_config
-   SET role_id = (SELECT id FROM (SELECT id FROM supricom_panel.roles WHERE name = 'inteligencia de negocio') AS r)
+   SET role_id = (SELECT id FROM (SELECT id FROM supricom_panel.roles WHERE name = 'inteligencia de negocio') AS r),
+       cids = NULL
  WHERE email = 'wuilker.escalona@supricom.com.ve';
 
 -- 5. Comprobar
