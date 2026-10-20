@@ -1372,7 +1372,9 @@ export function Sidebar({
                           : []),
                         {
                           label: t("mapa_de_clientes"),
-                          href: isGerenteOperaciones ? `${basePath}/mapa_clientes` : `${basePath}/vendedores`,
+                          // Fuera de /superadmin no puede ser ".../vendedores": el middleware lo
+                          // reserva al rol Vendedor.
+                          href: isGerenteOperaciones || isBIRole ? `${basePath}/mapa_clientes` : `${basePath}/vendedores`,
                           permission: "seller_map",
                         },
                         {
