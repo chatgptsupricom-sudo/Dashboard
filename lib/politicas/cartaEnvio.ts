@@ -165,7 +165,7 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
     por cuenta y riesgo de la empresa que represento. Por lo tanto, libero a <b>${osc}</b> de toda responsabilidad por la
     recolección, el almacenaje, la manipulación, el transporte y la entrega que haga el transportista.</p>
 
-    <p style="${parrafo}">Esta autorización vale para <b>todos los envíos que se despachen desde la fecha de su firma</b> y hasta que
+    <p style="${parrafo}">Esta autorización vale para <b>todos los envíos que se despachen desde la fecha de firma indicada abajo</b> y hasta que
     la revoque por escrito. Si cambio de transportista, de dirección de entrega o de condición del seguro, lo notificaré por
     escrito a <b>${osc}</b> antes del siguiente despacho; mientras tanto, rige lo indicado en esta carta.</p>
 
@@ -173,7 +173,8 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
     <table align="center" style="margin:22px auto 0;border-collapse:collapse"><tr>
       <td width="360" style="width:360px;border-top:1px solid #000;padding-top:4px;text-align:center;font-family:'Times New Roman',Times,serif;font-size:11pt">
         Firma y sello de la empresa<br>
-        Nombre: ${v(d.representante, 220)}<br>C.I.: ${v(d.cedula, 100)} &nbsp; Cargo: ${v(d.cargo, 110)}
+        Nombre: ${v(d.representante, 220)}<br>C.I.: ${v(d.cedula, 100)} &nbsp; Cargo: ${v(d.cargo, 110)}<br>
+        Fecha de firma: ${v("", 40)} / ${v("", 40)} / ${v("", 60)}
       </td>
     </tr></table>
 
