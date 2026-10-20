@@ -1,4 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -22,7 +23,7 @@ function getAgingBand(daysOverdue: number): string {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin", "gerente de operaciones"]);
+  const auth = await requireRoles(request, ["superadmin", "gerente de operaciones", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {

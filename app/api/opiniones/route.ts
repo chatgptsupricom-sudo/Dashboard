@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { COMPANY_IDS_ALL, COMPANY_NAME } from "@/lib/gerente_venta/reporteVentas";
 import { listarOpiniones } from "@/lib/opiniones/consulta";
@@ -21,11 +22,12 @@ function isoHaceDias(dias: number): string {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["gerencia de ventas"]);
+  const auth = await requireRoles(request, ["gerencia de ventas", ROL_BI]);
   if (auth.error) return auth.error;
 
   const role = ((auth.payload!.role as string) || "").toLowerCase().trim();
-  const esSuperAdmin = role === "superadmin";
+  // Inteligencia de Negocio también ve todas las sedes.
+  const esSuperAdmin = veTodasLasSedes(role);
 
   const sp = request.nextUrl.searchParams;
   const hasta = RE_FECHA.test(sp.get("hasta") ?? "") ? sp.get("hasta")! : isoHaceDias(0);

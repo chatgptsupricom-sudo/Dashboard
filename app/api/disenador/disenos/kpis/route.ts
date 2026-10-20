@@ -1,11 +1,12 @@
 import { query } from "@/lib/db";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
 import { requireRoles } from "@/lib/auth/roles";
 import { CATEGORIAS_DISENO } from "@/lib/disenos/categorias";
 import { COLUMNA_FECHA_SIN_ALIAS as FECHA, aISO } from "@/lib/disenos/fecha";
 import { NextRequest, NextResponse } from "next/server";
 
-const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
+const ROLES = ["diseñador", ROL_BI]; // superadmin siempre pasa via requireRoles
 
 /**
  * KPIs de diseños: cuántos se subieron por día, por semana y en el mes.

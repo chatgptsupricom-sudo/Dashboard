@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
     const userCids = payload.cids as number;
 
     let targetCompanyId: number | null = null;
-    if (role === "superAdmin") {
+    if (veTodasLasSedes(role)) {
       targetCompanyId = companyId ? parseInt(companyId) : null;
     } else {
       targetCompanyId = userCids;

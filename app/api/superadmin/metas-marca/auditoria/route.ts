@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { OdooUnreachableError } from "@/lib/odoo";
 import { auditarSede } from "@/lib/metas-marca/auditoria";
@@ -15,7 +16,7 @@ export const maxDuration = 60;
  * GET ...&lineas=1 → además, las líneas leídas (para el Excel de verificación).
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, []);
+  const auth = await requireRoles(request, [ROL_BI]);
   if (auth.error) return auth.error;
 
   const sp = request.nextUrl.searchParams;

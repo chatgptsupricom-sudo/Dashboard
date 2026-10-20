@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { canUploadCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
+import { canEditCustomPlan, canUploadCustomPlan, canViewCustomPlan, getAuthUser } from "@/lib/auth/customView";
 import {
   addPlanHistory,
   ensurePlanTables,
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
-    if (!canViewCustomPlan(user)) {
+    if (!canEditCustomPlan(user)) {
       return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 });
     }
 
