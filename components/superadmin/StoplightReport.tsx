@@ -30,6 +30,8 @@ import CoberturaMarcasModal from "./stoplight/CoberturaMarcasModal";
 import ActivacionCarteraModal from "./stoplight/ActivacionCarteraModal";
 import VisitasSemanalesModal from "./stoplight/VisitasSemanalesModal";
 import ModalMonthPicker from "./stoplight/ModalMonthPicker";
+import KpiCard from "./stoplight/KpiCard";
+import { leerKpi } from "@/lib/stoplight/lectura";
 import {
   getCellColor,
   getKpiCellColor,
@@ -45,7 +47,7 @@ import type { SellerData, KpiData, SellerDetail } from "@/lib/stoplight/types";
 export default function StoplightReportSuperadmin({ vendorMode = false, comprasMode = false, gerenteVentaMode = false, isSuperAdmin = false, cxCMode = false, gerenteOpsMode = false, companyId }: { vendorMode?: boolean; comprasMode?: boolean; gerenteVentaMode?: boolean; isSuperAdmin?: boolean; cxCMode?: boolean; gerenteOpsMode?: boolean; companyId?: number } = {}) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
-  const [activeTab, setActiveTab] = useState("Weekly");
+  const [activeTab, setActiveTab] = useState("Summary");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ "group-ventas": true, "group-compras": true });
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -438,36 +440,16 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     }
   };
 
-  const SparklineBar = ({ values, kpiId, goal }: { values: (string | null)[]; kpiId?: string; goal?: string }) => {
-    const nums = values.map(v => {
-      if (!v) return 0;
-      return parseFloat(v.replace("%", "").replace(" días", "").trim()) || 0;
-    });
-    const max = Math.max(...nums, 1);
-    const w = 16;
-    const gap = 4;
-    const h = 32;
-    // El color de cada barra sale del MISMO semáforo que la celda (contra la
-    // meta), no de un umbral relativo al máximo de la serie.
-    const colorDe = (raw: string | null): string => {
-      if (!raw) return "#e2e8f0";
-      const c = kpiId ? getKpiCellColor(kpiId, raw, goal ?? "0") : "";
-      if (/green|emerald/.test(c)) return "#34d399";
-      if (/yellow|amber/.test(c)) return "#fbbf24";
-      if (/red/.test(c)) return "#f87171";
-      return "#cbd5e1"; // sin meta / sin dato
-    };
-    return (
-      <svg width={nums.length * (w + gap)} height={h} style={{ display: "block" }}>
-        {nums.map((val, i) => {
-          const barH = Math.max(2, Math.round((val / max) * (h - 2)));
-          return (
-            <rect key={i} x={i * (w + gap)} y={h - barH} width={w} height={barH} rx={2} fill={colorDe(values[i])} />
-          );
-        })}
-      </svg>
-    );
-  };
+  // Parte del mes (días hábiles) ya corrida: en los KPIs acumulados la tarjeta
+  // marca dónde se debería ir hoy.
+  const avanceMes =
+    kpiData?.diasUtilesTranscurridos != null && kpiData?.totalDiasUtilesMes
+      ? kpiData.diasUtilesTranscurridos / kpiData.totalDiasUtilesMes
+      : 1;
+
+  // Qué modal de detalle abre cada KPI (fila de la tabla o tarjeta del Resumen).
+  const abrirDetalle = (kpi: any): (() => void) | undefined =>
+    kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? () => setCoberturaModalOpen(true) : kpi.id === "activacion_cartera" ? () => setActivacionModalOpen(true) : kpi.id === "visitas_semanales" ? () => setVisitasModalOpen(true) : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined;
 
   const numWeeks = kpiData?.numSemanas || 5;
   const defaultWeeks = Array(numWeeks).fill(null);
@@ -1146,7 +1128,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
       {/* Tabs */}
       <div className="mb-6 inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
-        {([["Trends", t("tab_trends")], ["Weekly", t("tab_weekly")], ["Monthly", t("tab_monthly")], ["Quarterly", t("tab_quarterly")], ["Annual", t("tab_annual")]] as const).map(([key, label]) => (
+        {([["Summary", t("tab_resumen")], ["Weekly", t("tab_weekly")], ["Monthly", t("tab_monthly")], ["Quarterly", t("tab_quarterly")], ["Annual", t("tab_annual")]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
@@ -1365,6 +1347,21 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         </div>
       )}
 
+      {/* Leyenda de las tarjetas del Resumen */}
+      {activeTab === "Summary" && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 px-1 text-xs text-slate-500">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3.5 w-0.5 rounded-full bg-slate-800" />
+            {t("leyenda_meta")}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3.5 border-l-2 border-dotted border-slate-500" />
+            {t("leyenda_hoy")}
+          </span>
+          <span className="text-slate-400">{t("leyenda_detalle")}</span>
+        </div>
+      )}
+
       {/* KPI Groups */}
       <div className="space-y-4">
         {groups.map((group) => {
@@ -1442,36 +1439,20 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
             )}
 
             {/* Table / View */}
-            {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Trends" && (
-              <div className="divide-y divide-slate-100 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
-                {group.kpis.map((kpi: any) => {
-                  const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
-                  return (
-                  <div key={kpi.id} className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50/70 transition-colors">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${nivel === "sin" ? "bg-slate-300" : NIVEL_UI[nivel].punto}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-800 truncate">
-                        {kpi.title}
-                        {sinMeta(kpi.goalDefault) && (
-                          <span className="ml-2 text-[10px] font-normal text-slate-400 bg-slate-100 rounded px-1 py-px align-middle">
-                            {t("sin_meta")}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-slate-400 mt-0.5 tabular-nums">{t("peso")}: {kpi.peso} · {t("meta")}: {kpi.goalDefault}{kpi.goalSuffix}</div>
-                    </div>
-                    <span className={`text-xs w-16 text-right px-1.5 py-0.5 rounded-md tabular-nums ${sinMeta(kpi.goalDefault) ? "text-slate-300" : getKpiCellColor(kpi.id, kpi.average, kpi.goalDefault) || "text-slate-600 font-medium"}`}>{sinMeta(kpi.goalDefault) ? "–" : kpi.average}</span>
-                    <div className="w-[140px] flex items-end justify-start gap-[2px]" title={kpi.sinSemana ? t("metrica_mensual") : kpi.weeks.map((v: string|null, i: number) => `S${i+1}: ${v || "-"}`).join(" | ")}>
-                      {kpi.sinSemana ? (
-                        <span className="text-[11px] text-slate-300">{t("metrica_mensual")}</span>
-                      ) : (
-                        <SparklineBar values={kpi.weeks} kpiId={kpi.id} goal={kpi.goalDefault} />
-                      )}
-                    </div>
-                    <div className="text-xs text-slate-400 w-20 text-right tabular-nums">{kpi.sinSemana ? "" : `${(group as any).weekHeaders.length} ${t("semanas_count")}`}</div>
-                  </div>
-                  );
-                })}
+            {/* Resumen: una tarjeta por KPI con el valor de hoy contra la meta. */}
+            {expandedGroups[group.id] && group.kpis.length > 0 && activeTab === "Summary" && (
+              <div className="grid grid-cols-1 gap-3 border-t border-slate-100 bg-slate-50/50 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-3 2xl:grid-cols-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                {group.kpis.map((kpi: any) => (
+                  <KpiCard
+                    key={kpi.id}
+                    kpi={kpi}
+                    lectura={leerKpi(kpi, kpiData?.reales, avanceMes)}
+                    weekHeaders={(group as any).weekHeaders || []}
+                    locale={locale}
+                    onAbrir={abrirDetalle(kpi)}
+                    onInfo={() => setKpiInfoModal({ open: true, kpiId: kpi.id, title: kpi.title })}
+                  />
+                ))}
               </div>
             )}
 
@@ -1503,7 +1484,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                       <tr
                         key={kpi.id}
                         className={`border-t border-slate-100 group ${kpi.isClickable ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
-                        onClick={kpi.isClickable ? (kpi.id === "cumplimiento_cuota_ventas" ? () => setModalOpen(true) : kpi.id === "clientes_nuevos" ? () => setClientesModalOpen(true) : kpi.id === "margen_bruto" ? () => setMargenModalOpen(true) : kpi.id === "efectividad_cierre" ? () => setEfectividadModalOpen(true) : kpi.id === "cobertura_marcas" ? () => setCoberturaModalOpen(true) : kpi.id === "activacion_cartera" ? () => setActivacionModalOpen(true) : kpi.id === "visitas_semanales" ? () => setVisitasModalOpen(true) : ["variacion_costo_compra","rotacion_saludable","quiebre_inventario","inventario_90_dias","forecast_semanal"].includes(kpi.id) ? () => { const map: Record<string,{type:string;title:string}> = {variacion_costo_compra:{type:"variacion_costo",title:"Variación del costo de compra"},rotacion_saludable:{type:"rotacion",title:"Rotación saludable de compras"},quiebre_inventario:{type:"quiebre",title:"Porcentaje de quiebre de inventario"},inventario_90_dias:{type:"inventario_90",title:"Inventario con más de 90 días"},forecast_semanal:{type:"forecast",title:"Revisión semanal de forecast Compras–Ventas"}}; const m = map[kpi.id]; setComprasKpiType(m.type); setComprasKpiTitle(m.title); setModalMes(selectedMes); setComprasModalOpen(true); } : kpi.id.startsWith("efectividad_") || kpi.id === "cartera_vencida" || kpi.id === "recuperacion_vencidos" || kpi.id === "dso" ? () => openCxcModal(kpi.id) : ["pagos_a_tiempo","cuentas_pagar_vencidas","procesamiento_oportuno","dpo"].includes(kpi.id) ? () => openCppModal(kpi.id) : undefined) : undefined}
+                        onClick={abrirDetalle(kpi)}
                       >
                         <td className="py-3 pl-4 pr-2 align-top">
                           <span

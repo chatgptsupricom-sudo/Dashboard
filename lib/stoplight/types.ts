@@ -56,6 +56,24 @@ export interface KpiData {
   semanaActivacion: (string | null)[];
   semanaClientes: (string | null)[];
   semanaCobertura: (string | null)[];
+  /**
+   * Valor real del mes por KPI (margen %, $ facturado, clientes…), para que
+   * la vista Resumen muestre "hoy vs meta" en las unidades del KPI y no solo
+   * el % de la meta cumplida. Un KPI sin entrada (o con semanas cargadas a
+   * mano) se muestra solo con su % de meta.
+   */
+  reales?: Record<string, ValorReal>;
+}
+
+export interface ValorReal {
+  valor: number;
+  /** Meta en las mismas unidades (la del mes si `acumulado`). null = sin meta. */
+  meta: number | null;
+  unidad: "%" | "$" | "" | "dias";
+  /** Se va sumando en el mes (facturado, clientes, visitas): a hoy se espera la parte prorrateada. */
+  acumulado?: boolean;
+  /** Mejor cuanto más bajo (la meta es un tope). */
+  menosEsMejor?: boolean;
 }
 
 export interface SellerDetail {
