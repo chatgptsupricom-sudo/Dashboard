@@ -64,8 +64,8 @@ export const CARTA_VACIA: DatosCarta = {
  * el logo y la marca de agua de la carta de Word de OSC; una sede sin membrete
  * usa el logo de su compañía en Odoo y va sin marca de agua.
  */
-const MEMBRETES: Record<number, { logo: string; marca: string; web: string }> = {
-  9: { logo: "/politicas/osc-logo.jpg", marca: "/politicas/osc-marca-agua.jpg", web: "www.osc2004.com" },
+const MEMBRETES: Record<number, { logo: string; marca: string }> = {
+  9: { logo: "/politicas/osc-logo.jpg", marca: "/politicas/osc-marca-agua.jpg" },
 };
 
 export const escaparHtml = (s: string) =>
@@ -100,7 +100,6 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
   const membrete = e ? MEMBRETES[e.sede] : undefined;
   const origen = o.origen ?? "";
   const logo = membrete ? origen + membrete.logo : o.word ? "" : e?.logo || "";
-  const web = e?.web || membrete?.web || "";
   const fecha = fechaLarga(d.fecha);
   const parrafo = "text-align:justify;text-indent:48px;line-height:1.4;margin:0 0 5px";
   const titulo = "font-weight:bold;margin:8px 0 1px;text-decoration:underline";
@@ -117,7 +116,6 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
     <table style="width:100%;border-collapse:collapse"><tr>
       <td style="vertical-align:top">${logo ? `<img src="${logo}" alt="${osc}" style="height:60px;max-width:280px">` : `<b style="font-size:16pt">${osc}</b>`}</td>
       <td style="vertical-align:bottom;text-align:right;font-family:Calibri,Arial,sans-serif">
-        ${web ? `<div style="color:#777;font-size:12pt">Visite: <b style="color:#6b6fc4">${escaparHtml(web)}</b></div>` : ""}
         ${e?.rif ? `<div style="color:#777;font-size:9pt;font-weight:bold">${fiscal === "RIF" ? "Rif" : "RUC"}: ${escaparHtml(e.rif)}</div>` : ""}
       </td>
     </tr></table>
