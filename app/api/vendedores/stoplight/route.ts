@@ -10,6 +10,7 @@ import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@
 import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 import { sinIntercompania } from "@/lib/intercompania";
 import type { ValorReal } from "@/lib/stoplight/types";
+import { metaVisitasEsMensual, metaVisitasMes, metaVisitasSemana } from "@/lib/stoplight/visitas";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -290,13 +291,23 @@ export async function GET(request: NextRequest) {
       });
     } catch (_) {}
 
-    const metaVisitasSemanal = metasMap["visitas_semanales"] || 0;
+    // Meta de visitas: desde VISITAS_META_MENSUAL_DESDE es la del mes para
+    // todo el equipo de la sede y al vendedor le toca su parte (meta ÷
+    // vendedores de la sede, los mismos que cuenta el Stoplight de la sede).
+    // Antes era semanal y se usaba tal cual (lib/stoplight/visitas).
+    let metaVisitasVendedor = metasMap["visitas_semanales"] || 0;
+    if (metaVisitasVendedor > 0 && metaVisitasEsMensual(mes)) {
+      const vendedoresSede = await query(`SELECT COUNT(*) AS n FROM sellers WHERE cids = ?`, [companyId]);
+      const n = Number((vendedoresSede.rows as any[])[0]?.n) || 1;
+      metaVisitasVendedor = metaVisitasVendedor / n;
+    }
     const semanaVisitas = semanas.map((sem, i) => {
       const esFuturo = sem.inicio > now;
       if (esFuturo) return null;
-      if (metaVisitasSemanal <= 0) return "100%";
+      const goal = metaVisitasSemana(metaVisitasVendedor, mes, sem.diasUtiles, totalDiasUtilesMes);
+      if (goal <= 0) return "100%";
       const total = visitasPorSemana[i];
-      const pct = Math.round((total / metaVisitasSemanal) * 100);
+      const pct = Math.round((total / goal) * 100);
       return `${pct}%`;
     });
 
@@ -566,7 +577,7 @@ export async function GET(request: NextRequest) {
     reales.clientes_nuevos = { valor: totalClientesNuevos, meta: metaONull(metaClientesNuevos), unidad: "", acumulado: true };
     reales.visitas_semanales = coberturaTerr
       ? { valor: coberturaTerr.realizadas, meta: metaONull(coberturaTerr.planificadas), unidad: "" }
-      : { valor: visitasPorSemana.reduce((a, b) => a + b, 0), meta: metaONull(metaVisitasSemanal * semanas.length), unidad: "", acumulado: true };
+      : { valor: visitasPorSemana.reduce((a, b) => a + b, 0), meta: metaONull(metaVisitasMes(metaVisitasVendedor, mes, semanas.length)), unidad: "", acumulado: true };
     if (coberturaMarcas) {
       reales.cobertura_marcas = { valor: coberturaMarcas.mes, meta: 100, unidad: "%" };
     }

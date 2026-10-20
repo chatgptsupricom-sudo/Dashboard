@@ -34,6 +34,7 @@ import KpiCard from "./stoplight/KpiCard";
 import KpiDetalleModal from "./stoplight/KpiDetalleModal";
 import type { ResumenKpiProps } from "./stoplight/ResumenKpi";
 import { leerKpi } from "@/lib/stoplight/lectura";
+import { metaVisitasEsMensual } from "@/lib/stoplight/visitas";
 import {
   getCellColor,
   getKpiCellColor,
@@ -589,10 +590,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       id: "visitas_semanales",
       // Con planes de visita en el mes es "Cobertura territorial" (foráneas
       // realizadas ÷ planificadas, lib/visitas/planificacion): meta 100%.
-      title: hayPlanesVisita ? t("kpi_cobertura_territorial") : t("kpi_visitas"),
+      // Sin planes, desde oct-2026 la meta es la del mes para todo el equipo
+      // (lib/stoplight/visitas); antes era semanal.
+      title: hayPlanesVisita ? t("kpi_cobertura_territorial") : metaVisitasEsMensual(selectedMes) ? t("kpi_visitas_mes") : t("kpi_visitas"),
       peso: pesoDe("visitas_semanales", pesoDefaultVentas("visitas_semanales")),
       pisoMinimo: pisoMinimoVentas("visitas_semanales"),
-      average: kpiData ? (hayPlanesVisita ? `${kpiData.avgVisitas}%` : String(kpiData.avgVisitas)) : "0",
+      // Con meta, cada semana es "% de la meta" (sin meta, la cantidad de visitas).
+      average: kpiData
+        ? (hayPlanesVisita || (kpiData.metas?.["visitas_semanales"] || 0) > 0 ? `${kpiData.avgVisitas}%` : String(kpiData.avgVisitas))
+        : "0",
       weeks: kpiData?.semanaVisitas || defaultWeeks,
       isClickable: true,
       goalDefault: hayPlanesVisita
@@ -601,6 +607,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       metaFija: hayPlanesVisita,
       hint: hayPlanesVisita
         ? t("cobertura_territorial_hint", { r: kpiData?.coberturaTerritorial?.realizadas ?? 0, p: kpiData?.coberturaTerritorial?.planificadas ?? 0 })
+        : metaVisitasEsMensual(selectedMes)
+        ? (vendorMode ? t("visitas_hint_vendedor") : t("visitas_hint_equipo"))
         : undefined,
       goalSuffix: hayPlanesVisita ? "%" : "",
       cumple: kpiData ? kpiData.avgVisitas >= 100 : false,
