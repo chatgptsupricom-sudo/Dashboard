@@ -9,17 +9,21 @@
  * revisa Compras antes de guardar.
  */
 
+import { aBultos, unidadDeEncabezado, type Conversion } from "./unidades";
+
 export type RenglonLeido = {
   codigo: string;
   producto: string;
   cantidad_esperada: number;
   cajas_esperadas: number | null;
+  /** El papel en hojas o resmas se pasa a bultos: lo que decia el Excel. */
+  conversion: Conversion | null;
 };
 
 const PATRONES = {
   codigo: /\b(c[oó]d(igo)?|sku|item\s*(no|#|code)|part\s*(no|#|number)|model(o)?|ref(erencia)?|art(\.|[ií]culo)?\s*(no|#)?)\b/i,
   producto: /(descrip|product|nombre|art[ií]culo|goods|commodity|item(?!\s*(no|#|code)))/i,
-  cantidad: /(cant|qty|q'?ty|quantity|pcs|pieces|piezas|unid|units)/i,
+  cantidad: /(cant|qty|q'?ty|quantity|pcs|pieces|piezas|unid|units|\bhojas?\b|\bsheets?\b|\bresmas?\b|\breams?\b)/i,
   cajas: /(caja|ctn|carton|bulto|pkgs?|packages|boxes)/i,
 };
 
@@ -64,6 +68,7 @@ export async function leerExcel(archivo: File): Promise<RenglonLeido[]> {
       const cProducto = col(PATRONES.producto, [cCodigo, cCantidad]);
       if (cProducto === -1 || cCantidad === -1) continue;
       const cCajas = col(PATRONES.cajas, [cCodigo, cProducto, cCantidad]);
+      const unidad = unidadDeEncabezado(enc[cCantidad]);
 
       const renglones: RenglonLeido[] = [];
       for (const fila of filas.slice(h + 1)) {
@@ -76,8 +81,9 @@ export async function leerExcel(archivo: File): Promise<RenglonLeido[]> {
         renglones.push({
           codigo: cCodigo >= 0 ? normal(fila[cCodigo]) : "",
           producto: producto.slice(0, 300),
-          cantidad_esperada: cantidad,
+          cantidad_esperada: unidad ? aBultos(cantidad, unidad) : cantidad,
           cajas_esperadas: cCajas >= 0 ? numero(fila[cCajas]) : null,
+          conversion: unidad ? { unidad, cantidad } : null,
         });
       }
       if (renglones.length) return renglones;
