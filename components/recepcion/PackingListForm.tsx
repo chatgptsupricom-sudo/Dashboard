@@ -7,6 +7,7 @@ import { AlertCircle, FileSpreadsheet, FileText, Loader2, Plus, Send, Trash2, Up
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { SUCURSALES, separarPrecintos } from "@/lib/recepcion/flujo";
 import { leerExcel } from "@/lib/recepcion/leerExcel";
+import { porBulto, type Conversion } from "@/lib/recepcion/unidades";
 import {
   PageHeader,
   Card,
@@ -36,6 +37,9 @@ type Renglon = {
   cajas_esperadas: string;
   // Lo lee la IA del PDF; se pierde si se cambia la cantidad a mano (ya no suma).
   reparto?: Reparto | null;
+  // Papel que el packing list traia en hojas o resmas y se paso a bultos.
+  // Solo se muestra: se pierde, igual, si se cambia la cantidad a mano.
+  conversion?: Conversion | null;
 };
 type Orden = { id: number; order_number: string; supplier_name: string };
 /** OC de Odoo que espera mercancia (lib/recepcion/odoo.ts). */
@@ -176,6 +180,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           producto: l.producto,
           cantidad_esperada: String(l.cantidad_esperada),
           cajas_esperadas: l.cajas_esperadas === null ? "" : String(l.cajas_esperadas),
+          conversion: l.conversion,
         })),
       );
       setAviso(t("excel_leido", { count: leidos.length }));
@@ -239,6 +244,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           cantidad_esperada: String(l.cantidad_esperada),
           cajas_esperadas: l.cajas_esperadas === null ? "" : String(l.cajas_esperadas),
           reparto: Array.isArray(l.reparto) && l.reparto.length ? l.reparto : null,
+          conversion: l.conversion || null,
         })),
       );
       setAviso(t("documento_leido", { count: d.renglones.length, contenedores: leidos.length }));
@@ -276,12 +282,12 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
     );
   };
 
-  const cambiar = (i: number, campo: Exclude<keyof Renglon, "reparto">, v: string) =>
+  const cambiar = (i: number, campo: Exclude<keyof Renglon, "reparto" | "conversion">, v: string) =>
     setRenglones((p) =>
       p.map((r, n) =>
         n === i
           ? // Otra cantidad ya no suma lo que dice cada contenedor: se descarta.
-            { ...r, [campo]: v, ...(campo === "cantidad_esperada" ? { reparto: null } : {}) }
+            { ...r, [campo]: v, ...(campo === "cantidad_esperada" ? { reparto: null, conversion: null } : {}) }
           : r,
       ),
     );
@@ -604,6 +610,18 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
+                {r.conversion && (
+                  <p className="col-span-full -mt-1 text-[11px] text-slate-500">
+                    {t(r.conversion.unidad === "hojas" ? "conversion_hojas" : "conversion_resmas", {
+                      original: r.conversion.cantidad.toLocaleString("es-VE"),
+                      bultos: Number(r.cantidad_esperada).toLocaleString("es-VE"),
+                      por_bulto: porBulto(r.conversion.unidad).toLocaleString("es-VE"),
+                    })}
+                    {!Number.isInteger(Number(r.cantidad_esperada)) && (
+                      <span className="text-amber-700"> — {t("conversion_no_entera")}</span>
+                    )}
+                  </p>
+                )}
                 {r.reparto && r.reparto.length > 0 && (() => {
                   // Si cambio el numero de un contenedor, el reparto no se guarda.
                   const llave = (v: string) => v.toUpperCase().replace(/[\s-]+/g, "");
