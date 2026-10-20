@@ -43,6 +43,7 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: true,
     canViewAudit: true,
     sections: [
+      "politicas", // Políticas y Acuerdos (lib/politicas)
       "alert", // Sistema de alertas para el SuperAdmin
       "dashboard", // Stats y KPIs generales
       "adminleads", // Clave para el menú principal (Dashboard Leads)
@@ -202,7 +203,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["politicas", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -220,6 +221,7 @@ export const rolePermissions: RolePermissions = {
     canViewAudit: false,
     // Sin "dashboard": su inicio es Salud Administrativa (/administracion).
     sections: [
+      "politicas", // Políticas y Acuerdos (lib/politicas)
       "salud_financiera",
       "gastos_presupuesto",
       "admin_cxp",
@@ -250,6 +252,7 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: true,
     sections: [
+      "politicas", // Políticas y Acuerdos (lib/politicas)
       "dashboard", // Stats y KPIs generales
       "actividad", // Activaciones
       "users", // Gestión de usuarios
@@ -293,6 +296,7 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
+      "politicas", // Políticas y Acuerdos (lib/politicas)
       "dashboard", // KPIs globales de personal
       "asistencia", // Control de biométricos (Valencia/Caracas)
       "recibos_pago", // Emisión automatizada con firma digital
@@ -311,6 +315,7 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
+      "politicas", // Políticas y Acuerdos (lib/politicas)
       "dashboard",
       "sugeridos",
       "moq",
@@ -349,6 +354,7 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
+      "politicas", // Políticas y Acuerdos (lib/politicas)
       "dashboard",
       "cuentas_por_cobrar",
       "estado_cuenta", // Estado de cuenta por cliente, con descarga a Excel
@@ -447,7 +453,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["manuales", "organigrama"],
+    sections: ["politicas", "manuales", "organigrama"],
   },
   // IT (Rangel): por ahora su trabajo en el panel es preaprobar notas de
   // credito. La entrada a /notas-credito la da ser responsable de un paso en

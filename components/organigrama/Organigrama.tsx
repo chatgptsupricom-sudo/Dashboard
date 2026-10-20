@@ -1,10 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { hijosPorPadre, type Nodo } from "@/lib/organigrama/tipos";
+import { descendientes, type Nodo } from "@/lib/organigrama/tipos";
+import { armarLienzo, yRelativaMax } from "@/lib/organigrama/lienzo";
 import { Check, Loader2, Pencil, Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
-import s from "./organigrama.module.css";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 export type EdicionRapida = { area: string; cargo: string; nota: string; personas: string[] };
 
@@ -16,6 +16,22 @@ type Props = {
   onAgregarSubordinado: (padre: number) => void;
   /** Guarda lo editado en el mismo recuadro; devuelve false si no se pudo. */
   onEditar: (id: number, cambios: EdicionRapida) => Promise<boolean>;
+  /** Solo lectura: el clic abre el cargo, pero no se edita ni se agregan subordinados. */
+  soloLectura?: boolean;
+  /** Se pueden arrastrar los recuadros (modo Editar y sin la manito). */
+  arrastrable?: boolean;
+  /** Zoom del lienzo: el arrastre se mide en px de pantalla. */
+  zoom?: number;
+  /** Guarda dónde quedaron los recuadros movidos (x absoluta, y dentro de su franja). */
+  onMover?: (posiciones: { id: number; x: number; y: number }[]) => Promise<void>;
+};
+
+type Arrastre = {
+  puntero: number;
+  x0: number;
+  y0: number;
+  movio: boolean;
+  piezas: { id: number; x: number; y: number; max: number }[];
 };
 
 const ESTILO_CAJA: Record<Nodo["tipo"], string> = {
@@ -31,13 +47,48 @@ const campo =
   "w-full rounded border border-slate-300 bg-white px-1.5 py-1 text-[12px] text-slate-900 outline-none focus:border-blue-500";
 
 /**
- * Dibuja el organigrama completo. Un clic abre el panel del cargo; doble clic
- * (o el lápiz) edita área, cargo, nota y personas en el mismo recuadro.
+ * Dibuja el organigrama en un lienzo (lib/organigrama/lienzo.ts): una franja por
+ * nivel de la jerarquía, cada cargo un recuadro y las líneas en SVG. Un clic
+ * abre el panel del cargo; doble clic (o el lápiz) edita área, cargo, nota y
+ * personas en el mismo recuadro. En modo Editar los recuadros se arrastran: a lo
+ * ancho libres, a lo alto solo dentro de su franja (Mayús arrastra también a sus
+ * subordinados). Para cambiar de nivel hay que cambiar a quién reporta.
  */
-export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAgregarSubordinado, onEditar }: Props) {
-  const mapa = hijosPorPadre(nodos);
+export function Organigrama({
+  nodos,
+  seleccionado,
+  busqueda,
+  onSeleccionar,
+  onAgregarSubordinado,
+  onEditar,
+  soloLectura = false,
+  arrastrable = false,
+  zoom = 1,
+  onMover,
+}: Props) {
   const q = busqueda.trim().toLowerCase();
-  const raices = mapa.get(null) || [];
+
+  // Alto real de cada recuadro (depende del texto y de las personas): las franjas se arman con eso.
+  const [altos, setAltos] = useState<Map<number, number>>(new Map());
+  const refs = useRef(new Map<number, HTMLDivElement>());
+  useLayoutEffect(() => {
+    let cambio = false;
+    const nuevos = new Map(altos);
+    for (const [id, el] of refs.current) {
+      const h = el.offsetHeight;
+      if (h && Math.abs((altos.get(id) ?? 0) - h) > 1) {
+        nuevos.set(id, h);
+        cambio = true;
+      }
+    }
+    if (cambio) setAltos(nuevos);
+  });
+
+  // Posiciones mientras se arrastra (todavía sin guardar).
+  const [mover, setMover] = useState<Map<number, { x: number; y: number }> | null>(null);
+  const arrastre = useRef<Arrastre | null>(null);
+  const recienArrastrado = useRef(false);
+  const lienzo = useMemo(() => armarLienzo(nodos, altos, mover ?? undefined), [nodos, altos, mover]);
 
   const [editando, setEditando] = useState<number | null>(null);
   const [borrador, setBorrador] = useState({ area: "", cargo: "", nota: "", personas: "" });
@@ -46,6 +97,7 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
   const clicPendiente = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const empezarEdicion = (n: Nodo) => {
+    if (soloLectura) return;
     if (clicPendiente.current) clearTimeout(clicPendiente.current);
     setBorrador({ area: n.area, cargo: n.cargo, nota: n.nota, personas: n.personas.join("\n") });
     setEditando(n.id);
@@ -133,15 +185,15 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
   const caja = (n: Nodo, ancho: string) => {
     const oscuro = n.tipo === "direccion";
     const atenuado = q !== "" && !coincide(n, q);
-    const enEdicion = editando === n.id;
+    const enEdicion = !soloLectura && editando === n.id;
     return (
       <div
         role="button"
         tabIndex={0}
         data-nodo={n.id}
         onClick={(e) => {
-          if (enEdicion) return;
-          if (e.detail > 1) return;
+          if (enEdicion || recienArrastrado.current) return;
+          if (e.detail > 1 && !soloLectura) return;
           if (clicPendiente.current) clearTimeout(clicPendiente.current);
           clicPendiente.current = setTimeout(() => onSeleccionar(n.id), 220);
         }}
@@ -154,7 +206,7 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
           }
           if (e.key === "F2") empezarEdicion(n);
         }}
-        title={enEdicion ? undefined : "Clic: actividades · Doble clic: editar nombre y personas"}
+        title={enEdicion ? undefined : soloLectura ? "Clic: ver actividades del cargo" : "Clic: actividades · Doble clic: editar nombre y personas"}
         className={cn(
           "group relative rounded-lg border px-3 py-2.5 text-center transition",
           enEdicion
@@ -202,6 +254,7 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
                 {n.actividades.length}
               </span>
             )}
+            {!soloLectura && (
             <div
               data-exportar="no"
               className="absolute -bottom-3 left-1/2 z-10 hidden -translate-x-1/2 gap-1 group-hover:flex print:hidden"
@@ -231,66 +284,113 @@ export function Organigrama({ nodos, seleccionado, busqueda, onSeleccionar, onAg
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
+            )}
           </>
         )}
       </div>
     );
   };
 
-  /** Un cargo con su staff al lado y sus subordinados debajo. */
-  const rama = (n: Nodo, enColumna: boolean): React.ReactNode => {
-    const todos = mapa.get(n.id) || [];
-    const staff = todos.filter((h) => h.staff);
-    const hijos = todos.filter((h) => !h.staff);
-    const enFila = n.disposicion === "fila" && hijos.length > 0;
-    const ancho = enColumna ? "w-full" : "w-[200px]";
-
-    const cabeza = staff.length ? (
-      <div className={s.conStaff}>
-        <div />
-        {caja(n, "w-[200px]")}
-        <div className={s.staff}>
-          {staff.map((h) => (
-            <div key={h.id} className="w-[190px]">
-              {rama(h, true)}
-            </div>
-          ))}
-        </div>
-      </div>
-    ) : (
-      caja(n, enFila && !enColumna ? "w-[200px]" : ancho)
+  // ---- Arrastrar recuadros (modo Editar) ----
+  const empezarArrastre = (e: React.PointerEvent<HTMLDivElement>, n: Nodo) => {
+    if (!arrastrable || soloLectura || e.button !== 0 || e.ctrlKey || editando === n.id) return;
+    if ((e.target as HTMLElement).closest("button, input, textarea, select")) return;
+    const ids = e.shiftKey ? [...descendientes(nodos, n.id)] : [n.id];
+    const piezas = ids.flatMap((id) => {
+      const c = lienzo.cajas.get(id);
+      if (!c) return [];
+      const f = lienzo.franjas[c.nivel];
+      return [{ id, x: c.x, y: c.y - f.top, max: yRelativaMax(f, c.h) }];
+    });
+    arrastre.current = { puntero: e.pointerId, x0: e.clientX, y0: e.clientY, movio: false, piezas };
+    e.stopPropagation(); // que el lienzo no lo tome como desplazamiento
+  };
+  const alMover = (e: React.PointerEvent<HTMLDivElement>) => {
+    const a = arrastre.current;
+    if (!a || a.puntero !== e.pointerId) return;
+    const dx = (e.clientX - a.x0) / zoom;
+    const dy = (e.clientY - a.y0) / zoom;
+    if (!a.movio) {
+      if (Math.hypot(dx, dy) < 4) return;
+      a.movio = true;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // el puntero ya se soltó
+      }
+    }
+    setMover(
+      new Map(
+        a.piezas.map((p) => [p.id, { x: Math.max(0, p.x + dx), y: Math.min(p.max, Math.max(0, p.y + dy)) }]),
+      ),
     );
-
-    return (
-      <div className={cn(enFila ? "flex flex-col items-center" : ancho, enColumna && "w-full")}>
-        {cabeza}
-        {hijos.length > 0 &&
-          (enFila ? (
-            <div className={s.fila}>
-              {hijos.map((h) => (
-                <div key={h.id} className={s.itemFila}>
-                  {rama(h, false)}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className={s.columna}>
-              {hijos.map((h) => (
-                <div key={h.id} className={s.itemColumna}>
-                  {rama(h, true)}
-                </div>
-              ))}
-            </div>
-          ))}
-      </div>
-    );
+  };
+  const soltar = async () => {
+    const a = arrastre.current;
+    arrastre.current = null;
+    if (!a?.movio || !mover) return;
+    recienArrastrado.current = true; // que el clic de soltar no abra el panel
+    setTimeout(() => (recienArrastrado.current = false), 0);
+    const posiciones = [...mover].map(([id, p]) => ({ id, x: Math.round(p.x), y: Math.round(p.y) }));
+    try {
+      await onMover?.(posiciones);
+    } finally {
+      setMover(null);
+    }
   };
 
   return (
-    <div className={cn(s.lienzo, "flex w-max min-w-full items-start justify-center gap-16 p-8 pb-16")}>
-      {raices.map((r) => (
-        <div key={r.id}>{rama(r, false)}</div>
-      ))}
+    <div className="relative" style={{ width: lienzo.ancho, height: lienzo.alto }}>
+      {arrastrable &&
+        lienzo.franjas.map((f) => (
+          <div
+            key={f.nivel}
+            data-exportar="no"
+            className="absolute inset-x-0 border-y border-dashed border-slate-200 bg-slate-100/50"
+            style={{ top: f.top - 8, height: f.alto + 16 }}
+          >
+            <span className="absolute left-2 top-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Nivel {f.nivel + 1}
+            </span>
+          </div>
+        ))}
+      <svg className="pointer-events-none absolute inset-0" width={lienzo.ancho} height={lienzo.alto} aria-hidden>
+        {lienzo.lineas.map((l, i) => (
+          <path
+            key={i}
+            d={l.d}
+            fill="none"
+            stroke="#94a3b8"
+            strokeWidth={1.5}
+            strokeDasharray={l.staff ? "5 4" : undefined}
+          />
+        ))}
+      </svg>
+      {nodos.map((n) => {
+        const c = lienzo.cajas.get(n.id);
+        if (!c) return null;
+        return (
+          <div
+            key={n.id}
+            ref={(el) => {
+              if (el) refs.current.set(n.id, el);
+              else refs.current.delete(n.id);
+            }}
+            onPointerDown={(e) => empezarArrastre(e, n)}
+            onPointerMove={alMover}
+            onPointerUp={soltar}
+            onPointerCancel={() => {
+              arrastre.current = null;
+              setMover(null);
+            }}
+            className={cn("absolute", arrastrable && editando !== n.id && "cursor-move touch-none")}
+            style={{ left: c.x, top: c.y, width: c.w, zIndex: editando === n.id || mover?.has(n.id) ? 30 : undefined }}
+            title={arrastrable ? "Arrastra para moverlo dentro de su nivel · Mayús + arrastrar: con sus subordinados" : undefined}
+          >
+            {caja(n, "w-full")}
+          </div>
+        );
+      })}
     </div>
   );
 }

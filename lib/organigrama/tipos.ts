@@ -12,8 +12,18 @@ export type Actividad = {
   detalle: string;
 };
 
+/** Organigramas que hay: cada uno es un árbol aparte (pestañas de la pantalla). */
+export const ORGANIGRAMAS = {
+  actual: "Organigrama actual",
+  propuesto: "Organigrama propuesto",
+} as const;
+export type Organigrama = keyof typeof ORGANIGRAMAS;
+export const organigramaDe = (v: unknown): Organigrama =>
+  typeof v === "string" && v in ORGANIGRAMAS ? (v as Organigrama) : "actual";
+
 export type Nodo = {
   id: number;
+  organigrama: Organigrama;
   parentId: number | null;
   orden: number;
   tipo: TipoNodo;
@@ -26,6 +36,9 @@ export type Nodo = {
   personas: string[];
   proposito: string;
   actividades: Actividad[];
+  /** Posición en el lienzo (px): x absoluta, y dentro de la franja de su nivel. null = acomodo automático. */
+  posX: number | null;
+  posY: number | null;
   updatedBy: string | null;
   updatedAt: string | null;
 };

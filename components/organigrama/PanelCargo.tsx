@@ -10,6 +10,7 @@ import {
   type Actividad,
   type Nodo,
 } from "@/lib/organigrama/tipos";
+import { niveles } from "@/lib/organigrama/lienzo";
 import {
   ArrowDown,
   ArrowLeft,
@@ -33,6 +34,8 @@ type Props = {
   onSeleccionar: (id: number, tab?: "actividades" | "datos") => void;
   /** Vuelve a leer el organigrama después de cada cambio. */
   onRecargar: () => Promise<void>;
+  /** Solo lectura: se ven el propósito y las actividades, sin editar. */
+  soloLectura?: boolean;
 };
 
 const pedir = async (url: string, method: string, body?: unknown) => {
@@ -56,6 +59,36 @@ const input =
   "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
 const etiqueta = "mb-1 block text-xs font-semibold text-slate-600";
 
+/** Solo lectura: propósito y actividades del cargo, sin controles de edición. */
+function Lectura({ nodo }: { nodo: Nodo }) {
+  return (
+    <div className="flex-1 space-y-5 p-5">
+      <div>
+        <p className={etiqueta}>Propósito del cargo</p>
+        <p className="whitespace-pre-line text-sm text-slate-700">{nodo.proposito || "Sin propósito anotado."}</p>
+      </div>
+      <div className="space-y-2">
+        <p className={etiqueta}>Actividades que desarrolla ({nodo.actividades.length})</p>
+        {nodo.actividades.length === 0 && (
+          <p className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+            Todavía no hay actividades anotadas para este cargo.
+          </p>
+        )}
+        {nodo.actividades.map((a, i) => (
+          <div key={a.id} className="flex gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <span className="w-5 shrink-0 text-right text-xs font-bold text-slate-400">{i + 1}.</span>
+            <div className="min-w-0 flex-1">
+              <p className="whitespace-pre-line text-sm text-slate-800">{a.texto}</p>
+              {a.detalle && <p className="mt-1 whitespace-pre-line text-xs text-slate-500">{a.detalle}</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-slate-400">Solo lectura. Para cambiar el cargo o sus actividades, pulsa «Editar» arriba del organigrama.</p>
+    </div>
+  );
+}
+
 /** Panel lateral de un cargo: sus actividades y, en otra pestaña, sus datos y su lugar en el organigrama. */
 export function PanelCargo(props: Props) {
   const { nodo, onCerrar } = props;
@@ -68,7 +101,7 @@ export function PanelCargo(props: Props) {
   );
 }
 
-function Contenido({ nodo, nodos, tabInicial, onCerrar, onSeleccionar, onRecargar }: Props & { nodo: Nodo }) {
+function Contenido({ nodo, nodos, tabInicial, onCerrar, onSeleccionar, onRecargar, soloLectura }: Props & { nodo: Nodo }) {
   const [tab, setTab] = useState<string>(tabInicial || "actividades");
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -258,6 +291,9 @@ function Contenido({ nodo, nodos, tabInicial, onCerrar, onSeleccionar, onRecarga
 
       {error && <p className="mx-5 mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
+      {soloLectura ? (
+        <Lectura nodo={nodo} />
+      ) : (
       <Tabs value={tab} onValueChange={setTab} className="flex-1 p-5">
         <TabsList className="w-full">
           <TabsTrigger value="actividades" className="flex-1">
@@ -409,15 +445,13 @@ function Contenido({ nodo, nodos, tabInicial, onCerrar, onSeleccionar, onRecarga
               </select>
             </div>
             <div>
-              <label className={etiqueta}>Subordinados en</label>
-              <select
-                value={datos.disposicion}
-                onChange={(e) => set("disposicion", e.target.value as Nodo["disposicion"])}
-                className={input}
-              >
-                <option value="columna">Columna (lista hacia abajo)</option>
-                <option value="fila">Fila (uno al lado del otro)</option>
-              </select>
+              <label className={etiqueta}>Nivel</label>
+              <p className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                Nivel {(niveles(nodos).get(nodo.id) ?? 0) + 1}
+                <span className="block text-[11px] text-slate-500">
+                  Sale de a quién reporta. Para subir o bajar de nivel, cambia «Reporta a».
+                </span>
+              </p>
             </div>
             <div className="sm:col-span-2">
               <label className={etiqueta}>Reporta a</label>
@@ -504,6 +538,7 @@ function Contenido({ nodo, nodos, tabInicial, onCerrar, onSeleccionar, onRecarga
           </div>
         </TabsContent>
       </Tabs>
+      )}
 
       {nodo.updatedAt && (
         <p className="border-t border-slate-100 px-5 py-3 text-[11px] text-slate-400">
