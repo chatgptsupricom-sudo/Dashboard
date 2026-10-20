@@ -73,35 +73,48 @@ const MEMBRETES: Record<number, { logo: string; marca: string }> = {
 export const escaparHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-/** El valor escapado, o una línea para llenar a mano. */
-const v = (s: string, ancho = 160) =>
-  s.trim()
-    ? `<b>${escaparHtml(s.trim())}</b>`
-    : `<span style="display:inline-block;width:${ancho}px;border-bottom:1px solid #000">&nbsp;</span>`;
-
 const fechaLarga = (iso: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return "";
   return new Date(`${iso}T12:00:00`).toLocaleDateString("es-VE", { day: "numeric", month: "long", year: "numeric" });
 };
 
-/** Como en la carta de Word: una línea donde se marca la X. */
-const marca = (si: boolean) =>
-  `<span style="display:inline-block;width:34px;border-bottom:1px solid #000;text-align:center;font-weight:bold">${si ? "X" : "&nbsp;"}</span>`;
-
 type Opciones = {
   /** Origen (https://…) para las imágenes del membrete: hace falta en Word, que no resuelve rutas relativas. */
   origen?: string;
-  /** Word no muestra el logo en base64 de Odoo ni la marca de agua posicionada. */
+  /**
+   * Para Word: no dibuja bordes de elementos en línea ni respeta tamaños por CSS, así que
+   * las líneas para llenar son guiones bajos, el logo lleva width/height y no hay marca de agua.
+   */
   word?: boolean;
 };
 
 /** Cuerpo de la carta en HTML con estilos en línea (sirve para la pantalla, la impresión y Word). */
 export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {}): string {
+  const word = Boolean(o.word);
+  /** El valor escapado, o una línea para llenar a mano. */
+  const v = (s: string, ancho = 160) =>
+    s.trim()
+      ? `<b>${escaparHtml(s.trim())}</b>`
+      : word
+        ? "_".repeat(Math.max(6, Math.round(ancho / 7)))
+        : `<span style="display:inline-block;width:${ancho}px;border-bottom:1px solid #000">&nbsp;</span>`;
+  /** Como en la carta de Word original: una línea donde se marca la X. */
+  const marca = (si: boolean) =>
+    word
+      ? si
+        ? "<b><u>&nbsp;&nbsp;X&nbsp;&nbsp;</u></b>"
+        : "_____"
+      : `<span style="display:inline-block;width:34px;border-bottom:1px solid #000;text-align:center;font-weight:bold">${si ? "X" : "&nbsp;"}</span>`;
+
   const osc = e?.nombre ? escaparHtml(e.nombre) : "la empresa";
   const fiscal = e?.sede === 7 ? "RUC" : "RIF";
   const membrete = e ? MEMBRETES[e.sede] : undefined;
   const origen = o.origen ?? "";
-  const logo = membrete ? origen + membrete.logo : o.word ? "" : e?.logo || "";
+  const logo = membrete ? origen + membrete.logo : word ? "" : e?.logo || "";
+  // El logo de OSC mide 2500×650: a 60 px de alto son 231 de ancho (Word necesita los dos).
+  const imgLogo = membrete
+    ? `<img src="${logo}" alt="${osc}" width="231" height="60" style="width:231px;height:60px">`
+    : `<img src="${logo}" alt="${osc}" height="60" style="height:60px;max-width:280px">`;
   const fecha = fechaLarga(d.fecha);
   const parrafo = "text-align:justify;text-indent:48px;line-height:1.4;margin:0 0 5px";
   const titulo = "font-weight:bold;margin:8px 0 1px;text-decoration:underline";
@@ -110,19 +123,19 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
   return `
 <div style="position:relative;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.3;color:#000">
   ${
-    membrete && !o.word
+    membrete && !word
       ? `<img src="${origen + membrete.marca}" alt="" style="position:absolute;left:50%;top:200px;width:70%;transform:translateX(-50%);opacity:.32;z-index:0;pointer-events:none">`
       : ""
   }
   <div style="position:relative;z-index:1">
-    <table style="width:100%;border-collapse:collapse"><tr>
-      <td style="vertical-align:top">${logo ? `<img src="${logo}" alt="${osc}" style="height:60px;max-width:280px">` : `<b style="font-size:16pt">${osc}</b>`}</td>
-      <td style="vertical-align:bottom;text-align:right;font-family:Calibri,Arial,sans-serif">
-        ${e?.rif ? `<div style="color:#777;font-size:9pt;font-weight:bold">${fiscal === "RIF" ? "Rif" : "RUC"}: ${escaparHtml(e.rif)}</div>` : ""}
+    <table width="100%" style="width:100%;border-collapse:collapse"><tr>
+      <td width="60%" style="vertical-align:top">${logo ? imgLogo : `<b style="font-size:16pt">${osc}</b>`}</td>
+      <td width="40%" style="vertical-align:bottom;text-align:right;font-family:Calibri,Arial,sans-serif">
+        ${e?.rif ? `<span style="color:#777;font-size:9pt;font-weight:bold">${fiscal === "RIF" ? "Rif" : "RUC"}: ${escaparHtml(e.rif)}</span>` : ""}
       </td>
     </tr></table>
 
-    <h1 style="text-align:center;font-size:12pt;font-weight:bold;text-decoration:underline;margin:12px 0 10px">CARTA DE AUTORIZACIÓN DE ENVÍO DE MERCANCÍA POR TRANSPORTISTA</h1>
+    <p style="text-align:center;font-size:12pt;font-weight:bold;text-decoration:underline;margin:12px 0 10px">CARTA DE AUTORIZACIÓN DE ENVÍO DE MERCANCÍA POR TRANSPORTISTA</p>
 
     <p style="text-align:right;margin:0 0 8px">${v(d.lugar, 120)}, ${fecha ? `<b>${fecha}</b>` : v("", 140)}</p>
 
@@ -134,10 +147,10 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
     con domicilio fiscal en ${v(d.direccionCliente, 240)}, autorizo a <b>${osc}</b> a entregar a la empresa de transporte
     que indico abajo la mercancía correspondiente al siguiente envío:</p>
 
-    <div style="${titulo}">Datos del envío</div>
+    <p style="${titulo}">Datos del envío</p>
     <p style="margin:0 0 0 48px">Factura(s) / Pedido(s) N.°: ${v(d.facturas, 260)}<br>Destino: ${v(d.destino, 380)}</p>
 
-    <div style="${titulo}">Datos del transportista</div>
+    <p style="${titulo}">Datos del transportista</p>
     <p style="margin:0 0 0 48px">Empresa: ${v(d.transportista, 260)} &nbsp; ${fiscal}: ${v(d.rifTransportista, 120)}<br>
     Flete a cargo de: ${d.flete === "cliente" ? "<b>la empresa que represento</b>" : v(d.fleteOtro, 200)}</p>
 
@@ -146,7 +159,7 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
       <li style="text-align:justify;margin-bottom:3px">${marca(!d.asegurado)} Envío no asegurado. Asumo, en nombre de la empresa que represento,
       todos los riesgos (robos, deterioros, pérdidas) involucrados en el transporte.</li>
       <li>${marca(d.asegurado)} Envío asegurado. Compañía aseguradora: ${d.asegurado ? v(d.aseguradora, 150) : v("", 150)}<br>
-      &nbsp; Póliza N.°: ${d.asegurado ? v(d.poliza, 110) : v("", 110)} &nbsp; Monto asegurado: ${d.asegurado ? v(d.montoAsegurado, 100) : v("", 100)}</li>
+      Póliza N.°: ${d.asegurado ? v(d.poliza, 110) : v("", 110)} &nbsp; Monto asegurado: ${d.asegurado ? v(d.montoAsegurado, 100) : v("", 100)}</li>
     </ul>
 
     <p style="${parrafo}">Declaro que elegí al transportista por cuenta de la empresa que represento. Desde el momento en que
@@ -156,25 +169,42 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
 
     <p style="${parrafo}">Esta autorización vale <b>solo para el envío descrito arriba</b>.</p>
 
-    <div style="margin:22px auto 0;width:360px;border-top:1px solid #000;padding-top:4px;text-align:center">
-      Firma y sello de la empresa<br>
-      Nombre: ${v(d.representante, 220)}<br>C.I.: ${v(d.cedula, 100)} &nbsp; Cargo: ${v(d.cargo, 110)}
-    </div>
+    ${word ? "<p>&nbsp;</p>" : ""}
+    <table align="center" style="margin:22px auto 0;border-collapse:collapse"><tr>
+      <td width="360" style="width:360px;border-top:1px solid #000;padding-top:4px;text-align:center;font-family:'Times New Roman',Times,serif;font-size:11pt">
+        Firma y sello de la empresa<br>
+        Nombre: ${v(d.representante, 220)}<br>C.I.: ${v(d.cedula, 100)} &nbsp; Cargo: ${v(d.cargo, 110)}
+      </td>
+    </tr></table>
 
     <div style="margin-top:12px;border:1px solid #000;padding:5px 10px;font-size:9.5pt;background:#fff">
-      <div style="font-weight:bold;margin-bottom:2px">CONSTANCIA DE ENTREGA AL TRANSPORTISTA <span style="font-weight:normal">(la llena el almacén al despachar)</span></div>
+      <b>CONSTANCIA DE ENTREGA AL TRANSPORTISTA</b> (la llena el almacén al despachar)<br>
       Estado de la mercancía: ${marca(false)} En buen estado &nbsp; ${marca(false)} Con observaciones: ${v("", 200)}<br>
       Fecha y hora: ${v("", 160)}<br>
       Entrega por ${osc}: ${v("", 160)} (firma) &nbsp; Recibe por el transportista: ${v("", 160)} (nombre, C.I. y firma)
     </div>
 
-    ${pie.length ? `<div style="margin-top:10px;border-top:1px solid #999;padding-top:4px;font-family:Calibri,Arial,sans-serif;font-size:8pt;line-height:1.2;text-align:center;color:#444">${pie.join(" | ")}</div>` : ""}
+    ${pie.length ? `<p style="margin:10px 0 0;border-top:1px solid #999;padding-top:4px;font-family:Calibri,Arial,sans-serif;font-size:8pt;line-height:1.2;text-align:center;color:#444">${pie.join(" | ")}</p>` : ""}
   </div>
 </div>`;
 }
 
-/** Documento completo, para imprimir (PDF) desde un iframe o abrir en Word. */
+/** Hoja carta a 96 ppp y los márgenes de la carta impresa (12 mm × 18 mm), en px. */
+export const HOJA_CARTA = { ancho: 816, alto: 1056, margenV: 45, margenH: 68 };
+
+/**
+ * Documento completo, para imprimir (PDF) desde un iframe o abrir en Word.
+ * Al imprimir, @page sin margen deja a Chrome sin lugar para la fecha, el
+ * título y la URL; el margen va como relleno del body.
+ */
 export function documentoCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {}): string {
+  const { margenV, margenH } = HOJA_CARTA;
+  if (o.word)
+    return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>Carta de autorización de envío</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
+<style>@page WordSection1{size:8.5in 11in;margin:0.5in 0.7in 0.5in 0.7in}div.WordSection1{page:WordSection1}</style></head>
+<body><div class="WordSection1">${htmlCarta(d, e, o)}</div></body></html>`;
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Carta de autorización de envío</title>
-<style>@page{size:letter;margin:12mm 18mm}body{margin:0}</style></head><body>${htmlCarta(d, e, o)}</body></html>`;
+<style>@page{size:letter;margin:0}html,body{margin:0}body{padding:${margenV}px ${margenH}px;box-sizing:border-box}</style></head><body>${htmlCarta(d, e, o)}</body></html>`;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { CARTA_VACIA, documentoCarta, htmlCarta, type DatosCarta, type EmpresaCarta } from "@/lib/politicas/cartaEnvio";
+import { CARTA_VACIA, documentoCarta, HOJA_CARTA, htmlCarta, type DatosCarta, type EmpresaCarta } from "@/lib/politicas/cartaEnvio";
 import { SEDES_POLITICA } from "@/lib/politicas/permisos";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { ArrowLeft, FileDown, Loader2, Printer, RotateCcw, Search } from "lucide-react";
@@ -82,10 +82,11 @@ export default function CartaEnvioPage() {
       .catch(() => setDirecciones([]));
   };
 
-  // Mismo patrón que el PDF del Organigrama: iframe de tamaño 0 (con display:none Chrome imprime en blanco).
+  // Como el PDF del Organigrama, pero el iframe mide una hoja carta (fuera de la pantalla) para poder
+  // medir la carta: si no cabe en una hoja (dirección muy larga), se achica hasta caber.
   const imprimir = () => {
     const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    iframe.style.cssText = `position:fixed;left:-${HOJA_CARTA.ancho + 100}px;top:0;width:${HOJA_CARTA.ancho}px;height:${HOJA_CARTA.alto}px;border:0`;
     document.body.appendChild(iframe);
     const doc = iframe.contentDocument!;
     doc.open();
@@ -96,6 +97,8 @@ export default function CartaEnvioPage() {
       img.complete ? null : new Promise((ok) => ((img.onload = ok), (img.onerror = ok))),
     );
     Promise.race([Promise.all(cargadas), new Promise((ok) => setTimeout(ok, 3000))]).then(() => {
+      const alto = doc.body.scrollHeight;
+      if (alto > HOJA_CARTA.alto - 4) (doc.body.style as any).zoom = String((HOJA_CARTA.alto - 4) / alto);
       iframe.contentWindow!.focus();
       iframe.contentWindow!.print();
       setTimeout(() => iframe.remove(), 60_000);
