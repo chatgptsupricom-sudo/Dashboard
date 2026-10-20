@@ -129,15 +129,16 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
   }
   <div style="position:relative;z-index:1">
     <table width="100%" style="width:100%;border-collapse:collapse"><tr>
-      <td width="60%" style="vertical-align:top">${logo ? imgLogo : `<b style="font-size:16pt">${osc}</b>`}</td>
-      <td width="40%" style="vertical-align:bottom;text-align:right;font-family:Calibri,Arial,sans-serif">
-        ${e?.rif ? `<span style="color:#777;font-size:9pt;font-weight:bold">${fiscal === "RIF" ? "Rif" : "RUC"}: ${escaparHtml(e.rif)}</span>` : ""}
+      <td width="55%" style="vertical-align:top">
+        ${logo ? imgLogo : `<b style="font-size:16pt">${osc}</b>`}
+        ${e?.rif ? `<br><span style="color:#777;font-family:Calibri,Arial,sans-serif;font-size:9pt;font-weight:bold">${fiscal === "RIF" ? "Rif" : "RUC"}: ${escaparHtml(e.rif)}</span>` : ""}
+      </td>
+      <td width="45%" style="vertical-align:bottom;text-align:right;font-family:'Times New Roman',Times,serif;font-size:11pt">
+        ${v(d.lugar, 110)}, ${fecha ? `<b>${fecha}</b>` : v("", 130)}
       </td>
     </tr></table>
 
     <p style="text-align:center;font-size:12pt;font-weight:bold;text-decoration:underline;margin:12px 0 10px">CARTA DE AUTORIZACIÓN DE ENVÍO DE MERCANCÍA POR TRANSPORTISTA</p>
-
-    <p style="text-align:right;margin:0 0 8px">${v(d.lugar, 120)}, ${fecha ? `<b>${fecha}</b>` : v("", 140)}</p>
 
     <p style="margin:0 0 8px">Señores<br><b>${osc}</b>${e?.rif ? `<br>${fiscal}: ${escaparHtml(e.rif)}` : ""}<br>Presente.</p>
 
