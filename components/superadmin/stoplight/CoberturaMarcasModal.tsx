@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { X, Package } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
 import MetasMarcaPanel from "./MetasMarcaPanel";
+import ResumenKpi, { type ResumenKpiProps } from "./ResumenKpi";
 
 interface CoberturaMarcasModalProps {
   isOpen: boolean;
@@ -23,6 +24,8 @@ interface CoberturaMarcasModalProps {
   puedeEditarMetas?: boolean;
   /** Se llama al cambiar una meta, para recargar la grilla. */
   onMetasChange?: () => void;
+  /** Encabezado hoy vs meta + meta/peso del mes (ResumenKpi); solo se pinta en el mes del Stoplight. */
+  resumen?: ResumenKpiProps | null;
 }
 
 type Periodo = "mes" | "trimestre" | "anio" | "todo";
@@ -30,7 +33,7 @@ type Periodo = "mes" | "trimestre" | "anio" | "todo";
 // Modal "Cobertura de marcas": resumen global + tabla por marca + detalle
 // semanal (con drill-down a una marca), con selector de período. Autocontenido.
 // Extraído de StoplightReport.tsx (audit #23).
-export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, companyId, defaultMes, ocultarCostoGanancia = false, mostrarMetasMarca = false, puedeEditarMetas = false, onMetasChange }: CoberturaMarcasModalProps) {
+export default function CoberturaMarcasModal({ resumen, isOpen, onClose, apiPrefix, companyId, defaultMes, ocultarCostoGanancia = false, mostrarMetasMarca = false, puedeEditarMetas = false, onMetasChange }: CoberturaMarcasModalProps) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
 
@@ -137,6 +140,7 @@ export default function CoberturaMarcasModal({ isOpen, onClose, apiPrefix, compa
 
         {/* Modal Body */}
         <div className="flex-1 overflow-auto p-5">
+          {resumen && mes === resumen.mes && <ResumenKpi {...resumen} />}
           {tab === "metas" ? (
             // Las metas son mensuales: usan el mes elegido, no el período.
             <MetasMarcaPanel companyId={companyId} mes={mes} puedeEditar={puedeEditarMetas} onChange={onMetasChange} />

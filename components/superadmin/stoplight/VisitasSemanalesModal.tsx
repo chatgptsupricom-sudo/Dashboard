@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { X, Calendar } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
+import ResumenKpi, { type ResumenKpiProps } from "./ResumenKpi";
 
 interface VisitasSemanalesModalProps {
   isOpen: boolean;
@@ -18,6 +19,8 @@ interface VisitasSemanalesModalProps {
   /** Vendedores disponibles para el selector (de kpiData.sellers). */
   sellers: any[];
   defaultMes: string;
+  /** Encabezado hoy vs meta + meta/peso del mes (ResumenKpi); solo se pinta en el mes del Stoplight. */
+  resumen?: ResumenKpiProps | null;
 }
 
 const EMPTY_FORM = {
@@ -32,6 +35,7 @@ const EMPTY_FORM = {
 // fecha) y listado del mes, con borrado. Autocontenido. Extraído de
 // StoplightReport.tsx (audit #23).
 export default function VisitasSemanalesModal({
+  resumen,
   isOpen, onClose, apiPrefix, queryCompanyId, postCompanyId, gerenteOpsMode, sellers, defaultMes,
 }: VisitasSemanalesModalProps) {
   const t = useTranslations("stoplight");
@@ -184,6 +188,7 @@ export default function VisitasSemanalesModal({
 
         {/* Modal Body */}
         <div className="flex-1 overflow-auto p-5">
+          {resumen && mes === resumen.mes && <ResumenKpi {...resumen} />}
           {loading ? (
             <div className="flex items-center justify-center py-20 text-slate-400">
               {t("loading")}

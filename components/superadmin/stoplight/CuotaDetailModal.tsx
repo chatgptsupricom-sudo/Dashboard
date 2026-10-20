@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { X, Check, ArrowLeft } from "lucide-react";
 import type { SellerDetail } from "@/lib/stoplight/types";
 import ModalMonthPicker from "./ModalMonthPicker";
+import ResumenKpi, { type ResumenKpiProps } from "./ResumenKpi";
+import { BarraMeta } from "./lecturaUI";
 
 interface CuotaDetailModalProps {
   isOpen: boolean;
@@ -13,6 +15,8 @@ interface CuotaDetailModalProps {
   /** company_id a enviar, o null en los modos que no lo mandan (vendedor / gerente de operaciones). */
   companyId: number | null;
   defaultMes: string;
+  /** Encabezado hoy vs meta + meta/peso del mes (ResumenKpi); solo se pinta en el mes del Stoplight. */
+  resumen?: ResumenKpiProps | null;
 }
 
 interface CuotaData {
@@ -21,10 +25,13 @@ interface CuotaData {
   sellers: SellerDetail[];
 }
 
+// % de la cuota cumplido; null si el vendedor no tiene cuota (la API manda 0).
+const pctCuota = (s: SellerDetail): number | null => (s.cuotaMensual > 0 ? s.porcentajeMensual : null);
+
 // Modal "Cumplimiento de cuota": resumen por vendedor + drill-down diario y
 // semanal. Autocontenido — su propio mes, tab y fetch. Extraído de
 // StoplightReport.tsx (audit #23).
-export default function CuotaDetailModal({ isOpen, onClose, apiPrefix, companyId, defaultMes }: CuotaDetailModalProps) {
+export default function CuotaDetailModal({ resumen, isOpen, onClose, apiPrefix, companyId, defaultMes }: CuotaDetailModalProps) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
 
@@ -62,6 +69,16 @@ export default function CuotaDetailModal({ isOpen, onClose, apiPrefix, companyId
     })();
     return () => { cancelled = true; };
   }, [isOpen, mes, companyId, apiPrefix]);
+
+  // Primero el que está más lejos de la cuota; los que no tienen cuota, al final.
+  const sellersOrdenados = useMemo(() => {
+    if (!data) return [];
+    return [...data.sellers].sort((a, b) => {
+      const pa = pctCuota(a), pb = pctCuota(b);
+      if (pa == null || pb == null) return pa == null ? (pb == null ? 0 : 1) : -1;
+      return pa - pb;
+    });
+  }, [data]);
 
   if (!isOpen) return null;
 
@@ -114,6 +131,7 @@ export default function CuotaDetailModal({ isOpen, onClose, apiPrefix, companyId
 
         {/* Modal Body */}
         <div className="flex-1 overflow-auto p-5">
+          {resumen && mes === resumen.mes && <ResumenKpi {...resumen} />}
           {loading ? (
             <div className="flex items-center justify-center py-20 text-slate-400">
               {t("loading")}
@@ -150,6 +168,7 @@ export default function CuotaDetailModal({ isOpen, onClose, apiPrefix, companyId
                     </div>
                   </div>
 
+                  <p className="text-xs text-slate-500 mb-2">{t("lista_ordenada")}</p>
                   <div className="border rounded-xl overflow-hidden">
                     <table className="w-full text-sm">
                       <thead>
@@ -163,15 +182,18 @@ export default function CuotaDetailModal({ isOpen, onClose, apiPrefix, companyId
                         </tr>
                       </thead>
                       <tbody>
-                        {data.sellers.map((seller) => (
+                        {sellersOrdenados.map((seller) => (
                           <tr key={seller.sellerId} className="border-b hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => { setSelectedSeller(seller); setTab("diario"); }}>
                             <td className="p-3 font-medium text-slate-800">{seller.nombre}</td>
                             <td className="p-3 text-center">${seller.cuotaMensual.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                             <td className="p-3 text-center">${seller.totalFacturado.toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                             <td className="p-3 text-center">
-                              <span className={`font-bold ${seller.porcentajeMensual >= 100 ? "text-green-600" : seller.porcentajeMensual >= 75 ? "text-yellow-600" : "text-red-600"}`}>
-                                {seller.porcentajeMensual}%
-                              </span>
+                              <div className="flex flex-col items-center gap-1">
+                                <span className={`font-bold ${seller.porcentajeMensual >= 100 ? "text-green-600" : seller.porcentajeMensual >= 70 ? "text-yellow-600" : "text-red-600"}`}>
+                                  {seller.porcentajeMensual}%
+                                </span>
+                                <BarraMeta pct={pctCuota(seller)} className="w-20" />
+                              </div>
                             </td>
                             <td className="p-3 text-center">
                               {seller.cumple ? (
@@ -203,16 +225,20 @@ export default function CuotaDetailModal({ isOpen, onClose, apiPrefix, companyId
                   {!selectedSeller ? (
                     <div className="space-y-3">
                       <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_diario")}</p>
+                      <p className="text-xs text-slate-500 mb-2">{t("lista_ordenada")}</p>
                       <div className="grid grid-cols-2 gap-3">
-                        {data.sellers.map((seller) => (
+                        {sellersOrdenados.map((seller) => (
                           <button
                             key={seller.sellerId}
                             onClick={() => setSelectedSeller(seller)}
                             className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
                           >
                             <span className="font-medium text-slate-800">{seller.nombre}</span>
-                            <span className={`text-sm font-bold ${seller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
-                              {seller.porcentajeMensual}%
+                            <span className="flex items-center gap-2">
+                              <BarraMeta pct={pctCuota(seller)} className="w-20" />
+                              <span className={`text-sm font-bold ${seller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
+                                {seller.porcentajeMensual}%
+                              </span>
                             </span>
                           </button>
                         ))}
@@ -302,16 +328,20 @@ export default function CuotaDetailModal({ isOpen, onClose, apiPrefix, companyId
                   {!selectedSeller ? (
                     <div className="space-y-3">
                       <p className="text-sm text-slate-500 mb-3">{t("selecciona_vendedor_semanal")}</p>
+                      <p className="text-xs text-slate-500 mb-2">{t("lista_ordenada")}</p>
                       <div className="grid grid-cols-2 gap-3">
-                        {data.sellers.map((seller) => (
+                        {sellersOrdenados.map((seller) => (
                           <button
                             key={seller.sellerId}
                             onClick={() => setSelectedSeller(seller)}
                             className="flex items-center justify-between p-3 border rounded-xl hover:bg-slate-50 transition-colors text-left"
                           >
                             <span className="font-medium text-slate-800">{seller.nombre}</span>
-                            <span className={`text-sm font-bold ${seller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
-                              {seller.porcentajeMensual}%
+                            <span className="flex items-center gap-2">
+                              <BarraMeta pct={pctCuota(seller)} className="w-20" />
+                              <span className={`text-sm font-bold ${seller.porcentajeMensual >= 100 ? "text-green-600" : "text-red-600"}`}>
+                                {seller.porcentajeMensual}%
+                              </span>
                             </span>
                           </button>
                         ))}
