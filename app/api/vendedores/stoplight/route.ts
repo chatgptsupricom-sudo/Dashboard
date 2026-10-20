@@ -9,6 +9,7 @@ import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
 import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 import { sinIntercompania } from "@/lib/intercompania";
+import type { ValorReal } from "@/lib/stoplight/types";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -547,6 +548,29 @@ export async function GET(request: NextRequest) {
       return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
     };
 
+    // Valor real del mes de cada KPI (vista Resumen: "hoy vs meta" en las
+    // unidades del KPI), mismo criterio que /api/superadmin/stoplight.
+    const metaONull = (n: number) => (n > 0 ? n : null);
+    const reales: Record<string, ValorReal> = {};
+    reales.cumplimiento_cuota_ventas = { valor: totalFacturado, meta: metaONull(effectiveCuota), unidad: "$", acumulado: true };
+    if (totalRevenueMes > 0) {
+      reales.margen_bruto = { valor: ((totalRevenueMes - totalCostoMes) / totalRevenueMes) * 100, meta: metaONull(metaMargen), unidad: "%" };
+    }
+    const efectividadMes = efectividadPorSemana.reduce((a, w) => ({ total: a.total + w.total, facturacion: a.facturacion + w.facturacion }), { total: 0, facturacion: 0 });
+    if (efectividadMes.total > 0) {
+      reales.efectividad_cierre = { valor: (efectividadMes.facturacion / efectividadMes.total) * 100, meta: metaONull(metaEfectividad), unidad: "%" };
+    }
+    if (totalClientsActivacion > 0) {
+      reales.activacion_cartera = { valor: (totalActiveClients / totalClientsActivacion) * 100, meta: metaONull(metaActivacion), unidad: "%" };
+    }
+    reales.clientes_nuevos = { valor: totalClientesNuevos, meta: metaONull(metaClientesNuevos), unidad: "", acumulado: true };
+    reales.visitas_semanales = coberturaTerr
+      ? { valor: coberturaTerr.realizadas, meta: metaONull(coberturaTerr.planificadas), unidad: "" }
+      : { valor: visitasPorSemana.reduce((a, b) => a + b, 0), meta: metaONull(metaVisitasSemanal * semanas.length), unidad: "", acumulado: true };
+    if (coberturaMarcas) {
+      reales.cobertura_marcas = { valor: coberturaMarcas.mes, meta: 100, unidad: "%" };
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -601,6 +625,7 @@ export async function GET(request: NextRequest) {
         metasPorMarca: coberturaMarcas ? { marcas: coberturaMarcas.porMarca.length } : null,
         metas: metasMap,
         pesos: pesosMap,
+        reales,
       },
     });
   } catch (error: any) {

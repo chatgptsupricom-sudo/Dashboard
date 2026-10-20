@@ -11,6 +11,7 @@ import { obtenerLineasMargen, fechaLocal, type LineaMargen } from "@/lib/stoplig
 import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
 import { coberturaTerritorial } from "@/lib/visitas/planificacion";
+import type { ValorReal } from "@/lib/stoplight/types";
 import { sinIntercompania } from "@/lib/intercompania";
 
 const JWT_SECRET = jwtSecretBytes();
@@ -812,6 +813,48 @@ export async function GET(request: NextRequest) {
       ? avgFromWeeks(semanaActivacion)
       : Math.round(metaActivacion > 0 ? (tasaActivacionMes / metaActivacion) * 100 : tasaActivacionMes);
 
+    // Valor real del mes de cada KPI (vista Resumen: "hoy vs meta" en las
+    // unidades del KPI). Solo de lo calculado: si el KPI tiene semanas
+    // cargadas a mano no hay un valor del mes que mostrar y queda fuera.
+    const hayManual = (key: string) => Object.keys(savedMap[key] || {}).length > 0;
+    const transcurridas = semanas.filter((s) => s.inicio <= now).length;
+    const metaONull = (n: number) => (n > 0 ? n : null);
+    const reales: Record<string, ValorReal> = {};
+    reales.cumplimiento_cuota_ventas = { valor: totalFacturadoMensual, meta: metaONull(effectiveCuotaMensual), unidad: "$", acumulado: true };
+    const margenMes = margenPorSemana.reduce((a, w) => ({ revenue: a.revenue + w.revenue, costo: a.costo + w.costo }), { revenue: 0, costo: 0 });
+    if (!hayManual("margen_bruto") && margenMes.revenue > 0) {
+      reales.margen_bruto = { valor: ((margenMes.revenue - margenMes.costo) / margenMes.revenue) * 100, meta: metaONull(metaMargen), unidad: "%" };
+    }
+    const efectividadMes = efectividadPorSemana.reduce((a, w) => ({ total: a.total + w.total, facturacion: a.facturacion + w.facturacion }), { total: 0, facturacion: 0 });
+    if (!hayManual("efectividad_cierre") && efectividadMes.total > 0) {
+      reales.efectividad_cierre = { valor: (efectividadMes.facturacion / efectividadMes.total) * 100, meta: metaONull(metaEfectividad), unidad: "%" };
+    }
+    if (!hayActivacionManual && tasaActivacionMes != null) {
+      reales.activacion_cartera = { valor: tasaActivacionMes, meta: metaONull(metaActivacion), unidad: "%" };
+    }
+    if (!hayManual("clientes_nuevos")) {
+      reales.clientes_nuevos = { valor: totalClientesNuevos, meta: metaONull(metaClientesNuevos * numSellers), unidad: "", acumulado: true };
+    }
+    if (coberturaTerr) {
+      reales.visitas_semanales = { valor: coberturaTerr.realizadas, meta: metaONull(coberturaTerr.planificadas), unidad: "" };
+    } else if (!hayManual("visitas_semanales")) {
+      reales.visitas_semanales = { valor: visitasPorSemana.reduce((a, b) => a + b, 0), meta: metaONull(metaVisitasSemanal * semanas.length), unidad: "", acumulado: true };
+    }
+    if (coberturaMarcas) {
+      reales.cobertura_marcas = { valor: coberturaMarcas.mes, meta: 100, unidad: "%" };
+    }
+    // Compras: promedio de las semanas ya corridas (valor crudo, no % de meta).
+    const comprasMes = (key: string, serie: (number | null)[], menosEsMejor: boolean) => {
+      const vals = semanas
+        .map((_, i) => (i < transcurridas ? savedMap[key]?.[i]?.valor ?? serie[i] : null))
+        .filter((v): v is number => v != null && Number.isFinite(v));
+      if (vals.length) reales[key] = { valor: vals.reduce((a, b) => a + b, 0) / vals.length, meta: metaONull(metasMap[key] || 0), unidad: "%", menosEsMejor };
+    };
+    comprasMes("variacion_costo_compra", comprasRaw.semanaVarCosto, false);
+    comprasMes("rotacion_saludable", comprasRaw.semanaRotacion, false);
+    comprasMes("quiebre_inventario", comprasRaw.semanaQuiebre, true);
+    comprasMes("inventario_90_dias", comprasRaw.semanaInv90, true);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -863,6 +906,7 @@ export async function GET(request: NextRequest) {
         avgPropuestas: avgFromWeeks(semanaPropuestas),
         metas: metasMap,
         pesos: pesosMap,
+        reales,
         sellersVisitas: visitasPorSeller,
         sellersClientes: clientesNuevosPorSeller,
         metaClientesNuevos,
