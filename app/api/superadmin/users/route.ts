@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
 import { olvidarSesion } from "@/lib/auth/vigencia";
@@ -204,8 +205,12 @@ export async function POST(request: NextRequest) {
     if (cityMapping[cids]) {
       finalCids = cityMapping[cids];
     }
+    // Inteligencia de Negocio ve las tres sedes: se guarda sin cids, como el
+    // SuperAdmin, aunque la pantalla mande una.
+    const rolDestino = await query("SELECT name FROM roles WHERE id = ?", [roleId]);
+    const sinSede = esRolBI(rolDestino?.rows?.[0]?.name);
     const safeCids =
-      finalCids === "" || finalCids === undefined || finalCids === null
+      sinSede || finalCids === "" || finalCids === undefined || finalCids === null
         ? null
         : parseInt(finalCids, 10);
 

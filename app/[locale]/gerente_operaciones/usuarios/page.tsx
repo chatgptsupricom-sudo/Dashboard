@@ -1,6 +1,7 @@
 "use client";
 
 import { CustomSelect } from "@/components/superadmin/CustomSelect";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { Title } from "@tremor/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -145,6 +146,11 @@ export default function UserManagement() {
   };
 
   // Función para asignar rol a un usuario seleccionado
+  // SuperAdmin (id 1) e Inteligencia de Negocio ven las tres sedes: no se les
+  // elige ciudad. BI además se guarda sin cids (el SuperAdmin sigue como antes).
+  const rolDestinoBI = esRolBI(dbRoles.find((r) => r.key === selectedRole)?.name);
+  const rolSinSede = selectedRole === "1" || rolDestinoBI;
+
   const handleAssignRole = async () => {
     // Diagnóstico visual
     console.log("DEBUG - Usuario seleccionado:", selectedUser);
@@ -175,7 +181,7 @@ export default function UserManagement() {
       const payload = {
         email: emailToUse,
         role: selectedRole,
-        cids: selectedCids,
+        cids: rolDestinoBI ? "" : selectedCids,
         odooId: selectedUser.key,
       };
 
@@ -507,7 +513,7 @@ export default function UserManagement() {
                   />
 
                   {/* 2. Selector de Ciudad (Sede) */}
-                  {selectedRole !== "1" && (
+                  {!rolSinSede && (
                     <div className="space-y-1.5 w-full">
                       <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest pl-1">
                         {t("modal.select_city") || "Sede / Ciudad"}
