@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { useRef, useState } from "react";
-import { Camera, Loader2, X } from "lucide-react";
+import { Camera, ImageIcon, Loader2, X } from "lucide-react";
 
 export type ArchivoRecepcion = {
   id: number;
@@ -69,28 +69,34 @@ export default function FotoCaptura({
 }) {
   const t = useTranslations("recepcion");
   const input = useRef<HTMLInputElement>(null);
+  const galeria = useRef<HTMLInputElement>(null);
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const subir = async (archivo: File) => {
+  // De la galeria se pueden elegir varias: se suben una tras otra.
+  const subir = async (archivos: File[]) => {
+    if (!archivos.length) return;
     setError(null);
     setSubiendo(true);
     try {
-      const blob = await comprimir(archivo);
-      const fd = new FormData();
-      fd.append("tipo", tipo);
-      if (itemId) fd.append("item_id", String(itemId));
-      if (contenedorId) fd.append("contenedor_id", String(contenedorId));
-      fd.append("archivo", blob, archivo.name.replace(/\.[^.]+$/, "") + ".jpg");
-      const res = await fetch(`/api/recepcion/${recepcionId}/archivos`, { method: "POST", body: fd });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || t("error"));
-      onCambio();
+      for (const archivo of archivos) {
+        const blob = await comprimir(archivo);
+        const fd = new FormData();
+        fd.append("tipo", tipo);
+        if (itemId) fd.append("item_id", String(itemId));
+        if (contenedorId) fd.append("contenedor_id", String(contenedorId));
+        fd.append("archivo", blob, archivo.name.replace(/\.[^.]+$/, "") + ".jpg");
+        const res = await fetch(`/api/recepcion/${recepcionId}/archivos`, { method: "POST", body: fd });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || t("error"));
+      }
     } catch (e: any) {
       setError(e?.message || t("error"));
     } finally {
       setSubiendo(false);
       if (input.current) input.current.value = "";
+      if (galeria.current) galeria.current.value = "";
+      onCambio();
     }
   };
 
@@ -106,6 +112,11 @@ export default function FotoCaptura({
   };
 
   const falta = obligatoria && fotos.length === 0;
+  const claseBoton =
+    "w-20 h-20 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 text-[11px] font-semibold transition-colors disabled:opacity-60";
+  const colorBoton = falta
+    ? "border-red-300 text-red-600 bg-red-50/50"
+    : "border-slate-300 text-slate-500 hover:border-violet-300 hover:text-[color:var(--portal-primary,#741DFE)]";
 
   return (
     <div>
@@ -142,15 +153,21 @@ export default function FotoCaptura({
               type="button"
               onClick={() => input.current?.click()}
               disabled={subiendo}
-              className={`w-20 h-20 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 text-[11px] font-semibold transition-colors disabled:opacity-60 ${
-                falta
-                  ? "border-red-300 text-red-600 bg-red-50/50"
-                  : "border-slate-300 text-slate-500 hover:border-violet-300 hover:text-[color:var(--portal-primary,#741DFE)]"
-              }`}
+              className={`${claseBoton} ${colorBoton}`}
             >
               {subiendo ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
               {subiendo ? t("subiendo") : fotos.length ? t("otra_foto") : t("tomar_foto")}
             </button>
+            {!subiendo && (
+              <button
+                type="button"
+                onClick={() => galeria.current?.click()}
+                className={`${claseBoton} ${colorBoton}`}
+              >
+                <ImageIcon className="w-5 h-5" />
+                {t("galeria")}
+              </button>
+            )}
             <input
               ref={input}
               type="file"
@@ -158,10 +175,16 @@ export default function FotoCaptura({
               // En el telefono abre directo la camara trasera.
               capture="environment"
               className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void subir(f);
-              }}
+              onChange={(e) => void subir(Array.from(e.target.files ?? []))}
+            />
+            {/* Sin capture: el telefono ofrece la galeria (fotos tomadas antes). */}
+            <input
+              ref={galeria}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => void subir(Array.from(e.target.files ?? []))}
             />
           </>
         )}
