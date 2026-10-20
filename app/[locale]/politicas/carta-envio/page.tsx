@@ -38,6 +38,8 @@ export default function CartaEnvioPage() {
   const [busqueda, setBusqueda] = useState("");
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [buscando, setBuscando] = useState(false);
+  const [clienteId, setClienteId] = useState<number | null>(null);
+  const [direcciones, setDirecciones] = useState<{ id: number; nombre: string; direccion: string }[]>([]);
 
   const set = <K extends keyof DatosCarta>(k: K, val: DatosCarta[K]) => setD((x) => ({ ...x, [k]: val }));
 
@@ -67,10 +69,17 @@ export default function CartaEnvioPage() {
     return () => clearTimeout(t);
   }, [busqueda, sede]);
 
+  // La dirección de entrega no se copia del domicilio fiscal: se ofrecen las de entrega del cliente en Odoo.
   const elegir = (c: Cliente) => {
-    setD((x) => ({ ...x, cliente: c.nombre, rifCliente: c.rif, direccionCliente: c.direccion, destino: x.destino || c.direccion }));
+    setD((x) => ({ ...x, cliente: c.nombre, rifCliente: c.rif, direccionCliente: c.direccion, destino: "" }));
     setBusqueda("");
     setClientes([]);
+    setClienteId(c.id);
+    setDirecciones([]);
+    fetch(`/api/politicas/carta-envio?sede=${sede}&partner=${c.id}`)
+      .then((r) => r.json())
+      .then((j) => setDirecciones(j.direcciones || []))
+      .catch(() => setDirecciones([]));
   };
 
   // Mismo patrón que el PDF del Organigrama: iframe de tamaño 0 (con display:none Chrome imprime en blanco).
@@ -113,7 +122,11 @@ export default function CartaEnvioPage() {
         </Link>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => setD({ ...CARTA_VACIA, fecha: hoy(), lugar: empresa?.ciudad || "" })}
+            onClick={() => {
+              setD({ ...CARTA_VACIA, fecha: hoy(), lugar: empresa?.ciudad || "" });
+              setClienteId(null);
+              setDirecciones([]);
+            }}
             className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
             <RotateCcw className="h-4 w-4" /> Limpiar
@@ -204,16 +217,8 @@ export default function CartaEnvioPage() {
                 <input id="ce-rif" value={d.rifCliente} onChange={(e) => set("rifCliente", e.target.value)} className={campo} />
               </div>
               <div>
-                <label className={etiqueta} htmlFor="ce-cargo">Cargo de quien firma</label>
-                <input id="ce-cargo" value={d.cargo} onChange={(e) => set("cargo", e.target.value)} placeholder="Ej. Gerente general" className={campo} />
-              </div>
-              <div>
-                <label className={etiqueta} htmlFor="ce-rep">Representante</label>
-                <input id="ce-rep" value={d.representante} onChange={(e) => set("representante", e.target.value)} className={campo} />
-              </div>
-              <div>
-                <label className={etiqueta} htmlFor="ce-ci">Cédula</label>
-                <input id="ce-ci" value={d.cedula} onChange={(e) => set("cedula", e.target.value)} className={campo} />
+                <label className={etiqueta} htmlFor="ce-replegal">Representante legal</label>
+                <input id="ce-replegal" value={d.representanteLegal} onChange={(e) => set("representanteLegal", e.target.value)} className={campo} />
               </div>
             </div>
             <div>
@@ -222,14 +227,62 @@ export default function CartaEnvioPage() {
             </div>
           </Bloque>
 
+          <Bloque titulo="Quien firma">
+            <p className="-mt-2 text-xs text-slate-500">Es quien habla en la carta ("Yo, …"); puede ser otra persona que el representante legal.</p>
+            <div>
+              <label className={etiqueta} htmlFor="ce-rep">Nombre</label>
+              <input id="ce-rep" value={d.representante} onChange={(e) => set("representante", e.target.value)} className={campo} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className={etiqueta} htmlFor="ce-ci">Cédula</label>
+                <input id="ce-ci" value={d.cedula} onChange={(e) => set("cedula", e.target.value)} className={campo} />
+              </div>
+              <div>
+                <label className={etiqueta} htmlFor="ce-cargo">Cargo</label>
+                <input id="ce-cargo" value={d.cargo} onChange={(e) => set("cargo", e.target.value)} placeholder="Ej. Encargado de compras" className={campo} />
+              </div>
+            </div>
+            {d.representanteLegal && d.representante !== d.representanteLegal && (
+              <button onClick={() => set("representante", d.representanteLegal)} className="text-xs font-semibold text-blue-700 hover:underline">
+                Firma el representante legal
+              </button>
+            )}
+          </Bloque>
+
           <Bloque titulo="Envío">
             <div>
               <label className={etiqueta} htmlFor="ce-fact">Factura(s) / Pedido(s)</label>
               <input id="ce-fact" value={d.facturas} onChange={(e) => set("facturas", e.target.value)} placeholder="Ej. F-001234, S-05678" className={campo} />
             </div>
             <div>
-              <label className={etiqueta} htmlFor="ce-dest">Destino</label>
+              <label className={etiqueta} htmlFor="ce-dest">Dirección de entrega</label>
               <textarea id="ce-dest" rows={2} value={d.destino} onChange={(e) => set("destino", e.target.value)} className={campo} />
+              {(direcciones.length > 0 || d.direccionCliente) && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {direcciones.map((x) => (
+                    <button
+                      key={x.id}
+                      onClick={() => set("destino", x.direccion)}
+                      title={x.direccion}
+                      className="max-w-full truncate rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 hover:border-blue-300 hover:text-blue-700"
+                    >
+                      {x.nombre || x.direccion}
+                    </button>
+                  ))}
+                  {d.direccionCliente && (
+                    <button
+                      onClick={() => set("destino", d.direccionCliente)}
+                      className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 hover:border-blue-300 hover:text-blue-700"
+                    >
+                      Usar el domicilio fiscal
+                    </button>
+                  )}
+                </div>
+              )}
+              {clienteId && direcciones.length === 0 && (
+                <p className="mt-1 text-xs text-slate-500">El cliente no tiene direcciones de entrega en Odoo: escríbela.</p>
+              )}
             </div>
           </Bloque>
 

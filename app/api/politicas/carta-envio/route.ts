@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 // Datos de Odoo para la carta de autorización de envío (Políticas y Acuerdos).
 //   GET ?sede=9          -> { empresa }   la sede que emite la carta (res.company, con logo).
 //   GET ?sede=9&q=texto  -> { clientes }  clientes por nombre o RIF (res.partner).
+//   GET ?sede=9&partner=123 -> { direcciones }  direcciones de entrega de ese cliente.
 // Administración queda en la sede de su cids.
 
 const direccion = (p: any) =>
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
   const contexto = { context: { allowed_company_ids: [sede] } };
 
   try {
-    if (!q) {
+    if (!q && !params.has("partner")) {
       const [c] =
         (await callOdooRPCEstricto<any[]>(
           "res.company",
@@ -47,6 +48,21 @@ export async function GET(request: NextRequest) {
           web: c.website || "",
           logo: c.logo ? `data:image/png;base64,${c.logo}` : "",
         },
+      });
+    }
+    const partner = Number(params.get("partner"));
+    if (params.has("partner")) {
+      // Direcciones de entrega del cliente: sus contactos hijos tipo "delivery".
+      if (!Number.isInteger(partner) || partner <= 0) return NextResponse.json({ direcciones: [] });
+      const hijos =
+        (await callOdooRPCEstricto<any[]>(
+          "res.partner",
+          "search_read",
+          [[["parent_id", "=", partner], ["type", "=", "delivery"]]],
+          { fields: ["name", "street", "street2", "city", "state_id", "country_id"], limit: 30, order: "name", ...contexto },
+        )) ?? [];
+      return NextResponse.json({
+        direcciones: hijos.map((h) => ({ id: h.id, nombre: h.name || "", direccion: direccion(h) })).filter((h) => h.direccion),
       });
     }
     if (q.length < 2) return NextResponse.json({ clientes: [] });

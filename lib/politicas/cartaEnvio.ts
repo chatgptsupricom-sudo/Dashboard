@@ -23,7 +23,8 @@ export type DatosCarta = {
   cliente: string;
   rifCliente: string;
   direccionCliente: string;
-  representante: string;
+  representante: string; // quien firma (el "Yo" de la carta)
+  representanteLegal: string; // de la empresa cliente; puede ser otra persona
   cedula: string;
   cargo: string;
   facturas: string;
@@ -45,6 +46,7 @@ export const CARTA_VACIA: DatosCarta = {
   rifCliente: "",
   direccionCliente: "",
   representante: "",
+  representanteLegal: "",
   cedula: "",
   cargo: "",
   facturas: "",
@@ -128,6 +130,7 @@ export function htmlCarta(d: DatosCarta, e: EmpresaCarta | null, o: Opciones = {
 
     <p style="${parrafo}">Yo, ${v(d.representante, 190)}, titular de la cédula de identidad N.° ${v(d.cedula, 100)},
     en mi carácter de ${v(d.cargo, 120)} de la empresa ${v(d.cliente, 200)}, ${fiscal} ${v(d.rifCliente, 100)},
+    representada legalmente por ${v(d.representanteLegal, 190)},
     con domicilio fiscal en ${v(d.direccionCliente, 240)}, autorizo a <b>${osc}</b> a entregar a la empresa de transporte
     que indico abajo la mercancía correspondiente al siguiente envío:</p>
 
