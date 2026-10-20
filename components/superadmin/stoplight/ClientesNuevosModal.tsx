@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { X, Check, ArrowLeft } from "lucide-react";
 import ModalMonthPicker from "./ModalMonthPicker";
+import ResumenKpi, { type ResumenKpiProps } from "./ResumenKpi";
+import { BarraMeta } from "./lecturaUI";
 
 interface ClientesNuevosModalProps {
   isOpen: boolean;
@@ -12,13 +14,15 @@ interface ClientesNuevosModalProps {
   /** company_id a enviar, o null en los modos que no lo mandan. */
   companyId: number | null;
   defaultMes: string;
+  /** Encabezado hoy vs meta + meta/peso del mes (ResumenKpi); solo se pinta en el mes del Stoplight. */
+  resumen?: ResumenKpiProps | null;
 }
 
 // Modal "Clientes nuevos": resumen y semanal por vendedor, con drill-down
 // vendedor → cliente → factura → líneas. Autocontenido. Extraído de
 // StoplightReport.tsx (audit #23). Todo — listado y drill-down — respeta el
 // selector de mes del modal (issue #132).
-export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, companyId, defaultMes }: ClientesNuevosModalProps) {
+export default function ClientesNuevosModal({ resumen, isOpen, onClose, apiPrefix, companyId, defaultMes }: ClientesNuevosModalProps) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
 
@@ -103,6 +107,20 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
     }
     setInvoiceLoading(false);
   };
+
+  // % de la meta de clientes nuevos (el mismo que muestra la tabla); null sin meta.
+  const pctNuevos = (seller: any): number | null => {
+    const meta = data?.metaPerSeller || 0;
+    return meta > 0 ? Math.round((seller.nuevosMes / meta) * 100) : null;
+  };
+
+  // Primero el que está más lejos de la meta; sin meta, al final.
+  const sellersOrdenados: any[] = useMemo(() => {
+    if (!data?.sellers) return [];
+    const meta = data.metaPerSeller || 0;
+    if (!(meta > 0)) return data.sellers;
+    return [...data.sellers].sort((a: any, b: any) => (a.nuevosMes || 0) - (b.nuevosMes || 0));
+  }, [data]);
 
   if (!isOpen) return null;
 
@@ -210,6 +228,7 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
 
         {/* Body */}
         <div className="flex-1 overflow-auto p-5">
+          {resumen && mes === resumen.mes && <ResumenKpi {...resumen} />}
           {loading ? (
             <div className="flex items-center justify-center py-20 text-slate-400">{t("loading")}</div>
           ) : !data ? (
@@ -244,6 +263,7 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
                   </div>
 
                   {/* Seller table */}
+                  <p className="text-xs text-slate-500 mb-2">{t("lista_ordenada")}</p>
                   <div className="border rounded-xl overflow-hidden">
                     <table className="w-full text-sm">
                       <thead>
@@ -256,9 +276,9 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
                         </tr>
                       </thead>
                       <tbody>
-                        {data.sellers.map((seller: any) => {
+                        {sellersOrdenados.map((seller: any) => {
                           const meta = data.metaPerSeller || 0;
-                          const pct = meta > 0 ? Math.round((seller.nuevosMes / meta) * 100) : 0;
+                          const pct = pctNuevos(seller) ?? 0;
                           const cumple = pct >= 100;
                           return (
                             <tr
@@ -270,9 +290,12 @@ export default function ClientesNuevosModal({ isOpen, onClose, apiPrefix, compan
                               <td className="p-3 text-center font-bold text-lg">{seller.nuevosMes}</td>
                               <td className="p-3 text-center text-slate-600">{meta}</td>
                               <td className="p-3 text-center">
-                                <span className={`font-bold ${pct >= 100 ? "text-green-600" : pct >= 75 ? "text-yellow-600" : "text-red-600"}`}>
-                                  {meta > 0 ? `${pct}%` : "-"}
-                                </span>
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className={`font-bold ${pct >= 100 ? "text-green-600" : pct >= 75 ? "text-yellow-600" : "text-red-600"}`}>
+                                    {meta > 0 ? `${pct}%` : "-"}
+                                  </span>
+                                  <BarraMeta pct={pctNuevos(seller)} className="w-20" />
+                                </div>
                               </td>
                               <td className="p-3 text-center">
                                 {meta > 0 ? (

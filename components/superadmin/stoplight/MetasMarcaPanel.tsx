@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { AlertTriangle, Copy, Plus, Search } from "lucide-react";
 import { nivelContraMeta, NIVEL_CHIP } from "@/lib/stoplight/scoring";
+import { BarraMeta } from "./lecturaUI";
 
 interface Meta {
   marcaId: number;
@@ -130,6 +131,12 @@ export default function MetasMarcaPanel({ companyId, mes, puedeEditar, onChange 
   const q = busqueda.trim().toLowerCase();
   // Marcas sin meta que se pueden agregar: las vendidas en los últimos meses.
   const candidatas = data.marcas.filter((m) => !conMeta.has(m.marcaId) && (!q || m.marca.toLowerCase().includes(q))).slice(0, q ? 30 : 12);
+  // Marcas de la más lejos de su meta a la más cerca. Quien edita las ve en
+  // el orden de siempre: si se reordenaran al guardar, la fila que se estaba
+  // editando saltaría de lugar.
+  const metasEnOrden = puedeEditar
+    ? data.metas
+    : [...data.metas].sort((a, b) => (a.cumplimiento ?? Infinity) - (b.cumplimiento ?? Infinity));
   const cobertura = data.cobertura.mes;
   const nivel = nivelContraMeta(cobertura, 100);
 
@@ -174,9 +181,12 @@ export default function MetasMarcaPanel({ companyId, mes, puedeEditar, onChange 
       </div>
 
       {/* Metas del mes */}
+      {data.metas.length > 0 && !puedeEditar && (
+        <p className="-mb-2 text-xs text-slate-500">{t("lista_ordenada")}</p>
+      )}
       {data.metas.length > 0 && (
         <div className="border border-slate-200 rounded-xl overflow-x-auto">
-          <table className="w-full text-sm min-w-[720px]">
+          <table className="w-full text-sm min-w-[780px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-2.5 text-left">{t("marca")}</th>
@@ -189,7 +199,7 @@ export default function MetasMarcaPanel({ companyId, mes, puedeEditar, onChange 
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.metas.map((m) => (
+              {metasEnOrden.map((m) => (
                 <tr key={m.marcaId}>
                   <td className="px-3 py-2 font-medium text-slate-800">{m.marca}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{puedeEditar ? inputMeta(m.marcaId, m.marca, m.meta) : dinero(m.meta)}</td>
@@ -197,8 +207,11 @@ export default function MetasMarcaPanel({ companyId, mes, puedeEditar, onChange 
                   <td className="px-3 py-2 text-right tabular-nums text-slate-500">{dinero(m.metaAlDia)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{dinero(m.real)}</td>
                   <td className="px-3 py-2 text-center">
-                    <span className={`inline-flex min-w-[56px] justify-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${NIVEL_CHIP[nivelContraMeta(m.cumplimiento, 100)]}`}>
-                      {m.cumplimiento == null ? "–" : `${m.cumplimiento}%`}
+                    <span className="inline-flex items-center gap-2">
+                      <BarraMeta pct={m.cumplimiento} className="w-16" />
+                      <span className={`inline-flex min-w-[56px] justify-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${NIVEL_CHIP[nivelContraMeta(m.cumplimiento, 100)]}`}>
+                        {m.cumplimiento == null ? "–" : `${m.cumplimiento}%`}
+                      </span>
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-400">{dinero(historial.get(m.marcaId)?.promedio3m ?? 0)}</td>

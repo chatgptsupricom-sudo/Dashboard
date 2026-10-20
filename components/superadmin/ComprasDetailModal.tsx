@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { X, ArrowLeft, Check, AlertTriangle, BarChart3, ChevronLeft, ChevronRight } from "lucide-react";
+import ResumenKpi, { type ResumenKpiProps } from "./stoplight/ResumenKpi";
 
 interface ComprasDetailModalProps {
   isOpen: boolean;
@@ -12,9 +13,12 @@ interface ComprasDetailModalProps {
   companyId: number;
   mes: string;
   onMesChange?: (mes: string) => void;
+  /** Encabezado hoy vs meta + meta/peso del mes (ResumenKpi); solo se pinta en el mes del Stoplight. */
+  resumen?: ResumenKpiProps | null;
 }
 
 export default function ComprasDetailModal({
+  resumen,
   isOpen,
   onClose,
   kpiType,
@@ -227,6 +231,7 @@ export default function ComprasDetailModal({
 
         {/* Body */}
         <div className="flex-1 overflow-auto p-5">
+          {resumen && mes === resumen.mes && <ResumenKpi {...resumen} />}
           {loading ? (
             <div className="flex items-center justify-center py-20 text-slate-400">{t("cargando_datos")}</div>
           ) : error ? (
