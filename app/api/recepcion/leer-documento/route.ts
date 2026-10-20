@@ -1,5 +1,6 @@
 import { requireRoles } from "@/lib/auth/roles";
 import { MAX_PRECINTOS, limpiarPrecintos } from "@/lib/recepcion/flujo";
+import { aBultos, unidadPapel, type Conversion } from "@/lib/recepcion/unidades";
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -52,6 +53,9 @@ const INSTRUCCIONES =
   "en ese contenedor (QTY o Item Total) y las cajas o cartones (CTNS) si el documento las dice (0 si no); " +
   "si el contenedor trae un solo producto y el dock receipt dice los cartones de ese contenedor, esas son sus cajas. " +
   "Si el detalle trae una linea por pallet, rollo o bulto (Roll/Pkg), NO es un renglon: usa el total del producto. " +
+  "unidad: en que esta esa cantidad. 'hojas' si es papel contado por hoja (SHEETS, HOJAS), 'resmas' si es papel " +
+  "contado por resma (REAMS, RESMAS); 'otra' para todo lo demas (piezas, unidades, cajas, bultos, y tambien un " +
+  "paquete de papel fotografico de 100 hojas contado por paquete). Copia la cantidad tal cual, sin convertirla. " +
   "No saques renglones del dock receipt ni de la confirmacion de booking si el packing list ya trae el detalle. " +
   "No incluyas totales generales, fletes, subtotales ni lineas que no sean productos. " +
   "proveedor: quien emite el documento. referencia: el numero de packing list, factura o BL.";
@@ -80,12 +84,13 @@ const ESQUEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["contenedor", "codigo", "producto", "cantidad", "cajas"],
+        required: ["contenedor", "codigo", "producto", "cantidad", "unidad", "cajas"],
         properties: {
           contenedor: { type: "string" },
           codigo: { type: "string" },
           producto: { type: "string" },
           cantidad: { type: "number" },
+          unidad: { type: "string", enum: ["hojas", "resmas", "otra"] },
           cajas: { type: "number" },
         },
       },
@@ -135,6 +140,9 @@ function juntarContenedores(lista: unknown): ContenedorLeido[] {
  * queda anotado cuanto trae cada contenedor (`reparto`), para que Almacen
  * compare cada uno por su lado. Si algun pedazo no dice de que contenedor
  * es, no hay reparto: no se puede saber.
+ *
+ * El papel en hojas o resmas se pasa a bultos (lib/recepcion/unidades.ts) y
+ * queda anotado lo que decia el documento (`conversion`).
  */
 function juntarRenglones(lista: unknown, contenedores: ContenedorLeido[]) {
   type Junto = {
@@ -143,26 +151,37 @@ function juntarRenglones(lista: unknown, contenedores: ContenedorLeido[]) {
     cantidad_esperada: number;
     cajas_esperadas: number | null;
     reparto: Map<string, number> | null;
+    conversion: Conversion | null;
   };
   const conocidos = new Set(contenedores.map((c) => c.numero));
   const porProducto = new Map<string, Junto>();
   for (const r of Array.isArray(lista) ? lista : []) {
     const codigo = texto((r as any)?.codigo, 100);
     const producto = texto((r as any)?.producto, 300);
-    const cantidad = Number((r as any)?.cantidad);
+    const leida = Number((r as any)?.cantidad);
     const cajas = Number((r as any)?.cajas) > 0 ? Math.round(Number((r as any).cajas)) : null;
-    if (!producto || !Number.isFinite(cantidad) || cantidad < 0) continue;
+    if (!producto || !Number.isFinite(leida) || leida < 0) continue;
+    const unidad = unidadPapel((r as any)?.unidad);
+    const cantidad = unidad ? aBultos(leida, unidad) : leida;
     const contenedor = texto((r as any)?.contenedor, 50).toUpperCase().replace(/[\s-]+/g, "");
     const llave = (codigo || producto).toUpperCase().replace(/\s+/g, " ");
     let junto = porProducto.get(llave);
     if (!junto) {
-      junto = { codigo, producto, cantidad_esperada: 0, cajas_esperadas: null, reparto: new Map() };
+      junto = { codigo, producto, cantidad_esperada: 0, cajas_esperadas: null, reparto: new Map(), conversion: null };
       porProducto.set(llave, junto);
     }
-    junto.cantidad_esperada += cantidad;
+    if (unidad) {
+      // Si un pedazo vino en hojas y otro en resmas, se anota el primero.
+      const previa = junto.conversion;
+      junto.conversion =
+        previa && previa.unidad !== unidad
+          ? previa
+          : { unidad, cantidad: (previa?.cantidad ?? 0) + leida };
+    }
+    junto.cantidad_esperada = Math.round((junto.cantidad_esperada + cantidad) * 1000) / 1000;
     if (cajas !== null) junto.cajas_esperadas = (junto.cajas_esperadas ?? 0) + cajas;
     if (junto.reparto && conocidos.has(contenedor)) {
-      junto.reparto.set(contenedor, (junto.reparto.get(contenedor) ?? 0) + cantidad);
+      junto.reparto.set(contenedor, Math.round(((junto.reparto.get(contenedor) ?? 0) + cantidad) * 1000) / 1000);
     } else {
       junto.reparto = null;
     }
