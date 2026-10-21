@@ -197,12 +197,16 @@ export async function GET(request: NextRequest) {
       ? Math.round((totalOverdue / totalReceivable) * 10000) / 100
       : null;
 
-    // Top deudores
-    const topDebtors = (() => {
+    // Top deudores. Sin incobrables (cartera vieja o marcadas a mano) ni
+    // SUPER TECHNO, igual que Cartera Vencida y "Facturas vencidas": se llama
+    // más abajo, cuando ya se sabe qué facturas son incobrables.
+    const topDeudores = (incobrables: Map<number, number>) => {
       const byClient: Record<number, { name: string; total: number; overdue: number; oldest: number; count: number }> = {};
       reportInvoices.forEach((r: any) => {
         const pid = r.partner_id?.[0] || 0;
         if (!pid) return;
+        if (incobrables.has(r.move_id?.[0])) return;
+        if ((r.partner_name || r.partner_id?.[1] || "").toLowerCase().includes(RELACIONADA)) return;
         if (!byClient[pid]) {
           byClient[pid] = { name: r.partner_name || r.partner_id?.[1] || "Sin cliente", total: 0, overdue: 0, oldest: 0, count: 0 };
         }
@@ -219,7 +223,7 @@ export async function GET(request: NextRequest) {
         .filter((d) => d.overdue > 0.005)
         .sort((a, b) => b.overdue - a.overdue)
         .slice(0, 10);
-    })();
+    };
 
     // Por vendedor
     const bySalesperson = (() => {
@@ -356,7 +360,7 @@ export async function GET(request: NextRequest) {
 
     // ── DSO: ya calculado arriba por calcularDSO() ──
     const dsoPorCliente = new Map(dsoCalc.clientes.map((c) => [c.partnerId, c.dso]));
-    const topDebtorsConDso = topDebtors.map((d) => ({ ...d, dso: dsoPorCliente.get(d.partnerId) ?? null }));
+    const topDebtorsConDso = topDeudores(viejas).map((d) => ({ ...d, dso: dsoPorCliente.get(d.partnerId) ?? null }));
 
     // ═══════════════════════════════════════════════════════════════════
     // Respuesta

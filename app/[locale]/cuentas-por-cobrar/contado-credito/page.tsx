@@ -330,17 +330,20 @@ export default function ContadoCreditoPage() {
   };
   const exportarClientes = () => {
     const f = clientesModal.filtro;
+    // Solo los clientes que se ven en el modal (respeta el buscador).
+    const visibles = new Set(clientesVisibles.map((c) => c.partnerId));
     const filas = (data?.detalle || [])
+      .filter((d) => visibles.has(d.partnerId))
       .filter((d) => f.journalId !== undefined ? d.journalId === f.journalId
         : f.dias !== undefined ? d.plazo === f.dias
         : f.tipo === "contado" ? d.plazo === null
         : f.tipo === "credito" ? d.plazo !== null
         : true)
       .sort((a, b) => a.cliente.localeCompare(b.cliente, "es") || (a.fecha || "").localeCompare(b.fecha || ""));
+    // El detalle va primero: es la hoja que abre Excel (antes se veía solo el total por cliente).
     libro(`${etiquetaModo}_${clientesModal.titulo}_${periodoTxt}`, [
-      { nombre: "Clientes", filas: clientesVisibles.map((c) => ({ Cliente: c.partnerName, Facturas: c.facturas, [colMonto]: c.monto })) },
       {
-        nombre: "Detalle",
+        nombre: esCobrado ? "Abonos" : "Facturas",
         filas: filas.map((d) => ({
           Cliente: d.cliente,
           Factura: d.factura,
@@ -352,6 +355,7 @@ export default function ContadoCreditoPage() {
           [colMonto]: d.monto,
         })),
       },
+      { nombre: "Por cliente", filas: clientesVisibles.map((c) => ({ Cliente: c.partnerName, Facturas: c.facturas, [colMonto]: c.monto })) },
     ]);
   };
   const exportarAparte = () => {

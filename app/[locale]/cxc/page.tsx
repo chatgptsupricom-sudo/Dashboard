@@ -348,7 +348,7 @@ export default function CxcDashboardPage() {
                       <th className="text-right py-2 text-slate-500 font-medium">Total</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Vencido</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Días</th>
-                      <th className="text-right py-2 text-slate-500 font-medium" title="Días promedio de cobro del cliente">DSO</th>
+                      <th className="text-right py-2 text-slate-500 font-medium" title="DSO del cliente: su saldo a crédito ÷ sus ventas a crédito de los últimos 90 días × 90 (la misma fórmula de la tarjeta DSO, con 90 días de ventas en vez de un mes)">DSO</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
                     </tr>
                   </thead>

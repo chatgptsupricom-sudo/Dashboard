@@ -600,7 +600,7 @@ export default function CxcDashboardPage() {
                       <th className="text-right py-2 text-slate-500 font-medium">Total</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Vencido</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Días</th>
-                      <th className="text-right py-2 text-slate-500 font-medium" title="Días promedio de cobro del cliente">DSO</th>
+                      <th className="text-right py-2 text-slate-500 font-medium" title="DSO del cliente: su saldo a crédito ÷ sus ventas a crédito de los últimos 90 días × 90 (la misma fórmula de la tarjeta DSO, con 90 días de ventas en vez de un mes)">DSO</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
                       <th className="w-8"></th>
                     </tr>
@@ -1467,7 +1467,7 @@ export default function CxcDashboardPage() {
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     Mismas cifras que Efectividad: saldo contable a crédito (sin Incobrables, Supricom ni SUPER TECHNO) y facturas a crédito del mes menos sus notas de crédito, con IVA. Mes en curso: al día de hoy.
-                    Por cliente, la misma fórmula con su saldo y sus ventas del mes; sin ventas en el mes no hay DSO (—).
+                    Por cliente, la misma fórmula con su saldo y sus ventas a crédito de los últimos 90 días (con un solo mes, un cliente que compró poco ese mes sale con un DSO enorme); sin ventas en esos días no hay DSO (—).
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -1476,7 +1476,7 @@ export default function CxcDashboardPage() {
                       <tr className="bg-slate-50/80">
                         <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
                         <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo al cierre</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas crédito del mes</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas crédito 90 días</th>
                         <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">DSO</th>
                       </tr>
                     </thead>
