@@ -221,8 +221,7 @@ export async function GET(request: NextRequest) {
         // Top de deudores VENCIDOS: solo quien tiene algo vencido, ordenados
         // por lo vencido. Total sigue mostrando todo lo que debe.
         .filter((d) => d.overdue > 0.005)
-        .sort((a, b) => b.overdue - a.overdue)
-        .slice(0, 10);
+        .sort((a, b) => b.overdue - a.overdue);
     };
 
     // Por vendedor
@@ -360,7 +359,8 @@ export async function GET(request: NextRequest) {
 
     // ── DSO: ya calculado arriba por calcularDSO() ──
     const dsoPorCliente = new Map(dsoCalc.clientes.map((c) => [c.partnerId, c.dso]));
-    const topDebtorsConDso = topDeudores(viejas).map((d) => ({ ...d, dso: dsoPorCliente.get(d.partnerId) ?? null }));
+    // Todos los deudores vencidos, en el orden del Top 10 (para su Excel); la tabla muestra los 10 primeros.
+    const deudoresVencidos = topDeudores(viejas).map((d) => ({ ...d, dso: dsoPorCliente.get(d.partnerId) ?? null }));
 
     // ═══════════════════════════════════════════════════════════════════
     // Respuesta
@@ -452,7 +452,8 @@ export async function GET(request: NextRequest) {
             aging: sede?.aging ?? co.aging,
           };
         }),
-        topDebtors: topDebtorsConDso,
+        topDebtors: deudoresVencidos.slice(0, 10),
+        deudoresVencidos,
         bySalesperson: (() => {
           const cobrado = new Map<number, { name: string; monto: number }>();
           for (const c of cobrosMes) {

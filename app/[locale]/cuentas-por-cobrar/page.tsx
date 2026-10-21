@@ -22,7 +22,9 @@ import {
   ChevronRight,
   FileText,
   Package,
+  Download,
 } from "lucide-react";
+import { descargarExcel } from "@/lib/excel";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { BANDAS, COLOR_BANDA, type Banda } from "@/lib/cxc/bandas";
 import { ColumnHeader } from "@/components/compras/column-header";
@@ -588,9 +590,32 @@ export default function CxcDashboardPage() {
             )}
 
             <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Users size={18} className="text-blue-600" />
-                <h3 className="font-semibold text-slate-700 text-sm">Top 10 Deudores Vencidos</h3>
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div className="flex items-center gap-2">
+                  <Users size={18} className="text-blue-600" />
+                  <h3 className="font-semibold text-slate-700 text-sm">Top 10 Deudores Vencidos</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    descargarExcel(`Deudores_vencidos_${new Date().toISOString().slice(0, 10)}`, [{
+                      nombre: "Deudores vencidos",
+                      filas: (data.deudoresVencidos || data.topDebtors).map((d: any, i: number) => ({
+                        "#": i + 1,
+                        Cliente: d.name,
+                        Total: Math.round(d.total * 100) / 100,
+                        Vencido: Math.round(d.overdue * 100) / 100,
+                        "Días vencido (más antigua)": d.oldest,
+                        "DSO (90 días)": d.dso ?? "",
+                        Facturas: d.count,
+                      })),
+                    }])
+                  }
+                  title="Todos los clientes con deuda vencida, en el mismo orden"
+                  className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition"
+                >
+                  <Download size={13} /> Excel (todos)
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
