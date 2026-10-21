@@ -1903,7 +1903,14 @@
       "marca": "Marca",
       "categoria": "Categoría",
       "productos": "Productos",
-      "de": "de"
+      "de": "de",
+      "costo": "Costo",
+      "precio_base": "Precio base",
+      "vendidas": "Vendidas ({dias} d)",
+      "vendidas_en": "Vendidas en",
+      "vendidas_30": "Vendidas: 30 días",
+      "vendidas_90": "Vendidas: 90 días",
+      "vendidas_365": "Vendidas: 12 meses"
     },
     "integracion_pago": {
       "title": "IntegracionDePago",

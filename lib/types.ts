@@ -482,6 +482,7 @@ export const rolePermissions: RolePermissions = {
       "actividad",
       "stoplight_reports",
       "inventory",
+      "bi_dias_promedio", // Días promedio de cobro, inventario y pago
       "agenteia",
       // Desplegable Leads
       "adminleads",

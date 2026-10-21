@@ -2087,7 +2087,14 @@
       "marca": "Brand",
       "categoria": "Category",
       "productos": "Products",
-      "de": "of"
+      "de": "of",
+      "costo": "Cost",
+      "precio_base": "Base price",
+      "vendidas": "Sold ({dias} d)",
+      "vendidas_en": "Sold in",
+      "vendidas_30": "Sold: 30 days",
+      "vendidas_90": "Sold: 90 days",
+      "vendidas_365": "Sold: 12 months"
     }
   },
   "cxc": {
