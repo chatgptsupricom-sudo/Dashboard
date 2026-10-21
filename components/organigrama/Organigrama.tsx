@@ -20,6 +20,8 @@ type Props = {
   soloLectura?: boolean;
   /** Se pueden arrastrar los recuadros (modo Editar y sin la manito). */
   arrastrable?: boolean;
+  /** Modo libre: a lo alto se suelta en cualquier nivel (solo cambia el dibujo, no la jerarquía). */
+  libre?: boolean;
   /** Zoom del lienzo: el arrastre se mide en px de pantalla. */
   zoom?: number;
   /** Guarda dónde quedaron los recuadros movidos (x absoluta, y dentro de su franja). */
@@ -31,7 +33,7 @@ type Arrastre = {
   x0: number;
   y0: number;
   movio: boolean;
-  piezas: { id: number; x: number; y: number; max: number }[];
+  piezas: { id: number; x: number; y: number; min: number; max: number }[];
 };
 
 const ESTILO_CAJA: Record<Nodo["tipo"], string> = {
@@ -52,7 +54,8 @@ const campo =
  * abre el panel del cargo; doble clic (o el lápiz) edita área, cargo, nota y
  * personas en el mismo recuadro. En modo Editar los recuadros se arrastran: a lo
  * ancho libres, a lo alto solo dentro de su franja (Mayús arrastra también a sus
- * subordinados). Para cambiar de nivel hay que cambiar a quién reporta.
+ * subordinados); en modo libre, a lo alto también a cualquier nivel. Para
+ * cambiar de nivel en la jerarquía hay que cambiar a quién reporta.
  */
 export function Organigrama({
   nodos,
@@ -63,6 +66,7 @@ export function Organigrama({
   onEditar,
   soloLectura = false,
   arrastrable = false,
+  libre = false,
   zoom = 1,
   onMover,
 }: Props) {
@@ -301,7 +305,8 @@ export function Organigrama({
       const c = lienzo.cajas.get(id);
       if (!c) return [];
       const f = lienzo.franjas[c.nivel];
-      return [{ id, x: c.x, y: c.y - f.top, max: yRelativaMax(f, c.h) }];
+      // En modo libre sube hasta el borde del lienzo y baja sin límite.
+      return [{ id, x: c.x, y: c.y - f.top, min: libre ? -f.top : 0, max: libre ? Infinity : yRelativaMax(f, c.h) }];
     });
     const a: Arrastre = { puntero: e.pointerId, x0: e.clientX, y0: e.clientY, movio: false, piezas };
     let movido: Map<number, { x: number; y: number }> | null = null;
@@ -315,7 +320,7 @@ export function Organigrama({
       if (!a.movio && Math.hypot(dx, dy) < 4) return;
       a.movio = true;
       movido = new Map(
-        a.piezas.map((p) => [p.id, { x: Math.max(0, p.x + dx), y: Math.min(p.max, Math.max(0, p.y + dy)) }]),
+        a.piezas.map((p) => [p.id, { x: Math.max(0, p.x + dx), y: Math.min(p.max, Math.max(p.min, p.y + dy)) }]),
       );
       setMover(movido);
     };
@@ -382,7 +387,11 @@ export function Organigrama({
             onPointerDown={(e) => empezarArrastre(e, n)}
             className={cn("absolute", arrastrable && editando !== n.id && "cursor-move touch-none select-none")}
             style={{ left: c.x, top: c.y, width: c.w, zIndex: editando === n.id || mover?.has(n.id) ? 30 : undefined }}
-            title={arrastrable ? "Arrastra para moverlo dentro de su nivel · Mayús + arrastrar: con sus subordinados" : undefined}
+            title={
+              arrastrable
+                ? `${libre ? "Arrastra para moverlo a cualquier nivel" : "Arrastra para moverlo dentro de su nivel"} · Mayús + arrastrar: con sus subordinados`
+                : undefined
+            }
           >
             {caja(n, "w-full")}
           </div>
