@@ -342,6 +342,7 @@ export const rolePermissions: RolePermissions = {
       // Sin "rma": su item apuntaba también a /rma y se marcaba activo junto
       // con "dashboard". El inventario va separado por procedencia.
       "rma_por_llegar", // Tickets abiertos cuyo equipo todavía no llegó
+      "rma_buscar_factura", // Buscar factura / serial: ¿el equipo se compró en la empresa?
       "rma_inventario_supricom", // Inventario RMA de equipos vendidos por Supricom
       "rma_inventario_externo", // Inventario RMA de equipos no vendidos por Supricom
       "rma_nota_credito", // Solicitudes de nota de crédito (las aprueba superAdmin)

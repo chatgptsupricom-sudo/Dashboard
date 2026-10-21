@@ -42,6 +42,7 @@ import {
   ClipboardList,
   CreditCard,
   DollarSign,
+  FileSearch,
   FileText,
   Receipt,
   Monitor,
@@ -346,6 +347,8 @@ export function Sidebar({
     // Inventario de RMA separado por procedencia del equipo.
     // Tickets abiertos cuyo equipo todavía no llegó (lib/rma/plazos.ts).
     { id: "rma_por_llegar", label: t("rma_por_llegar"), icon: Inbox, slug: "/rma/por-llegar", absoluteHref: true },
+    // Buscar factura o serial: valida si el equipo se compró en la empresa.
+    { id: "rma_buscar_factura", label: t("rma_buscar_factura"), icon: FileSearch, slug: "/rma/buscar-factura", absoluteHref: true },
     { id: "rma_inventario_supricom", label: t("rma_inventario_supricom"), icon: PackageCheck, slug: "/rma/inventario/supricom", absoluteHref: true },
     { id: "rma_inventario_externo", label: t("rma_inventario_externo"), icon: Globe, slug: "/rma/inventario/externo", absoluteHref: true },
     // Personal de RMA: lo registra RMA ("Recibio por RMA" del ingreso), no Seguridad.
@@ -926,6 +929,7 @@ export function Sidebar({
                             // al desplegable "Seguridad" aparte, mas abajo.
                             { label: t("rma"), href: `/${locale}/rma` },
                             { label: t("rma_por_llegar"), href: `/${locale}/rma/por-llegar` },
+                            { label: t("rma_buscar_factura"), href: `/${locale}/rma/buscar-factura` },
                             { label: t("rma_inventario_supricom"), href: `/${locale}/rma/inventario/supricom` },
                             { label: t("rma_inventario_externo"), href: `/${locale}/rma/inventario/externo` },
                             { label: t("nota_credito"), href: `/${locale}/rma/nota-credito` },
