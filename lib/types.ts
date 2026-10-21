@@ -98,6 +98,7 @@ export const rolePermissions: RolePermissions = {
       "catalogo_disenos", // Catálogo de Diseños del Diseñador
       "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
       "organigrama", // Organigrama y actividades de cada cargo (también rol Procesos)
+      "flujogramas", // Flujogramas de procesos (también rol Procesos)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -453,7 +454,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["politicas", "manuales", "organigrama"],
+    sections: ["politicas", "manuales", "organigrama", "flujogramas"],
   },
   // IT (Rangel): por ahora su trabajo en el panel es preaprobar notas de
   // credito. La entrada a /notas-credito la da ser responsable de un paso en

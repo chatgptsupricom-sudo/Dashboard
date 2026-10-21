@@ -159,6 +159,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/manuales") ||
     // Organigrama con las actividades de cada cargo (SuperAdmin y Procesos).
     pathname.includes("/organigrama") ||
+    // Flujogramas de procesos (SuperAdmin y Procesos).
+    pathname.includes("/flujogramas") ||
     // Políticas y Acuerdos: publican Procesos y SuperAdmin, leen los roles
     // administrativos (lib/politicas/permisos.ts).
     pathname.includes("/politicas") ||
@@ -368,6 +370,11 @@ export default async function middleware(request: NextRequest) {
 
       // 10c. Organigrama: SuperAdmin y Procesos (los dos lo editan).
       if (pathname.includes("/organigrama") && !isProcesos && !isSuperAdmin) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
+      // 10c-bis. Flujogramas: igual que el Organigrama (SuperAdmin y Procesos editan).
+      if (pathname.includes("/flujogramas") && !isProcesos && !isSuperAdmin) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 
