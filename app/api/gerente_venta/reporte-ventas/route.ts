@@ -20,8 +20,9 @@ import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
  *   ?tipo=comparativo&vendedor&cliente&marca -> facturación por mes de toda la
  *                                         historia (Smartbit antes del corte)
  *
- * Alcance: gerencia de ventas ve su compañía (payload.cids); superadmin ve las
- * tres sedes y puede acotar con ?sede=. El rango de fechas se limita a 12 meses.
+ * Alcance: gerencia de ventas y gerente de operaciones ven su compañía
+ * (payload.cids); superadmin ve las tres sedes y puede acotar con ?sede=. El
+ * rango de fechas se limita a 12 meses.
  */
 
 const MS_DIA = 24 * 60 * 60 * 1000;
@@ -71,7 +72,7 @@ function sedesPayload(isSuper: boolean) {
 }
 
 async function leerGET(req: NextRequest) {
-  const auth = await requireRoles(req, ["gerencia de ventas", ROL_BI]);
+  const auth = await requireRoles(req, ["gerencia de ventas", "gerente de operaciones", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {
