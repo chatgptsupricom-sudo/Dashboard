@@ -16,10 +16,14 @@ import {
   ChevronRight,
   Copy,
   AlertTriangle,
+  ArrowLeft,
+  FileText,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useTranslations, useLocale } from "next-intl";
+import InvoiceDetailView from "@/components/cxc/InvoiceDetailView";
+import type { FacturaSpiff } from "@/lib/spiff/calculo";
 
 interface SpiffRule {
   id: number;
@@ -128,6 +132,16 @@ export default function SpiffManager({
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [rankingModal, setRankingModal] = useState<{ rule: SpiffRule; mes: string; data: any[]; loading: boolean } | null>(null);
+  // Facturas de un vendedor del ranking (y, con `facturaId`, el detalle de una).
+  const [facturasModal, setFacturasModal] = useState<{
+    vendedor: string;
+    facturas: FacturaSpiff[];
+    monto: number;
+    cantidad: number;
+    loading: boolean;
+    error: boolean;
+    facturaId: number | null;
+  } | null>(null);
   const [filtroEstado, setFiltroEstado] = useState<"todas" | EstadoRegla>("todas");
 
   useEffect(() => {
@@ -365,6 +379,27 @@ export default function SpiffManager({
       setRankingModal((prev) => prev ? { ...prev, loading: false } : null);
     }
   };
+
+  // Mismo cálculo que la fila del ranking (lib/spiff/calculo.ts con
+  // `conFacturas`): las facturas suman su Unidad y su Monto.
+  const handleViewFacturas = async (rule: SpiffRule, mes: string, vendedor: string) => {
+    setFacturasModal({ vendedor, facturas: [], monto: 0, cantidad: 0, loading: true, error: false, facturaId: null });
+    try {
+      const [y, m] = mes.split("-").map(Number);
+      const params = new URLSearchParams({
+        company_id: String(rule.company_id), regla_id: String(rule.id), year: String(y), month: String(m), vendedor,
+      });
+      const res = await fetch(`/api/vendedores/spiff/facturas?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error(String(res.status));
+      const json = await res.json();
+      setFacturasModal((prev) => prev && prev.vendedor === vendedor
+        ? { ...prev, facturas: json.facturas || [], monto: json.monto || 0, cantidad: json.cantidad || 0, loading: false }
+        : prev);
+    } catch {
+      setFacturasModal((prev) => prev && prev.vendedor === vendedor ? { ...prev, loading: false, error: true } : prev);
+    }
+  };
+  const montoSpiff = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString()}`;
 
   const groupedRules = showCompanyFilter
     ? reglasVisibles.reduce<Record<number, SpiffRule[]>>((acc, rule) => {
@@ -765,7 +800,12 @@ export default function SpiffManager({
                       {rankingModal.data
                         .sort((a, b) => b.spiff - a.spiff || b.monto - a.monto)
                         .map((seller, i) => (
-                          <tr key={seller.nombre} className="border-b last:border-none hover:bg-slate-50/50 transition-all">
+                          <tr
+                            key={seller.nombre}
+                            onClick={() => handleViewFacturas(rankingModal.rule, rankingModal.mes, seller.nombre)}
+                            title={t("ranking_ver_facturas")}
+                            className="border-b last:border-none hover:bg-amber-50/60 cursor-pointer transition-all"
+                          >
                             <td className="py-3 text-center">
                               {i === 0 ? <Trophy size={16} className="text-yellow-500 inline" /> :
                                i === 1 ? <Trophy size={16} className="text-slate-400 inline" /> :
@@ -796,6 +836,127 @@ export default function SpiffManager({
                     </tbody>
                   </table>
                 </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Facturas del vendedor -> detalle de una factura */}
+      {rankingModal && facturasModal && createPortal(
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setFacturasModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-h-[85vh] w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {facturasModal.facturaId ? (
+                  <button
+                    onClick={() => setFacturasModal((prev) => prev ? { ...prev, facturaId: null } : null)}
+                    className="w-10 h-10 shrink-0 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600"
+                    aria-label={t("volver_facturas")}
+                    title={t("volver_facturas")}
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+                ) : (
+                  <div className="w-10 h-10 shrink-0 rounded-xl bg-amber-100 flex items-center justify-center">
+                    <FileText size={20} className="text-amber-600" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h2 className="text-base font-black text-slate-800 truncate">
+                    {facturasModal.facturaId
+                      ? facturasModal.facturas.find((f) => f.id === facturasModal.facturaId)?.numero
+                      : t("facturas_title", { vendedor: facturasModal.vendedor })}
+                  </h2>
+                  <p className="text-[11px] text-slate-400 font-medium truncate">
+                    {rankingModal.rule.brand_name}
+                    {rankingModal.rule.tipo === "producto" && rankingModal.rule.product_name ? ` · ${rankingModal.rule.product_name}` : ""}
+                    {" · "}
+                    {new Date(Number(rankingModal.mes.slice(0, 4)), Number(rankingModal.mes.slice(5, 7)) - 1, 1)
+                      .toLocaleDateString(locale, { month: "short", year: "numeric" })}
+                    {facturasModal.facturaId ? ` · ${facturasModal.vendedor}` : ""}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setFacturasModal(null)}
+                className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto">
+              {facturasModal.facturaId ? (
+                <div className="p-5">
+                  <InvoiceDetailView invoiceId={facturasModal.facturaId} />
+                </div>
+              ) : facturasModal.loading ? (
+                <div className="py-12 text-center text-slate-400 font-medium">{t("facturas_loading")}</div>
+              ) : facturasModal.error ? (
+                <div className="py-12 text-center text-sm text-red-500">{t("facturas_error")}</div>
+              ) : facturasModal.facturas.length === 0 ? (
+                <div className="py-12 text-center text-sm text-slate-400">{t("facturas_vacio")}</div>
+              ) : (
+                <>
+                  <p className="px-5 pt-3 text-[11px] text-slate-400">{t("facturas_subtitulo")}</p>
+                  <table className="w-full border-collapse">
+                    <thead className="sticky top-0 bg-slate-50 z-10">
+                      <tr className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                        <th className="py-2 text-left pl-5 pr-3">{t("col_factura")}</th>
+                        <th className="py-2 text-left px-3">{t("col_fecha")}</th>
+                        <th className="py-2 text-left px-3">{t("col_cliente")}</th>
+                        <th className="w-16 py-2 text-center">{t("unit")}</th>
+                        <th className="w-24 py-2 text-right pr-5">{t("col_amount")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {facturasModal.facturas.map((f) => (
+                        <tr
+                          key={f.id}
+                          onClick={() => setFacturasModal((prev) => prev ? { ...prev, facturaId: f.id } : null)}
+                          className="border-b hover:bg-amber-50/60 cursor-pointer transition-all"
+                        >
+                          <td className="py-2.5 pl-5 pr-3 whitespace-nowrap">
+                            <span className="text-xs font-bold text-slate-700 font-mono">{f.numero}</span>
+                            {f.notaCredito && (
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded bg-red-50 text-red-600 text-[9px] font-black">
+                                {t("nota_credito_corta")}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap text-[11px] text-slate-500 tabular-nums">
+                            {f.fecha.split("-").reverse().join("/")}
+                          </td>
+                          <td className="py-2.5 px-3 text-[11px] text-slate-600 max-w-[260px] truncate" title={f.cliente}>
+                            {f.cliente}
+                          </td>
+                          <td className={`py-2.5 text-center text-[10px] font-bold ${f.cantidad < 0 ? "text-red-600" : "text-slate-600"}`}>
+                            {f.cantidad}
+                          </td>
+                          <td className={`py-2.5 pr-5 text-right text-[10px] font-bold tabular-nums ${f.monto < 0 ? "text-red-600" : "text-slate-700"}`}>
+                            {montoSpiff(f.monto)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="sticky bottom-0 bg-slate-50">
+                      <tr className="text-[10px] font-black text-slate-700">
+                        <td className="py-2.5 pl-5 pr-3 uppercase tracking-wider text-slate-500" colSpan={3}>
+                          {t("total_fila")} ({facturasModal.facturas.length})
+                        </td>
+                        <td className="py-2.5 text-center">{facturasModal.cantidad}</td>
+                        <td className="py-2.5 pr-5 text-right tabular-nums">{montoSpiff(facturasModal.monto)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </>
               )}
             </div>
           </div>

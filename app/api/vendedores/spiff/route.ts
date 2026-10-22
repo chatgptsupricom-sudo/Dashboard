@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireSession } from "@/lib/auth/roles";
+import { sedeDelSpiff } from "@/lib/spiff/acceso";
 import { calcularSpiffDelMes } from "@/lib/spiff/calculo";
 
 /**
@@ -24,15 +24,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const uid = Number(payload.uid);
-    const role = String(payload.role || "").toLowerCase().trim();
     const sp = request.nextUrl.searchParams;
     const now = new Date();
     const mes = parseInt(sp.get("month") || "", 10) || now.getMonth() + 1;
     const anio = parseInt(sp.get("year") || "", 10) || now.getFullYear();
 
-    const puedeElegirSede = ["superadmin", "gerencia de ventas", "gerente de operaciones", ROL_BI].includes(role);
-    const param = parseInt(sp.get("company_id") || "", 10);
-    const companyId = puedeElegirSede && Number.isFinite(param) ? param : Number(payload.cids) || 9;
+    const companyId = sedeDelSpiff(payload, sp);
 
     // `regla_id`: el ranking de una regla del administrador la pide aunque
     // esté inactiva o fuera de fecha.
