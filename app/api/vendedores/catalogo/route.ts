@@ -78,6 +78,7 @@
 //     return NextResponse.json({ error: error.message }, { status: 500 });
 //   }
 // }
+import { esRolBI, SEDE_CATALOGO_BI } from "@/lib/auth/inteligenciaNegocio";
 import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextResponse } from "next/server";
@@ -95,13 +96,15 @@ export async function GET(request: Request) {
     }
 
     const payload = verifyToken(token);
-    if (!payload || !payload.cids) {
+    // Inteligencia de Negocio no tiene cids: ve el catálogo de Valencia.
+    const cids = esRolBI(payload?.role) ? SEDE_CATALOGO_BI : payload?.cids;
+    if (!payload || !cids) {
       return NextResponse.json(
         { error: "Empresa no definida" },
         { status: 403 },
       );
     }
-    const userCompanyId = parseInt(payload.cids as string);
+    const userCompanyId = parseInt(String(cids));
 
     const warehouses = await callOdooRPC<any[]>(
       "stock.warehouse",
