@@ -59,6 +59,8 @@ export interface Grupo {
   promedioPonderado: number;
   /** % de facturas pagadas dentro del plazo. */
   aTiempoPct: number;
+  /** Atraso promedio por factura: días pagada después del vencimiento (0 si fue a tiempo). */
+  promedioAtraso: number;
 }
 
 export interface TiempoCobro {
@@ -117,6 +119,7 @@ function agrupar(clave: string, fs: FacturaCobrada[]): Grupo {
     plazoPromedio: r2(prom("plazo")),
     promedioPonderado: r2(monto > 0 ? fs.reduce((s, f) => s + f.dias * f.monto, 0) / monto : 0),
     aTiempoPct: fs.length ? Math.round((fs.filter((f) => f.dias <= f.plazo).length / fs.length) * 1000) / 10 : 0,
+    promedioAtraso: r2(fs.length ? fs.reduce((s, f) => s + Math.max(0, f.dias - f.plazo), 0) / fs.length : 0),
   };
 }
 
