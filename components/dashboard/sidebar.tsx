@@ -48,6 +48,7 @@ import {
   Receipt,
   Monitor,
   Landmark,
+  Bitcoin,
   BookOpenCheck,
   FileCheck2,
   Globe,
@@ -415,6 +416,7 @@ export function Sidebar({
     // Modulos de solo lectura del rol Administracion (lib/administracion/).
     { id: "admin_cxp", label: "Cuentas por Pagar", icon: Receipt, slug: "/administracion/cuentas-por-pagar", absoluteHref: true },
     { id: "admin_tesoreria", label: "Tesorería y Bancos", icon: Landmark, slug: "/administracion/tesoreria", absoluteHref: true },
+    { id: "admin_binance", label: "Conciliación Binance", icon: Bitcoin, slug: "/administracion/binance", absoluteHref: true },
     { id: "admin_fiscal", label: "Fiscal", icon: FileText, slug: "/administracion/fiscal", absoluteHref: true },
     { id: "admin_contabilidad", label: "Contabilidad y cierre", icon: BookOpenCheck, slug: "/administracion/contabilidad", absoluteHref: true },
   ];
@@ -515,6 +517,7 @@ export function Sidebar({
     "gastos_presupuesto",
     "admin_cxp",
     "admin_tesoreria",
+    "admin_binance",
     "admin_fiscal",
     "admin_contabilidad",
   ];
@@ -1709,6 +1712,7 @@ export function Sidebar({
                         { label: "Gastos y Presupuesto", href: `/${locale}/administracion/gastos` },
                         { label: "Cuentas por Pagar", href: `/${locale}/administracion/cuentas-por-pagar` },
                         { label: "Tesorería y Bancos", href: `/${locale}/administracion/tesoreria` },
+                        { label: "Conciliación Binance", href: `/${locale}/administracion/binance` },
                         { label: "Fiscal", href: `/${locale}/administracion/fiscal` },
                         { label: "Contabilidad y cierre", href: `/${locale}/administracion/contabilidad` },
                       ].map((subItem, index) => {
