@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
 import {
+  ArchivoIlegible,
   borrarMovimientosSemana,
   conciliacionSemana,
   eliminarComprobante,
@@ -107,8 +108,18 @@ export async function POST(request: NextRequest) {
     if (e instanceof Anthropic.RateLimitError) {
       return NextResponse.json({ error: "La IA está saturada, intenta en un minuto" }, { status: 429 });
     }
-    console.error("[binance] subir comprobante:", e?.message);
-    return NextResponse.json({ error: "No se pudo procesar el comprobante" }, { status: 500 });
+    if (e instanceof ArchivoIlegible) {
+      return NextResponse.json({ error: e.message }, { status: 422 });
+    }
+    if (e instanceof Anthropic.BadRequestError) {
+      return NextResponse.json({ error: `La IA no pudo leer el archivo: ${e.message.slice(0, 200)}` }, { status: 422 });
+    }
+    console.error("[binance] subir archivo:", e?.message);
+    // Pantalla interna: el detalle ayuda a saber si fallo la IA o la base.
+    return NextResponse.json(
+      { error: `No se pudo procesar el archivo (${String(e?.message || "error").slice(0, 160)})` },
+      { status: 500 },
+    );
   }
 }
 

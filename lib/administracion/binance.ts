@@ -525,7 +525,46 @@ const INSTRUCCIONES_ESTADO =
   "recibido: true solo si es un pago recibido (Received/Recibido, o monto con +). " +
   "contraparte: el To/From tal cual. monto: el valor absoluto, sin signo ni separador de miles (1,841.85 es 1841.85). " +
   "moneda: el codigo (USDT...). completado: true si el estado es Completed/Completado. " +
+  "Pueden venir varias imagenes: son pedazos seguidos de la misma lista, con un poco de solape; " +
+  "una fila que sale en dos pedazos va una sola vez. " +
   "Si la imagen no es un historial de Binance, devuelve la lista vacia.";
+
+// Claude achica cada imagen a ~1568 px de lado largo: una captura larga del
+// historial quedaria con los montos ilegibles. Se parte en franjas que se
+// solapan un poco (la fila repetida la descarta el UNIQUE de la tabla).
+const ANCHO_MAX = 1600;
+const ALTO_FRANJA = 1400;
+const SOLAPE = 150;
+const MAX_FRANJAS = 20;
+// El limite de la API por imagen es 5 MB.
+const MAX_IMAGEN_BYTES = 4.5 * 1024 * 1024;
+
+async function bloquesEstado(datos: Buffer, mime: string): Promise<Anthropic.ContentBlockParam[]> {
+  if (mime === "application/pdf") return [bloqueArchivo(datos, mime)];
+  const sharp = (await import("sharp")).default;
+  const meta = await sharp(datos).metadata();
+  const img =
+    (meta.width || 0) > ANCHO_MAX ? await sharp(datos).resize({ width: ANCHO_MAX }).png().toBuffer() : datos;
+  const { width = 0, height = 0 } = img === datos ? meta : await sharp(img).metadata();
+  if (height <= ALTO_FRANJA * 1.2) {
+    if (img === datos && datos.length <= MAX_IMAGEN_BYTES) return [bloqueArchivo(datos, mime)];
+    return [bloqueArchivo(await sharp(img).png().toBuffer(), "image/png")];
+  }
+  const bloques: Anthropic.ContentBlockParam[] = [];
+  for (let top = 0; top < height; top += ALTO_FRANJA - SOLAPE) {
+    if (bloques.length >= MAX_FRANJAS) {
+      throw new ArchivoIlegible("La captura es demasiado larga: súbela en varias partes");
+    }
+    const alto = Math.min(ALTO_FRANJA, height - top);
+    const franja = await sharp(img).extract({ left: 0, top, width, height: alto }).png().toBuffer();
+    bloques.push(bloqueArchivo(franja, "image/png"));
+    if (top + alto >= height) break;
+  }
+  return bloques;
+}
+
+/** Un archivo que no se puede leer: el mensaje se le muestra a quien lo subio. */
+export class ArchivoIlegible extends Error {}
 
 const ESQUEMA_ESTADO = {
   type: "object",
@@ -564,7 +603,9 @@ export async function leerEstadoDeCuenta(datos: Buffer, mime: string): Promise<{
       max_tokens: 32000,
       system: INSTRUCCIONES_ESTADO,
       output_config: { format: { type: "json_schema", schema: ESQUEMA_ESTADO as any }, effort: "low" },
-      messages: [{ role: "user", content: [bloqueArchivo(datos, mime), { type: "text", text: "Lee estos movimientos." }] }],
+      messages: [
+        { role: "user", content: [...(await bloquesEstado(datos, mime)), { type: "text", text: "Lee estos movimientos." }] },
+      ],
     })
     .finalMessage();
   let l: any;
