@@ -1,6 +1,6 @@
 import { requireRoles } from "@/lib/auth/roles";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
-import { calcularTiempoCobro, explicarAusencia } from "@/lib/cxc/tiempoCobro";
+import { calcularTiempoCobro, esTipoCobro, explicarAusencia } from "@/lib/cxc/tiempoCobro";
 import { NextRequest, NextResponse } from "next/server";
 
 // Tiempo de cobro (lib/cxc/tiempoCobro.ts): días desde la emisión hasta el
@@ -42,17 +42,21 @@ export async function GET(request: NextRequest) {
       hasta = fechaLocal(new Date(year, month + 1, 0));
     }
 
+    // ?tipo=credito (default) | contado | todos
+    const tipoParam = searchParams.get("tipo");
+    const tipo = esTipoCobro(tipoParam) ? tipoParam : "credito";
+
     // ?explicar=<texto>: por qué un cliente buscado no sale en el período.
     const explicar = searchParams.get("explicar")?.trim() || "";
     if (explicar) {
       if (explicar.length < 3 || explicar.length > 80) return NextResponse.json({ error: "Escribe entre 3 y 80 letras." }, { status: 400 });
-      return NextResponse.json({ success: true, data: { ausencias: await explicarAusencia(companyIds, desde, hasta, explicar) } });
+      return NextResponse.json({ success: true, data: { ausencias: await explicarAusencia(companyIds, desde, hasta, explicar, tipo) } });
     }
 
-    const data = await calcularTiempoCobro(companyIds, desde, hasta);
+    const data = await calcularTiempoCobro(companyIds, desde, hasta, tipo);
     return NextResponse.json({
       success: true,
-      data: { ...data, filters: { empresa, companyIds, desde, hasta }, updatedAt: new Date().toISOString() },
+      data: { ...data, filters: { empresa, companyIds, desde, hasta, tipo }, updatedAt: new Date().toISOString() },
     });
   } catch (error: any) {
     console.error("Error CxC tiempo-cobro:", error.message);

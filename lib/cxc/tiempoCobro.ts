@@ -19,11 +19,18 @@ import { esPlazoCredito } from "@/lib/cxc/credito";
  * registro/confirmación que usa el resto de CxC: aquí se mide cuánto tardó el
  * cliente, y la confirmación suele llegar después (sep-2026 en Valencia: 271 de
  * 400 pagos, 2,4 días más tarde en promedio), que es demora interna. Un abono
- * que no es pago (nota de crédito, retención) se fecha por la conciliación. Solo facturas a crédito (plazo con días) que
+ * que no es pago (nota de crédito, retención) se fecha por la conciliación. Por defecto solo facturas a crédito (plazo con días;
+ * `tipo` suma las de contado, con plazo 0) que
  * recibieron al menos un pago real: una cerrada solo con nota de crédito no es
  * "el cliente pagó". Fuera Supricom, SUPER TECHNO y la cartera vieja (vencida
  * antes de 2025), como en los KPIs.
  */
+
+/** Qué facturas mide: las de crédito (default, la de los KPIs), las de contado o todas. */
+export type TipoCobro = "credito" | "contado" | "todos";
+export const esTipoCobro = (v: unknown): v is TipoCobro => v === "credito" || v === "contado" || v === "todos";
+const entra = (esCredito: boolean, tipo: TipoCobro) => tipo === "todos" || (tipo === "credito") === esCredito;
+const nombreTipo = { credito: "a crédito", contado: "de contado", todos: "" } as const;
 
 export interface FacturaCobrada {
   id: number;
@@ -158,7 +165,12 @@ async function diasPlazoCredito(): Promise<Map<number, number>> {
   return dias;
 }
 
-export async function calcularTiempoCobro(companyIds: number[], desde: string, hasta: string): Promise<TiempoCobro> {
+export async function calcularTiempoCobro(
+  companyIds: number[],
+  desde: string,
+  hasta: string,
+  tipo: TipoCobro = "credito",
+): Promise<TiempoCobro> {
   // Conciliaciones desde el inicio del período de facturas que HOY están en
   // cero. La última de cada factura dice cuándo quedó pagada.
   const conciliaciones = await paginar(
@@ -194,8 +206,10 @@ export async function calcularTiempoCobro(companyIds: number[], desde: string, h
   const facturas: FacturaCobrada[] = [];
   for (const m of moves) {
     const delNombre = diasPlazo.get(idDe(m.invoice_payment_term_id) ?? -1);
-    if (delNombre === undefined || !m.invoice_date || esCarteraVieja(m.invoice_date_due)) continue; // contado o vieja
-    const plazo = m.invoice_date_due ? Math.max(0, diasEntre(m.invoice_date, m.invoice_date_due)) : delNombre;
+    if (!entra(delNombre !== undefined, tipo) || !m.invoice_date || esCarteraVieja(m.invoice_date_due)) continue;
+    // Contado: plazo 0 (se paga al facturar); "a tiempo" = pagada el mismo día.
+    const plazo = delNombre === undefined ? 0
+      : m.invoice_date_due ? Math.max(0, diasEntre(m.invoice_date, m.invoice_date_due)) : delNombre;
     const pagada = ultimo.get(m.id)!.fecha;
     facturas.push({
       id: m.id,
@@ -231,7 +245,7 @@ export async function calcularTiempoCobro(companyIds: number[], desde: string, h
     resumen: { ...agrupar("total", facturas), mediana },
     tramos,
     porPlazo: [...porClave(facturas, (f) => String(f.plazo))]
-      .map(([k, fs]) => ({ ...agrupar(`${k} días`, fs), plazo: Number(k) }))
+      .map(([k, fs]) => ({ ...agrupar(k === "0" ? "0 días (contado)" : `${k} días`, fs), plazo: Number(k) }))
       .sort((a, b) => a.plazo - b.plazo),
     clientes: [...clientesMap]
       .map(([k, fs]) => ({ ...agrupar(fs[0].cliente, fs), partnerId: Number(k) }))
@@ -259,6 +273,7 @@ export async function explicarAusencia(
   desde: string,
   hasta: string,
   texto: string,
+  tipo: TipoCobro = "credito",
 ): Promise<{ cliente: string; motivo: string }[]> {
   const facturas = await callOdooRPC<any[]>(
     "account.move",
@@ -282,9 +297,10 @@ export async function explicarAusencia(
   }
   const clientes = [...porCliente.values()].slice(0, 5);
 
-  // Último abono de las facturas a crédito ya pagadas.
+  const delTipo = (f: any) => entra(diasPlazo.has(idDe(f.invoice_payment_term_id) ?? -1), tipo);
+  // Último abono de las facturas del tipo elegido ya pagadas.
   const pagadas = clientes.flat().filter(
-    (f) => diasPlazo.has(idDe(f.invoice_payment_term_id) ?? -1) && !esCarteraVieja(f.invoice_date_due) && Number(f.amount_residual) === 0,
+    (f) => delTipo(f) && !esCarteraVieja(f.invoice_date_due) && Number(f.amount_residual) === 0,
   );
   const ultimo = pagadas.length
     ? await ultimosAbonos(await paginar("account.partial.reconcile", [["debit_move_id.move_id", "in", pagadas.map((f) => f.id)]], ["id", "max_date", "debit_move_id", "credit_move_id"]))
@@ -296,12 +312,18 @@ export async function explicarAusencia(
     if (/supricom/i.test(cliente) || comercial.toLowerCase().includes(RELACIONADA))
       return { cliente, motivo: "Es una empresa del grupo: no entra en el tiempo de cobro." };
 
-    const credito = fs.filter((f) => diasPlazo.has(idDe(f.invoice_payment_term_id) ?? -1));
-    const vigentes = credito.filter((f) => !esCarteraVieja(f.invoice_date_due));
-    if (!credito.length)
-      return { cliente, motivo: `Solo tiene facturas de contado en esta sede (${plural(fs.length, "factura", "facturas")}); aquí solo cuentan las de crédito.` };
+    const t = nombreTipo[tipo];
+    const delTipoCliente = fs.filter(delTipo);
+    const vigentes = delTipoCliente.filter((f) => !esCarteraVieja(f.invoice_date_due));
+    if (!delTipoCliente.length)
+      return {
+        cliente,
+        motivo: tipo === "credito"
+          ? `Solo tiene facturas de contado en esta sede (${plural(fs.length, "factura", "facturas")}): elige «Contado» o «Todas» arriba para verlo.`
+          : `Solo tiene facturas a crédito en esta sede (${plural(fs.length, "factura", "facturas")}): elige «Crédito» o «Todas» arriba para verlo.`,
+      };
     if (!vigentes.length)
-      return { cliente, motivo: "Sus facturas a crédito vencieron antes de 2025 (cartera vieja): no cuentan." };
+      return { cliente, motivo: `Sus facturas${t ? " " + t : ""} vencieron antes de 2025 (cartera vieja): no cuentan.` };
 
     const partes: string[] = [];
     const conPago = vigentes.map((f) => ultimo.get(f.id)).filter((u) => u?.conPago) as { fecha: string }[];
@@ -309,12 +331,12 @@ export async function explicarAusencia(
     if (enPeriodo.length) partes.push(`Terminó de pagar ${plural(enPeriodo.length, "factura", "facturas")} en el período: sale como «${cliente}».`);
     else if (conPago.length) {
       const meses = [...new Set(conPago.map((u) => u.fecha.slice(0, 7)))].sort().map((m) => mesDe(m));
-      partes.push(`No terminó de pagar facturas a crédito en este período; lo hizo en ${lista(meses)}.`);
+      partes.push(`No terminó de pagar facturas${t ? " " + t : ""} en este período; lo hizo en ${lista(meses)}.`);
     }
     const soloNota = vigentes.filter((f) => Number(f.amount_residual) === 0 && !ultimo.get(f.id)?.conPago).length;
     if (soloNota) partes.push(`${plural(soloNota, "factura se cerró", "facturas se cerraron")} solo con nota de crédito (no cuentan).`);
     const pendientes = vigentes.filter((f) => Number(f.amount_residual) > 0).length;
-    if (pendientes) partes.push(`Tiene ${plural(pendientes, "factura a crédito", "facturas a crédito")} sin terminar de pagar.`);
-    return { cliente, motivo: partes.join(" ") || "No terminó de pagar facturas a crédito en este período." };
+    if (pendientes) partes.push(`Tiene ${plural(pendientes, `factura${t ? " " + t : ""}`, `facturas${t ? " " + t : ""}`)} sin terminar de pagar.`);
+    return { cliente, motivo: partes.join(" ") || `No terminó de pagar facturas${t ? " " + t : ""} en este período.` };
   });
 }
