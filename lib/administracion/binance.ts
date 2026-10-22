@@ -18,6 +18,12 @@ import { db, query } from "@/lib/db";
  * Necesita BINANCE_API_KEY / BINANCE_API_SECRET (una key de solo lectura) y
  * ANTHROPIC_API_KEY para leer los comprobantes.
  *
+ * Sin la API, Administracion sube el estado de cuenta de Binance Pay (capturas o
+ * PDF de la lista de movimientos: fecha, quien, monto, moneda). Eso no trae el
+ * ID de orden: se cruza por monto + moneda + hora al minuto (`cruzar`). Las
+ * filas quedan en `binance_movimientos` (se crea sola) y, si la semana tiene
+ * estado de cuenta, se usa ese en vez de la API.
+ *
  * Binance responde 451 desde paises restringidos (el servidor del panel esta
  * en uno). BINANCE_PROXY_URL (http://usuario:clave@host:puerto) hace que solo
  * estas consultas salgan por un proxy HTTP en un pais permitido, p. ej. el de
@@ -33,6 +39,8 @@ const DIA_MS = 86400_000;
 // Un comprobante cuyo ID se leyo mal se acepta si hay un solo pago del mismo
 // monto y moneda a esta distancia de la hora del comprobante.
 const MARGEN_POR_HORA_MS = 15 * 60_000;
+// El estado de cuenta y el comprobante muestran la misma hora del pago.
+const MARGEN_ESTADO_MS = 2 * 60_000;
 // Mediodia del lunes: donde queda un comprobante sin fecha que Binance no encontro.
 const MEDIODIA_MS = 12 * 3600_000;
 
@@ -57,6 +65,9 @@ export type EstadoComprobante =
   | "por_monto_hora"
   | "no_encontrado"
   | "sin_verificar";
+
+/** De donde salieron los pagos de la semana. */
+export type OrigenPagos = "estado" | "api";
 
 export type Comprobante = {
   id: number;
@@ -242,9 +253,69 @@ export function rangoSemana(lunes: string): { desde: number; hasta: number } | n
 }
 
 const aMysql = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+type BaseComprobante = Omit<Comprobante, "estado" | "binance">;
+
+const mismoMonto = (p: PagoBinance, c: BaseComprobante) =>
+  p.moneda === c.moneda.toUpperCase() && Math.abs(p.monto - c.monto) < 1e-6;
+
+/**
+ * Cruza comprobantes con pagos. Con la API manda el ID de orden; con el estado
+ * de cuenta (sin ID) manda monto + moneda + hora: el pago mas cercano dentro del
+ * margen. Un comprobante sin fecha solo se acepta si hay un unico pago libre de
+ * ese monto en la semana, y queda para revisar.
+ */
+export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: OrigenPagos) {
+  const porId = new Map(pagos.map((p) => [p.id, p]));
+  const usados = new Set<string>(origen === "api" ? bases.map((b) => b.orderId).filter((id) => porId.has(id)) : []);
+  const margen = origen === "estado" ? MARGEN_ESTADO_MS : MARGEN_POR_HORA_MS;
+  // Primero los que tienen hora: no deben perder su pago contra uno sin fecha.
+  const orden = [...bases.keys()].sort((a, b) => Number(bases[a].fechaEstimada) - Number(bases[b].fechaEstimada));
+  const salida: Comprobante[] = new Array(bases.length);
+  for (const i of orden) {
+    const base = bases[i];
+    const exacto = origen === "api" ? porId.get(base.orderId) : undefined;
+    if (exacto) {
+      const fecha = base.fechaEstimada ? exacto.fecha : base.fecha;
+      salida[i] = { ...base, fecha, estado: mismoMonto(exacto, base) ? "conciliado" : "monto_distinto", binance: exacto };
+      continue;
+    }
+    const libres = pagos.filter((p) => !usados.has(p.id) && mismoMonto(p, base));
+    let pago: PagoBinance | null = null;
+    if (base.fechaEstimada) {
+      pago = libres.length === 1 ? libres[0] : null;
+    } else {
+      const t = Date.parse(base.fecha);
+      const dt = (p: PagoBinance) => Math.abs(Date.parse(p.fecha) - t);
+      pago = libres.filter((p) => dt(p) <= margen).sort((a, b) => dt(a) - dt(b))[0] || null;
+    }
+    if (!pago) {
+      salida[i] = { ...base, estado: "no_encontrado", binance: null };
+      continue;
+    }
+    usados.add(pago.id);
+    // En el estado de cuenta la hora es la unica prueba: si coincide, esta conciliado.
+    const estado = origen === "estado" && !base.fechaEstimada ? "conciliado" : "por_monto_hora";
+    salida[i] = { ...base, fecha: base.fechaEstimada ? pago.fecha : base.fecha, estado, binance: pago };
+  }
+  return { comprobantes: salida, usados };
+}
+
+/**
+ * El estado de cuenta muestra la hora sin zona. Se guarda como hora de Caracas,
+ * pero si se bajo con la hora en UTC los comprobantes calzan 4 h despues: se usa
+ * la lectura que concilia mas comprobantes.
+ */
+function ajustarZona(bases: BaseComprobante[], pagos: PagoBinance[]) {
+  const comoUtc = pagos.map((p) => ({ ...p, fecha: new Date(Date.parse(p.fecha) - OFFSET_CARACAS_MS).toISOString() }));
+  const conciliados = (lista: PagoBinance[]) =>
+    cruzar(bases, lista, "estado").comprobantes.filter((c) => c.estado === "conciliado").length;
+  return conciliados(comoUtc) > conciliados(pagos) ? comoUtc : pagos;
+}
+
 /**
  * Comprobantes de la semana cruzados con Binance, y los pagos que entraron en
- * la semana sin comprobante. Si Binance falla, los comprobantes salen
+ * la semana sin comprobante. Los pagos salen del estado de cuenta si la semana
+ * tiene uno; si no, de la API. Si la API falla, los comprobantes salen
  * `sin_verificar` con el error.
  */
 export async function conciliacionSemana(lunes: string) {
@@ -258,58 +329,112 @@ export async function conciliacionSemana(lunes: string) {
        FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? ORDER BY fecha_pago`,
     [aMysql(rango.desde), aMysql(rango.hasta)],
   );
+  const bases: BaseComprobante[] = rows.map((r: any) => ({
+    id: r.id,
+    orderId: String(r.order_id),
+    monto: Number(r.monto),
+    moneda: String(r.moneda),
+    fecha: r.fecha,
+    fechaEstimada: !!r.fecha_estimada,
+    archivoNombre: r.archivo_nombre,
+    subidoPor: r.subido_por,
+    subidoEl: new Date(r.created_at).toISOString(),
+  }));
 
   // Un dia de margen: la hora del comprobante puede no ser exacta.
-  let pagos: PagoBinance[] = [];
-  let errorBinance: string | null = null;
-  try {
-    pagos = await pagosRecibidos(rango.desde - DIA_MS, Math.min(rango.hasta + DIA_MS, Date.now()));
-  } catch (e: any) {
-    errorBinance = e?.message || "No se pudo consultar Binance";
+  const desde = rango.desde - DIA_MS;
+  const hasta = Math.min(rango.hasta + DIA_MS, Date.now());
+  let pagos = await movimientosEnRango(desde, hasta);
+  let origen: OrigenPagos = "estado";
+  if (pagos.length) {
+    pagos = ajustarZona(bases, pagos);
+  } else {
+    origen = "api";
+    try {
+      pagos = await pagosRecibidos(desde, hasta);
+    } catch (e: any) {
+      return {
+        comprobantes: bases.map((b): Comprobante => ({ ...b, estado: "sin_verificar", binance: null })),
+        sinComprobante: [] as PagoBinance[],
+        errorBinance: (e?.message as string) || "No se pudo consultar Binance",
+        origen,
+        movimientos: 0,
+      };
+    }
   }
-  const porId = new Map(pagos.map((p) => [p.id, p]));
-  const usados = new Set<string>(rows.map((r: any) => String(r.order_id)).filter((id) => porId.has(id)));
 
-  const comprobantes: Comprobante[] = rows.map((r: any) => {
-    const base = {
-      id: r.id,
-      orderId: String(r.order_id),
-      monto: Number(r.monto),
-      moneda: String(r.moneda),
-      fecha: r.fecha,
-      fechaEstimada: !!r.fecha_estimada,
-      archivoNombre: r.archivo_nombre,
-      subidoPor: r.subido_por,
-      subidoEl: new Date(r.created_at).toISOString(),
-    };
-    if (errorBinance) return { ...base, estado: "sin_verificar" as const, binance: null };
-    const exacto = porId.get(base.orderId);
-    if (exacto) {
-      const igual = exacto.moneda === base.moneda.toUpperCase() && Math.abs(exacto.monto - base.monto) < 1e-6;
-      const fecha = base.fechaEstimada ? exacto.fecha : base.fecha;
-      return { ...base, fecha, estado: igual ? ("conciliado" as const) : ("monto_distinto" as const), binance: exacto };
-    }
-    const t = Date.parse(base.fecha);
-    const candidatos = pagos.filter(
-      (p) =>
-        !usados.has(p.id) &&
-        p.moneda === base.moneda.toUpperCase() &&
-        Math.abs(p.monto - base.monto) < 1e-6 &&
-        // Sin fecha en el comprobante vale cualquier hora de la semana.
-        (base.fechaEstimada || Math.abs(Date.parse(p.fecha) - t) <= MARGEN_POR_HORA_MS),
-    );
-    if (candidatos.length === 1) {
-      usados.add(candidatos[0].id);
-      return { ...base, estado: "por_monto_hora" as const, binance: candidatos[0] };
-    }
-    return { ...base, estado: "no_encontrado" as const, binance: null };
-  });
-
-  const sinComprobante = pagos.filter((p) => {
+  const { comprobantes, usados } = cruzar(bases, pagos, origen);
+  const enSemana = (p: PagoBinance) => {
     const t = Date.parse(p.fecha);
-    return !usados.has(p.id) && t >= rango.desde && t <= rango.hasta;
-  });
-  return { comprobantes, sinComprobante, errorBinance };
+    return t >= rango.desde && t <= rango.hasta;
+  };
+  const sinComprobante = pagos.filter((p) => !usados.has(p.id) && enSemana(p));
+  return { comprobantes, sinComprobante, errorBinance: null, origen, movimientos: pagos.filter(enSemana).length };
+}
+
+// ---------- Estado de cuenta ----------
+
+let tablaMovimientosLista = false;
+async function ensureTablaMovimientos() {
+  if (tablaMovimientosLista) return;
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS binance_movimientos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      fecha DATETIME NOT NULL,
+      contraparte VARCHAR(120) NOT NULL DEFAULT '',
+      monto DECIMAL(20,8) NOT NULL,
+      moneda VARCHAR(12) NOT NULL,
+      subido_por VARCHAR(190) NOT NULL DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_mov (fecha, monto, moneda, contraparte),
+      INDEX (fecha)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  tablaMovimientosLista = true;
+}
+
+async function movimientosEnRango(desde: number, hasta: number): Promise<PagoBinance[]> {
+  await ensureTablaMovimientos();
+  const { rows } = await query(
+    `SELECT id, DATE_FORMAT(fecha, '%Y-%m-%dT%H:%i:%sZ') AS fecha, contraparte, monto, moneda
+       FROM binance_movimientos WHERE fecha BETWEEN ? AND ? ORDER BY fecha`,
+    [aMysql(desde), aMysql(hasta)],
+  );
+  return rows.map((r: any) => ({
+    id: `e${r.id}`,
+    fecha: r.fecha,
+    monto: Number(r.monto),
+    moneda: String(r.moneda),
+    tipo: "Estado de cuenta",
+    pagador: r.contraparte,
+  }));
+}
+
+export type Movimiento = { fechaMs: number; contraparte: string; monto: number; moneda: string };
+
+/** Guarda los movimientos; los repetidos (misma hora, monto, moneda y quien) se saltan. */
+export async function guardarMovimientos(movs: Movimiento[], email: string) {
+  await ensureTablaMovimientos();
+  let nuevos = 0;
+  for (const m of movs) {
+    const { rows } = await query(
+      "INSERT IGNORE INTO binance_movimientos (fecha, contraparte, monto, moneda, subido_por) VALUES (?,?,?,?,?)",
+      [aMysql(m.fechaMs), m.contraparte.slice(0, 120), m.monto, m.moneda, email],
+    );
+    nuevos += Number((rows as any)?.affectedRows || 0);
+  }
+  return { nuevos, repetidos: movs.length - nuevos };
+}
+
+/** Borra el estado de cuenta de la semana, para volver a subirlo. */
+export async function borrarMovimientosSemana(lunes: string) {
+  const rango = rangoSemana(lunes);
+  if (!rango) throw new Error("Semana inválida");
+  await ensureTablaMovimientos();
+  await query("DELETE FROM binance_movimientos WHERE fecha BETWEEN ? AND ?", [
+    aMysql(rango.desde),
+    aMysql(rango.hasta),
+  ]);
 }
 
 export async function imagenComprobante(id: number) {
@@ -356,16 +481,19 @@ const WORKSPACE = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
 const anthropic = () =>
   (cliente ??= new Anthropic(WORKSPACE ? { defaultHeaders: { "anthropic-workspace-id": WORKSPACE } } : {}));
 
+function bloqueArchivo(datos: Buffer, mime: string): Anthropic.ContentBlockParam {
+  const data = datos.toString("base64");
+  return mime === "application/pdf"
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data } }
+    : { type: "image", source: { type: "base64", media_type: mime as "image/jpeg", data } };
+}
+
 /** fechaMs null = la captura no trae la fecha. */
 export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number | null };
 
 /** Lee el comprobante. null = no es un comprobante de Binance o le faltan datos. */
 export async function leerComprobante(datos: Buffer, mime: string): Promise<Leido | null> {
-  const base64 = datos.toString("base64");
-  const documento: Anthropic.ContentBlockParam =
-    mime === "application/pdf"
-      ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
-      : { type: "image", source: { type: "base64", media_type: mime as "image/jpeg", data: base64 } };
+  const documento = bloqueArchivo(datos, mime);
   const respuesta = await anthropic().messages.create({
     model: MODELO,
     max_tokens: 1000,
@@ -388,6 +516,74 @@ export async function leerComprobante(datos: Buffer, mime: string): Promise<Leid
   const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
   // Sin "UTC" en el comprobante se toma la hora de Caracas.
   return { orderId, monto, moneda, fechaMs: l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS };
+}
+
+const INSTRUCCIONES_ESTADO =
+  "Te dan una captura o PDF del historial de movimientos de Binance Pay (columnas Time/Fecha, Type/Tipo, " +
+  "To/From, Amount/Monto, Currency/Moneda, Status/Estado). Devuelve TODAS las filas, sin inventar ni saltar ninguna. " +
+  "fecha: tal cual aparece, como 'YYYY-MM-DD HH:MM:SS'. tipo: el texto de Type (Received, Sent, Recibido...). " +
+  "recibido: true solo si es un pago recibido (Received/Recibido, o monto con +). " +
+  "contraparte: el To/From tal cual. monto: el valor absoluto, sin signo ni separador de miles (1,841.85 es 1841.85). " +
+  "moneda: el codigo (USDT...). completado: true si el estado es Completed/Completado. " +
+  "Si la imagen no es un historial de Binance, devuelve la lista vacia.";
+
+const ESQUEMA_ESTADO = {
+  type: "object",
+  additionalProperties: false,
+  required: ["movimientos"],
+  properties: {
+    movimientos: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["fecha", "tipo", "recibido", "contraparte", "monto", "moneda", "completado"],
+        properties: {
+          fecha: { type: "string" },
+          tipo: { type: "string" },
+          recibido: { type: "boolean" },
+          contraparte: { type: "string" },
+          monto: { type: "number" },
+          moneda: { type: "string" },
+          completado: { type: "boolean" },
+        },
+      },
+    },
+  },
+} as const;
+
+/**
+ * Lee el estado de cuenta: solo los pagos recibidos y completados. La hora se
+ * toma como de Caracas (`ajustarZona` corrige si venia en UTC).
+ */
+export async function leerEstadoDeCuenta(datos: Buffer, mime: string): Promise<{ movs: Movimiento[]; leidas: number }> {
+  // En streaming: un PDF de muchas paginas puede pasar del tiempo de una llamada normal.
+  const respuesta = await anthropic()
+    .messages.stream({
+      model: MODELO,
+      max_tokens: 32000,
+      system: INSTRUCCIONES_ESTADO,
+      output_config: { format: { type: "json_schema", schema: ESQUEMA_ESTADO as any }, effort: "low" },
+      messages: [{ role: "user", content: [bloqueArchivo(datos, mime), { type: "text", text: "Lee estos movimientos." }] }],
+    })
+    .finalMessage();
+  let l: any;
+  try {
+    l = JSON.parse(respuesta.content.map((b) => (b.type === "text" ? b.text : "")).join(""));
+  } catch {
+    return { movs: [], leidas: 0 };
+  }
+  const filas: any[] = Array.isArray(l?.movimientos) ? l.movimientos : [];
+  const movs: Movimiento[] = [];
+  for (const f of filas) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(f?.fecha || ""));
+    const monto = Math.abs(Number(f?.monto));
+    const moneda = String(f?.moneda || "").trim().toUpperCase().slice(0, 12);
+    if (!m || !f?.recibido || !f?.completado || !(monto > 0) || !moneda) continue;
+    const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+    movs.push({ fechaMs: local + OFFSET_CARACAS_MS, contraparte: String(f?.contraparte || "").trim(), monto, moneda });
+  }
+  return { movs, leidas: filas.length };
 }
 
 /**

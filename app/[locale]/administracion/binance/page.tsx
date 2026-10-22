@@ -5,21 +5,24 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Aviso, BotonExcel, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
-import type { Comprobante, EstadoComprobante, PagoBinance } from "@/lib/administracion/binance";
-import { Bitcoin, Loader2, Trash2, Upload } from "lucide-react";
+import type { Comprobante, EstadoComprobante, OrigenPagos, PagoBinance } from "@/lib/administracion/binance";
+import { Bitcoin, FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
   comprobantes: Comprobante[];
   sinComprobante: PagoBinance[];
   errorBinance: string | null;
+  origen: OrigenPagos;
+  movimientos: number;
 };
 
 type Subida = { nombre: string; ok: boolean; texto: string };
+type TipoArchivo = "comprobante" | "estado";
 
 const ESTADOS: Record<EstadoComprobante, { label: string; clase: string }> = {
   conciliado: { label: "Conciliado", clase: "bg-emerald-100 text-emerald-800" },
-  por_monto_hora: { label: "Coincide por monto y hora (revisar ID)", clase: "bg-amber-100 text-amber-800" },
+  por_monto_hora: { label: "Coincide solo por monto (revisar)", clase: "bg-amber-100 text-amber-800" },
   monto_distinto: { label: "Monto distinto", clase: "bg-red-100 text-red-800" },
   no_encontrado: { label: "No está en Binance", clase: "bg-red-100 text-red-800" },
   sin_verificar: { label: "Sin verificar", clase: "bg-slate-100 text-slate-700" },
@@ -62,6 +65,7 @@ export default function BinancePage() {
   const [subiendo, setSubiendo] = useState<{ hecho: number; total: number } | null>(null);
   const [subidas, setSubidas] = useState<Subida[]>([]);
   const input = useRef<HTMLInputElement>(null);
+  const inputEstado = useRef<HTMLInputElement>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -80,7 +84,7 @@ export default function BinancePage() {
     cargar();
   }, [cargar]);
 
-  const subir = async (archivos: FileList | null) => {
+  const subir = async (archivos: FileList | null, tipo: TipoArchivo) => {
     if (!archivos?.length) return;
     const lista = [...archivos];
     const resultados: Subida[] = [];
@@ -90,10 +94,17 @@ export default function BinancePage() {
       const form = new FormData();
       form.append("archivo", lista[i]);
       form.append("semana", semana);
+      if (tipo === "estado") form.append("tipo", "estado");
       try {
         const json = await (await fetch("/api/administracion/binance", { method: "POST", body: form })).json();
         resultados.push(
-          json.success
+          json.success && json.estado
+            ? {
+                nombre: lista[i].name,
+                ok: true,
+                texto: `${json.recibidos} pagos recibidos (${json.nuevos} nuevos, ${json.repetidos} ya estaban)`,
+              }
+            : json.success
             ? { nombre: lista[i].name, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${json.fechaEstimada ? "sin fecha, quedó en esta semana" : fechaHora(json.fecha)}` }
             : { nombre: lista[i].name, ok: false, texto: json.error || "Error" },
         );
@@ -104,6 +115,13 @@ export default function BinancePage() {
     }
     setSubiendo(null);
     if (input.current) input.current.value = "";
+    if (inputEstado.current) inputEstado.current.value = "";
+    cargar();
+  };
+
+  const borrarEstado = async () => {
+    if (!confirm("¿Borrar el estado de cuenta de esta semana para volver a subirlo?")) return;
+    await fetch(`/api/administracion/binance?estado=${semana}`, { method: "DELETE" });
     cargar();
   };
 
@@ -118,6 +136,8 @@ export default function BinancePage() {
   const conciliados = comprobantes.filter((c) => c.estado === "conciliado");
   const conProblema = comprobantes.filter((c) => c.estado !== "conciliado");
   const etiquetaSemana = opciones.find((o) => o.value === semana)?.label || semana;
+  // El estado de cuenta no trae ID de orden: su id es interno y no se muestra.
+  const idBinance = (id?: string) => (datos?.origen === "estado" || !id ? "" : id);
 
   return (
     <div className="space-y-6">
@@ -128,7 +148,7 @@ export default function BinancePage() {
             Conciliación Binance
           </h1>
           <p className="text-gray-500 text-sm">
-            Sube los comprobantes de la semana; el panel los cruza con los pagos recibidos en Binance Pay
+            Sube el estado de cuenta y los comprobantes de la semana; el panel los cruza por monto, moneda y hora
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -150,8 +170,26 @@ export default function BinancePage() {
             multiple
             accept="image/jpeg,image/png,image/webp,application/pdf"
             className="hidden"
-            onChange={(e) => subir(e.target.files)}
+            onChange={(e) => subir(e.target.files, "comprobante")}
           />
+          <input
+            ref={inputEstado}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/webp,application/pdf"
+            className="hidden"
+            onChange={(e) => subir(e.target.files, "estado")}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-9"
+            disabled={!!subiendo}
+            onClick={() => inputEstado.current?.click()}
+          >
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Subir estado de cuenta
+          </Button>
           <Button size="sm" className="h-9" disabled={!!subiendo} onClick={() => input.current?.click()}>
             {subiendo ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
             {subiendo ? `Leyendo ${subiendo.hecho + 1} de ${subiendo.total}` : "Subir comprobantes"}
@@ -181,7 +219,7 @@ export default function BinancePage() {
                     "Monto comprobante": c.monto,
                     Moneda: c.moneda,
                     Estado: ESTADOS[c.estado].label,
-                    "ID en Binance": c.binance?.id || "",
+                    "ID en Binance": idBinance(c.binance?.id),
                     "Fecha Binance": c.binance ? fechaHora(c.binance.fecha) : "",
                     "Monto Binance": c.binance?.monto ?? "",
                     "Moneda Binance": c.binance?.moneda || "",
@@ -194,7 +232,7 @@ export default function BinancePage() {
                   nombre: "Sin comprobante",
                   filas: sinComprobante.map((p) => ({
                     Fecha: fechaHora(p.fecha),
-                    "ID de orden": p.id,
+                    "ID de orden": idBinance(p.id),
                     Monto: p.monto,
                     Moneda: p.moneda,
                     Pagador: p.pagador,
@@ -220,7 +258,19 @@ export default function BinancePage() {
       )}
 
       {datos?.errorBinance && (
-        <Aviso tono="rojo">No se pudo consultar Binance: {datos.errorBinance}. Los comprobantes quedan sin verificar.</Aviso>
+        <Aviso>
+          Esta semana no tiene estado de cuenta: súbelo con «Subir estado de cuenta» (capturas o PDF de los movimientos
+          de Binance Pay) para conciliar. La consulta directa a Binance tampoco respondió ({datos.errorBinance}).
+        </Aviso>
+      )}
+      {datos?.origen === "estado" && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+          Estado de cuenta cargado: {datos.movimientos} pagos recibidos en la semana.
+          <Button variant="ghost" size="sm" className="h-7 text-gray-500" onClick={borrarEstado}>
+            <Trash2 className="h-3.5 w-3.5 mr-1" />
+            Borrar y volver a subir
+          </Button>
+        </div>
       )}
       {error && <Aviso tono="rojo">{error}</Aviso>}
 
@@ -282,7 +332,9 @@ export default function BinancePage() {
                             {c.orderId}
                           </a>
                           {c.estado === "por_monto_hora" && c.binance && (
-                            <span className="block text-amber-700">Binance: {c.binance.id}</span>
+                            <span className="block text-amber-700">
+                              {idBinance(c.binance.id) ? `Binance: ${c.binance.id}` : "Sin hora en el comprobante"}
+                            </span>
                           )}
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap">
@@ -329,7 +381,7 @@ export default function BinancePage() {
                     {sinComprobante.map((p) => (
                       <TableRow key={p.id}>
                         <TableCell className="whitespace-nowrap">{fechaHora(p.fecha)}</TableCell>
-                        <TableCell className="font-mono text-xs">{p.id}</TableCell>
+                        <TableCell className="font-mono text-xs">{idBinance(p.id) || "—"}</TableCell>
                         <TableCell className="text-right whitespace-nowrap">
                           {cifra(p.monto)} {p.moneda}
                         </TableCell>

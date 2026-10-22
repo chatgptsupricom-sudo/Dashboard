@@ -3,11 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
 import {
+  borrarMovimientosSemana,
   conciliacionSemana,
   eliminarComprobante,
   fechaSinComprobante,
   guardarComprobante,
+  guardarMovimientos,
   leerComprobante,
+  leerEstadoDeCuenta,
   rangoSemana,
 } from "@/lib/administracion/binance";
 
@@ -31,8 +34,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/administracion/binance (multipart: archivo) — un comprobante por
-// llamada: la pantalla los sube de a uno para mostrar el avance.
+// POST /api/administracion/binance (multipart: archivo [, tipo=estado]) — un
+// archivo por llamada: la pantalla los sube de a uno para mostrar el avance.
+// Con tipo=estado es una captura/PDF del estado de cuenta, no un comprobante.
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
@@ -52,6 +56,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Solo fotos (JPG, PNG, WEBP) o PDF" }, { status: 415 });
     }
     const datos = Buffer.from(await archivo.arrayBuffer());
+    if (form.get("tipo") === "estado") {
+      const { movs, leidas } = await leerEstadoDeCuenta(datos, archivo.type);
+      if (!leidas) {
+        return NextResponse.json({ error: "No parece un estado de cuenta de Binance Pay" }, { status: 422 });
+      }
+      const r = await guardarMovimientos(movs, String(auth.payload?.email || ""));
+      return NextResponse.json({ success: true, estado: true, leidas, recibidos: movs.length, ...r });
+    }
     const leido = await leerComprobante(datos, archivo.type);
     if (!leido) {
       return NextResponse.json(
@@ -101,9 +113,16 @@ export async function POST(request: NextRequest) {
 }
 
 // DELETE /api/administracion/binance?id= — quitar un comprobante subido por error.
+// DELETE /api/administracion/binance?estado=YYYY-MM-DD — borrar el estado de cuenta de esa semana.
 export async function DELETE(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
+  const semana = request.nextUrl.searchParams.get("estado");
+  if (semana !== null) {
+    if (!rangoSemana(semana)) return NextResponse.json({ error: "Semana inválida" }, { status: 400 });
+    await borrarMovimientosSemana(semana);
+    return NextResponse.json({ success: true });
+  }
   const id = Number(request.nextUrl.searchParams.get("id"));
   if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "id inválido" }, { status: 400 });
   await eliminarComprobante(id);
