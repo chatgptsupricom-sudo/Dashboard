@@ -57,6 +57,7 @@ export const rolePermissions: RolePermissions = {
       "gastos_presupuesto", // Administración: gastos vs presupuesto
       "admin_cxp", // Administración: cuentas por pagar
       "admin_tesoreria", // Administración: tesorería y bancos
+      "admin_binance", // Administración: conciliación de pagos de Binance
       "admin_fiscal", // Administración: fiscal (SENIAT / DGI)
       "admin_contabilidad", // Administración: contabilidad y cierre
       "users", // Gestión de usuarios
@@ -228,6 +229,7 @@ export const rolePermissions: RolePermissions = {
       "gastos_presupuesto",
       "admin_cxp",
       "admin_tesoreria",
+      "admin_binance",
       "admin_fiscal",
       "admin_contabilidad",
       // Todas las secciones de Cuentas por Cobrar (desplegable en el menu).
