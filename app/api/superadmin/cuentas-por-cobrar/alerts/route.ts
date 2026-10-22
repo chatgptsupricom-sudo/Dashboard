@@ -1,6 +1,9 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
+import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
+import { RELACIONADA } from "@/lib/cxc/cobros";
+import { idsIncobrablesManuales } from "@/lib/cxc/incobrablesManuales";
 import { NextRequest, NextResponse } from "next/server";
 
 const COMPANY_MAP: Record<string, number> = {
@@ -49,22 +52,32 @@ export async function GET(request: NextRequest) {
       ["amount_residual", "!=", 0],
     ];
 
-    const records = (await callOdooRPC<any[]>(
-      "digiflex.cxc.report",
-      "search_read",
-      [domain],
-      {
-        fields: [
-          "id", "move_id", "partner_id", "partner_name",
-          "user_id", "user_name", "company_id", "company_name",
-          "invoice_date", "date_maturity", "days_overdue",
-          "amount_residual", "document_number", "transaction_type",
-        ],
-      },
-    )) || [];
+    const [records, manuales] = await Promise.all([
+      callOdooRPC<any[]>(
+        "digiflex.cxc.report",
+        "search_read",
+        [domain],
+        {
+          fields: [
+            "id", "move_id", "partner_id", "partner_name",
+            "user_id", "user_name", "company_id", "company_name",
+            "invoice_date", "date_maturity", "days_overdue",
+            "amount_residual", "document_number", "transaction_type",
+          ],
+        },
+      ).then((r) => r || []),
+      idsIncobrablesManuales(companyIds),
+    ]);
 
+    // Fuera, como en los KPIs y el Dashboard de CxC: Supricom, SUPER TECHNO y
+    // los incobrables (vencidos antes de 2025 o marcados a mano en Incobrables).
     const openInvoices = records
-      .filter((r: any) => !((r.partner_name || "").toLowerCase().includes("supricom")))
+      .filter((r: any) => {
+        const cliente = (r.partner_name || r.partner_id?.[1] || "").toLowerCase();
+        if (cliente.includes("supricom") || cliente.includes(RELACIONADA)) return false;
+        const moveId = Array.isArray(r.move_id) ? r.move_id[0] : r.move_id;
+        return !manuales.has(moveId) && !esCarteraVieja(r.date_maturity);
+      })
       .map((r: any) => {
         // Con signo (negativo = nota de credito abierta) para que los
         // totales sumados mas abajo neten correctamente.
