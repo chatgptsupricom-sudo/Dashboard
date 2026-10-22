@@ -385,6 +385,7 @@ export const rolePermissions: RolePermissions = {
       "sales_dashboard",
       "actividad",
       "catalogo_disenador",
+      "catalogo", // El de los vendedores, de Valencia (lib/catalogo/sede.ts)
       "llegadas_disenador",
       "catalogo_disenos", // Catálogo de Diseños propios (carga masiva por carpeta)
       "editor_ia_disenador", // Editor con IA (Seedream vía KIE)
@@ -485,7 +486,7 @@ export const rolePermissions: RolePermissions = {
       "stoplight_reports",
       "inventory",
       "bi_dias_promedio", // Días promedio de cobro, inventario y pago
-      "catalogo", // El de los vendedores, de Valencia (SEDE_CATALOGO_BI)
+      "catalogo", // El de los vendedores, de Valencia (lib/catalogo/sede.ts)
       "agenteia",
       // Desplegable Leads
       "adminleads",
