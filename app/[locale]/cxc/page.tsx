@@ -16,7 +16,9 @@ import {
   ArrowDownRight,
   Target,
   Activity,
+  Download,
 } from "lucide-react";
+import { descargarExcel } from "@/lib/excel";
 
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -339,6 +341,29 @@ export default function CxcDashboardPage() {
               <div className="flex items-center gap-2 mb-4">
                 <Users size={18} className="text-blue-600" />
                 <h3 className="font-semibold text-slate-700 text-sm">Top 10 Deudores</h3>
+                <div className="ml-auto">
+                <button
+                  type="button"
+                  onClick={() =>
+                    descargarExcel(`Deudores_vencidos_${new Date().toISOString().slice(0, 10)}`, [{
+                      nombre: "Deudores vencidos",
+                      filas: (data.deudoresVencidos || data.topDebtors).map((d: any, i: number) => ({
+                        "#": i + 1,
+                        Cliente: d.name,
+                        Total: Math.round(d.total * 100) / 100,
+                        Vencido: Math.round(d.overdue * 100) / 100,
+                        "Días vencido (más antigua)": d.oldest,
+                        "DSO (90 días)": d.dso ?? "",
+                        Facturas: d.count,
+                      })),
+                    }])
+                  }
+                  title="Todos los clientes con deuda vencida, en el mismo orden"
+                  className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 hover:bg-emerald-100 transition"
+                >
+                  <Download size={13} /> Excel (todos)
+                </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -348,7 +373,7 @@ export default function CxcDashboardPage() {
                       <th className="text-right py-2 text-slate-500 font-medium">Total</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Vencido</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Días</th>
-                      <th className="text-right py-2 text-slate-500 font-medium" title="Días promedio de cobro del cliente">DSO</th>
+                      <th className="text-right py-2 text-slate-500 font-medium" title="DSO del cliente: su saldo a crédito ÷ sus ventas a crédito de los últimos 90 días × 90 (la misma fórmula de la tarjeta DSO, con 90 días de ventas en vez de un mes)">DSO</th>
                       <th className="text-right py-2 text-slate-500 font-medium">Fact.</th>
                     </tr>
                   </thead>

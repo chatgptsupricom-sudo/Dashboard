@@ -31,6 +31,7 @@ import {
   Check,
   CircleHelp,
   LayoutGrid,
+  Move,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -124,6 +125,8 @@ export default function OrganigramaPage() {
   // Desplazarse arrastrando: con la manito activada, con Ctrl apretado o con
   // el botón central del mouse.
   const [mano, setMano] = useState(false);
+  // Modo libre: el recuadro se suelta en cualquier nivel (solo cambia dónde se dibuja, no a quién reporta).
+  const [libre, setLibre] = useState(false);
   const [ctrl, setCtrl] = useState(false);
   const [arrastrando, setArrastrando] = useState(false);
   const arrastre = useRef<{ x: number; y: number; left: number; top: number; movio: boolean; id: number } | null>(null);
@@ -517,6 +520,16 @@ export default function OrganigramaPage() {
             </DropdownMenu>
             {editando && (
               <button
+                onClick={() => setLibre((v) => !v)}
+                aria-pressed={libre}
+                className={cn(boton, libre && "border-blue-500 bg-blue-50 text-blue-700")}
+                title="Modo libre: arrastra un recuadro a cualquier nivel. Solo cambia dónde se dibuja; a quién reporta se cambia en el panel del cargo."
+              >
+                <Move className="h-4 w-4" /> Modo libre {libre ? "activado" : ""}
+              </button>
+            )}
+            {editando && (
+              <button
                 onClick={ordenarSolo}
                 data-tour="org-ordenar"
                 className={boton}
@@ -643,6 +656,7 @@ export default function OrganigramaPage() {
                 onEditar={editarRapido}
                 soloLectura={!editando}
                 arrastrable={editando && !mano && !exportando}
+                libre={libre}
                 zoom={zoom}
                 onMover={guardarPosiciones}
               />

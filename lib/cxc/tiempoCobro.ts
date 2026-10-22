@@ -123,6 +123,42 @@ function porClave(fs: FacturaCobrada[], clave: (f: FacturaCobrada) => string) {
   return m;
 }
 
+// Último abono de cada factura (fecha del pago; un abono que no es pago se
+// fecha por la conciliación) y si alguno fue un pago real.
+async function ultimosAbonos(conciliaciones: any[]): Promise<Map<number, { fecha: string; conPago: boolean }>> {
+  const [lineasDebito, lineasCredito] = await Promise.all([
+    leer("account.move.line", [...new Set(conciliaciones.map((c) => idDe(c.debit_move_id)!).filter(Boolean))], ["id", "move_id"]),
+    leer("account.move.line", [...new Set(conciliaciones.map((c) => idDe(c.credit_move_id)!).filter(Boolean))], ["id", "payment_id"]),
+  ]);
+  const facturaDeLinea = new Map(lineasDebito.map((l) => [l.id, idDe(l.move_id)]));
+  const pagoDeLinea = new Map(lineasCredito.filter((l) => idDe(l.payment_id)).map((l) => [l.id, idDe(l.payment_id)!]));
+  const pagos = await leer("account.payment", [...new Set(pagoDeLinea.values())], ["id", "date"]);
+  const fechaPago = new Map(pagos.map((p) => [p.id, String(p.date || "").slice(0, 10)]));
+
+  const ultimo = new Map<number, { fecha: string; conPago: boolean }>();
+  for (const c of conciliaciones) {
+    const fid = facturaDeLinea.get(idDe(c.debit_move_id)!);
+    const pagoId = pagoDeLinea.get(idDe(c.credit_move_id)!);
+    const fecha = (pagoId && fechaPago.get(pagoId)) || (c.max_date ? String(c.max_date).slice(0, 10) : "");
+    if (!fid || !fecha) continue;
+    const u = ultimo.get(fid) || { fecha: "", conPago: false };
+    if (fecha > u.fecha) u.fecha = fecha;
+    if (pagoId) u.conPago = true;
+    ultimo.set(fid, u);
+  }
+  return ultimo;
+}
+
+// Plazos a crédito (número en el nombre, esPlazoCredito) → días del nombre.
+async function diasPlazoCredito(): Promise<Map<number, number>> {
+  const plazos = await callOdooRPC<any[]>("account.payment.term", "search_read", [[]], { fields: ["id", "name"], context: { active_test: false } });
+  const dias = new Map<number, number>();
+  for (const p of plazos || []) {
+    if (esPlazoCredito(p.name)) dias.set(p.id, parseInt(String(p.name).match(/\d+/)![0], 10));
+  }
+  return dias;
+}
+
 export async function calcularTiempoCobro(companyIds: number[], desde: string, hasta: string): Promise<TiempoCobro> {
   // Conciliaciones desde el inicio del período de facturas que HOY están en
   // cero. La última de cada factura dice cuándo quedó pagada.
@@ -141,44 +177,21 @@ export async function calcularTiempoCobro(companyIds: number[], desde: string, h
     ["id", "max_date", "debit_move_id", "credit_move_id"],
   );
 
-  const [lineasDebito, lineasCredito] = await Promise.all([
-    leer("account.move.line", [...new Set(conciliaciones.map((c) => idDe(c.debit_move_id)!).filter(Boolean))], ["id", "move_id"]),
-    leer("account.move.line", [...new Set(conciliaciones.map((c) => idDe(c.credit_move_id)!).filter(Boolean))], ["id", "payment_id"]),
-  ]);
-  const facturaDeLinea = new Map(lineasDebito.map((l) => [l.id, idDe(l.move_id)]));
-  const pagoDeLinea = new Map(lineasCredito.filter((l) => idDe(l.payment_id)).map((l) => [l.id, idDe(l.payment_id)!]));
-  const pagos = await leer("account.payment", [...new Set(pagoDeLinea.values())], ["id", "date"]);
-  const fechaPago = new Map(pagos.map((p) => [p.id, String(p.date || "").slice(0, 10)]));
-
-  const ultimo = new Map<number, { fecha: string; conPago: boolean }>();
-  for (const c of conciliaciones) {
-    const fid = facturaDeLinea.get(idDe(c.debit_move_id)!);
-    const pagoId = pagoDeLinea.get(idDe(c.credit_move_id)!);
-    // El dominio filtra por confirmación (siempre >= fecha del pago), así que
-    // no se pierde ningún pago del período; los que sobran caen en el filtro de abajo.
-    const fecha = (pagoId && fechaPago.get(pagoId)) || (c.max_date ? String(c.max_date).slice(0, 10) : "");
-    if (!fid || !fecha) continue;
-    const u = ultimo.get(fid) || { fecha: "", conPago: false };
-    if (fecha > u.fecha) u.fecha = fecha;
-    if (pagoId) u.conPago = true;
-    ultimo.set(fid, u);
-  }
+  // El dominio filtra por confirmación (siempre >= fecha del pago), así que
+  // no se pierde ningún pago del período; los que sobran caen en el filtro de abajo.
+  const ultimo = await ultimosAbonos(conciliaciones);
   // Pagada en el período: su último abono cae entre desde y hasta.
   const ids = [...ultimo].filter(([, u]) => u.conPago && u.fecha >= desde && u.fecha <= hasta).map(([id]) => id);
 
-  const [moves, plazos] = await Promise.all([
+  const [moves, diasPlazo] = await Promise.all([
     leer("account.move", ids, ["id", "name", "partner_id", "invoice_date", "invoice_date_due",
       "invoice_payment_term_id", "amount_total_signed", "invoice_user_id"]),
-    callOdooRPC<any[]>("account.payment.term", "search_read", [[]], { fields: ["id", "name"], context: { active_test: false } }),
+    diasPlazoCredito(),
   ]);
   // Crédito = plazo con número en el nombre (esPlazoCredito, como el resto de
   // CxC). Pero los DÍAS del plazo salen del vencimiento de la factura: es lo
   // que define "a tiempo", y el nombre que devuelve la API (en inglés) quedó
   // viejo en varios plazos (ver nombresPlazos en lib/cxc/credito.ts).
-  const diasPlazo = new Map<number, number>();
-  for (const p of plazos || []) {
-    if (esPlazoCredito(p.name)) diasPlazo.set(p.id, parseInt(String(p.name).match(/\d+/)![0], 10));
-  }
 
   const facturas: FacturaCobrada[] = [];
   for (const m of moves) {
@@ -230,4 +243,80 @@ export async function calcularTiempoCobro(companyIds: number[], desde: string, h
       .sort((a, b) => b.monto - a.monto),
     facturas,
   };
+}
+
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const mesDe = (fecha: string) => `${MESES[Number(fecha.slice(5, 7)) - 1]} ${fecha.slice(0, 4)}`;
+const lista = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}`);
+const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+
+/**
+ * Por qué un cliente buscado no sale en el tiempo de cobro del período: mira
+ * sus facturas de cliente en las sedes elegidas y lo explica con los mismos
+ * criterios de calcularTiempoCobro (crédito, cartera vieja, pagada en el
+ * período con un pago real, sin el grupo).
+ */
+export async function explicarAusencia(
+  companyIds: number[],
+  desde: string,
+  hasta: string,
+  texto: string,
+): Promise<{ cliente: string; motivo: string }[]> {
+  const facturas = await callOdooRPC<any[]>(
+    "account.move",
+    "search_read",
+    [[
+      ["company_id", "in", companyIds],
+      ["move_type", "=", "out_invoice"],
+      ["state", "=", "posted"],
+      ["partner_id.name", "ilike", texto],
+    ]],
+    { fields: ["id", "partner_id", "commercial_partner_id", "invoice_payment_term_id", "invoice_date_due", "amount_residual"], limit: 1000 },
+  );
+  if (!facturas?.length) return [];
+
+  const diasPlazo = await diasPlazoCredito();
+  const porCliente = new Map<number, any[]>();
+  for (const f of facturas) {
+    const k = idDe(f.partner_id) || 0;
+    if (!porCliente.has(k)) porCliente.set(k, []);
+    porCliente.get(k)!.push(f);
+  }
+  const clientes = [...porCliente.values()].slice(0, 5);
+
+  // Último abono de las facturas a crédito ya pagadas.
+  const pagadas = clientes.flat().filter(
+    (f) => diasPlazo.has(idDe(f.invoice_payment_term_id) ?? -1) && !esCarteraVieja(f.invoice_date_due) && Number(f.amount_residual) === 0,
+  );
+  const ultimo = pagadas.length
+    ? await ultimosAbonos(await paginar("account.partial.reconcile", [["debit_move_id.move_id", "in", pagadas.map((f) => f.id)]], ["id", "max_date", "debit_move_id", "credit_move_id"]))
+    : new Map<number, { fecha: string; conPago: boolean }>();
+
+  return clientes.map((fs) => {
+    const cliente = fs[0].partner_id?.[1] || "Sin cliente";
+    const comercial = String(fs[0].commercial_partner_id?.[1] || "");
+    if (/supricom/i.test(cliente) || comercial.toLowerCase().includes(RELACIONADA))
+      return { cliente, motivo: "Es una empresa del grupo: no entra en el tiempo de cobro." };
+
+    const credito = fs.filter((f) => diasPlazo.has(idDe(f.invoice_payment_term_id) ?? -1));
+    const vigentes = credito.filter((f) => !esCarteraVieja(f.invoice_date_due));
+    if (!credito.length)
+      return { cliente, motivo: `Solo tiene facturas de contado en esta sede (${plural(fs.length, "factura", "facturas")}); aquí solo cuentan las de crédito.` };
+    if (!vigentes.length)
+      return { cliente, motivo: "Sus facturas a crédito vencieron antes de 2025 (cartera vieja): no cuentan." };
+
+    const partes: string[] = [];
+    const conPago = vigentes.map((f) => ultimo.get(f.id)).filter((u) => u?.conPago) as { fecha: string }[];
+    const enPeriodo = conPago.filter((u) => u.fecha >= desde && u.fecha <= hasta);
+    if (enPeriodo.length) partes.push(`Terminó de pagar ${plural(enPeriodo.length, "factura", "facturas")} en el período: sale como «${cliente}».`);
+    else if (conPago.length) {
+      const meses = [...new Set(conPago.map((u) => u.fecha.slice(0, 7)))].sort().map((m) => mesDe(m));
+      partes.push(`No terminó de pagar facturas a crédito en este período; lo hizo en ${lista(meses)}.`);
+    }
+    const soloNota = vigentes.filter((f) => Number(f.amount_residual) === 0 && !ultimo.get(f.id)?.conPago).length;
+    if (soloNota) partes.push(`${plural(soloNota, "factura se cerró", "facturas se cerraron")} solo con nota de crédito (no cuentan).`);
+    const pendientes = vigentes.filter((f) => Number(f.amount_residual) > 0).length;
+    if (pendientes) partes.push(`Tiene ${plural(pendientes, "factura a crédito", "facturas a crédito")} sin terminar de pagar.`);
+    return { cliente, motivo: partes.join(" ") || "No terminó de pagar facturas a crédito en este período." };
+  });
 }

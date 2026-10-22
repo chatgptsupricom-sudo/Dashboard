@@ -6,8 +6,8 @@
 // - El nivel sale de la jerarquía: la cabeza es el 0 y cada subordinado está un
 //   nivel debajo de su jefe; el staff va en el nivel de su jefe, a su lado.
 // - Cada nivel es una franja horizontal. Un recuadro se mueve libre a lo ancho,
-//   y a lo alto solo dentro de su franja: para cambiar de nivel hay que cambiar
-//   a quién reporta.
+//   y a lo alto dentro de su franja; en modo libre también fuera de ella (solo
+//   cambia dónde se dibuja: el nivel en la jerarquía sale de a quién reporta).
 // - Sin posición guardada, se acomoda solo (árbol centrado). Si su jefe se movió,
 //   se corre con él.
 
@@ -132,7 +132,8 @@ export function armarLienzo(
     const f = franjas[v];
     const h = alto(n.id);
     const yRel = mover?.get(n.id)?.y ?? n.posY ?? 0;
-    const y = f.top + Math.min(Math.max(0, yRel), Math.max(0, f.alto - h)); // nunca sale de su franja
+    // Fuera de [0, alto de la franja] es una posición del modo libre: se respeta (sin salir por arriba del lienzo).
+    const y = f.top + Math.max(-f.top, yRel);
     cajas.set(n.id, { id: n.id, x: xDe(n), y, w: ANCHO, h, nivel: v });
   }
 
@@ -157,14 +158,18 @@ export function armarLienzo(
       const y1 = a.y + a.h;
       const x2 = b.x + b.w / 2;
       const y2 = b.y;
-      const bus = franjas[b.nivel].top - ENTRE_FRANJAS / 2;
+      // Si alguno se movió fuera de su franja (modo libre), la línea quiebra a mitad de camino.
+      const enSuFranja = (c: Caja) => c.y >= franjas[c.nivel].top && c.y + c.h <= franjas[c.nivel].top + franjas[c.nivel].alto;
+      const bus =
+        enSuFranja(a) && enSuFranja(b) && b.nivel > a.nivel ? franjas[b.nivel].top - ENTRE_FRANJAS / 2 : (y1 + y2) / 2;
       lineas.push({ d: `M${x1},${y1} V${bus} H${x2} V${y2}`, staff: false });
     }
   }
 
   const ancho = Math.max(0, ...[...cajas.values()].map((c) => c.x + c.w)) + MARGEN;
   const ultima = franjas[franjas.length - 1];
-  return { cajas, franjas, lineas, ancho, alto: ultima ? ultima.top + ultima.alto + MARGEN : 0 };
+  const fondo = Math.max(ultima ? ultima.top + ultima.alto : 0, ...[...cajas.values()].map((c) => c.y + c.h));
+  return { cajas, franjas, lineas, ancho, alto: cajas.size ? fondo + MARGEN : 0 };
 }
 
 /** Límite vertical de un recuadro dentro de su franja (para arrastrar). */

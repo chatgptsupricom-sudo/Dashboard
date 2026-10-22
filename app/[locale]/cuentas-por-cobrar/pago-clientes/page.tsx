@@ -93,6 +93,8 @@ export default function PagoClientesPage() {
   const [estado, setEstado] = useState("posted");
   const [search, setSearch] = useState("");
   const [soloRevisar, setSoloRevisar] = useState(false);
+  // Clic en "Sin conciliar": la tabla muestra solo los pagos con algo sin aplicar.
+  const [soloSinConciliar, setSoloSinConciliar] = useState(false);
   const [vendedorFiltro, setVendedorFiltro] = useState("");
   const [bancoFiltro, setBancoFiltro] = useState("");
   const [detalleId, setDetalleId] = useState<number | null>(null);
@@ -135,7 +137,7 @@ export default function PagoClientesPage() {
   }, [desdeConf, hastaConf, desdePago, hastaPago, empresa, estado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { setPage(1); }, [search, soloRevisar, excluirAsistentes, excluirRetenciones, excluirIva25, tab, vendedorFiltro, bancoFiltro]);
+  useEffect(() => { setPage(1); }, [search, soloRevisar, soloSinConciliar, excluirAsistentes, excluirRetenciones, excluirIva25, tab, vendedorFiltro, bancoFiltro]);
 
   // Opciones de los selectores: todo lo que vino del servidor, para que la
   // lista no se vacíe a medida que se filtra.
@@ -191,11 +193,12 @@ export default function PagoClientesPage() {
     const q = search.trim().toLowerCase();
     return enTab.filter((r) => {
       if (soloRevisar && !r.revisar) return false;
+      if (soloSinConciliar && sinConciliarVisible(r) <= 0.005) return false;
       if (!q) return true;
       return [r.cliente, r.rif, r.numeroPago, r.referencia, r.vendedor, r.banco, r.descripcion, r.facturasAplicadas]
         .some((c) => (c || "").toLowerCase().includes(q));
     });
-  }, [enTab, soloRevisar, search]);
+  }, [enTab, soloRevisar, soloSinConciliar, sinConciliarVisible, search]);
 
   const resumen = useMemo(() => {
     const base = search.trim() ? visibles : enTab;
@@ -422,12 +425,22 @@ export default function PagoClientesPage() {
         <Card icon={<Receipt size={16} className="text-slate-500" />} label={tab === "cobro" ? "Cobros" : "Ajustes"} value={resumen.pagos.toLocaleString("es-VE")} />
         <Card icon={<DollarSign size={16} className="text-emerald-600" />} label="Total USD" value={`$ ${fmtNum(resumen.totalUsd)}`} hint="Cobrado del período, conciliado con facturas (= Cobrado de Contado/Crédito con los mismos checks)" />
         <Card icon={<Banknote size={16} className="text-indigo-600" />} label="Total Bs" value={`Bs ${fmtNum(resumen.totalBs)}`} hint="Conciliado con facturas" />
-        <Card
-          icon={<DollarSign size={16} className="text-slate-400" />}
-          label="Sin conciliar"
-          value={`$ ${fmtNum(resumen.sinConciliar)}`}
-          hint={`Recibido $ ${fmtNum(resumen.recibidoUsd)}. Pagos aún no aplicados a facturas (anticipos o saldo a favor): no suman al total, igual que en Contado/Crédito.`}
-        />
+        <button
+          type="button"
+          onClick={() => setSoloSinConciliar((v) => !v)}
+          className={`text-left rounded-xl border p-3 min-w-0 transition-colors ${
+            soloSinConciliar ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"
+          }`}
+        >
+          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <DollarSign size={16} className="text-slate-400" /> Sin conciliar
+          </div>
+          <div className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 tabular-nums break-words">$ {fmtNum(resumen.sinConciliar)}</div>
+          <div className="text-[10px] leading-snug text-slate-400 mt-0.5">
+            Recibido $ {fmtNum(resumen.recibidoUsd)}. Pagos aún no aplicados a facturas (anticipos o saldo a favor): no suman al total, igual que en Contado/Crédito.{" "}
+            <span className="text-slate-500">{soloSinConciliar ? "Mostrando solo estos — tocá para ver todos" : "Tocá para ver el detalle"}</span>
+          </div>
+        </button>
         <button
           type="button"
           onClick={() => setSoloRevisar((v) => !v)}
@@ -511,7 +524,14 @@ export default function PagoClientesPage() {
                     <td className="p-3 text-right tabular-nums text-slate-500">{r.igtf ? fmtNum(r.igtf) : "—"}</td>
                     <td className="p-3 max-w-[280px] truncate text-slate-500" title={r.descripcion}>{r.descripcion || "—"}</td>
                     <td className="p-3 max-w-[160px] truncate text-slate-500" title={r.facturasAplicadas}>{r.facturasAplicadas || "—"}</td>
-                    <td className="p-3 text-center">{r.conciliado ? "✓" : "—"}</td>
+                    <td className="p-3 text-center whitespace-nowrap">
+                      {r.conciliado ? "✓" : "—"}
+                      {sinConciliarVisible(r) > 0.005 && (
+                        <div className="text-[10px] text-blue-700 tabular-nums" title="Parte del pago que no está aplicada a ninguna factura">
+                          $ {fmtNum(r2(sinConciliarVisible(r)))} sin aplicar
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}

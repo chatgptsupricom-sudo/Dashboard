@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { facturasDelPeriodo } from "@/lib/cxc/efectividad";
 import type { SeriesCxC } from "@/lib/cxc/seriesSemanales";
+import { CORTE_ODOO } from "@/lib/smartbit";
 
 /**
  * KPI "DSO" (días promedio de cobro) del mes, en su forma estándar:
@@ -26,11 +27,16 @@ import type { SeriesCxC } from "@/lib/cxc/seriesSemanales";
  * le da más peso a quien más debe respecto de lo que compra y salía 58-88 días
  * contra ~37 reales, además de no seguir el mes elegido.
  *
- * El detalle por cliente usa la misma fórmula con su saldo a crédito al cierre
- * (por factura) y sus ventas a crédito del mes. Un cliente sin ventas en el
- * mes queda sin DSO (no hay contra qué dividir). La suma de saldos por cliente
- * no es exactamente la CxC de la tarjeta: la del libro además resta los pagos
- * sin aplicar, que no son de ninguna factura.
+ * El detalle por cliente usa la misma fórmula (saldo a crédito al cierre ÷
+ * ventas a crédito × días), pero con sus ventas de los últimos
+ * `DIAS_CLIENTE` días y no solo las del mes: un cliente compra pocas veces al
+ * mes, y con un mes su DSO salta con cada factura (oct-2026: AL GIORNO, que
+ * paga a 45 días, salía 212 al día 20 porque ese mes solo había comprado
+ * 12 mil contra 131 mil de saldo; con 90 días da 43). Para toda la cartera
+ * el mes alcanza, por eso la tarjeta sigue mensual. Sin ventas en la ventana,
+ * sin DSO. La ventana no empieza antes de CORTE_ODOO (antes, las ventas están
+ * en Smartbit). La suma de saldos por cliente no es exactamente la CxC de la
+ * tarjeta: la del libro además resta los pagos sin aplicar.
  *
  * Antes de abril 2026 Odoo no tiene las ventas (están en Smartbit), así que
  * esos meses salen sin DSO, igual que el CEI.
@@ -41,10 +47,11 @@ export interface DsoCliente {
   partnerName: string;
   /** Saldo a crédito del cliente al cierre (facturas − NC abiertas). */
   saldo: number;
-  /** Ventas a crédito del cliente en el mes. */
+  /** Ventas a crédito del cliente en los últimos DIAS_CLIENTE días. */
   ventasNetas: number;
+  /** Días de esa ventana. */
   dias: number;
-  /** `null` si no tuvo ventas a crédito en el mes. */
+  /** `null` si no tuvo ventas a crédito en la ventana. */
   dso: number | null;
 }
 
@@ -64,6 +71,8 @@ export interface DsoResultado {
 }
 
 const DIA_MS = 24 * 60 * 60 * 1000;
+/** Ventana de ventas del DSO por cliente. */
+export const DIAS_CLIENTE = 90;
 const idDe = (v: any): number | undefined => (Array.isArray(v) ? v[0] : v || undefined);
 const fechaLocal = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -82,9 +91,17 @@ export async function calcularDSO(
   inicio.setHours(0, 0, 0, 0);
   const dias = Math.max(1, Math.floor((corte.getTime() - inicio.getTime()) / DIA_MS) + 1);
 
-  const [cxc, ventasMes] = await Promise.all([
+  const desdeCliente = new Date(corte);
+  desdeCliente.setHours(0, 0, 0, 0);
+  desdeCliente.setDate(desdeCliente.getDate() - (DIAS_CLIENTE - 1));
+  const corteOdoo = new Date(`${CORTE_ODOO}T00:00:00`);
+  if (desdeCliente < corteOdoo) desdeCliente.setTime(corteOdoo.getTime());
+  const diasCliente = Math.max(1, Math.floor((corte.getTime() - desdeCliente.getTime()) / DIA_MS) + 1);
+
+  const [cxc, ventasMes, ventasCliente] = await Promise.all([
     series.carteraCEI(corte),
     facturasDelPeriodo(companyIds, fechaLocal(inicio), fechaLocal(corte)),
+    facturasDelPeriodo(companyIds, fechaLocal(desdeCliente), fechaLocal(corte)),
   ]);
   const ventas = ventasMes.reduce((s, f) => s + (Number(f.amount_total_signed) || 0), 0);
 
@@ -102,7 +119,7 @@ export async function calcularDSO(
     return porCliente.get(pid)!;
   };
   for (const m of moves) cliente(m.commercial_partner_id).saldo += saldos.get(m.id) || 0;
-  for (const f of ventasMes) cliente(f.commercial_partner_id).ventas += Number(f.amount_total_signed) || 0;
+  for (const f of ventasCliente) cliente(f.commercial_partner_id).ventas += Number(f.amount_total_signed) || 0;
 
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const clientes: DsoCliente[] = [...porCliente]
@@ -112,8 +129,8 @@ export async function calcularDSO(
       partnerName: c.name,
       saldo: r2(c.saldo),
       ventasNetas: r2(c.ventas),
-      dias,
-      dso: c.ventas > 0 ? Math.round((c.saldo / c.ventas) * dias) : null,
+      dias: diasCliente,
+      dso: c.ventas > 0 ? Math.round((c.saldo / c.ventas) * diasCliente) : null,
     }))
     .sort((a, b) => b.saldo - a.saldo);
 

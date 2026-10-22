@@ -256,14 +256,15 @@ export async function actualizarNodo(id: number, b: any, por: string): Promise<v
 export async function guardarPosiciones(lista: unknown, por: string): Promise<number> {
   await ensureTabla();
   if (!Array.isArray(lista)) throw new Error("Faltan las posiciones.");
-  const entero = (v: unknown) => Math.max(0, Math.min(100_000, Math.round(Number(v) || 0)));
+  // y puede ser negativa: en modo libre un recuadro se dibuja arriba de su franja.
+  const entero = (v: unknown, min = 0) => Math.max(min, Math.min(100_000, Math.round(Number(v) || 0)));
   let n = 0;
   for (const p of lista.slice(0, 500) as any[]) {
     const id = Number(p?.id);
     if (!Number.isInteger(id) || id <= 0) continue;
     await db.execute("UPDATE organigrama_nodos SET pos_x = ?, pos_y = ?, updated_by = ? WHERE id = ?", [
       entero(p.x),
-      entero(p.y),
+      entero(p.y, -100_000),
       por,
       id,
     ]);
