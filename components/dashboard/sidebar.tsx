@@ -71,6 +71,7 @@ import {
   Star,
   ShieldCheck,
   Target,
+  Timer,
   TrendingDown,
   TrendingUp,
   Trophy,
@@ -284,6 +285,8 @@ export function Sidebar({
     { id: "seller_map", label: t("mapa_clientes"), icon: Map, slug: "/vendedores" },
     { id: "cuota", label: t("cuota"), icon: FileText, slug: "/cuota" },
     { id: "inventory", label: t("inventario"), icon: Package, slug: "/inventory" },
+    // Inteligencia de Negocio: días promedio de cobro, inventario y pago.
+    { id: "bi_dias_promedio", label: "Días promedio", icon: Timer, slug: "/dias-promedio" },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
     // Organigrama con las actividades de cada cargo (SuperAdmin y Procesos).

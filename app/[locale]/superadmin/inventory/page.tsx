@@ -22,6 +22,9 @@ export default function InventoryPageClient() {
   const [selBrand, setSelBrand] = useState("all");
   const [selCategory, setSelCategory] = useState("all");
   const [onlyLowStock, setOnlyLowStock] = useState(false);
+  // Ventana de "Vendidas": solo la usa Inteligencia de Negocio (la API manda
+  // costo, precio base y vendidas únicamente a ese rol, con `verCostos`).
+  const [ventasDias, setVentasDias] = useState("90");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -55,6 +58,7 @@ export default function InventoryPageClient() {
     onlyLowStock,
     currentPage,
     itemsPerPage,
+    ventasDias,
   ]);
 
   async function loadInventory() {
@@ -69,6 +73,7 @@ export default function InventoryPageClient() {
         search: search,
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
+        ventas_dias: ventasDias,
       });
       const res = await fetch(`/api/superadmin/inventory?${query}`);
       const json = await res.json();
@@ -108,6 +113,9 @@ export default function InventoryPageClient() {
   const showingFrom =
     totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
   const showingTo = Math.min(currentPage * itemsPerPage, totalItems);
+  const verCostos = !!data?.verCostos;
+  const dinero = (n: number | null | undefined) =>
+    n == null ? "—" : `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <div className="space-y-6 p-4 md:p-6 bg-slate-50/50 min-h-screen flex flex-col font-sans text-slate-900">
@@ -119,7 +127,7 @@ export default function InventoryPageClient() {
       </div>
 
       {/* BARRA DE FILTROS AVANZADA */}
-      <div className="grid grid-cols-1 md:grid-cols-7 gap-3 bg-white p-4 rounded-3xl shadow-sm border border-slate-100 items-center">
+      <div className={`grid grid-cols-1 ${verCostos ? "md:grid-cols-8" : "md:grid-cols-7"} gap-3 bg-white p-4 rounded-3xl shadow-sm border border-slate-100 items-center`}>
         {/* Búsqueda */}
         <div className="relative md:col-span-2">
           <Search
@@ -224,6 +232,23 @@ export default function InventoryPageClient() {
           <Filter size={14} />
           {onlyLowStock ? t("bajo_stock") : t("stock")}
         </button>
+
+        {/* Ventana de lo vendido (solo Inteligencia de Negocio) */}
+        {verCostos && (
+          <select
+            className="bg-slate-50 border-none rounded-xl text-[10px] font-bold p-2.5 outline-none cursor-pointer hover:bg-slate-100 transition-colors"
+            value={ventasDias}
+            onChange={(e) => {
+              setVentasDias(e.target.value);
+              setCurrentPage(1);
+            }}
+            aria-label={t("vendidas_en")}
+          >
+            <option value="30">{t("vendidas_30")}</option>
+            <option value="90">{t("vendidas_90")}</option>
+            <option value="365">{t("vendidas_365")}</option>
+          </select>
+        )}
       </div>
 
       {/* TABLA */}
@@ -256,6 +281,19 @@ export default function InventoryPageClient() {
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">
                   {t("stock")}
                 </th>
+                {verCostos && (
+                  <>
+                    <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-right">
+                      {t("costo")}
+                    </th>
+                    <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-right">
+                      {t("precio_base")}
+                    </th>
+                    <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">
+                      {t("vendidas", { dias: data?.ventasDias ?? ventasDias })}
+                    </th>
+                  </>
+                )}
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-right">
                   {t("estado")}
                 </th>
@@ -286,6 +324,19 @@ export default function InventoryPageClient() {
                   <td className="px-6 py-4 text-center font-black text-xs text-slate-800">
                     {item.quantity}
                   </td>
+                  {verCostos && (
+                    <>
+                      <td className="px-6 py-4 text-right font-bold text-xs text-slate-700 tabular-nums">
+                        {dinero(item.costo)}
+                      </td>
+                      <td className="px-6 py-4 text-right font-bold text-xs text-slate-700 tabular-nums">
+                        {dinero(item.precioBase)}
+                      </td>
+                      <td className="px-6 py-4 text-center font-black text-xs text-slate-800 tabular-nums">
+                        {Number(item.vendidas || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                      </td>
+                    </>
+                  )}
                   <td className="px-8 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <div

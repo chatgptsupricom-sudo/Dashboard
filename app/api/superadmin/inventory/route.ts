@@ -1,9 +1,13 @@
 // Bypass SSL para subdominios multi-nivel de Odoo Sh, escopeado por-request
 // via callOdooRPCInsecure (ver lib/odoo.ts) — nunca process.env global.
 import { callOdooRPCInsecure as callOdooRPC } from "@/lib/odoo";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+import { costos, hoyCaracas, sumarDias, unidadesVendidas } from "@/lib/compras/datosOdoo";
+
+// Ventanas de "Vendidas" que puede pedir Inteligencia de Negocio (días).
+const VENTANAS_VENTAS = [30, 90, 365];
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin", ROL_BI]);
@@ -79,7 +83,7 @@ export async function GET(request: NextRequest) {
       allProductsInfo =
         (await callOdooRPC<any[]>("product.product", "search_read", [
           [["id", "in", availProductIds]],
-          ["categ_id", "display_name"],
+          ["categ_id", "display_name", "lst_price"],
         ])) || [];
     }
 
@@ -143,6 +147,25 @@ export async function GET(request: NextRequest) {
     const stockData = resStock || [];
     const totalCount = resCount || 0;
 
+    // Inteligencia de Negocio ve además costo, precio base y lo vendido. El
+    // costo es por sede (standard_price, o el del proveedor si está en 0) y lo
+    // vendido son las unidades netas de la sede en la ventana, Odoo + Smartbit
+    // antes del corte y sin intercompañía: las mismas cifras de Compras
+    // (lib/compras/datosOdoo.ts, en caché 10 min).
+    const verCostos = esRolBI(auth.payload?.role);
+    const pedida = parseInt(searchParams.get("ventas_dias") || "", 10);
+    const ventasDias = VENTANAS_VENTAS.includes(pedida) ? pedida : 90;
+    const porSede = new Map<number, { costo: Map<number, number>; vendidas: Map<number, number> }>();
+    if (verCostos) {
+      const hasta = hoyCaracas();
+      const desde = sumarDias(hasta, -(ventasDias - 1));
+      const sedes = [...new Set(stockData.map((s) => s.company_id?.[0]).filter(Boolean))] as number[];
+      await Promise.all(sedes.map(async (cid) => {
+        const [costo, vendidas] = await Promise.all([costos(cid), unidadesVendidas(cid, desde, hasta)]);
+        porSede.set(cid, { costo, vendidas });
+      }));
+    }
+
     // 6. MAPEO LIMPIO Y SEGURO PARA EL FRONTEND
     const inventory = stockData.map((item) => {
       const pInfo = allProductsInfo.find((p) => p.id === item.product_id[0]);
@@ -156,6 +179,11 @@ export async function GET(request: NextRequest) {
         warehouse: item.location_id[1],
         company: item.company_id[1],
         status: item.quantity <= 20 ? "Bajo" : "Activo",
+        ...(verCostos && {
+          costo: porSede.get(item.company_id[0])?.costo.get(item.product_id[0]) ?? null,
+          precioBase: pInfo?.lst_price ?? null,
+          vendidas: porSede.get(item.company_id[0])?.vendidas.get(item.product_id[0]) ?? 0,
+        }),
       };
     });
 
@@ -176,6 +204,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       inventory,
       total_count: totalCount,
+      ...(verCostos && { verCostos, ventasDias }),
       filters: {
         companies: allRealCompanies,
         brands: dynamicBrands,
