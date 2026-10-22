@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { sedeSinSeguridad } from "@/lib/rma/sedesSeguridad";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
 import { enviarCorreoEnviadoAgencia } from "@/lib/rma/emailEnviado";
@@ -81,7 +82,10 @@ export async function POST(
         { status: 400 },
       );
     }
-    if (caso.despachado_at) {
+    // En una sede sin Seguridad la entrega es el acta de RMA (con la firma de
+    // quien se lo lleva a la agencia) y la guía se adjunta después: ahí el
+    // caso ya está entregado, solo falta mandarle la guía al cliente.
+    if (caso.despachado_at && !sedeSinSeguridad(caso.company_id)) {
       return NextResponse.json({ error: "Este caso ya quedo marcado como entregado." }, { status: 409 });
     }
 
@@ -124,11 +128,15 @@ export async function POST(
     );
     const guiaId = (insertResult.rows as any)?.insertId;
 
-    await query(
-      `UPDATE rma_cases SET despachado_at = CURDATE() WHERE id = ? AND despachado_at IS NULL`,
-      [id],
-    );
-    await marcarProductosDespachados(caso.id);
+    // Sin Seguridad, lo que salió lo marcó el acta de entrega (producto por
+    // producto): la guía no marca nada.
+    if (!sedeSinSeguridad(caso.company_id)) {
+      await query(
+        `UPDATE rma_cases SET despachado_at = CURDATE() WHERE id = ? AND despachado_at IS NULL`,
+        [id],
+      );
+      await marcarProductosDespachados(caso.id);
+    }
 
     if (trackingToken && guiaId) {
       const guiaUrl = `${getPublicOrigin(request)}/api/servicio-tecnico/ticket/adjuntos/${trackingToken}/${guiaId}`;

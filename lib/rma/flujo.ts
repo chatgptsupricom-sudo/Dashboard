@@ -57,8 +57,9 @@ export async function errorEstadoFlujo(nuevo: string | undefined | null): Promis
 const SIN_LLEGAR = ["por_llegar", "recibido"];
 
 /**
- * Seguridad registró el ingreso del envío (lo firma también RMA): lo que
- * llegó pasa a diagnóstico y empieza a correr el plazo de 48 horas.
+ * Seguridad registró el ingreso del envío (lo firma también RMA; en una sede
+ * sin Seguridad lo registra RMA con la firma del cliente): lo que llegó pasa
+ * a diagnóstico y empieza a correr el plazo de 48 horas.
  *
  * `recibidos` = productos que el acta marcó como recibidos; null = el envío
  * entero (ingreso de un solo producto). Lo que no llegó sigue por llegar.
@@ -67,7 +68,17 @@ const SIN_LLEGAR = ["por_llegar", "recibido"];
  */
 export async function registrarLlegada(
   caseId: number,
-  opciones: { changedBy: string; recibidos: number[] | null; guia?: string | null; origenPeticion: string },
+  opciones: {
+    changedBy: string;
+    recibidos: number[] | null;
+    guia?: string | null;
+    /**
+     * Sede sin Seguridad (lib/rma/sedesSeguridad.ts): la recepción la registró
+     * RMA, con el equipo que trajo el cliente o que llegó por encomienda.
+     */
+    porRma?: "cliente" | "encomienda";
+    origenPeticion: string;
+  },
 ): Promise<void> {
   try {
     if (!(await hayEstadosFlujo())) return;
@@ -75,7 +86,10 @@ export async function registrarLlegada(
     const r = await query(`SELECT id, status, model, hardware FROM rma_cases WHERE id = ?`, [caseId]);
     const caso = (r.rows as any[])[0];
     if (!caso) return;
-    const nota = `Ingreso registrado en almacén${opciones.guia ? ` (guía ${opciones.guia})` : ""}: pasa a diagnóstico`;
+    const origen = opciones.porRma === "encomienda" ? "Llegó por encomienda, recibido por RMA" : "Recepción registrada por RMA";
+    const nota = `${opciones.porRma ? origen : "Ingreso registrado en almacén"}${
+      opciones.guia ? ` (guía ${opciones.guia})` : ""
+    }: pasa a diagnóstico`;
 
     const productos = await leerProductos(caseId);
     let despues: string = "en_diagnostico";

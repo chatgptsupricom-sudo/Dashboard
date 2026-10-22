@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRmaOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { sedeSinSeguridad } from "@/lib/rma/sedesSeguridad";
 import { fechaLarga } from "@/lib/fecha";
 import { firmasConImagen, tecnicoDeOsc } from "@/lib/seguridad/firmas";
 import { NextRequest, NextResponse } from "next/server";
@@ -147,12 +148,24 @@ export async function GET(
   ]);
   const firmaDe = (rol: string) => firmas.find((f) => f.rol === rol);
 
-  const bloquesFirma = [
-    { rol: "tecnico", titulo: tecnico.nombre, cargo: tecnico.cargo },
-    { rol: "almacen", titulo: "Almacén", cargo: i.recibido_por },
-    { rol: "seguridad", titulo: "Seguridad de OSC", cargo: "" },
-    { rol: "cliente", titulo: "Entrega", cargo: i.cliente_nombre },
-  ]
+  // Sede sin Seguridad (lib/rma/sedesSeguridad.ts): recibe RMA y firma quien
+  // trae el equipo; no hay Almacén ni Seguridad en el acta.
+  const bloquesFirma = (
+    sedeSinSeguridad(i.cids)
+      ? [
+          { rol: "tecnico", titulo: "Recibe por RMA", cargo: i.recibido_rma_nombre || i.recibido_por },
+          // Sin firma del cliente: llegó por encomienda (lo recibió solo RMA).
+          firmaDe("cliente")
+            ? { rol: "cliente", titulo: "Entrega", cargo: i.cliente_nombre }
+            : { rol: "cliente", titulo: "Llegó por encomienda", cargo: i.cliente_nombre },
+        ]
+      : [
+          { rol: "tecnico", titulo: tecnico.nombre, cargo: tecnico.cargo },
+          { rol: "almacen", titulo: "Almacén", cargo: i.recibido_por },
+          { rol: "seguridad", titulo: "Seguridad de OSC", cargo: "" },
+          { rol: "cliente", titulo: "Entrega", cargo: i.cliente_nombre },
+        ]
+  )
     .map(({ rol, titulo, cargo }) => {
       const f = firmaDe(rol);
       return `

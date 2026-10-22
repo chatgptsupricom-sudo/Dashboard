@@ -16,7 +16,9 @@ import type { CasoConPlazo } from "@/lib/rma/plazosCasos";
 /**
  * Por llegar: casos con ticket abierto cuyo equipo todavía no llegó (estado
  * "por_llegar", lib/rma/plazos.ts). Salen de aquí cuando Seguridad registra el
- * ingreso: el equipo pasa a diagnóstico y empieza su plazo de 48 horas.
+ * ingreso (en una sede sin Seguridad, cuando RMA registra la recepción en el
+ * caso, lib/rma/sedesSeguridad.ts): el equipo pasa a diagnóstico y empieza su
+ * plazo de 48 horas.
  *
  * Los más viejos primero: son los que hay que perseguir con el cliente.
  */

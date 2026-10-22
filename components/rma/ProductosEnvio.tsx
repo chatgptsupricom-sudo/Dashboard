@@ -78,11 +78,27 @@ type Props = {
   soloAgregar?: boolean;
   /** Equipo externo: Supricom no lo vendió, no hay nota de crédito posible. */
   sinNotaCredito?: boolean;
+  /**
+   * Sede sin Seguridad (lib/rma/sedesSeguridad.ts): los productos salen con el
+   * acta de entrega firmada (components/rma/ActasSinSeguridad.tsx), no con
+   * "Entregar productos".
+   */
+  sinEntregaManual?: boolean;
 };
 
 const PRODUCTO_VACIO = { brand: "", model: "", product_code: "", hardware: "", serial: "", reported_fault: "" };
 
-export default function ProductosEnvio({ caseId, caseNumber, locale, items, adjuntos, onCambio, soloAgregar, sinNotaCredito }: Props) {
+export default function ProductosEnvio({
+  caseId,
+  caseNumber,
+  locale,
+  items,
+  adjuntos,
+  onCambio,
+  soloAgregar,
+  sinNotaCredito,
+  sinEntregaManual,
+}: Props) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -251,7 +267,7 @@ export default function ProductosEnvio({ caseId, caseNumber, locale, items, adju
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {sinEntregar.length > 0 && (
+          {sinEntregar.length > 0 && !sinEntregaManual && (
             <Button
               variant="outline"
               size="sm"

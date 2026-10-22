@@ -1,6 +1,9 @@
 import { query } from "@/lib/db";
 import { filtroDespachos } from "@/lib/seguridad/filtros";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { requireRoles } from "@/lib/auth/roles";
+import { sedeSinSeguridad } from "@/lib/rma/sedesSeguridad";
+import { ensureEntregaSchema } from "@/lib/rma/entrega";
 import { NextRequest, NextResponse } from "next/server";
 import { decodificarFirmaPng } from "@/lib/seguridad/firmas";
 import { firmasRequeridasDespacho } from "@/lib/seguridad/despachoFirmas";
@@ -139,8 +142,11 @@ const MAX_FIRMA_BYTES = 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireSeguridad(request);
+    // RMA entra solo para las sedes sin Seguridad (lib/rma/sedesSeguridad.ts):
+    // ahí entrega el equipo desde el caso, con la firma de quien lo retira.
+    const auth = await requireRoles(request, ["seguridad", "rma"]);
     if (auth.error) return auth.error;
+    const esRma = String(auth.payload?.role || "").toLowerCase().trim() === "rma";
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
     if (cidsError) return cidsError;
@@ -162,29 +168,74 @@ export async function POST(request: NextRequest) {
     // Todo despacho devuelve un ingreso: se elige de "RMA por despachar".
     // El ticket, los datos del equipo y las facturas salen del ingreso y del
     // caso en el servidor; lo que mande la pantalla en esos campos se ignora.
-    const ingresoId = parseInt(String(body.ingreso_id ?? ""), 10) || null;
-    if (!ingresoId) {
-      return NextResponse.json(
-        { error: "Elige el RMA por despachar: todo despacho devuelve un ingreso" },
-        { status: 400 },
-      );
-    }
-    const ir = await query("SELECT * FROM seguridad_ingresos WHERE id = ?", [ingresoId]);
-    const ingreso = (ir.rows as any[])[0];
-    // 404 y no 403 para otra sucursal: no confirmar que existe.
-    if (!ingreso || (cids !== null && Number(ingreso.cids) !== cids)) {
-      return NextResponse.json({ error: "Ingreso no encontrado" }, { status: 404 });
-    }
-    const rmaCaseId: number | null = ingreso.rma_case_id ? Number(ingreso.rma_case_id) : null;
+    //
+    // En una sede sin Seguridad, RMA entrega desde el caso (`rma_case_id`):
+    // se usa su acta de recepción si la tiene, y si no (casos que RMA abrió
+    // con el equipo en la mano, o de antes) el despacho va sin ingreso.
+    let ingresoId = parseInt(String(body.ingreso_id ?? ""), 10) || null;
+    let ingreso: any = null;
+    let rmaCaseId: number | null = null;
     let caso: any = null;
+    if (ingresoId) {
+      const ir = await query("SELECT * FROM seguridad_ingresos WHERE id = ?", [ingresoId]);
+      ingreso = (ir.rows as any[])[0];
+      // 404 y no 403 para otra sucursal: no confirmar que existe.
+      if (!ingreso || (cids !== null && Number(ingreso.cids) !== cids)) {
+        return NextResponse.json({ error: "Ingreso no encontrado" }, { status: 404 });
+      }
+      rmaCaseId = ingreso.rma_case_id ? Number(ingreso.rma_case_id) : null;
+    } else {
+      const casoId = parseInt(String(body.rma_case_id ?? ""), 10) || null;
+      if (casoId) {
+        const cr = await query("SELECT * FROM rma_cases WHERE id = ?", [casoId]);
+        const c = (cr.rows as any[])[0];
+        if (c && sedeSinSeguridad(c.company_id) && (cids === null || Number(c.company_id) === cids)) {
+          rmaCaseId = casoId;
+          const ir = await query(
+            "SELECT * FROM seguridad_ingresos WHERE rma_case_id = ? ORDER BY id DESC LIMIT 1",
+            [casoId],
+          );
+          ingreso = (ir.rows as any[])[0] ?? null;
+          ingresoId = ingreso ? Number(ingreso.id) : null;
+        }
+      }
+      if (rmaCaseId === null) {
+        return NextResponse.json(
+          { error: "Elige el RMA por despachar: todo despacho devuelve un ingreso" },
+          { status: 400 },
+        );
+      }
+    }
     if (rmaCaseId !== null) {
       const cr = await query("SELECT * FROM rma_cases WHERE id = ?", [rmaCaseId]);
       caso = (cr.rows as any[])[0] ?? null;
     }
 
+    const sinSeguridad = !!caso && sedeSinSeguridad(caso.company_id);
+    if (esRma && !sinSeguridad) {
+      return NextResponse.json(
+        { error: "En esta sede la entrega del equipo la registra Seguridad" },
+        { status: 403 },
+      );
+    }
+    const cidsActa = cids ?? (sinSeguridad ? Number(caso.company_id) || null : null);
+
     // Lo único que escribe Seguridad en los datos del despacho: quién retira.
-    const clienteRetira = truncate(body.cliente_retira, MAX.cliente_retira);
-    if (!clienteRetira?.trim()) {
+    //
+    // Sin Seguridad, RMA dice además cómo sale (`sale_por`): si no lo retira
+    // el cliente, firma quien se lo lleva —el chofer de la ruta o quien lo
+    // lleva a la agencia— y queda dicho junto al nombre. La prueba de que le
+    // llegó al cliente es la guía o la nota de entrega firmada, que se
+    // adjuntan después en el caso.
+    const SALE_POR: Record<string, string> = {
+      sucursal: "",
+      ruta: " (chofer de la ruta)",
+      agencia: " (lleva a la agencia)",
+    };
+    const salePor = sinSeguridad && typeof body.sale_por === "string" && body.sale_por in SALE_POR ? body.sale_por : null;
+    const nombreRetira = truncate(body.cliente_retira, MAX.cliente_retira - 25)?.trim() || null;
+    const clienteRetira = nombreRetira ? nombreRetira + (salePor ? SALE_POR[salePor] : "") : null;
+    if (!clienteRetira) {
       errors.push("Escribe el nombre del cliente que retira");
     }
 
@@ -193,9 +244,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Firmas del acta, todas obligatorias: cliente que retira, RMA y
-    // Seguridad (retiro físico o por ruta / encomienda, igual).
+    // Seguridad (retiro físico o por ruta / encomienda, igual). Sin
+    // Seguridad, el cliente y RMA.
     const firmas: { rol: string; nombre: string; png: { buffer: Buffer; mime: string } }[] = [];
-    for (const req of firmasRequeridasDespacho()) {
+    for (const req of firmasRequeridasDespacho(sinSeguridad)) {
       const f = body.firmas?.[req.rol];
       const nombre = req.rol === "cliente" ? clienteRetira : truncate(f?.nombre, MAX.almacenista_nombre);
       if (!nombre?.trim()) {
@@ -208,11 +260,12 @@ export async function POST(request: NextRequest) {
       else firmas.push({ rol: req.rol, nombre: nombre.trim(), png });
     }
 
-    // Quien entrega por Seguridad: es el que se califica en el despacho.
+    // Quien entrega por Seguridad: es el que se califica en el despacho. Sin
+    // Seguridad, quien entrega por RMA.
     const almacenistaNombre =
-      truncate(body.firmas?.seguridad?.nombre, MAX.almacenista_nombre) ||
+      truncate(body.firmas?.[sinSeguridad ? "tecnico" : "seguridad"]?.nombre, MAX.almacenista_nombre) ||
       truncate((auth.payload?.name as string) || "", MAX.almacenista_nombre);
-    if (!almacenistaNombre) errors.push("Elige quién entrega por Seguridad");
+    if (!almacenistaNombre) errors.push(`Elige quién entrega por ${sinSeguridad ? "RMA" : "Seguridad"}`);
 
     // Con un solo producto (o sin la tabla de productos), el caso tiene que
     // estar terminado por RMA y el ingreso sin despachar.
@@ -222,7 +275,10 @@ export async function POST(request: NextRequest) {
       if (caso && !["reparado", "nota_credito", "no_procesado"].includes(estado)) {
         errors.push("RMA todavía no terminó este caso: no se puede despachar");
       }
-      const ya = await query("SELECT id FROM seguridad_despachos WHERE ingreso_id = ? LIMIT 1", [ingresoId]);
+      const ya = await query(
+        `SELECT id FROM seguridad_despachos WHERE ${ingresoId ? "ingreso_id" : "rma_case_id"} = ? LIMIT 1`,
+        [ingresoId ?? rmaCaseId],
+      );
       if ((ya.rows as any[]).length) {
         return NextResponse.json({ error: "Este equipo ya se despachó", id: (ya.rows as any[])[0].id }, { status: 409 });
       }
@@ -230,7 +286,7 @@ export async function POST(request: NextRequest) {
 
     // Facturas: las del ticket. Equipo externo: sin factura de Supricom.
     const externo = Number(caso?.producto_externo) === 1;
-    const factura = externo ? null : caso?.invoice_number || ingreso.factura_numero || null;
+    const factura = externo ? null : caso?.invoice_number || ingreso?.factura_numero || null;
     const facturasJson: string | null = factura ? JSON.stringify([String(factura).slice(0, MAX.factura)]) : null;
 
     // Devolución total o parcial de un envío (issue #331). Sin `item_ids`,
@@ -272,8 +328,8 @@ export async function POST(request: NextRequest) {
         // Número de guía: el del ingreso que se devuelve (recepción y
         // despacho son una sola hoja); sin ingreso, el siguiente de la
         // sucursal. Ya no se escribe a mano.
-        (ingresoId !== null ? await guiaDeIngreso(ingresoId) : null) || (await siguienteGuia(cids)),
-        cids,
+        (ingresoId !== null ? await guiaDeIngreso(ingresoId) : null) || (await siguienteGuia(cidsActa)),
+        cidsActa,
       ],
     );
 
@@ -291,11 +347,29 @@ export async function POST(request: NextRequest) {
              VALUES ('despacho', ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE firmante_nombre = VALUES(firmante_nombre),
                firma_data = VALUES(firma_data), firma_mime = VALUES(firma_mime)`,
-            [insertId, f.rol, f.nombre, f.png.buffer, f.png.mime, cids],
+            [insertId, f.rol, f.nombre, f.png.buffer, f.png.mime, cidsActa],
           );
         } catch (e: any) {
           console.error(`No se pudo guardar la firma ${f.rol} del despacho ${insertId}:`, e?.message);
         }
+      }
+    }
+
+    // Cómo salió, en una sede sin Seguridad: queda como el método de entrega
+    // del caso (el cliente pudo haber elegido otro en el portal, o ninguno).
+    // Con "agencia", la pantalla pide después la guía para el cliente.
+    if (rmaCaseId !== null && salePor) {
+      try {
+        await ensureEntregaSchema();
+        const agencia = truncate(body.agencia, 100)?.trim() || null;
+        await query(
+          `UPDATE rma_cases SET entrega_metodo = ?, entrega_agencia = COALESCE(?, entrega_agencia),
+                  entrega_elegida_at = COALESCE(entrega_elegida_at, NOW())
+            WHERE id = ?`,
+          [salePor, salePor === "agencia" ? agencia : null, rmaCaseId],
+        );
+      } catch (e: any) {
+        console.warn(`[despacho ${insertId}] no se pudo guardar cómo salió el caso ${rmaCaseId}:`, e?.message);
       }
     }
 

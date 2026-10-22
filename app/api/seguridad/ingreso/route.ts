@@ -1,6 +1,8 @@
 import { query } from "@/lib/db";
 import { filtroIngresos } from "@/lib/seguridad/filtros";
 import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { requireRoles } from "@/lib/auth/roles";
+import { sedeSinSeguridad } from "@/lib/rma/sedesSeguridad";
 import { asegurarEsquemaPersonal } from "@/lib/seguridad/catalogoPersonal";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -123,8 +125,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireSeguridad(request);
+    // RMA entra solo para las sedes sin Seguridad (lib/rma/sedesSeguridad.ts):
+    // ahí registra la recepción desde el caso, con la firma del cliente.
+    const auth = await requireRoles(request, ["seguridad", "rma"]);
     if (auth.error) return auth.error;
+    const esRma = String(auth.payload?.role || "").toLowerCase().trim() === "rma";
 
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
     if (cidsError) return cidsError;
@@ -142,21 +147,6 @@ export async function POST(request: NextRequest) {
     if (!fechaEntrega) errors.push("fecha_entrega es obligatorio");
     else if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaEntrega))
       errors.push("fecha_entrega debe tener formato YYYY-MM-DD");
-
-    // #50: quién recibió, por cada lado del mostrador. `recibido_por` (viejo,
-    // texto único) se sigue guardando para la calificación y los KPIs — es el
-    // de Seguridad. Se acepta que el cliente lo mande directo (cola offline con
-    // builds viejos) o que se derive del de Seguridad.
-    const recibidoSeguridad = truncate(
-      body.recibido_seguridad_nombre,
-      MAX.recibido_por,
-    );
-    const recibidoRma = truncate(body.recibido_rma_nombre, MAX.recibido_por);
-    const recibidoPor =
-      truncate(body.recibido_por, MAX.recibido_por) || recibidoSeguridad;
-    if (!recibidoSeguridad) errors.push("recibido_seguridad_nombre es obligatorio");
-    if (!recibidoRma) errors.push("recibido_rma_nombre es obligatorio");
-    if (!recibidoPor) errors.push("recibido_por es obligatorio");
 
     // Todo ingreso sale de un ticket del portal: no llega un equipo sin
     // ticket. Los datos del acta (cliente, factura, equipo, serial, falla)
@@ -187,15 +177,66 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Sede sin Seguridad (Caracas): el acta la firman el cliente que entrega
+    // el equipo y RMA. En las demás sedes, Seguridad y RMA, y el rol RMA no
+    // registra ingresos.
+    const sinSeguridad = !!caso && sedeSinSeguridad(caso.company_id);
+    if (esRma && caso && !sinSeguridad) {
+      return NextResponse.json(
+        { error: "En esta sede la recepción del equipo la registra Seguridad" },
+        { status: 403 },
+      );
+    }
+    // El `cids` del acta: el de la sesión, o el del caso si entra el
+    // SuperAdmin en una sede sin Seguridad (para la guía de esa sede).
+    const cidsActa = cids ?? (sinSeguridad ? Number(caso.company_id) || null : null);
+
+    // #50: quién recibió, por cada lado del mostrador. `recibido_por` (viejo,
+    // texto único) se sigue guardando para la calificación y los KPIs — es el
+    // de Seguridad (sin Seguridad, el de RMA). Se acepta que el cliente lo
+    // mande directo (cola offline con builds viejos) o que se derive del de
+    // Seguridad.
+    const recibidoSeguridad = sinSeguridad
+      ? null
+      : truncate(body.recibido_seguridad_nombre, MAX.recibido_por);
+    const recibidoRma = truncate(body.recibido_rma_nombre, MAX.recibido_por);
+    const recibidoPor = sinSeguridad
+      ? recibidoRma
+      : truncate(body.recibido_por, MAX.recibido_por) || recibidoSeguridad;
+    // Quien trae el equipo, en una sede sin Seguridad: firma el acta. Si llegó
+    // por encomienda no hay quien firme: firma solo RMA, con la foto de la
+    // guía o del paquete ya adjunta al caso (/api/rma/[id]/prueba).
+    const porEncomienda = sinSeguridad && body.llego_por === "encomienda";
+    const entregaCliente = sinSeguridad ? truncate(body.cliente_entrega_nombre, MAX.cliente_nombre) : null;
+    if (!sinSeguridad && !recibidoSeguridad) errors.push("recibido_seguridad_nombre es obligatorio");
+    if (!recibidoRma) errors.push("recibido_rma_nombre es obligatorio");
+    if (!recibidoPor) errors.push("recibido_por es obligatorio");
+    if (sinSeguridad && !porEncomienda && !entregaCliente?.trim()) {
+      errors.push("Escribe el nombre de quien entrega el equipo");
+    }
+    if (porEncomienda) {
+      const prueba = await query(
+        `SELECT id FROM rma_ticket_adjuntos WHERE ticket_id = ? AND tipo = 'llegada_encomienda' LIMIT 1`,
+        [caso.id],
+      ).catch(() => ({ rows: [] as any[] }));
+      if (!(prueba.rows as any[]).length) errors.push("Adjunta la foto de la guía o del paquete de la encomienda");
+    }
+
     // Firmas de quien recibe, por cada lado del mostrador: Seguridad y RMA
-    // firman en el mismo formulario, al recibir el equipo.
-    const firmas: { rol: "seguridad" | "tecnico"; nombre: string | null; png: { buffer: Buffer; mime: string } | null }[] = [
-      { rol: "seguridad", nombre: recibidoSeguridad, png: null },
+    // firman en el mismo formulario, al recibir el equipo. Sin Seguridad,
+    // firman el cliente que lo entrega y RMA.
+    const firmas: { rol: "seguridad" | "tecnico" | "cliente"; nombre: string | null; png: { buffer: Buffer; mime: string } | null }[] = [
+      ...(porEncomienda
+        ? []
+        : sinSeguridad
+          ? [{ rol: "cliente" as const, nombre: entregaCliente?.trim() || null, png: null }]
+          : [{ rol: "seguridad" as const, nombre: recibidoSeguridad, png: null }]),
       { rol: "tecnico", nombre: recibidoRma, png: null },
     ];
     for (const f of firmas) {
-      const dataUrl = f.rol === "seguridad" ? body.firma_seguridad : body.firma_rma;
-      const quien = f.rol === "seguridad" ? "Seguridad" : "RMA";
+      const dataUrl =
+        f.rol === "seguridad" ? body.firma_seguridad : f.rol === "cliente" ? body.firma_cliente : body.firma_rma;
+      const quien = f.rol === "seguridad" ? "Seguridad" : f.rol === "cliente" ? "quien entrega el equipo" : "RMA";
       if (typeof dataUrl !== "string" || !dataUrl) {
         errors.push(`Falta la firma de ${quien}`);
         continue;
@@ -297,7 +338,7 @@ export async function POST(request: NextRequest) {
 
     // Número de guía: lo asigna el sistema (el siguiente de la sucursal), ya
     // no se escribe a mano. Se ignora el que mande el cliente.
-    const guia = await siguienteGuia(cids);
+    const guia = await siguienteGuia(cidsActa);
 
     await asegurarColumnasGarantiaNullables();
     // Crea las columnas recibido_seguridad_nombre / recibido_rma_nombre si esta
@@ -328,7 +369,7 @@ export async function POST(request: NextRequest) {
         truncate(body.foto_estado_url, MAX.foto_estado_url),
         idempotencyKey,
         guia,
-        cids,
+        cidsActa,
       ],
     );
 
@@ -348,7 +389,7 @@ export async function POST(request: NextRequest) {
              VALUES ('ingreso', ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE firmante_nombre = VALUES(firmante_nombre),
                firma_data = VALUES(firma_data), firma_mime = VALUES(firma_mime)`,
-            [insertId, f.rol, f.nombre, f.png!.buffer, f.png!.mime, cids],
+            [insertId, f.rol, f.nombre, f.png!.buffer, f.png!.mime, cidsActa],
           );
         } catch (e: any) {
           console.error(`No se pudo guardar la firma ${f.rol} del ingreso ${insertId}:`, e?.message);
@@ -365,6 +406,7 @@ export async function POST(request: NextRequest) {
           ? productosIngreso.filter((f) => f.recibido && f.rma_item_id).map((f) => f.rma_item_id!)
           : null,
         guia,
+        porRma: sinSeguridad ? (porEncomienda ? "encomienda" : "cliente") : undefined,
         origenPeticion: getPublicOrigin(request),
       });
     }

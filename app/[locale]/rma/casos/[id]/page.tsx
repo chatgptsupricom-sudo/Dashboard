@@ -48,6 +48,8 @@ import ActasPorFirmar from "@/components/seguridad/ActasPorFirmar";
 import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 import { colorEstado, ESTADOS_ELEGIBLES, ESTADOS_SOLICITAN_NC, etiquetaEstado } from "@/components/rma/estados";
 import { PlazoCaso } from "@/components/rma/PlazoCaso";
+import ActasSinSeguridad, { type ActasCaso } from "@/components/rma/ActasSinSeguridad";
+import { sedeSinSeguridad } from "@/lib/rma/sedesSeguridad";
 
 const statusColors = colorEstado;
 const statusLabels = etiquetaEstado;
@@ -78,6 +80,8 @@ export default function RmaCasoDetailPage() {
   // Productos del envío (issue #331). Con más de uno, cada producto se
   // atiende en su tarjeta y el estado del caso lo calcula el servidor.
   const [items, setItems] = useState<ProductoEnvio[]>([]);
+  // Actas de recepción y entrega (en una sede sin Seguridad las hace RMA aquí).
+  const [actas, setActas] = useState<ActasCaso>({ ingresos: [], despachos: [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -114,6 +118,7 @@ export default function RmaCasoDetailPage() {
         setCaseData({ ...data.case, adjuntos: data.adjuntos ?? [] });
         setHistory(data.history);
         setItems(data.items ?? []);
+        setActas(data.actas ?? { ingresos: [], despachos: [] });
         setEditForm(data.case);
       }
     } catch (error) {
@@ -284,6 +289,10 @@ export default function RmaCasoDetailPage() {
   // Equipo que no se compró en Supricom (portal, sin factura): sin garantía
   // nuestra y sin nota de crédito posible; el servicio se presupuesta.
   const esExterno = Number(caseData.producto_externo) === 1;
+  // Sede sin Seguridad (Caracas): RMA registra recepción y entrega con la
+  // firma del cliente, en vez de "Marcar como entregado" y las firmas de las
+  // actas de Seguridad.
+  const sinSeguridad = sedeSinSeguridad(caseData.company_id);
 
   return (
     <div className="p-4 sm:p-8 space-y-6 bg-slate-50/30 min-h-screen max-w-5xl mx-auto">
@@ -430,6 +439,7 @@ export default function RmaCasoDetailPage() {
               adjuntos={caseData.adjuntos || []}
               onCambio={fetchCase}
               sinNotaCredito={esExterno}
+              sinEntregaManual={sinSeguridad}
             />
           )}
 
@@ -483,7 +493,17 @@ export default function RmaCasoDetailPage() {
               y confirmacion de que ya se llevo el equipo (issue #122). Solo
               se muestra si hay algo que mostrar: ni todos los casos pasan
               por el portal, ni todos ya eligieron. */}
-          {(caseData.entrega_metodo || caseData.despachado_at) && (
+          {sinSeguridad && (
+            <ActasSinSeguridad
+              caso={caseData}
+              items={items}
+              actas={actas}
+              onCambio={fetchCase}
+              onAdjuntarGuia={() => setGuiaDialogOpen(true)}
+            />
+          )}
+
+          {(caseData.entrega_metodo || (caseData.despachado_at && !sinSeguridad)) && (
             <Card className="rounded-3xl border-none shadow-sm">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold text-slate-900">Entrega</CardTitle>
@@ -530,7 +550,7 @@ export default function RmaCasoDetailPage() {
                   );
                 })()}
 
-                {caseData.despachado_at ? (
+                {sinSeguridad ? null : caseData.despachado_at ? (
                   <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span className="text-sm font-semibold text-emerald-800">
@@ -799,6 +819,7 @@ export default function RmaCasoDetailPage() {
 
           {/* Firma de RMA en las actas de Seguridad (ingreso y despacho) de
               este caso: cada rol firma la suya desde su panel. */}
+          {!sinSeguridad && (
           <Card className="rounded-3xl border-none shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg font-semibold text-slate-900">Firmas de las actas</CardTitle>
@@ -810,6 +831,7 @@ export default function RmaCasoDetailPage() {
               <ActasPorFirmar rol="tecnico" rmaCaseId={caseData.id} compacto />
             </CardContent>
           </Card>
+          )}
 
           <Card className="rounded-3xl border-none shadow-sm">
             <CardHeader>

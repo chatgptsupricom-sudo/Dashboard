@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
-import { requireSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { requireRmaOSeguridad, resolverCidsSesion } from "@/lib/seguridad/auth";
+import { sedeSinSeguridad } from "@/lib/rma/sedesSeguridad";
 import { fechaLarga } from "@/lib/fecha";
 import { firmasConImagen, tecnicoDeOsc } from "@/lib/seguridad/firmas";
 import { NextRequest, NextResponse } from "next/server";
@@ -54,7 +55,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireSeguridad(request);
+  // RMA lo imprime desde el caso (en una sede sin Seguridad, el acta es suya).
+  const auth = await requireRmaOSeguridad(request);
   if (auth.error) return auth.error;
 
   const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
@@ -136,12 +138,21 @@ export async function GET(
   ]);
   const firmaDe = (rol: string) => firmas.find((f) => f.rol === rol);
 
-  const bloquesFirma = [
-    { rol: "tecnico", titulo: tecnico.nombre, cargo: tecnico.cargo },
-    { rol: "almacen", titulo: "Almacén", cargo: d.almacenista_nombre },
-    { rol: "seguridad", titulo: "Seguridad de OSC", cargo: "" },
-    { rol: "cliente", titulo: "Recibe", cargo: d.cliente_retira || "" },
-  ]
+  // Sede sin Seguridad (lib/rma/sedesSeguridad.ts): entrega RMA y firma
+  // quien retira; no hay Almacén ni Seguridad en el acta.
+  const bloquesFirma = (
+    sedeSinSeguridad((d as any).cids)
+      ? [
+          { rol: "tecnico", titulo: "Entrega por RMA", cargo: d.almacenista_nombre },
+          { rol: "cliente", titulo: "Recibe", cargo: d.cliente_retira || "" },
+        ]
+      : [
+          { rol: "tecnico", titulo: tecnico.nombre, cargo: tecnico.cargo },
+          { rol: "almacen", titulo: "Almacén", cargo: d.almacenista_nombre },
+          { rol: "seguridad", titulo: "Seguridad de OSC", cargo: "" },
+          { rol: "cliente", titulo: "Recibe", cargo: d.cliente_retira || "" },
+        ]
+  )
     .map(({ rol, titulo, cargo }) => {
       const f = firmaDe(rol);
       // Cuando no hay firma se deja el hueco igual: el comprobante se imprime
