@@ -66,7 +66,11 @@ export function limpiarSerial(entrada: string): string {
   return entrada.trim().replace(/%/g, "").slice(0, 80);
 }
 
-export async function buscarSerial(entrada: string): Promise<ResultadoSerial> {
+/**
+ * `productoIds`: si se buscó también por producto, solo cuentan los seriales
+ * de esos productos (el mismo serial puede existir en dos marcas).
+ */
+export async function buscarSerial(entrada: string, productoIds: number[] = []): Promise<ResultadoSerial> {
   const serial = limpiarSerial(entrada);
   const vacio: ResultadoSerial = { serial, veredicto: "no_existe", productos: [], venta: null, movimientos: [] };
   if (!serial) return vacio;
@@ -78,7 +82,11 @@ export async function buscarSerial(entrada: string): Promise<ResultadoSerial> {
       fields: ["id", "name", "product_id", "company_id"],
       limit: 50,
     })
-  ).filter((l) => comparable(l.name || "") === comparable(serial));
+  ).filter(
+    (l) =>
+      comparable(l.name || "") === comparable(serial) &&
+      (productoIds.length === 0 || productoIds.includes(id(l.product_id) ?? -1)),
+  );
   if (!lotes.length) return vacio;
 
   const productos = [...new Set(lotes.map((l) => nombre(l.product_id)).filter(Boolean))];
