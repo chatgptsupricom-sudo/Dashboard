@@ -43,7 +43,33 @@ type Factura =
   | { estado: "ok"; factura: Resumen; cliente: { nombre: string }; items: Item[] }
   | { estado: "no_encontrada" }
   | { estado: "ambiguo"; coincidencias: Resumen[] };
-type Respuesta = { factura: Factura | null; serial: ResultadoSerial | null; enFactura: boolean | null };
+type FacturaSmartbit = {
+  sede: number;
+  fecha: string;
+  numero: string;
+  cliente: string;
+  rif: string;
+  unidades: number | null;
+  devolucion: boolean;
+  productos: { codigo: string; articulo: string; unidades: number }[];
+};
+type Compra = {
+  origen: "odoo" | "smartbit";
+  fecha: string;
+  sede: number | null;
+  cliente: string;
+  factura: string | null;
+  codigo: string;
+  producto: string;
+  unidades: number;
+};
+type Respuesta = {
+  factura: Factura | null;
+  facturasSmartbit: FacturaSmartbit[] | null;
+  serial: ResultadoSerial | null;
+  enFactura: boolean | null;
+  compras: { compras: Compra[]; productosOdoo: string[] } | null;
+};
 
 const comparable = (s: string) => s.trim().toUpperCase();
 const sedeDe = (id: number | null | undefined, fallback = "") => (id ? NOMBRES_SUCURSAL[id] || fallback : fallback);
@@ -66,20 +92,28 @@ export function BuscarFactura() {
   const t = useTranslations("rma.buscar_factura");
   const [factura, setFactura] = useState("");
   const [serial, setSerial] = useState("");
+  const [producto, setProducto] = useState("");
+  const [cliente, setCliente] = useState("");
   const [sede, setSede] = useState("");
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
   const [res, setRes] = useState<Respuesta | null>(null);
 
   async function buscar(sedeElegida = sede) {
-    if (!factura.trim() && !serial.trim()) {
+    if (!factura.trim() && !serial.trim() && !producto.trim()) {
       setError(t("falta_dato"));
       return;
     }
     setCargando(true);
     setError("");
     try {
-      const qs = new URLSearchParams({ factura: factura.trim(), serial: serial.trim(), sede: sedeElegida });
+      const qs = new URLSearchParams({
+        factura: factura.trim(),
+        serial: serial.trim(),
+        producto: producto.trim(),
+        cliente: cliente.trim(),
+        sede: sedeElegida,
+      });
       const r = await fetch(`/api/rma/buscar-factura?${qs}`);
       const json = await r.json();
       if (!r.ok || !json.success) {
@@ -108,6 +142,8 @@ export function BuscarFactura() {
 
   const s = res?.serial;
   const f = res?.factura;
+  const sb = res?.facturasSmartbit ?? [];
+  const compras = res?.compras;
   // Serial que no está en la factura pero sí se vendió con otra: se dice cuál.
   const otraFactura = res?.enFactura === false && s?.venta?.facturas[0]?.numero;
 
@@ -123,7 +159,7 @@ export function BuscarFactura() {
         </div>
       </div>
 
-      <form onSubmit={enviar} className="rounded-3xl bg-white p-4 sm:p-5 shadow-sm grid grid-cols-1 md:grid-cols-[1fr_1fr_12rem_auto] gap-3 items-end">
+      <form onSubmit={enviar} className="rounded-3xl bg-white p-4 sm:p-5 shadow-sm grid grid-cols-1 md:grid-cols-3 xl:grid-cols-[1fr_1fr_1fr_1fr_11rem_auto] gap-3 items-end">
         <label className="space-y-1.5">
           <span className="text-xs font-medium text-slate-500">{t("factura")}</span>
           <Input value={factura} onChange={(e) => setFactura(e.target.value)} placeholder={t("factura_ph")} className="bg-white" />
@@ -131,6 +167,14 @@ export function BuscarFactura() {
         <label className="space-y-1.5">
           <span className="text-xs font-medium text-slate-500">{t("serial")}</span>
           <Input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder={t("serial_ph")} className="bg-white font-mono" />
+        </label>
+        <label className="space-y-1.5">
+          <span className="text-xs font-medium text-slate-500">{t("producto")}</span>
+          <Input value={producto} onChange={(e) => setProducto(e.target.value)} placeholder={t("producto_ph")} className="bg-white" />
+        </label>
+        <label className="space-y-1.5">
+          <span className="text-xs font-medium text-slate-500">{t("cliente")}</span>
+          <Input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder={t("cliente_ph")} className="bg-white" />
         </label>
         <label className="space-y-1.5">
           <span className="text-xs font-medium text-slate-500">{t("sede")}</span>
@@ -156,6 +200,7 @@ export function BuscarFactura() {
           {t("buscar")}
         </button>
       </form>
+      <p className="-mt-3 px-1 text-xs text-slate-500">{t("ayuda")}</p>
 
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
@@ -218,7 +263,7 @@ export function BuscarFactura() {
         </section>
       )}
 
-      {!cargando && f && f.estado === "no_encontrada" && (
+      {!cargando && f && f.estado === "no_encontrada" && sb.length === 0 && (
         <div className="rounded-3xl bg-white py-10 text-center text-sm text-slate-500 shadow-sm">{t("factura_no_encontrada")}</div>
       )}
 
@@ -316,6 +361,97 @@ export function BuscarFactura() {
               </tbody>
             </table>
           </div>
+        </section>
+      )}
+      {!cargando && sb.length > 0 && (
+        <section className="rounded-3xl bg-white p-5 shadow-sm space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-800">Smartbit</span>
+            <p className="text-sm text-slate-600">{t("smartbit_factura")}</p>
+          </div>
+          {sb.map((x) => (
+            <div key={`${x.sede}-${x.numero}`} className="rounded-2xl border border-slate-100 p-4 space-y-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="font-bold text-slate-900">
+                  {x.numero}
+                  {x.devolucion && <span className="ml-2 text-xs font-medium text-amber-700">{t("devolucion")}</span>}
+                </p>
+                <p className="text-sm text-slate-500">
+                  {[x.cliente, x.rif, sedeDe(x.sede), fechaCorta(x.fecha)].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              {x.productos.length ? (
+                <>
+                  <p className="text-xs text-slate-500">{t("smartbit_productos")}</p>
+                  <ul className="divide-y divide-slate-100 text-sm">
+                    {x.productos.map((p, i) => (
+                      <li key={i} className="flex justify-between gap-3 py-1.5">
+                        <span className="text-slate-800">
+                          {p.articulo}
+                          {p.codigo && <span className="ml-2 text-xs text-slate-500">{p.codigo}</span>}
+                        </span>
+                        <span className="tabular-nums text-slate-600">×{p.unidades}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="text-xs text-slate-500">{t("smartbit_sin_productos")}</p>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {!cargando && compras && (
+        <section className="rounded-3xl bg-white p-5 shadow-sm space-y-3">
+          <div>
+            <p className="text-lg font-bold text-slate-900">{t("compras_titulo")}</p>
+            <p className="text-xs text-slate-500">
+              {compras.productosOdoo.length
+                ? t("compras_productos_odoo", { productos: compras.productosOdoo.slice(0, 3).join(" / ") + (compras.productosOdoo.length > 3 ? "…" : "") })
+                : t("compras_sin_producto_odoo")}
+            </p>
+          </div>
+          {compras.compras.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500">{t(cliente.trim() ? "compras_vacio_cliente" : "compras_vacio")}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-500 border-b">
+                    <th className="py-2 pr-3 font-medium">{t("fecha")}</th>
+                    <th className="py-2 pr-3 font-medium">{t("cliente")}</th>
+                    <th className="py-2 pr-3 font-medium">{t("producto")}</th>
+                    <th className="py-2 pr-3 font-medium">{t("vendido_factura")}</th>
+                    <th className="py-2 pr-3 font-medium">{t("sede")}</th>
+                    <th className="py-2 font-medium text-right">{t("unidades")}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {compras.compras.map((c, i) => (
+                    <tr key={i}>
+                      <td className="py-2 pr-3 tabular-nums text-slate-600 whitespace-nowrap">{fechaCorta(c.fecha)}</td>
+                      <td className="py-2 pr-3 text-slate-800">{c.cliente}</td>
+                      <td className="py-2 pr-3 text-slate-700">
+                        {c.producto}
+                        {c.codigo && <span className="ml-1 text-xs text-slate-500">{c.codigo}</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-xs">
+                        {c.origen === "smartbit" ? (
+                          <span className="rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-800">Smartbit</span>
+                        ) : (
+                          <span className="text-slate-700">{c.factura}</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-xs text-slate-600">{sedeDe(c.sede, "—")}</td>
+                      <td className="py-2 text-right tabular-nums text-slate-700">{c.unidades}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
     </div>
