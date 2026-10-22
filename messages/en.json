@@ -1886,6 +1886,7 @@
       "productos_devueltos": "Returned Products",
       "loading": "Syncing Alerts...",
       "error_loading": "Could not load detail",
+      "error_alertas": "Could not load alerts",
       "meses": [
         "",
         "January",

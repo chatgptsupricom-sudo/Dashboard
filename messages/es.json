@@ -2320,6 +2320,7 @@
       "productos_devueltos": "Productos Devueltos",
       "loading": "Sincronizando Alertas...",
       "error_loading": "No se pudo cargar el detalle",
+      "error_alertas": "No se pudieron cargar las alertas",
       "meses": [
         "",
         "Enero",

@@ -28,7 +28,13 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+// Un 401/403/500 tiene que verse como error, no como alertas en 0.
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+  return json;
+};
 
 function ProductDeclineDetailView({ item }: { item: any }) {
   const t = useTranslations("superadmin.alert");
@@ -674,6 +680,11 @@ export default function AlertSuperadmin({ cidsLocked = false }: { cidsLocked?: b
       {isLoading ? (
         <div className="p-20 text-center font-bold text-slate-400 uppercase animate-pulse tracking-wider">
           {t("loading")}
+        </div>
+      ) : error ? (
+        <div className="p-10 text-center rounded-2xl border border-red-200 bg-red-50 text-red-700">
+          <p className="font-bold">{t("error_alertas")}</p>
+          <p className="text-sm mt-1">{error.message}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
