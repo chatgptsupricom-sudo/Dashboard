@@ -5,6 +5,7 @@ import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
 import {
   conciliacionSemana,
   eliminarComprobante,
+  fechaSinComprobante,
   guardarComprobante,
   leerComprobante,
   rangoSemana,
@@ -39,7 +40,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Falta configurar ANTHROPIC_API_KEY en el servidor" }, { status: 503 });
   }
   try {
-    const archivo = (await request.formData()).get("archivo");
+    const form = await request.formData();
+    const archivo = form.get("archivo");
     if (!(archivo instanceof File) || archivo.size === 0) {
       return NextResponse.json({ error: "Falta el archivo" }, { status: 400 });
     }
@@ -57,9 +59,17 @@ export async function POST(request: NextRequest) {
         { status: 422 },
       );
     }
+    // Una captura recortada puede no traer la fecha: va a la semana elegida.
+    const fecha =
+      leido.fechaMs !== null
+        ? { fechaMs: leido.fechaMs, estimada: false }
+        : await fechaSinComprobante(leido.orderId, String(form.get("semana") || ""));
+    if (!fecha) {
+      return NextResponse.json({ error: "El comprobante no trae la fecha y falta la semana" }, { status: 400 });
+    }
     const cids = Number(auth.payload?.cids);
     const r = await guardarComprobante(
-      leido,
+      { ...leido, ...fecha },
       { nombre: archivo.name, mime: archivo.type, datos },
       { email: String(auth.payload?.email || ""), cids: Number.isInteger(cids) ? cids : null },
     );
@@ -75,7 +85,8 @@ export async function POST(request: NextRequest) {
       orderId: leido.orderId,
       monto: leido.monto,
       moneda: leido.moneda,
-      fecha: new Date(leido.fechaMs).toISOString(),
+      fecha: new Date(fecha.fechaMs).toISOString(),
+      fechaEstimada: fecha.estimada,
     });
   } catch (e: any) {
     if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {

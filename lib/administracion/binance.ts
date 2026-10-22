@@ -1,4 +1,7 @@
 import crypto from "crypto";
+import http from "http";
+import https from "https";
+import tls from "tls";
 import Anthropic from "@anthropic-ai/sdk";
 import { db, query } from "@/lib/db";
 
@@ -14,6 +17,11 @@ import { db, query } from "@/lib/db";
  *
  * Necesita BINANCE_API_KEY / BINANCE_API_SECRET (una key de solo lectura) y
  * ANTHROPIC_API_KEY para leer los comprobantes.
+ *
+ * Binance responde 451 desde paises restringidos (el servidor del panel esta
+ * en uno). BINANCE_PROXY_URL (http://usuario:clave@host:puerto) hace que solo
+ * estas consultas salgan por un proxy HTTP en un pais permitido, p. ej. el de
+ * un contenedor gluetun con VPN; el resto del panel sigue saliendo directo.
  */
 
 const BASE = process.env.BINANCE_API_URL?.trim() || "https://api.binance.com";
@@ -25,6 +33,8 @@ const DIA_MS = 86400_000;
 // Un comprobante cuyo ID se leyo mal se acepta si hay un solo pago del mismo
 // monto y moneda a esta distancia de la hora del comprobante.
 const MARGEN_POR_HORA_MS = 15 * 60_000;
+// Mediodia del lunes: donde queda un comprobante sin fecha que Binance no encontro.
+const MEDIODIA_MS = 12 * 3600_000;
 
 export class BinanceNoConfigurado extends Error {
   constructor() {
@@ -54,6 +64,8 @@ export type Comprobante = {
   monto: number;
   moneda: string;
   fecha: string; // ISO UTC
+  /** El comprobante no traia fecha: se guardo en la semana elegida al subirlo. */
+  fechaEstimada: boolean;
   archivoNombre: string;
   subidoPor: string;
   subidoEl: string;
@@ -63,19 +75,86 @@ export type Comprobante = {
 
 // ---------- Binance ----------
 
+/** GET por un proxy HTTP con CONNECT: el TLS va de punta a punta con Binance. */
+function getPorProxy(
+  destino: URL,
+  headers: Record<string, string>,
+  proxyUrl: string,
+): Promise<{ status: number; texto: string }> {
+  const proxy = new URL(proxyUrl);
+  const auth = proxy.username
+    ? {
+        "Proxy-Authorization": `Basic ${Buffer.from(
+          `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`,
+        ).toString("base64")}`,
+      }
+    : {};
+  return new Promise((resolve, reject) => {
+    const tunel = http.request({
+      host: proxy.hostname,
+      port: Number(proxy.port) || 80,
+      method: "CONNECT",
+      path: `${destino.hostname}:443`,
+      headers: { host: `${destino.hostname}:443`, ...auth },
+      timeout: 20_000,
+    });
+    tunel.on("connect", (res, socket) => {
+      if (res.statusCode !== 200) {
+        socket.destroy();
+        return reject(new Error(`El proxy de Binance respondió ${res.statusCode}`));
+      }
+      const req = https.request(
+        {
+          host: destino.hostname,
+          path: destino.pathname + destino.search,
+          method: "GET",
+          headers,
+          agent: false,
+          createConnection: () => tls.connect({ socket, servername: destino.hostname }),
+          timeout: 20_000,
+        },
+        (r) => {
+          let texto = "";
+          r.setEncoding("utf8");
+          r.on("data", (c) => (texto += c));
+          r.on("end", () => resolve({ status: r.statusCode || 0, texto }));
+        },
+      );
+      req.on("error", reject);
+      req.on("timeout", () => req.destroy(new Error("Binance no respondió a tiempo")));
+      req.end();
+    });
+    tunel.on("error", (e) => reject(new Error(`No se pudo conectar al proxy de Binance: ${e.message}`)));
+    tunel.on("timeout", () => tunel.destroy(new Error("El proxy de Binance no respondió")));
+    tunel.end();
+  });
+}
+
 async function firmado(path: string, params: Record<string, string>): Promise<any> {
   const key = process.env.BINANCE_API_KEY?.trim();
   const secret = process.env.BINANCE_API_SECRET?.trim();
   if (!key || !secret) throw new BinanceNoConfigurado();
   const qs = new URLSearchParams({ ...params, recvWindow: "10000", timestamp: String(Date.now()) }).toString();
   const firma = crypto.createHmac("sha256", secret).update(qs).digest("hex");
-  const res = await fetch(`${BASE}${path}?${qs}&signature=${firma}`, {
-    headers: { "X-MBX-APIKEY": key },
-    cache: "no-store",
-  });
-  const json = await res.json().catch(() => null);
-  if (!res.ok || (json?.code && json.code !== "000000")) {
-    throw new Error(`Binance respondió ${res.status}: ${json?.msg || json?.message || "sin detalle"}`);
+  const url = `${BASE}${path}?${qs}&signature=${firma}`;
+  const headers = { "X-MBX-APIKEY": key };
+  const proxy = process.env.BINANCE_PROXY_URL?.trim();
+  const { status, texto } = proxy
+    ? await getPorProxy(new URL(url), headers, proxy)
+    : await fetch(url, { headers, cache: "no-store" }).then(async (r) => ({ status: r.status, texto: await r.text() }));
+  let json: any = null;
+  try {
+    json = JSON.parse(texto);
+  } catch {}
+  if (status === 451) {
+    throw new Error(
+      proxy
+        ? "Binance bloquea el país por donde sale el proxy (451): elige un servidor de la VPN en otro país"
+        : "Binance bloquea el país del servidor (451): falta configurar BINANCE_PROXY_URL",
+    );
+  }
+  if (status < 200 || status >= 300 || (json?.code && json.code !== "000000")) {
+    throw new Error(`Binance respondió ${status}: ${json?.msg || json?.message || "sin detalle"}`);
   }
   return json;
 }
@@ -145,6 +224,11 @@ async function ensureTabla() {
       INDEX (fecha_pago)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  try {
+    await query("ALTER TABLE binance_comprobantes ADD COLUMN fecha_estimada TINYINT(1) NOT NULL DEFAULT 0");
+  } catch (e: any) {
+    if (e?.code !== "ER_DUP_FIELDNAME") throw e;
+  }
   tablaLista = true;
 }
 
@@ -170,7 +254,7 @@ export async function conciliacionSemana(lunes: string) {
   const { rows } = await query(
     // DATE_FORMAT: la columna guarda UTC y asi no depende de la zona del proceso.
     `SELECT id, order_id, monto, moneda, DATE_FORMAT(fecha_pago, '%Y-%m-%dT%H:%i:%sZ') AS fecha,
-            archivo_nombre, subido_por, created_at
+            fecha_estimada, archivo_nombre, subido_por, created_at
        FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? ORDER BY fecha_pago`,
     [aMysql(rango.desde), aMysql(rango.hasta)],
   );
@@ -193,6 +277,7 @@ export async function conciliacionSemana(lunes: string) {
       monto: Number(r.monto),
       moneda: String(r.moneda),
       fecha: r.fecha,
+      fechaEstimada: !!r.fecha_estimada,
       archivoNombre: r.archivo_nombre,
       subidoPor: r.subido_por,
       subidoEl: new Date(r.created_at).toISOString(),
@@ -201,7 +286,8 @@ export async function conciliacionSemana(lunes: string) {
     const exacto = porId.get(base.orderId);
     if (exacto) {
       const igual = exacto.moneda === base.moneda.toUpperCase() && Math.abs(exacto.monto - base.monto) < 1e-6;
-      return { ...base, estado: igual ? ("conciliado" as const) : ("monto_distinto" as const), binance: exacto };
+      const fecha = base.fechaEstimada ? exacto.fecha : base.fecha;
+      return { ...base, fecha, estado: igual ? ("conciliado" as const) : ("monto_distinto" as const), binance: exacto };
     }
     const t = Date.parse(base.fecha);
     const candidatos = pagos.filter(
@@ -209,7 +295,8 @@ export async function conciliacionSemana(lunes: string) {
         !usados.has(p.id) &&
         p.moneda === base.moneda.toUpperCase() &&
         Math.abs(p.monto - base.monto) < 1e-6 &&
-        Math.abs(Date.parse(p.fecha) - t) <= MARGEN_POR_HORA_MS,
+        // Sin fecha en el comprobante vale cualquier hora de la semana.
+        (base.fechaEstimada || Math.abs(Date.parse(p.fecha) - t) <= MARGEN_POR_HORA_MS),
     );
     if (candidatos.length === 1) {
       usados.add(candidatos[0].id);
@@ -247,6 +334,7 @@ const INSTRUCCIONES =
   "order_id: el 'ID de orden' / 'Order ID' completo, solo digitos; copia cada digito con cuidado, es lo que se usa para conciliar. " +
   "monto: el monto pagado, sin signo ni separador de miles. moneda: el codigo (USDT, USDC, BTC...). " +
   "fecha: fecha y hora del pago como 'YYYY-MM-DD HH:MM:SS'; fecha_en_utc = true si el comprobante dice UTC. " +
+  "Si la captura no muestra la fecha, fecha = '' (no la inventes). " +
   "Si la imagen no es un comprobante de pago de Binance, es_comprobante = false y lo demas vacio o 0.";
 
 const ESQUEMA = {
@@ -268,7 +356,8 @@ const WORKSPACE = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
 const anthropic = () =>
   (cliente ??= new Anthropic(WORKSPACE ? { defaultHeaders: { "anthropic-workspace-id": WORKSPACE } } : {}));
 
-export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number };
+/** fechaMs null = la captura no trae la fecha. */
+export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number | null };
 
 /** Lee el comprobante. null = no es un comprobante de Binance o le faltan datos. */
 export async function leerComprobante(datos: Buffer, mime: string): Promise<Leido | null> {
@@ -294,15 +383,33 @@ export async function leerComprobante(datos: Buffer, mime: string): Promise<Leid
   const monto = Number(l?.monto);
   const moneda = String(l?.moneda || "").trim().toUpperCase().slice(0, 12);
   const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(l?.fecha || ""));
-  if (!l?.es_comprobante || !/^\d{6,40}$/.test(orderId) || !(monto > 0) || !moneda || !m) return null;
+  if (!l?.es_comprobante || !/^\d{6,40}$/.test(orderId) || !(monto > 0) || !moneda) return null;
+  if (!m) return { orderId, monto, moneda, fechaMs: null };
   const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
   // Sin "UTC" en el comprobante se toma la hora de Caracas.
   return { orderId, monto, moneda, fechaMs: l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS };
 }
 
+/**
+ * Fecha de un comprobante que no la trae: la del pago en Binance si esta en la
+ * semana elegida; si no, el lunes de esa semana, marcada como estimada.
+ */
+export async function fechaSinComprobante(orderId: string, lunes: string) {
+  const rango = rangoSemana(lunes);
+  if (!rango) return null;
+  try {
+    const pagos = await pagosRecibidos(rango.desde - DIA_MS, Math.min(rango.hasta + DIA_MS, Date.now()));
+    const pago = pagos.find((p) => p.id === orderId);
+    if (pago) return { fechaMs: Date.parse(pago.fecha), estimada: false };
+  } catch {
+    // Binance no responde: queda en la semana elegida.
+  }
+  return { fechaMs: rango.desde + MEDIODIA_MS, estimada: true };
+}
+
 /** Guarda el comprobante. Devuelve el que ya estaba si el ID de orden se repite. */
 export async function guardarComprobante(
-  leido: Leido,
+  leido: Leido & { fechaMs: number; estimada: boolean },
   archivo: { nombre: string; mime: string; datos: Buffer },
   usuario: { email: string; cids: number | null },
 ): Promise<{ id: number } | { repetido: { fecha: string; subidoPor: string } }> {
@@ -311,13 +418,14 @@ export async function guardarComprobante(
     // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
     const [res]: any = await db.execute(
       `INSERT INTO binance_comprobantes
-         (order_id, monto, moneda, fecha_pago, archivo_nombre, archivo_mime, archivo, subido_por, company_id)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, archivo_mime, archivo, subido_por, company_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [
         leido.orderId,
         leido.monto,
         leido.moneda,
         aMysql(leido.fechaMs),
+        leido.estimada ? 1 : 0,
         archivo.nombre.slice(0, 200),
         archivo.mime,
         archivo.datos,

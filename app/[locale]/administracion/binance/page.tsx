@@ -89,11 +89,12 @@ export default function BinancePage() {
       setSubiendo({ hecho: i, total: lista.length });
       const form = new FormData();
       form.append("archivo", lista[i]);
+      form.append("semana", semana);
       try {
         const json = await (await fetch("/api/administracion/binance", { method: "POST", body: form })).json();
         resultados.push(
           json.success
-            ? { nombre: lista[i].name, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fechaHora(json.fecha)}` }
+            ? { nombre: lista[i].name, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${json.fechaEstimada ? "sin fecha, quedó en esta semana" : fechaHora(json.fecha)}` }
             : { nombre: lista[i].name, ok: false, texto: json.error || "Error" },
         );
       } catch {
@@ -175,7 +176,7 @@ export default function BinancePage() {
                 {
                   nombre: "Comprobantes",
                   filas: comprobantes.map((c) => ({
-                    "Fecha comprobante": fechaHora(c.fecha),
+                    "Fecha comprobante": c.fechaEstimada ? "Sin fecha" : fechaHora(c.fecha),
                     "ID de orden": c.orderId,
                     "Monto comprobante": c.monto,
                     Moneda: c.moneda,
@@ -268,7 +269,9 @@ export default function BinancePage() {
                     {comprobantes.length === 0 && <FilaVacia columnas={7} texto="No hay comprobantes en esta semana." />}
                     {comprobantes.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="whitespace-nowrap">{fechaHora(c.fecha)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {c.fechaEstimada && !c.binance ? "Sin fecha" : fechaHora(c.fecha)}
+                        </TableCell>
                         <TableCell className="font-mono text-xs">
                           <a
                             href={`/api/administracion/binance/imagen?id=${c.id}`}
