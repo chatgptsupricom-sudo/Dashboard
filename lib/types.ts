@@ -271,6 +271,7 @@ export const rolePermissions: RolePermissions = {
       "alert", // Sistema de alertas
       // Ventas dropdown
       "reporte_diario", // Reporte Diario
+      "reporte_ventas", // Reporte de Ventas (de su sede, payload.cids)
       "seller_map", // Mapa de Clientes (sub-item de Ventas)
       // Leads dropdown
       "adminleads", // Leads (permiso principal del dropdown)
