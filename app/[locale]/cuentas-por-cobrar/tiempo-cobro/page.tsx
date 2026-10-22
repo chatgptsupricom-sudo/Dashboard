@@ -22,7 +22,7 @@ type Data = {
   clientes: (Grupo & { partnerId: number })[];
   vendedores: Grupo[];
   facturas: Factura[];
-  filters: { desde: string; hasta: string };
+  filters: { desde: string; hasta: string; tipo?: string };
   updatedAt: string;
 };
 
@@ -200,6 +200,9 @@ export default function TiempoCobroPage() {
   const now = new Date();
   const [empresa, setEmpresa] = useState("");
   const [modo, setModo] = useState<"mes" | "anio" | "rango">("mes");
+  // Crédito es lo de siempre (y lo de los KPIs); Contado mide cuánto tardan en pagar lo que debía pagarse al facturar.
+  const [tipo, setTipo] = useState<"credito" | "contado" | "todos">("credito");
+  const tipoTexto = tipo === "credito" ? "a crédito" : tipo === "contado" ? "de contado" : "a crédito y de contado";
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [anio, setAnio] = useState(now.getFullYear());
   const [rangoDesde, setRangoDesde] = useState(fechaLocal(new Date(now.getFullYear(), now.getMonth(), 1)));
@@ -224,6 +227,7 @@ export default function TiempoCobroPage() {
     setError(null);
     try {
       const params = new URLSearchParams({ startDate: desde, endDate: hasta });
+      params.set("tipo", tipo);
       if (empresa) params.set("empresa", empresa);
       else if (userCids) params.set("userCids", String(userCids));
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar/tiempo-cobro?${params}`);
@@ -236,7 +240,7 @@ export default function TiempoCobroPage() {
     } finally {
       setLoading(false);
     }
-  }, [empresa, desde, hasta, rangoInvalido, userCids]);
+  }, [empresa, desde, hasta, rangoInvalido, userCids, tipo]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -246,7 +250,7 @@ export default function TiempoCobroPage() {
   }, [detalle]);
 
   const r = data?.resumen;
-  const periodo = modo === "rango" ? `${desde}_a_${hasta}` : modo === "anio" ? String(anio) : `${MONTHS[mes - 1]}_${anio}`;
+  const periodo = (tipo === "credito" ? "" : `${tipo}_`) + (modo === "rango" ? `${desde}_a_${hasta}` : modo === "anio" ? String(anio) : `${MONTHS[mes - 1]}_${anio}`);
   const periodoTexto = modo === "rango" ? `del ${formatDate(desde)} al ${formatDate(hasta)}`
     : modo === "anio" ? `en ${anio}` : `en ${MONTHS[mes - 1]} ${anio}`;
   const q = busqueda.trim().toLowerCase();
@@ -268,6 +272,7 @@ export default function TiempoCobroPage() {
     const t = setTimeout(async () => {
       setAusencias({ q, items: null });
       const params = new URLSearchParams({ startDate: desde, endDate: hasta, explicar: busqueda.trim() });
+      params.set("tipo", tipo);
       if (empresa) params.set("empresa", empresa);
       else if (userCids) params.set("userCids", String(userCids));
       try {
@@ -280,7 +285,7 @@ export default function TiempoCobroPage() {
     }, 500);
     return () => { clearTimeout(t); ctrl.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sinClientes, q, desde, hasta, empresa, userCids]);
+  }, [sinClientes, q, desde, hasta, empresa, userCids, tipo]);
 
   const exportarTodo = () => {
     if (!data || !r) return;
@@ -296,6 +301,7 @@ export default function TiempoCobroPage() {
           { Indicador: "Facturas pagadas", Resultado: r.facturas },
           { Indicador: "Monto pagado (con IVA)", Resultado: r.monto },
           { Indicador: "Período", Resultado: `${data.filters.desde} a ${data.filters.hasta}` },
+          { Indicador: "Facturas", Resultado: tipo === "credito" ? "Crédito" : tipo === "contado" ? "Contado" : "Crédito y contado" },
         ],
       },
       { nombre: "Tramos de días", filas: data.tramos.map((t) => ({ Tramo: t.label, Facturas: t.facturas, "Monto (con IVA)": t.monto, "% del monto": t.pct })) },
@@ -312,7 +318,7 @@ export default function TiempoCobroPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Tiempo de Cobro</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Días desde que se emite la factura hasta que el cliente la paga por completo · facturas a crédito pagadas {periodoTexto}
+            Días desde que se emite la factura hasta que el cliente la paga por completo · facturas {tipoTexto} pagadas {periodoTexto}
             {data && <span className="ml-2 text-slate-400">| Actualizado: {new Date(data.updatedAt).toLocaleTimeString("es-VE")}</span>}
           </p>
         </div>
@@ -333,6 +339,18 @@ export default function TiempoCobroPage() {
               <span className="text-sm text-slate-700">{COMPANY_MAP[userCids] || `Sede ${userCids}`}</span>
             </div>
           )}
+          <div className="flex items-center bg-slate-100 rounded-lg p-1" role="group" aria-label="Tipo de factura">
+            {(["credito", "contado", "todos"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTipo(t)}
+                aria-pressed={tipo === t}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${tipo === t ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+              >
+                {t === "credito" ? "Crédito" : t === "contado" ? "Contado" : "Todas"}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center bg-slate-100 rounded-lg p-1" role="group" aria-label="Tipo de período">
             {(["mes", "anio", "rango"] as const).map((m) => (
               <button
@@ -386,7 +404,7 @@ export default function TiempoCobroPage() {
         <div className={`space-y-6 transition-opacity ${loading ? "opacity-50" : ""}`}>
           {r.facturas === 0 ? (
             <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-400 text-sm">
-              Ninguna factura a crédito se terminó de pagar en este período.
+              Ninguna factura {tipoTexto} se terminó de pagar en este período.
             </div>
           ) : (
             <>
@@ -541,7 +559,7 @@ export default function TiempoCobroPage() {
               <p className="text-[11px] text-slate-400">
                 Cada factura cuenta desde su fecha de emisión hasta la fecha del último pago que la dejó en cero (fecha del pago, no la de registro en Odoo).
                 El plazo es fecha de vencimiento − fecha de la factura. Los promedios son por factura (cada una pesa igual).
-                Solo crédito; sin Supricom, SUPER TECHNO ni facturas vencidas antes de 2025. Las cerradas solo con nota de crédito no cuentan.
+                {tipo === "credito" ? "Solo crédito" : tipo === "contado" ? "Solo contado (plazo 0: a tiempo = pagada el mismo día)" : "Crédito y contado (el contado con plazo 0)"}; sin Supricom, SUPER TECHNO ni facturas vencidas antes de 2025. Las cerradas solo con nota de crédito no cuentan.
               </p>
             </>
           )}
