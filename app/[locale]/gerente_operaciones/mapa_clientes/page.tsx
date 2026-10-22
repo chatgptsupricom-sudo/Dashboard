@@ -19,7 +19,6 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  CreditCard,
   FilterX,
   Globe,
   History,
@@ -35,6 +34,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DateRange } from "react-day-picker";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 import { fechaDeInput, rangoInicialMapa } from "@/lib/mapaClientes/fechas";
+import { DetalleClienteMapa } from "@/components/mapaClientes/DetalleClienteMapa";
 
 const COMPANY_NAMES: Record<number, string> = {
   9: "Valencia",
@@ -604,42 +604,20 @@ export default function MapsClientsPage() {
 
                {/* Contenido */}
                <div className="p-8 overflow-y-auto space-y-6 flex-1">
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                 <div className="grid grid-cols-1 gap-4">
                    <div className="p-5 bg-blue-50/50 border border-blue-100/50 rounded-2xl flex items-center gap-4">
                      <div className="p-3 bg-blue-600 rounded-xl text-white shadow-md shadow-blue-200">
                        <Receipt size={20} />
                      </div>
                      <div>
                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                         Monto
+                         {isTotalHistory ? "Facturado (historial total)" : "Facturado en el período"}
                        </span>
                        <div className="text-xl font-black text-blue-600 mt-0.5 tabular-nums">
                          ${" "}
                          {selectedClient.value.toLocaleString("en-US", {
                            minimumFractionDigits: 2,
                          })}
-                       </div>
-                     </div>
-                   </div>
-
-                   <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl flex items-center gap-4">
-                     <div className="p-3 bg-slate-900 rounded-xl text-white shadow-md">
-                       <CreditCard size={20} />
-                     </div>
-                     <div>
-                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                         Término de Venta
-                       </span>
-                       <div className="text-sm font-black text-slate-800 uppercase mt-0.5 tracking-wide">
-                         {selectedClient.value > 25000 ? (
-                           <Badge className="bg-amber-100 border-none text-amber-700 rounded-lg font-bold text-[10px] py-1 px-2.5">
-                             Crédito
-                           </Badge>
-                         ) : (
-                           <Badge className="bg-emerald-100 border-none text-emerald-700 rounded-lg font-bold text-[10px] py-1 px-2.5">
-                             Contado
-                           </Badge>
-                         )}
                        </div>
                      </div>
                    </div>
@@ -679,51 +657,13 @@ export default function MapsClientsPage() {
                    </div>
                  </div>
 
-                 {/* Productos Adquiridos */}
-                 <div className="space-y-3">
-                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
-                     Productos Adquiridos
-                   </h4>
-                   <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-sm">
-                     <div className="bg-slate-50 px-5 py-3 flex justify-between text-[9px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                       <span>Artículo / Cantidad</span>
-                       <span>Monto Facturado</span>
-                     </div>
-                     <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto">
-                       {selectedClient.products &&
-                       selectedClient.products.length > 0 ? (
-                         selectedClient.products.map((item: any, i: number) => (
-                           <div
-                             key={i}
-                             className="px-5 py-3.5 flex justify-between items-center text-xs hover:bg-slate-50/40 transition-all"
-                           >
-                             <div className="flex flex-col gap-0.5 max-w-[70%]">
-                               <span className="font-bold text-slate-800 uppercase tracking-tight line-clamp-2">
-                                 {item.product}
-                               </span>
-                               <span className="text-[10px] text-slate-400 font-bold tabular-nums">
-                                 {" "}
-                                 {item.quantity.toLocaleString("en-US")} unidades
-                               </span>
-                             </div>
-                             <span className="font-mono font-black text-blue-600 text-right tabular-nums">
-                               ${" "}
-                               {item.total.toLocaleString("en-US", {
-                                 minimumFractionDigits: 2,
-                                 maximumFractionDigits: 2,
-                               })}
-                             </span>
-                           </div>
-                         ))
-                       ) : (
-                         <div className="py-8 text-center text-xs text-slate-400 italic font-medium">
-                           Sin desglose de productos para visualización histórica
-                           total o período vacío.
-                         </div>
-                       )}
-                     </div>
-                   </div>
-                 </div>
+                 <DetalleClienteMapa
+                   partnerId={selectedClient.id}
+                   desde={!isTotalHistory && date?.from ? format(date.from, "yyyy-MM-dd") : null}
+                   hasta={
+                     !isTotalHistory && date?.from ? format(date.to ?? date.from, "yyyy-MM-dd") : null
+                   }
+                 />
                </div>
              </motion.div>
            </div>

@@ -161,6 +161,7 @@ export async function GET(request: NextRequest) {
       stateStats[stateName].count += 1;
       stateStats[stateName].revenue += revenue;
       stateStats[stateName].clients.push({
+        id: client.id,
         name: client.name,
         city: client.city || "N/A",
         rif: client.vat || "N/A",
