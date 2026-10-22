@@ -485,6 +485,7 @@ export const rolePermissions: RolePermissions = {
       "stoplight_reports",
       "inventory",
       "bi_dias_promedio", // Días promedio de cobro, inventario y pago
+      "catalogo", // El de los vendedores, de Valencia (SEDE_CATALOGO_BI)
       "agenteia",
       // Desplegable Leads
       "adminleads",

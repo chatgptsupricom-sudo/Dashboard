@@ -40,3 +40,9 @@ export function esEscrituraBI(rol: unknown, metodo: string): boolean {
 }
 
 export const MENSAJE_SOLO_LECTURA_BI = "Inteligencia de Negocio es de solo lectura";
+
+/**
+ * El Catálogo de los vendedores (`/api/vendedores/catalogo` y su export) es
+ * de una sola sede y BI no tiene `cids`: ve el de Valencia.
+ */
+export const SEDE_CATALOGO_BI = 9;
