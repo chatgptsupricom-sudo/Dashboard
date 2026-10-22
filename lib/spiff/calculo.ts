@@ -47,6 +47,29 @@ export interface DetalleSpiff {
   cantidad: number;
   /** Productos que suman a la regla, de mayor a menor venta. */
   productos: { nombre: string; monto: number; cantidad: number }[];
+  /** Facturas y NC que suman a la regla (solo con `conFacturas`). Monto y
+   *  cantidad son solo de las líneas que cuentan, con signo: suman la fila. */
+  facturas?: FacturaSpiff[];
+}
+
+export interface FacturaSpiff {
+  id: number;
+  numero: string;
+  fecha: string;
+  cliente: string;
+  notaCredito: boolean;
+  monto: number;
+  cantidad: number;
+}
+
+export interface OpcionesSpiff {
+  /** Además de las reglas activas y vigentes en el mes, incluye esa regla
+   *  aunque esté inactiva o fuera de fecha (el ranking de una regla en el
+   *  administrador la necesita siempre; sus fechas se siguen aplicando a las
+   *  facturas). */
+  incluirReglaId?: number;
+  /** Agrega a cada detalle las facturas que lo componen. */
+  conFacturas?: boolean;
 }
 
 export interface SpiffVendedor {
@@ -85,14 +108,8 @@ const fechaISO = (v: any): string | null => {
   return String(v).slice(0, 10);
 };
 
-/**
- * `incluirReglaId`: además de las reglas activas y vigentes en el mes, incluye
- * esa regla aunque esté inactiva o fuera de fecha (el ranking de una regla en
- * el administrador la necesita siempre; sus fechas se siguen aplicando a las
- * facturas).
- */
 export async function calcularSpiffDelMes(
-  companyId: number, anio: number, mes: number, opciones: { incluirReglaId?: number } = {},
+  companyId: number, anio: number, mes: number, opciones: OpcionesSpiff = {},
 ): Promise<ResumenSpiff> {
   const mm = String(mes).padStart(2, "0");
   const inicio = `${anio}-${mm}-01`;
@@ -117,7 +134,7 @@ export async function calcularSpiffDelMes(
   })).filter((r) => r.target_amount > 0);
 
   const vendedoresRes = await query("SELECT name, user_id FROM sellers WHERE cids = ?", [companyId]);
-  return calcularSpiff(companyId, anio, mes, reglas, vendedoresRes.rows as any[]);
+  return calcularSpiff(companyId, anio, mes, reglas, vendedoresRes.rows as any[], opciones);
 }
 
 /** Cálculo con las reglas y vendedores ya leídos de MySQL (solo lee Odoo). */
@@ -127,6 +144,7 @@ export async function calcularSpiff(
   mes: number,
   reglas: ReglaSpiff[],
   sellers: { name: string; user_id: number | null }[],
+  opciones: OpcionesSpiff = {},
 ): Promise<ResumenSpiff> {
   const mm = String(mes).padStart(2, "0");
   const inicio = `${anio}-${mm}-01`;
@@ -151,7 +169,7 @@ export async function calcularSpiff(
       ["invoice_date", "<=", fin],
       ["invoice_user_id", "!=", false],
     ]],
-    { fields: ["id", "invoice_user_id", "invoice_date", "move_type", "amount_untaxed_signed"], limit: 20000 },
+    { fields: ["id", "name", "partner_id", "invoice_user_id", "invoice_date", "move_type", "amount_untaxed_signed"], limit: 20000 },
   )) || [];
   if (facturas.length === 0) return resultadoVacio;
 
@@ -222,7 +240,12 @@ export async function calcularSpiff(
   });
 
   // vendido[vendedor][regla] = monto y cantidad
-  type Acc = { monto: number; cantidad: number; productos: Map<string, { monto: number; cantidad: number }> };
+  type Acc = {
+    monto: number;
+    cantidad: number;
+    productos: Map<string, { monto: number; cantidad: number }>;
+    facturas: Map<number, { monto: number; cantidad: number }>;
+  };
   const vendido = new Map<string, Map<number, Acc>>();
   for (const l of lineas) {
     const f = facturaPorId.get(l.move_id?.[0]);
@@ -248,7 +271,7 @@ export async function calcularSpiff(
       }
       if (!vendido.has(v.nombre)) vendido.set(v.nombre, new Map());
       const porRegla = vendido.get(v.nombre)!;
-      const acc = porRegla.get(r.id) ?? { monto: 0, cantidad: 0, productos: new Map() };
+      const acc = porRegla.get(r.id) ?? { monto: 0, cantidad: 0, productos: new Map(), facturas: new Map() };
       const monto = signo * (Number(l.price_subtotal) || 0);
       const cantidad = signo * (Number(l.quantity) || 0);
       acc.monto += monto;
@@ -257,6 +280,10 @@ export async function calcularSpiff(
       pr.monto += monto;
       pr.cantidad += cantidad;
       acc.productos.set(prod.nombre, pr);
+      const fa = acc.facturas.get(f.id) ?? { monto: 0, cantidad: 0 };
+      fa.monto += monto;
+      fa.cantidad += cantidad;
+      acc.facturas.set(f.id, fa);
       porRegla.set(r.id, acc);
       vendedor(v);
     }
@@ -287,6 +314,24 @@ export async function calcularSpiff(
         productos: [...acc.productos.entries()]
           .map(([nombre, x]) => ({ nombre, monto: Math.round(x.monto * 100) / 100, cantidad: Math.round(x.cantidad * 100) / 100 }))
           .sort((a, b) => b.monto - a.monto),
+        ...(opciones.conFacturas
+          ? {
+              facturas: [...acc.facturas.entries()]
+                .map(([id, x]): FacturaSpiff => {
+                  const f = facturaPorId.get(id);
+                  return {
+                    id,
+                    numero: f?.name || "",
+                    fecha: String(f?.invoice_date || "").slice(0, 10),
+                    cliente: f?.partner_id?.[1] || "",
+                    notaCredito: f?.move_type === "out_refund",
+                    monto: Math.round(x.monto * 100) / 100,
+                    cantidad: Math.round(x.cantidad * 100) / 100,
+                  };
+                })
+                .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.numero.localeCompare(a.numero)),
+            }
+          : {}),
       });
       sv.totalSpiff += spiff;
     }
