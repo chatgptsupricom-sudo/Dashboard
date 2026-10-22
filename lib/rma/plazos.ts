@@ -4,13 +4,16 @@
  * Un caso pasa por estas etapas (sql/rma_estados_plazos.sql):
  *
  *   por_llegar      el cliente abrió el ticket y el equipo todavía no llegó.
- *                   Termina cuando Seguridad registra el ingreso (lo firma RMA).
+ *                   Termina cuando Seguridad registra el ingreso (lo firma RMA;
+ *                   en una sede sin Seguridad, lib/rma/sedesSeguridad.ts, el
+ *                   acta la registra RMA con la firma del cliente).
  *   en_diagnostico  RMA tiene el equipo: 48 horas hábiles para diagnosticarlo.
  *   en_reparacion   después del diagnóstico.
  *   reparado / nota_credito / no_procesado   resuelto, falta que salga.
  *
  * Y el equipo no puede pasar una semana en las instalaciones: tiene que salir
- * (despacho de Seguridad o entrega marcada por RMA) ANTES del 7.º día hábil
+ * (despacho de Seguridad —o de RMA en una sede sin Seguridad— o entrega
+ * marcada por RMA) ANTES del 7.º día hábil
  * contado desde el ingreso. El día del ingreso es el día 1.
  *
  * "Hábil" = lunes a viernes, hora de Caracas. No descuenta feriados.

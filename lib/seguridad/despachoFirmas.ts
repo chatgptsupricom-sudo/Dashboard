@@ -9,10 +9,11 @@
 export type MetodoEntrega = "sucursal" | "ruta" | "agencia";
 export type RolFirmaDespacho = "cliente" | "seguridad" | "tecnico";
 
-export function firmasRequeridasDespacho(): { rol: RolFirmaDespacho; etiqueta: string }[] {
-  return [
+/** `sinSeguridad`: sede sin Seguridad (lib/rma/sedesSeguridad.ts), firman el cliente y RMA. */
+export function firmasRequeridasDespacho(sinSeguridad = false): { rol: RolFirmaDespacho; etiqueta: string }[] {
+  const firmas: { rol: RolFirmaDespacho; etiqueta: string }[] = [
     { rol: "cliente", etiqueta: "el cliente que retira" },
     { rol: "tecnico", etiqueta: "RMA" },
-    { rol: "seguridad", etiqueta: "Seguridad" },
   ];
+  return sinSeguridad ? firmas : [...firmas, { rol: "seguridad", etiqueta: "Seguridad" }];
 }

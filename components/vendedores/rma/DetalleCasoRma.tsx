@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fechaCorta } from "@/lib/fecha";
 import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
+import { sedeSinSeguridad } from "@/lib/rma/sedesSeguridad";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -178,6 +179,8 @@ export function DetalleCasoRma() {
   }, [datos]);
 
   const varios = productos.length > 1;
+  // Sede sin Seguridad (lib/rma/sedesSeguridad.ts): las actas las hace RMA.
+  const sinSeguridad = sedeSinSeguridad(datos?.case?.company_id);
   const nombreProducto = useCallback(
     (itemId: number | null) => {
       const p = productos.find((x: any) => x.id === itemId);
@@ -203,7 +206,7 @@ export function DetalleCasoRma() {
         fecha: i.created_at,
         icono: Shield,
         color: "bg-sky-100 text-sky-600",
-        titulo: t("ev_ingreso"),
+        titulo: t(sinSeguridad ? "ev_ingreso_rma" : "ev_ingreso"),
         quien: [i.recibido_seguridad_nombre || i.recibido_por, i.recibido_rma_nombre].filter(Boolean).join(" · "),
       });
     }
@@ -258,7 +261,7 @@ export function DetalleCasoRma() {
         fecha: d.created_at,
         icono: PackageCheck,
         color: "bg-emerald-100 text-emerald-600",
-        titulo: t("ev_despacho"),
+        titulo: t(sinSeguridad ? "ev_despacho_rma" : "ev_despacho"),
         detalle: d.cliente_retira ? t("retira", { nombre: d.cliente_retira }) : null,
         quien: d.almacenista_nombre,
         nota: d.observaciones,
@@ -268,7 +271,7 @@ export function DetalleCasoRma() {
       ev.push({ fecha: c.despachado_at, icono: PackageCheck, color: "bg-emerald-100 text-emerald-600", titulo: t("ev_entregado") });
     }
     return ev.sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
-  }, [datos, varios, nombreProducto, t]);
+  }, [datos, varios, nombreProducto, sinSeguridad, t]);
 
   if (loading) {
     return (
@@ -474,17 +477,24 @@ export function DetalleCasoRma() {
             <AdjuntosGaleria adjuntos={fotosGenerales} />
           </Tarjeta>
 
-          {/* Recepción en Seguridad */}
-          <Tarjeta titulo={t("recepcion")} icono={Shield}>
+          {/* Recepción en Seguridad (en una sede sin Seguridad, la registra RMA) */}
+          <Tarjeta titulo={t(sinSeguridad ? "recepcion_rma" : "recepcion")} icono={Shield}>
             {datos.ingresos.length === 0 ? (
-              <p className="text-sm text-slate-500">{c.origen === "portal" && ["recibido", "por_llegar"].includes(c.status) ? t("sin_recepcion_portal") : t("sin_recepcion")}</p>
+              <p className="text-sm text-slate-500">
+                {c.origen === "portal" && ["recibido", "por_llegar"].includes(c.status)
+                  ? t("sin_recepcion_portal")
+                  : t(sinSeguridad ? "sin_recepcion_rma" : "sin_recepcion")}
+              </p>
             ) : (
               <div className="space-y-3">
                 {datos.ingresos.map((i) => (
                   <div key={i.id} className="rounded-xl border border-slate-200 p-3 space-y-3">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <Dato etiqueta={t("fecha")} valor={fechaCorta(i.fecha_entrega)} />
-                      <Dato etiqueta={t("recibio_seguridad")} valor={i.recibido_seguridad_nombre || i.recibido_por} />
+                      {/* Sin Seguridad recibe solo RMA. */}
+                      {!sinSeguridad && (
+                        <Dato etiqueta={t("recibio_seguridad")} valor={i.recibido_seguridad_nombre || i.recibido_por} />
+                      )}
                       <Dato etiqueta={t("recibio_rma")} valor={i.recibido_rma_nombre} />
                       {i.nd_numero && <Dato etiqueta={t("nota_entrega")} valor={i.nd_numero} mono />}
                     </div>

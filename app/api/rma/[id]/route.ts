@@ -93,12 +93,34 @@ export async function GET(
       console.warn("rma_case_items no disponible:", e?.message);
     }
 
+    // Actas de recepción y entrega del caso. En una sede sin Seguridad
+    // (lib/rma/sedesSeguridad.ts) las registra RMA desde esta pantalla.
+    let actas: { ingresos: any[]; despachos: any[] } = { ingresos: [], despachos: [] };
+    try {
+      const [ing, des] = await Promise.all([
+        query(
+          `SELECT id, nd_numero, fecha_entrega, recibido_rma_nombre, created_at
+             FROM seguridad_ingresos WHERE rma_case_id = ? ORDER BY id`,
+          [caseData.id],
+        ),
+        query(
+          `SELECT id, nd_numero, fecha_despacho, cliente_retira, almacenista_nombre, created_at
+             FROM seguridad_despachos WHERE rma_case_id = ? ORDER BY id`,
+          [caseData.id],
+        ),
+      ]);
+      actas = { ingresos: ing.rows as any[], despachos: des.rows as any[] };
+    } catch (e: any) {
+      console.warn("actas de Seguridad no disponibles:", e?.message);
+    }
+
     return NextResponse.json({
       success: true,
       case: caseData,
       history: historyResult.rows,
       adjuntos,
       items,
+      actas,
     });
   } catch (error: any) {
     console.error("Error fetching RMA case:", error);
