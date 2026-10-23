@@ -4,9 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Aviso, BotonExcel, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
+import { Aviso, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
 import type { Comprobante, EstadoComprobante, OrigenPagos, PagoBinance } from "@/lib/administracion/binance";
-import { Bitcoin, FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
+import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
+import { Bitcoin, Download, FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
@@ -20,13 +21,13 @@ type Respuesta = {
 type Subida = { nombre: string; ok: boolean; texto: string };
 type TipoArchivo = "comprobante" | "estado";
 
-const ESTADOS: Record<EstadoComprobante, { label: string; clase: string }> = {
-  conciliado: { label: "Conciliado", clase: "bg-emerald-100 text-emerald-800" },
-  manual: { label: "Conciliado a mano", clase: "bg-emerald-100 text-emerald-800" },
-  por_monto_hora: { label: "Coincide solo por monto (revisar)", clase: "bg-amber-100 text-amber-800" },
-  monto_distinto: { label: "Monto distinto", clase: "bg-red-100 text-red-800" },
-  no_encontrado: { label: "No está en Binance", clase: "bg-red-100 text-red-800" },
-  sin_verificar: { label: "Sin verificar", clase: "bg-slate-100 text-slate-700" },
+const CLASE_ESTADO: Record<EstadoComprobante, string> = {
+  conciliado: "bg-emerald-100 text-emerald-800",
+  manual: "bg-emerald-100 text-emerald-800",
+  por_monto_hora: "bg-amber-100 text-amber-800",
+  monto_distinto: "bg-red-100 text-red-800",
+  no_encontrado: "bg-red-100 text-red-800",
+  sin_verificar: "bg-slate-100 text-slate-700",
 };
 
 const DIA = 86400_000;
@@ -63,7 +64,7 @@ export default function BinancePage() {
   const [datos, setDatos] = useState<Respuesta | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [subiendo, setSubiendo] = useState<{ hecho: number; total: number } | null>(null);
+  const [subiendo, setSubiendo] = useState<{ hecho: number; total: number; tipo: TipoArchivo } | null>(null);
   const [subidas, setSubidas] = useState<Subida[]>([]);
   const input = useRef<HTMLInputElement>(null);
   const inputEstado = useRef<HTMLInputElement>(null);
@@ -91,7 +92,7 @@ export default function BinancePage() {
     const resultados: Subida[] = [];
     setSubidas([]);
     for (let i = 0; i < lista.length; i++) {
-      setSubiendo({ hecho: i, total: lista.length });
+      setSubiendo({ hecho: i, total: lista.length, tipo });
       const form = new FormData();
       form.append("archivo", lista[i]);
       form.append("semana", semana);
@@ -156,7 +157,6 @@ export default function BinancePage() {
     const mismo = (p: PagoBinance) => p.moneda === c.moneda && Math.abs(p.monto - c.monto) < 1e-6;
     return libres.sort((a, b) => Number(mismo(b)) - Number(mismo(a)) || a.fecha.localeCompare(b.fecha));
   };
-  const etiquetaSemana = opciones.find((o) => o.value === semana)?.label || semana;
   // El estado de cuenta no trae ID de orden: su id es interno y no se muestra.
   const idBinance = (id?: string) => (datos?.origen === "estado" || !id ? "" : id);
 
@@ -185,83 +185,14 @@ export default function BinancePage() {
               </option>
             ))}
           </select>
-          <input
-            ref={input}
-            type="file"
-            multiple
-            accept="image/jpeg,image/png,image/webp,application/pdf"
-            className="hidden"
-            onChange={(e) => subir(e.target.files, "comprobante")}
-          />
-          <input
-            ref={inputEstado}
-            type="file"
-            multiple
-            accept="image/jpeg,image/png,image/webp,application/pdf"
-            className="hidden"
-            onChange={(e) => subir(e.target.files, "estado")}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-9"
-            disabled={!!subiendo}
-            onClick={() => inputEstado.current?.click()}
-          >
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Subir estado de cuenta
-          </Button>
-          <Button size="sm" className="h-9" disabled={!!subiendo} onClick={() => input.current?.click()}>
-            {subiendo ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
-            {subiendo ? `Leyendo ${subiendo.hecho + 1} de ${subiendo.total}` : "Subir comprobantes"}
-          </Button>
+          {/* Lo arma el servidor: el Excel lleva la imagen de cada comprobante y su línea del estado de cuenta. */}
           {datos && (
-            <BotonExcel
-              archivo={`Conciliacion_Binance_${semana}`}
-              hojas={() => [
-                {
-                  nombre: "Resumen",
-                  filas: [
-                    { Concepto: "Semana", Valor: etiquetaSemana },
-                    { Concepto: "Comprobantes subidos", Valor: comprobantes.length },
-                    { Concepto: "Monto de comprobantes", Valor: porMoneda(comprobantes) },
-                    { Concepto: "Conciliados", Valor: conciliados.length },
-                    { Concepto: "Monto conciliado", Valor: porMoneda(conciliados) },
-                    { Concepto: "Con diferencia o no encontrados", Valor: conProblema.length },
-                    { Concepto: "Pagos en Binance sin comprobante", Valor: sinComprobante.length },
-                    { Concepto: "Monto sin comprobante", Valor: porMoneda(sinComprobante) },
-                  ],
-                },
-                {
-                  nombre: "Comprobantes",
-                  filas: comprobantes.map((c) => ({
-                    "Fecha comprobante": c.fechaEstimada ? "Sin fecha" : fechaHora(c.fecha),
-                    "ID de orden": c.orderId,
-                    "Monto comprobante": c.monto,
-                    Moneda: c.moneda,
-                    Estado: ESTADOS[c.estado].label,
-                    "ID en Binance": idBinance(c.binance?.id),
-                    "Fecha Binance": c.binance ? fechaHora(c.binance.fecha) : "",
-                    "Monto Binance": c.binance?.monto ?? "",
-                    "Moneda Binance": c.binance?.moneda || "",
-                    Pagador: c.binance?.pagador || "",
-                    Archivo: c.archivoNombre,
-                    "Subido por": c.subidoPor,
-                  })),
-                },
-                {
-                  nombre: "Sin comprobante",
-                  filas: sinComprobante.map((p) => ({
-                    Fecha: fechaHora(p.fecha),
-                    "ID de orden": idBinance(p.id),
-                    Monto: p.monto,
-                    Moneda: p.moneda,
-                    Pagador: p.pagador,
-                    Tipo: p.tipo,
-                  })),
-                },
-              ]}
-            />
+            <Button asChild variant="outline" size="sm" className="h-9">
+              <a href={`/api/administracion/binance/excel?semana=${semana}`}>
+                <Download className="h-4 w-4 mr-2" />
+                Excel
+              </a>
+            </Button>
           )}
         </div>
       </div>
@@ -284,15 +215,22 @@ export default function BinancePage() {
           de Binance Pay) para conciliar. La consulta directa a Binance tampoco respondió ({datos.errorBinance}).
         </Aviso>
       )}
-      {datos?.origen === "estado" && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-          Estado de cuenta cargado: {datos.movimientos} pagos recibidos en la semana.
-          <Button variant="ghost" size="sm" className="h-7 text-gray-500" onClick={borrarEstado}>
-            <Trash2 className="h-3.5 w-3.5 mr-1" />
-            Borrar y volver a subir
-          </Button>
-        </div>
-      )}
+      <input
+        ref={input}
+        type="file"
+        multiple
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(e) => subir(e.target.files, "comprobante")}
+      />
+      <input
+        ref={inputEstado}
+        type="file"
+        multiple
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(e) => subir(e.target.files, "estado")}
+      />
       {error && <Aviso tono="rojo">{error}</Aviso>}
 
       {cargando && !datos ? (
@@ -320,8 +258,18 @@ export default function BinancePage() {
             </div>
 
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
+                <Button size="sm" className="h-9" disabled={!!subiendo} onClick={() => input.current?.click()}>
+                  {subiendo?.tipo === "comprobante" ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4 mr-2" />
+                  )}
+                  {subiendo?.tipo === "comprobante"
+                    ? `Leyendo ${subiendo.hecho + 1} de ${subiendo.total}`
+                    : "Subir comprobantes"}
+                </Button>
               </CardHeader>
               <CardContent className="overflow-x-auto">
                 <Table>
@@ -366,8 +314,8 @@ export default function BinancePage() {
                         </TableCell>
                         <TableCell>{c.binance?.pagador || "—"}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={`border-0 ${ESTADOS[c.estado].clase}`}>
-                            {ESTADOS[c.estado].label}
+                          <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
+                            {ETIQUETA_ESTADO[c.estado]}
                           </Badge>
                           {datos.origen === "estado" && c.estado !== "conciliado" && (
                             <select
@@ -400,8 +348,39 @@ export default function BinancePage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Pagos recibidos en Binance sin comprobante</CardTitle>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+                <div>
+                  <CardTitle className="text-base">Estado de cuenta: pagos sin comprobante</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {datos.origen === "estado"
+                      ? `Estado de cuenta cargado: ${datos.movimientos} pagos recibidos en la semana.`
+                      : "Esta semana todavía no tiene estado de cuenta."}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {datos.origen === "estado" && (
+                    <Button variant="ghost" size="sm" className="h-9 text-gray-500" onClick={borrarEstado}>
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Borrar y volver a subir
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9"
+                    disabled={!!subiendo}
+                    onClick={() => inputEstado.current?.click()}
+                  >
+                    {subiendo?.tipo === "estado" ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <FileSpreadsheet className="h-4 w-4 mr-2" />
+                    )}
+                    {subiendo?.tipo === "estado"
+                      ? `Leyendo ${subiendo.hecho + 1} de ${subiendo.total}`
+                      : "Subir estado de cuenta"}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
                 <Table>

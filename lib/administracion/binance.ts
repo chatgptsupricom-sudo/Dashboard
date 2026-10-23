@@ -409,6 +409,24 @@ async function ensureTablaMovimientos() {
       INDEX (fecha)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  // La captura subida, para recortar la linea de cada pago en el Excel.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS binance_estados (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      archivo_nombre VARCHAR(200) NOT NULL DEFAULT '',
+      archivo LONGBLOB NOT NULL,
+      subido_por VARCHAR(190) NOT NULL DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  // De que captura salio cada pago y entre que pixeles esta su linea.
+  for (const col of ["estado_id INT NULL", "y0 INT NULL", "y1 INT NULL"]) {
+    try {
+      await query(`ALTER TABLE binance_movimientos ADD COLUMN ${col}`);
+    } catch (e: any) {
+      if (e?.code !== "ER_DUP_FIELDNAME") throw e;
+    }
+  }
   tablaMovimientosLista = true;
 }
 
@@ -429,20 +447,121 @@ async function movimientosEnRango(desde: number, hasta: number): Promise<PagoBin
   }));
 }
 
-export type Movimiento = { fechaMs: number; contraparte: string; monto: number; moneda: string };
+type Region = { y0: number; y1: number };
 
-/** Guarda los movimientos; los repetidos (misma hora, monto, moneda y quien) se saltan. */
-export async function guardarMovimientos(movs: Movimiento[], email: string) {
+export type Movimiento = {
+  fechaMs: number;
+  contraparte: string;
+  monto: number;
+  moneda: string;
+  /** Donde esta su linea en la captura (null: PDF o no se ubico). */
+  linea: Region | null;
+};
+
+/**
+ * Guarda los movimientos y la captura de donde salieron. Los repetidos (misma
+ * hora, monto, moneda y quien) no se duplican, pero toman el recorte si no
+ * tenian uno (lo subido antes de guardar capturas).
+ */
+export async function guardarMovimientos(
+  movs: Movimiento[],
+  email: string,
+  captura: { datos: Buffer; nombre: string } | null,
+) {
   await ensureTablaMovimientos();
+  let estadoId: number | null = null;
+  if (captura && movs.some((m) => m.linea)) {
+    // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
+    const [res]: any = await db.execute(
+      "INSERT INTO binance_estados (archivo_nombre, archivo, subido_por) VALUES (?,?,?)",
+      [captura.nombre.slice(0, 200), captura.datos, email],
+    );
+    estadoId = res.insertId;
+  }
   let nuevos = 0;
   for (const m of movs) {
+    const conLinea = estadoId !== null && m.linea;
     const { rows } = await query(
-      "INSERT IGNORE INTO binance_movimientos (fecha, contraparte, monto, moneda, subido_por) VALUES (?,?,?,?,?)",
-      [aMysql(m.fechaMs), m.contraparte.slice(0, 120), m.monto, m.moneda, email],
+      // y0/y1 van antes que estado_id: MySQL asigna de izquierda a derecha.
+      `INSERT INTO binance_movimientos (fecha, contraparte, monto, moneda, subido_por, estado_id, y0, y1)
+         VALUES (?,?,?,?,?,?,?,?) AS nuevo
+       ON DUPLICATE KEY UPDATE
+         y0 = IF(estado_id IS NULL, nuevo.y0, y0),
+         y1 = IF(estado_id IS NULL, nuevo.y1, y1),
+         estado_id = COALESCE(estado_id, nuevo.estado_id)`,
+      [
+        aMysql(m.fechaMs),
+        m.contraparte.slice(0, 120),
+        m.monto,
+        m.moneda,
+        email,
+        conLinea ? estadoId : null,
+        conLinea ? m.linea!.y0 : null,
+        conLinea ? m.linea!.y1 : null,
+      ],
     );
-    nuevos += Number((rows as any)?.affectedRows || 0);
+    // 1 = fila nueva; 2 = ya estaba y tomo el recorte; 0 = ya estaba igual.
+    if (Number((rows as any)?.affectedRows) === 1) nuevos++;
   }
   return { nuevos, repetidos: movs.length - nuevos };
+}
+
+/** Recorte de la linea de cada movimiento en su captura, en JPEG, por id de movimiento. */
+export async function recortesDeMovimientos(ids: number[]) {
+  const salida = new Map<number, { datos: Buffer; ancho: number; alto: number }>();
+  if (!ids.length) return salida;
+  await ensureTablaMovimientos();
+  const sharp = (await import("sharp")).default;
+  const { rows } = await query(
+    `SELECT id, estado_id, y0, y1 FROM binance_movimientos
+      WHERE estado_id IS NOT NULL AND id IN (${ids.map(() => "?").join(",")})`,
+    ids,
+  );
+  const capturas = new Map<number, Buffer | null>();
+  for (const r of rows as any[]) {
+    if (!capturas.has(r.estado_id)) {
+      const [c]: any = await db.execute("SELECT archivo FROM binance_estados WHERE id = ?", [r.estado_id]);
+      capturas.set(r.estado_id, c[0]?.archivo || null);
+    }
+    const captura = capturas.get(r.estado_id);
+    if (!captura) continue;
+    try {
+      const { width = 0, height = 0 } = await sharp(captura).metadata();
+      const y0 = Math.max(0, r.y0);
+      const alto = Math.min(height, r.y1) - y0;
+      if (alto <= 0) continue;
+      const img = sharp(captura).extract({ left: 0, top: y0, width, height: alto }).resize({ width: Math.min(width, 700) });
+      const datos = await img.jpeg({ quality: 85 }).toBuffer();
+      const meta = await sharp(datos).metadata();
+      salida.set(r.id, { datos, ancho: meta.width || 0, alto: meta.height || 0 });
+    } catch (e: any) {
+      console.error("[binance] recorte", r.id, e?.message);
+    }
+  }
+  return salida;
+}
+
+/** Miniatura de cada comprobante en JPEG (los PDF no tienen), por id de comprobante. */
+export async function miniaturasDeComprobantes(ids: number[]) {
+  const salida = new Map<number, { datos: Buffer; ancho: number; alto: number }>();
+  if (!ids.length) return salida;
+  await ensureTabla();
+  const sharp = (await import("sharp")).default;
+  const [rows]: any = await db.execute(
+    `SELECT id, archivo, archivo_mime FROM binance_comprobantes WHERE id IN (${ids.map(() => "?").join(",")})`,
+    ids,
+  );
+  for (const r of rows) {
+    if (r.archivo_mime === "application/pdf") continue;
+    try {
+      const datos = await sharp(r.archivo).resize({ width: 220, height: 260, fit: "inside" }).jpeg({ quality: 80 }).toBuffer();
+      const meta = await sharp(datos).metadata();
+      salida.set(r.id, { datos, ancho: meta.width || 0, alto: meta.height || 0 });
+    } catch (e: any) {
+      console.error("[binance] miniatura", r.id, e?.message);
+    }
+  }
+  return salida;
 }
 
 /** Borra el estado de cuenta de la semana, para volver a subirlo. */
@@ -454,6 +573,11 @@ export async function borrarMovimientosSemana(lunes: string) {
     aMysql(rango.desde),
     aMysql(rango.hasta),
   ]);
+  // Las capturas que ya no tienen ningun pago.
+  await query(
+    `DELETE FROM binance_estados WHERE id NOT IN
+       (SELECT estado_id FROM (SELECT DISTINCT estado_id FROM binance_movimientos WHERE estado_id IS NOT NULL) t)`,
+  );
 }
 
 export async function imagenComprobante(id: number) {
@@ -618,7 +742,10 @@ export async function leerComprobante(datos: Buffer, mime: string): Promise<Leid
 
 const INSTRUCCIONES_ESTADO =
   "Te dan una captura o PDF del historial de movimientos de Binance Pay (columnas Time/Fecha, Type/Tipo, " +
-  "To/From, Amount/Monto, Currency/Moneda, Status/Estado). Devuelve TODAS las filas, sin inventar ni saltar ninguna. " +
+  "To/From, Amount/Monto, Currency/Moneda, Status/Estado). Devuelve TODAS las filas, sin inventar ni saltar ninguna, " +
+  "en el orden en que aparecen, de arriba a abajo (no las ordenes por fecha ni por monto). " +
+  "imagen: en que imagen esta la fila (1 = la primera). posicion: a que altura esta el centro de la fila dentro de " +
+  "esa imagen, de 0 (borde de arriba) a 1 (borde de abajo). " +
   "fecha: tal cual aparece, como 'YYYY-MM-DD HH:MM:SS'. tipo: el texto de Type (Received, Sent, Recibido...). " +
   "recibido: true solo si es un pago recibido (Received/Recibido, o monto con +). " +
   "contraparte: el To/From tal cual. monto: el valor absoluto, sin signo ni separador de miles (1,841.85 es 1841.85). " +
@@ -638,18 +765,30 @@ const MAX_FRANJAS = 30;
 // El limite de la API por imagen es 5 MB.
 const MAX_IMAGEN_BYTES = 4.5 * 1024 * 1024;
 
-async function bloquesEstado(datos: Buffer, mime: string): Promise<Archivo[]> {
-  if (mime === "application/pdf") return [bloqueArchivo(datos, mime)];
+type EstadoPreparado = {
+  bloques: Archivo[];
+  /** La captura como se mando (achicada si era muy ancha); null en un PDF. */
+  img: Buffer | null;
+  /** Donde empieza y cuanto mide cada franja, en pixeles de `img`. */
+  franjas: Region[];
+};
+
+async function bloquesEstado(datos: Buffer, mime: string): Promise<EstadoPreparado> {
+  if (mime === "application/pdf") return { bloques: [bloqueArchivo(datos, mime)], img: null, franjas: [] };
   const sharp = (await import("sharp")).default;
   const meta = await sharp(datos).metadata();
   const img =
     (meta.width || 0) > ANCHO_MAX ? await sharp(datos).resize({ width: ANCHO_MAX }).png().toBuffer() : datos;
   const { width = 0, height = 0 } = img === datos ? meta : await sharp(img).metadata();
   if (height <= ALTO_FRANJA * 1.2) {
-    if (img === datos && datos.length <= MAX_IMAGEN_BYTES) return [bloqueArchivo(datos, mime)];
-    return [bloqueArchivo(await sharp(img).png().toBuffer(), "image/png")];
+    const bloque =
+      img === datos && datos.length <= MAX_IMAGEN_BYTES
+        ? bloqueArchivo(datos, mime)
+        : bloqueArchivo(await sharp(img).png().toBuffer(), "image/png");
+    return { bloques: [bloque], img, franjas: [{ y0: 0, y1: height }] };
   }
   const bloques: Archivo[] = [];
+  const franjas: Region[] = [];
   for (let top = 0; top < height; top += ALTO_FRANJA - SOLAPE) {
     if (bloques.length >= MAX_FRANJAS) {
       throw new ArchivoIlegible("La captura es demasiado larga: súbela en varias partes");
@@ -657,9 +796,66 @@ async function bloquesEstado(datos: Buffer, mime: string): Promise<Archivo[]> {
     const alto = Math.min(ALTO_FRANJA, height - top);
     const franja = await sharp(img).extract({ left: 0, top, width, height: alto }).png().toBuffer();
     bloques.push(bloqueArchivo(franja, "image/png"));
+    franjas.push({ y0: top, y1: top + alto });
     if (top + alto >= height) break;
   }
-  return bloques;
+  return { bloques, img, franjas };
+}
+
+/**
+ * Las lineas de texto de la captura, de arriba a abajo: bandas horizontales con
+ * tinta sobre el color de fondo. Cada una se estira hasta la mitad del hueco con
+ * la de al lado, asi el recorte sale con su margen, como la fila en pantalla.
+ */
+export async function lineasDeTexto(img: Buffer): Promise<Region[]> {
+  const sharp = (await import("sharp")).default;
+  const { data, info } = await sharp(img).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const { width, height } = info;
+  const hist = new Array<number>(256).fill(0);
+  for (let i = 0; i < data.length; i++) hist[data[i]]++;
+  const fondo = hist.indexOf(Math.max(...hist));
+  const bandas: Region[] = [];
+  let ini = -1;
+  for (let y = 0; y <= height; y++) {
+    let n = 0;
+    if (y < height) for (let x = 0; x < width; x++) if (Math.abs(data[y * width + x] - fondo) > 60) n++;
+    // Poca tinta = texto; tinta en casi todo el ancho = una raya o un bloque.
+    const hay = y < height && n / width > 0.002 && n / width < 0.6;
+    if (hay && ini < 0) ini = y;
+    if (!hay && ini >= 0) {
+      const previa = bandas[bandas.length - 1];
+      // Un hueco chico es la misma linea (letras con partes separadas).
+      if (previa && ini - previa.y1 < 6) previa.y1 = y;
+      else bandas.push({ y0: ini, y1: y });
+      ini = -1;
+    }
+  }
+  const lineas = bandas.filter((b) => b.y1 - b.y0 >= 6);
+  const huecos = lineas.slice(1).map((b, i) => b.y0 - lineas[i].y1).sort((a, b) => a - b);
+  const medio = Math.round((huecos[Math.floor(huecos.length / 2)] ?? 40) / 2);
+  return lineas.map((b, i) => ({
+    y0: i ? Math.round((lineas[i - 1].y1 + b.y0) / 2) : Math.max(0, b.y0 - medio),
+    y1: i < lineas.length - 1 ? Math.round((b.y1 + lineas[i + 1].y0) / 2) : Math.min(height, b.y1 + medio),
+  }));
+}
+
+/**
+ * La linea de cada fila leida. Si hay tantas lineas como filas (o una mas: el
+ * encabezado) van en orden; si no, la linea donde la IA dijo que estaba la fila.
+ */
+export function ubicarFilas(
+  filas: { imagen: number; posicion: number }[],
+  lineas: Region[],
+  franjas: Region[],
+): (Region | null)[] {
+  if (lineas.length === filas.length) return lineas;
+  if (lineas.length === filas.length + 1) return lineas.slice(1);
+  return filas.map((f) => {
+    const franja = franjas[Math.min(Math.max(Math.round(f.imagen) - 1, 0), franjas.length - 1)];
+    if (!franja) return null;
+    const y = franja.y0 + Math.min(Math.max(Number(f.posicion) || 0, 0), 1) * (franja.y1 - franja.y0);
+    return lineas.find((l) => y >= l.y0 && y <= l.y1) || null;
+  });
 }
 
 // Un recorte de WhatsApp puede venir de 400 px: el ID de 18 digitos queda tan
@@ -688,8 +884,10 @@ const ESQUEMA_ESTADO = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["fecha", "tipo", "recibido", "contraparte", "monto", "moneda", "completado"],
+        required: ["fecha", "tipo", "recibido", "contraparte", "monto", "moneda", "completado", "imagen", "posicion"],
         properties: {
+          imagen: { type: "integer" },
+          posicion: { type: "number" },
           fecha: { type: "string" },
           tipo: { type: "string" },
           recibido: { type: "boolean" },
@@ -707,20 +905,42 @@ const ESQUEMA_ESTADO = {
  * Lee el estado de cuenta: solo los pagos recibidos y completados. La hora se
  * toma como de Caracas (`ajustarZona` corrige si venia en UTC).
  */
-export async function leerEstadoDeCuenta(datos: Buffer, mime: string): Promise<{ movs: Movimiento[]; leidas: number }> {
-  // 16000: el tope de salida de gpt-4o (unas 300 filas).
-  const l = await leerConIA(INSTRUCCIONES_ESTADO, ESQUEMA_ESTADO, await bloquesEstado(datos, mime), "Lee estos movimientos.", 16000);
-  const filas: any[] = Array.isArray(l?.movimientos) ? l.movimientos : [];
+export async function leerEstadoDeCuenta(
+  datos: Buffer,
+  mime: string,
+): Promise<{ movs: Movimiento[]; leidas: number; captura: Buffer | null }> {
+  const prep = await bloquesEstado(datos, mime);
+  // 16000: el tope de salida de gpt-4o (unas 250 filas).
+  const l = await leerConIA(INSTRUCCIONES_ESTADO, ESQUEMA_ESTADO, prep.bloques, "Lee estos movimientos.", 16000);
+  const leidas: any[] = Array.isArray(l?.movimientos) ? l.movimientos : [];
+  // Una fila que cae en el solape de dos franjas sale dos veces: va una.
+  const vistas = new Set<string>();
+  const filas = leidas.filter((f) => {
+    const llave = [f?.fecha, f?.tipo, f?.contraparte, f?.monto, f?.moneda].join("|");
+    if (vistas.has(llave)) return false;
+    vistas.add(llave);
+    return true;
+  });
+  // Todas las filas cuentan para ubicar las lineas, tambien las enviadas.
+  const ubicadas = prep.img ? ubicarFilas(filas, await lineasDeTexto(prep.img), prep.franjas) : [];
   const movs: Movimiento[] = [];
-  for (const f of filas) {
+  filas.forEach((f, i) => {
     const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(f?.fecha || ""));
     const monto = Math.abs(Number(f?.monto));
     const moneda = String(f?.moneda || "").trim().toUpperCase().slice(0, 12);
-    if (!m || !f?.recibido || !f?.completado || !(monto > 0) || !moneda) continue;
+    if (!m || !f?.recibido || !f?.completado || !(monto > 0) || !moneda) return;
     const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
-    movs.push({ fechaMs: local + OFFSET_CARACAS_MS, contraparte: String(f?.contraparte || "").trim(), monto, moneda });
-  }
-  return { movs, leidas: filas.length };
+    movs.push({
+      fechaMs: local + OFFSET_CARACAS_MS,
+      contraparte: String(f?.contraparte || "").trim(),
+      monto,
+      moneda,
+      linea: ubicadas[i] || null,
+    });
+  });
+  const sharp = (await import("sharp")).default;
+  const captura = prep.img ? await sharp(prep.img).jpeg({ quality: 90 }).toBuffer() : null;
+  return { movs, leidas: leidas.length, captura };
 }
 
 /**

@@ -59,11 +59,15 @@ export async function POST(request: NextRequest) {
     }
     const datos = Buffer.from(await archivo.arrayBuffer());
     if (form.get("tipo") === "estado") {
-      const { movs, leidas } = await leerEstadoDeCuenta(datos, archivo.type);
+      const { movs, leidas, captura } = await leerEstadoDeCuenta(datos, archivo.type);
       if (!leidas) {
         return NextResponse.json({ error: "No parece un estado de cuenta de Binance Pay" }, { status: 422 });
       }
-      const r = await guardarMovimientos(movs, String(auth.payload?.email || ""));
+      const r = await guardarMovimientos(
+        movs,
+        String(auth.payload?.email || ""),
+        captura && { datos: captura, nombre: archivo.name },
+      );
       return NextResponse.json({ success: true, estado: true, leidas, recibidos: movs.length, ...r });
     }
     const leido = await leerComprobante(datos, archivo.type);
