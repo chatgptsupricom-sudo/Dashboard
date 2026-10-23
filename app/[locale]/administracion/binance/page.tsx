@@ -7,7 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Aviso, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
 import type { Comprobante, EstadoComprobante, OrigenPagos, PagoBinance } from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
-import { Bitcoin, Download, FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
@@ -54,6 +55,18 @@ const soloFecha = (iso: string) =>
 
 const cifra = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 
+const fechaComprobante = (c: Comprobante) =>
+  c.fechaEstimada && !c.binance ? (c.soloDia ? `${soloFecha(c.fecha)} (sin hora)` : "Sin fecha") : fechaHora(c.fecha);
+
+// Lo que muestra cada tarjeta al hacerle clic.
+type Lista = "comprobantes" | "conciliados" | "problema" | "sinComprobante";
+const TITULO_LISTA: Record<Lista, string> = {
+  comprobantes: "Comprobantes",
+  conciliados: "Conciliados",
+  problema: "Con diferencia o no encontrados",
+  sinComprobante: "Recibido sin comprobante",
+};
+
 /** Suma por moneda: Binance recibe USDT, USDC, BTC... y no se mezclan. */
 function porMoneda(items: { monto: number; moneda: string }[]) {
   const m = new Map<string, number>();
@@ -69,6 +82,8 @@ export default function BinancePage() {
   const [error, setError] = useState<string | null>(null);
   const [subiendo, setSubiendo] = useState<{ hecho: number; total: number; tipo: TipoArchivo } | null>(null);
   const [subidas, setSubidas] = useState<Subida[]>([]);
+  const [lista, setLista] = useState<Lista | null>(null);
+  const [verImagen, setVerImagen] = useState<Comprobante | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const inputEstado = useRef<HTMLInputElement>(null);
 
@@ -153,6 +168,7 @@ export default function BinancePage() {
   const esConciliado = (c: Comprobante) => c.estado === "conciliado" || c.estado === "manual";
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
+  const COMPROBANTES_LISTA = { comprobantes, conciliados, problema: conProblema };
   // Pagos para amarrar a mano un comprobante: solo los de su monto y moneda, y
   // solo si ese monto se repite en el estado de cuenta (si es unico, el cruce ya
   // lo amarro). Van los libres y el que ya tiene (elegirlo confirma el que propuso el panel).
@@ -251,21 +267,125 @@ export default function BinancePage() {
         datos && (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Tarjeta titulo="Comprobantes" valor={comprobantes.length} detalle={porMoneda(comprobantes)} />
-              <Tarjeta tono="verde" titulo="Conciliados" valor={conciliados.length} detalle={porMoneda(conciliados)} />
-              <Tarjeta
-                tono={conProblema.length ? "rojo" : "neutro"}
-                titulo="Con diferencia o no encontrados"
-                valor={conProblema.length}
-                detalle={porMoneda(conProblema)}
-              />
-              <Tarjeta
-                tono={sinComprobante.length ? "ambar" : "neutro"}
-                titulo="Recibido sin comprobante"
-                valor={sinComprobante.length}
-                detalle={porMoneda(sinComprobante)}
-              />
+              {(
+                [
+                  ["comprobantes", "neutro", comprobantes],
+                  ["conciliados", "verde", conciliados],
+                  ["problema", conProblema.length ? "rojo" : "neutro", conProblema],
+                  ["sinComprobante", sinComprobante.length ? "ambar" : "neutro", sinComprobante],
+                ] as const
+              ).map(([clave, tono, items]) => (
+                <button
+                  key={clave}
+                  type="button"
+                  onClick={() => setLista(clave)}
+                  className="text-left rounded-xl transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  <Tarjeta tono={tono} titulo={TITULO_LISTA[clave]} valor={items.length} detalle={porMoneda(items)} />
+                </button>
+              ))}
             </div>
+
+            <Dialog
+              open={lista !== null}
+              onOpenChange={(abierto) => {
+                if (!abierto) {
+                  setLista(null);
+                  setVerImagen(null);
+                }
+              }}
+            >
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>{verImagen ? `Comprobante ${verImagen.orderId}` : lista && TITULO_LISTA[lista]}</DialogTitle>
+                </DialogHeader>
+                {verImagen ? (
+                  <div className="space-y-3">
+                    <Button variant="outline" size="sm" onClick={() => setVerImagen(null)}>
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Volver a la lista
+                    </Button>
+                    <p className="text-sm text-gray-600">
+                      {fechaComprobante(verImagen)} · {cifra(verImagen.monto)} {verImagen.moneda} ·{" "}
+                      {ETIQUETA_ESTADO[verImagen.estado]}
+                    </p>
+                    {/\.pdf$/i.test(verImagen.archivoNombre || "") ? (
+                      <iframe
+                        src={`/api/administracion/binance/imagen?id=${verImagen.id}`}
+                        title={`Comprobante ${verImagen.orderId}`}
+                        className="w-full h-[70vh] border rounded-lg"
+                      />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/administracion/binance/imagen?id=${verImagen.id}`}
+                        alt={`Comprobante ${verImagen.orderId}`}
+                        className="mx-auto max-h-[70vh] rounded-lg border"
+                      />
+                    )}
+                  </div>
+                ) : lista === "sinComprobante" ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
+                        <TableHead>Pagador</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sinComprobante.length === 0 && <FilaVacia columnas={3} texto="Todo lo recibido tiene comprobante." />}
+                      {sinComprobante.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell className="whitespace-nowrap">{fechaHora(p.fecha)}</TableCell>
+                          <TableCell className="text-right whitespace-nowrap">
+                            {cifra(p.monto)} {p.moneda}
+                          </TableCell>
+                          <TableCell>{p.pagador || "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  lista && (
+                    <>
+                      <p className="text-xs text-gray-500">Haz clic en un comprobante para ver su imagen.</p>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Fecha</TableHead>
+                            <TableHead>ID de orden</TableHead>
+                            <TableHead className="text-right">Monto</TableHead>
+                            <TableHead>Pagador</TableHead>
+                            <TableHead>Estado</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {COMPROBANTES_LISTA[lista].length === 0 && (
+                            <FilaVacia columnas={5} texto="No hay comprobantes aquí." />
+                          )}
+                          {COMPROBANTES_LISTA[lista].map((c) => (
+                            <TableRow key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setVerImagen(c)}>
+                              <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
+                              <TableCell className="font-mono text-xs text-blue-600">{c.orderId}</TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                {cifra(c.monto)} {c.moneda}
+                              </TableCell>
+                              <TableCell>{c.binance?.pagador || "—"}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
+                                  {ETIQUETA_ESTADO[c.estado]}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </>
+                  )
+                )}
+              </DialogContent>
+            </Dialog>
 
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
@@ -298,13 +418,7 @@ export default function BinancePage() {
                     {comprobantes.length === 0 && <FilaVacia columnas={7} texto="No hay comprobantes en esta semana." />}
                     {comprobantes.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="whitespace-nowrap">
-                          {c.fechaEstimada && !c.binance
-                            ? c.soloDia
-                              ? `${soloFecha(c.fecha)} (sin hora)`
-                              : "Sin fecha"
-                            : fechaHora(c.fecha)}
-                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
                         <TableCell className="font-mono text-xs">
                           <a
                             href={`/api/administracion/binance/imagen?id=${c.id}`}

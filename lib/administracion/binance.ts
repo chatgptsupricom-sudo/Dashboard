@@ -276,8 +276,8 @@ const mismoMonto = (p: PagoBinance, c: BaseComprobante) =>
 /**
  * Cruza comprobantes con pagos. Con la API manda el ID de orden; con el estado
  * de cuenta (sin ID) manda monto + moneda + hora: el pago mas cercano dentro del
- * margen. Un comprobante sin fecha solo se acepta si hay un unico pago libre de
- * ese monto en la semana, y queda para revisar.
+ * margen. Un comprobante sin hora solo se acepta si su monto sale una sola vez
+ * (en su dia, o en la semana si tampoco trae dia); con la API queda para revisar.
  */
 export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: OrigenPagos) {
   const porId = new Map(pagos.map((p) => [p.id, p]));
@@ -305,9 +305,12 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     const libres = pagos.filter((p) => !usados.has(p.id) && mismoMonto(p, base));
     let pago: PagoBinance | null = null;
     if (base.fechaEstimada) {
-      // Con el dia del nombre del archivo solo cuentan los pagos de ese dia.
-      const posibles = base.soloDia ? libres.filter((p) => diaCaracas(p.fecha) === diaCaracas(base.fecha)) : libres;
-      pago = posibles.length === 1 ? posibles[0] : null;
+      // Con el dia del nombre del archivo solo cuentan los pagos de ese dia. Si
+      // el monto se repite (aunque otro comprobante ya tenga uno) no se adivina:
+      // se amarra a mano.
+      const delDia = (p: PagoBinance) => !base.soloDia || diaCaracas(p.fecha) === diaCaracas(base.fecha);
+      const iguales = pagos.filter((p) => mismoMonto(p, base) && delDia(p));
+      pago = iguales.length === 1 && !usados.has(iguales[0].id) ? iguales[0] : null;
     } else {
       const t = Date.parse(base.fecha);
       const dt = (p: PagoBinance) => Math.abs(Date.parse(p.fecha) - t);
@@ -318,8 +321,9 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
       continue;
     }
     usados.add(pago.id);
-    // En el estado de cuenta la hora es la unica prueba: si coincide, esta conciliado.
-    const estado = origen === "estado" && !base.fechaEstimada ? "conciliado" : "por_monto_hora";
+    // En el estado de cuenta la hora (o el monto unico, si no hay hora) es la
+    // unica prueba: si coincide, esta conciliado.
+    const estado = origen === "estado" ? "conciliado" : "por_monto_hora";
     salida[i] = { ...base, fecha: base.fechaEstimada ? pago.fecha : base.fecha, estado, binance: pago };
   }
   return { comprobantes: salida, usados };
