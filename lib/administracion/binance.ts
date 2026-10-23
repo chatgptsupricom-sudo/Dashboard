@@ -62,6 +62,7 @@ export type PagoBinance = {
 
 export type EstadoComprobante =
   | "conciliado"
+  | "manual"
   | "monto_distinto"
   | "por_monto_hora"
   | "no_encontrado"
@@ -78,6 +79,8 @@ export type Comprobante = {
   fecha: string; // ISO UTC
   /** El comprobante no traia fecha: se guardo en la semana elegida al subirlo. */
   fechaEstimada: boolean;
+  /** Movimiento del estado de cuenta que se le asigno a mano, o null. */
+  movimientoId: number | null;
   archivoNombre: string;
   subidoPor: string;
   subidoEl: string;
@@ -241,6 +244,12 @@ async function ensureTabla() {
   } catch (e: any) {
     if (e?.code !== "ER_DUP_FIELDNAME") throw e;
   }
+  try {
+    // El pago del estado de cuenta que Administracion le asigno a mano.
+    await query("ALTER TABLE binance_comprobantes ADD COLUMN movimiento_id INT NULL");
+  } catch (e: any) {
+    if (e?.code !== "ER_DUP_FIELDNAME") throw e;
+  }
   tablaLista = true;
 }
 
@@ -272,7 +281,15 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
   // Primero los que tienen hora: no deben perder su pago contra uno sin fecha.
   const orden = [...bases.keys()].sort((a, b) => Number(bases[a].fechaEstimada) - Number(bases[b].fechaEstimada));
   const salida: Comprobante[] = new Array(bases.length);
+  // Lo que Administracion amarro a mano va antes que todo y no se discute.
+  bases.forEach((base, i) => {
+    const pago = origen === "estado" && base.movimientoId ? porId.get(`e${base.movimientoId}`) : undefined;
+    if (!pago || usados.has(pago.id)) return;
+    usados.add(pago.id);
+    salida[i] = { ...base, fecha: base.fechaEstimada ? pago.fecha : base.fecha, estado: "manual", binance: pago };
+  });
   for (const i of orden) {
+    if (salida[i]) continue;
     const base = bases[i];
     const exacto = origen === "api" ? porId.get(base.orderId) : undefined;
     if (exacto) {
@@ -326,7 +343,7 @@ export async function conciliacionSemana(lunes: string) {
   const { rows } = await query(
     // DATE_FORMAT: la columna guarda UTC y asi no depende de la zona del proceso.
     `SELECT id, order_id, monto, moneda, DATE_FORMAT(fecha_pago, '%Y-%m-%dT%H:%i:%sZ') AS fecha,
-            fecha_estimada, archivo_nombre, subido_por, created_at
+            fecha_estimada, movimiento_id, archivo_nombre, subido_por, created_at
        FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? ORDER BY fecha_pago`,
     [aMysql(rango.desde), aMysql(rango.hasta)],
   );
@@ -337,6 +354,7 @@ export async function conciliacionSemana(lunes: string) {
     moneda: String(r.moneda),
     fecha: r.fecha,
     fechaEstimada: !!r.fecha_estimada,
+    movimientoId: r.movimiento_id ?? null,
     archivoNombre: r.archivo_nombre,
     subidoPor: r.subido_por,
     subidoEl: new Date(r.created_at).toISOString(),
@@ -447,6 +465,20 @@ export async function imagenComprobante(id: number) {
   return rows[0] || null;
 }
 
+/**
+ * Amarra a mano un comprobante con un movimiento del estado de cuenta (null =
+ * soltarlo). Sirve cuando el comprobante no trae fecha y el monto se repite.
+ */
+export async function asignarMovimiento(id: number, movimientoId: number | null) {
+  await ensureTabla();
+  if (movimientoId !== null) {
+    await ensureTablaMovimientos();
+    const { rows } = await query("SELECT id FROM binance_movimientos WHERE id = ?", [movimientoId]);
+    if (!rows.length) throw new ArchivoIlegible("Ese pago ya no está en el estado de cuenta");
+  }
+  await query("UPDATE binance_comprobantes SET movimiento_id = ? WHERE id = ?", [movimientoId, id]);
+}
+
 export async function eliminarComprobante(id: number) {
   await ensureTabla();
   await query("DELETE FROM binance_comprobantes WHERE id = ?", [id]);
@@ -456,6 +488,7 @@ export async function eliminarComprobante(id: number) {
 
 const INSTRUCCIONES =
   "Te dan la captura o el PDF de un comprobante de pago de Binance Pay (pantalla 'Pago exitoso' de la app). " +
+  "Muchas veces viene recortada (sin el titulo, la fecha ni el boton): si trae un ID de orden y un monto, es un comprobante. " +
   "Devuelve SOLO lo que esta en la imagen, sin inventar. " +
   "order_id: el 'ID de orden' / 'Order ID' completo, solo digitos; copia cada digito con cuidado, es lo que se usa para conciliar. " +
   "monto: el monto pagado, sin signo ni separador de miles. moneda: el codigo (USDT, USDC, BTC...). " +
@@ -560,14 +593,22 @@ async function leerConIA(
 /** fechaMs null = la captura no trae la fecha. */
 export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number | null };
 
-/** Lee el comprobante. null = no es un comprobante de Binance o le faltan datos. */
-export async function leerComprobante(datos: Buffer, mime: string): Promise<Leido | null> {
+/**
+ * Lee el comprobante. Si no salen ID de orden, monto y moneda lanza
+ * `ArchivoIlegible` diciendo que se leyo, para que quien sube sepa por que.
+ */
+export async function leerComprobante(datos: Buffer, mime: string): Promise<Leido> {
   const l = await leerConIA(INSTRUCCIONES, ESQUEMA, [bloqueArchivo(datos, mime)], "Lee este comprobante.", 1000);
   const orderId = String(l?.order_id || "").replace(/\D/g, "");
   const monto = Number(l?.monto);
   const moneda = String(l?.moneda || "").trim().toUpperCase().slice(0, 12);
   const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(l?.fecha || ""));
-  if (!l?.es_comprobante || !/^\d{6,40}$/.test(orderId) || !(monto > 0) || !moneda) return null;
+  // es_comprobante no manda: una captura recortada con ID y monto sirve igual.
+  if (!/^\d{6,40}$/.test(orderId) || !(monto > 0) || !moneda) {
+    throw new ArchivoIlegible(
+      `No se leyó un comprobante de Binance Pay (ID de orden: "${orderId || "—"}", monto: ${monto > 0 ? monto : "—"} ${moneda || ""})`,
+    );
+  }
   if (!m) return { orderId, monto, moneda, fechaMs: null };
   const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
   // Sin "UTC" en el comprobante se toma la hora de Caracas.

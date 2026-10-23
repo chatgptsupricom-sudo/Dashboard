@@ -22,6 +22,7 @@ type TipoArchivo = "comprobante" | "estado";
 
 const ESTADOS: Record<EstadoComprobante, { label: string; clase: string }> = {
   conciliado: { label: "Conciliado", clase: "bg-emerald-100 text-emerald-800" },
+  manual: { label: "Conciliado a mano", clase: "bg-emerald-100 text-emerald-800" },
   por_monto_hora: { label: "Coincide solo por monto (revisar)", clase: "bg-amber-100 text-amber-800" },
   monto_distinto: { label: "Monto distinto", clase: "bg-red-100 text-red-800" },
   no_encontrado: { label: "No está en Binance", clase: "bg-red-100 text-red-800" },
@@ -119,6 +120,18 @@ export default function BinancePage() {
     cargar();
   };
 
+  const asignar = async (c: Comprobante, valor: string) => {
+    const json = await (
+      await fetch("/api/administracion/binance", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: c.id, movimiento_id: valor ? Number(valor) : null }),
+      })
+    ).json();
+    if (!json.success) setError(json.error || "No se pudo guardar");
+    cargar();
+  };
+
   const borrarEstado = async () => {
     if (!confirm("¿Borrar el estado de cuenta de esta semana para volver a subirlo?")) return;
     await fetch(`/api/administracion/binance?estado=${semana}`, { method: "DELETE" });
@@ -133,8 +146,16 @@ export default function BinancePage() {
 
   const comprobantes = datos?.comprobantes || [];
   const sinComprobante = datos?.sinComprobante || [];
-  const conciliados = comprobantes.filter((c) => c.estado === "conciliado");
-  const conProblema = comprobantes.filter((c) => c.estado !== "conciliado");
+  const esConciliado = (c: Comprobante) => c.estado === "conciliado" || c.estado === "manual";
+  const conciliados = comprobantes.filter(esConciliado);
+  const conProblema = comprobantes.filter((c) => !esConciliado(c));
+  // Pagos para amarrar a mano un comprobante: los libres, primero los de su
+  // monto, y el que ya tiene (elegirlo confirma el que propuso el panel).
+  const opcionesPago = (c: Comprobante) => {
+    const libres = [...sinComprobante, ...(c.binance ? [c.binance] : [])];
+    const mismo = (p: PagoBinance) => p.moneda === c.moneda && Math.abs(p.monto - c.monto) < 1e-6;
+    return libres.sort((a, b) => Number(mismo(b)) - Number(mismo(a)) || a.fecha.localeCompare(b.fecha));
+  };
   const etiquetaSemana = opciones.find((o) => o.value === semana)?.label || semana;
   // El estado de cuenta no trae ID de orden: su id es interno y no se muestra.
   const idBinance = (id?: string) => (datos?.origen === "estado" || !id ? "" : id);
@@ -348,6 +369,23 @@ export default function BinancePage() {
                           <Badge variant="outline" className={`border-0 ${ESTADOS[c.estado].clase}`}>
                             {ESTADOS[c.estado].label}
                           </Badge>
+                          {datos.origen === "estado" && c.estado !== "conciliado" && (
+                            <select
+                              value={c.estado === "manual" ? String(c.movimientoId) : ""}
+                              onChange={(e) => asignar(c, e.target.value)}
+                              className="mt-1 block w-full max-w-[260px] border rounded-md px-2 py-1 text-xs bg-white"
+                              aria-label="Amarrar a un pago del estado de cuenta"
+                            >
+                              <option value="">
+                                {c.estado === "manual" ? "Soltar" : "Amarrar a un pago…"}
+                              </option>
+                              {opcionesPago(c).map((p) => (
+                                <option key={p.id} value={p.id.slice(1)}>
+                                  {fechaHora(p.fecha)} · {cifra(p.monto)} {p.moneda} · {p.pagador || "—"}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" onClick={() => eliminar(c)} aria-label="Quitar comprobante">

@@ -3,6 +3,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
 import {
   ArchivoIlegible,
+  asignarMovimiento,
   borrarMovimientosSemana,
   conciliacionSemana,
   eliminarComprobante,
@@ -66,12 +67,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, estado: true, leidas, recibidos: movs.length, ...r });
     }
     const leido = await leerComprobante(datos, archivo.type);
-    if (!leido) {
-      return NextResponse.json(
-        { error: "No parece un comprobante de Binance Pay o no se leyó el ID de orden" },
-        { status: 422 },
-      );
-    }
     // Una captura recortada puede no traer la fecha: va a la semana elegida.
     const fecha =
       leido.fechaMs !== null
@@ -119,6 +114,27 @@ export async function POST(request: NextRequest) {
       { error: `No se pudo procesar el archivo (${String(e?.message || "error").slice(0, 160)})` },
       { status: 500 },
     );
+  }
+}
+
+// PATCH /api/administracion/binance {id, movimiento_id} — amarrar a mano un
+// comprobante con un pago del estado de cuenta (movimiento_id null = soltarlo).
+export async function PATCH(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  if (auth.error) return auth.error;
+  const b = await request.json().catch(() => ({}));
+  const id = Number(b?.id);
+  const mov = b?.movimiento_id === null ? null : Number(b?.movimiento_id);
+  if (!Number.isInteger(id) || id <= 0 || (mov !== null && (!Number.isInteger(mov) || mov <= 0))) {
+    return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+  }
+  try {
+    await asignarMovimiento(id, mov);
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    if (e instanceof ArchivoIlegible) return NextResponse.json({ error: e.message }, { status: 409 });
+    console.error("[binance] asignar:", e?.message);
+    return NextResponse.json({ error: "No se pudo guardar" }, { status: 500 });
   }
 }
 
