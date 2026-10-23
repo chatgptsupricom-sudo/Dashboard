@@ -325,3 +325,185 @@ export async function fetchCxPAdmin(
     pagosDelMes,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Detalle de un documento de proveedor (al abrirlo desde la pantalla)
+// ---------------------------------------------------------------------------
+
+export interface LineaDocumentoCxP {
+  tipo: "producto" | "seccion" | "nota";
+  descripcion: string;
+  producto: string;
+  cantidad: number;
+  precioUnitario: number;
+  subtotal: number;
+  /** Subtotal en USD (moneda de la empresa). */
+  subtotalUsd: number;
+  impuestos: string;
+}
+
+export interface PagoDocumentoCxP {
+  nombre: string;
+  diario: string;
+  fecha: string;
+  monto: number;
+  montoUsd: number;
+  esRetencion: boolean;
+}
+
+export interface DetalleDocumentoCxP {
+  id: number;
+  numero: string;
+  referencia: string;
+  nroControl: string;
+  tipo: "factura" | "nota_credito";
+  estado: string;
+  estadoPago: string;
+  proveedor: string;
+  rif: string;
+  sede: string;
+  fecha: string;
+  vence: string;
+  plazo: string;
+  origen: string;
+  moneda: string;
+  /** USD por unidad de la moneda del documento (1 si es USD). */
+  tasa: number;
+  baseUsd: number;
+  impuestoUsd: number;
+  totalUsd: number;
+  saldoUsd: number;
+  total: number;
+  saldo: number;
+  lineas: LineaDocumentoCxP[];
+  pagos: PagoDocumentoCxP[];
+  retencionIva: string;
+  retencionIslr: string;
+  urlOdoo: string;
+}
+
+/**
+ * Lee una factura o NC de proveedor con sus lineas y pagos. null = no existe,
+ * no es de proveedor o es de una sede fuera de `companyIds`.
+ *
+ * Los montos del widget de pagos de Odoo vienen en la moneda del documento y
+ * su "amount_company_currency" se equivoca con las retenciones de IVA en
+ * bolivares (dice "$ 9.524,27" en una factura de $104,49): se pasan a USD con
+ * la tasa de la propia factura.
+ */
+export async function fetchDocumentoCxP(id: number, companyIds: number[]): Promise<DetalleDocumentoCxP | null> {
+  const [m] = await leerTodo(
+    "account.move",
+    [
+      ["id", "=", id],
+      ["company_id", "in", companyIds],
+      ["move_type", "in", ["in_invoice", "in_refund"]],
+    ],
+    [
+      "name",
+      "ref",
+      "nro_ctrl",
+      "move_type",
+      "state",
+      "payment_state",
+      "partner_id",
+      "company_id",
+      "invoice_date",
+      "invoice_date_due",
+      "invoice_payment_term_id",
+      "invoice_origin",
+      "currency_id",
+      "amount_untaxed_signed",
+      "amount_tax_signed",
+      "amount_total_signed",
+      "amount_residual_signed",
+      "amount_total",
+      "amount_residual",
+      "invoice_payments_widget",
+      "wh_iva_id",
+      "islr_wh_doc_id",
+    ],
+    companyIds,
+  );
+  if (!m) return null;
+
+  const [lineasRaw, partner] = await Promise.all([
+    leerTodo(
+      "account.move.line",
+      [
+        ["move_id", "=", id],
+        ["display_type", "in", ["product", "line_section", "line_note"]],
+      ],
+      ["display_type", "name", "product_id", "quantity", "price_unit", "price_subtotal", "balance", "tax_ids"],
+      companyIds,
+      "sequence asc, id asc",
+    ),
+    idM2o(m.partner_id)
+      ? leerTodo("res.partner", [["id", "=", idM2o(m.partner_id)]], ["vat"], companyIds)
+      : Promise.resolve([] as any[]),
+  ]);
+
+  const idsImpuestos = Array.from(new Set(lineasRaw.flatMap((l: any) => (l.tax_ids || []) as number[])));
+  const impuestos = idsImpuestos.length
+    ? await leerTodo("account.tax", [["id", "in", idsImpuestos], ["active", "in", [true, false]]], ["name"], companyIds)
+    : [];
+  const nombreImpuesto = new Map<number, string>(impuestos.map((t: any) => [t.id, t.name]));
+
+  const total = Math.abs(Number(m.amount_total) || 0);
+  const totalUsd = Math.abs(Number(m.amount_total_signed) || 0);
+  const tasa = total ? totalUsd / total : 1;
+  const moneda = nombreM2o(m.currency_id, "USD");
+
+  const pagosWidget = (m.invoice_payments_widget && m.invoice_payments_widget.content) || [];
+  const pagos: PagoDocumentoCxP[] = pagosWidget.map((p: any) => {
+    const monto = Math.abs(Number(p.amount) || 0);
+    const texto = `${p.journal_name || ""} ${p.name || ""}`;
+    return {
+      nombre: p.name || p.ref || "",
+      diario: p.journal_name || "",
+      fecha: p.date || "",
+      monto: redondear(monto),
+      montoUsd: redondear(monto * tasa),
+      esRetencion: /retenci[oó]n|ret\. /i.test(texto),
+    };
+  });
+
+  return {
+    id: m.id,
+    numero: m.name || "",
+    referencia: m.ref || "",
+    nroControl: m.nro_ctrl || "",
+    tipo: m.move_type === "in_refund" ? "nota_credito" : "factura",
+    estado: m.state || "",
+    estadoPago: m.payment_state || "",
+    proveedor: nombreM2o(m.partner_id, "Sin proveedor"),
+    rif: (partner[0] && partner[0].vat) || "",
+    sede: empresaDeCompanyId(idM2o(m.company_id) || 0),
+    fecha: m.invoice_date || "",
+    vence: m.invoice_date_due || "",
+    plazo: nombreM2o(m.invoice_payment_term_id),
+    origen: m.invoice_origin || "",
+    moneda,
+    tasa,
+    baseUsd: redondear(Math.abs(Number(m.amount_untaxed_signed) || 0)),
+    impuestoUsd: redondear(Math.abs(Number(m.amount_tax_signed) || 0)),
+    totalUsd: redondear(totalUsd),
+    saldoUsd: redondear(Math.abs(Number(m.amount_residual_signed) || 0)),
+    total: redondear(total),
+    saldo: redondear(Math.abs(Number(m.amount_residual) || 0)),
+    lineas: lineasRaw.map((l: any) => ({
+      tipo: l.display_type === "line_section" ? "seccion" : l.display_type === "line_note" ? "nota" : "producto",
+      descripcion: l.name || "",
+      producto: nombreM2o(l.product_id),
+      cantidad: Number(l.quantity) || 0,
+      precioUnitario: Number(l.price_unit) || 0,
+      subtotal: redondear(Number(l.price_subtotal) || 0),
+      subtotalUsd: redondear(Math.abs(Number(l.balance) || 0)),
+      impuestos: ((l.tax_ids || []) as number[]).map((t) => nombreImpuesto.get(t) || "").filter(Boolean).join(", "),
+    })),
+    pagos,
+    retencionIva: nombreM2o(m.wh_iva_id),
+    retencionIslr: nombreM2o(m.islr_wh_doc_id),
+    urlOdoo: `${(process.env.NEXT_PUBLIC_ODOO_URL || "").replace(/\/$/, "")}/web#id=${m.id}&model=account.move&view_type=form`,
+  };
+}
