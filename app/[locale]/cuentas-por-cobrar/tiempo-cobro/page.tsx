@@ -13,7 +13,7 @@ import { ColumnHeader } from "@/components/compras/column-header";
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
-type Grupo = { clave: string; facturas: number; monto: number; promedioDias: number; plazoPromedio: number; promedioPonderado: number; aTiempoPct: number };
+type Grupo = { clave: string; facturas: number; monto: number; promedioDias: number; plazoPromedio: number; promedioPonderado: number; aTiempoPct: number; promedioAtraso: number };
 type Factura = { id: number; name: string; partnerId: number; cliente: string; vendedor: string; emision: string; pagada: string; dias: number; plazo: number; monto: number };
 type Data = {
   resumen: Grupo & { mediana: number };
@@ -40,7 +40,14 @@ const AYUDA = {
     "Si el ponderado es menor que el promedio, el dinero grande entra más rápido que las facturas chicas.",
   plazo: "Días de crédito que dio la factura: fecha de vencimiento − fecha de emisión (no el nombre del término de pago en Odoo). Promedio por factura.",
   aTiempo: "% de facturas que se terminaron de pagar en o antes de su fecha de vencimiento.",
+  atraso:
+    "Días que pasaron DESPUÉS del vencimiento hasta el pago completo (pago − vencimiento; 0 si pagó a tiempo). " +
+    "«Tarda en pagar» cuenta desde la emisión e incluye el plazo; el atraso es solo lo que se pasó. Promedio por factura.",
 };
+const atrasoDe = (f: { dias: number; plazo: number }) => Math.max(0, f.dias - f.plazo);
+/** Atraso en rojo/ámbar; a tiempo, un guion verde. */
+const celdaAtraso = (n: number) =>
+  n <= 0 ? <span className="text-emerald-600">—</span> : <span className={n > 15 ? "text-red-600" : "text-amber-600"}>{n.toLocaleString("es-VE", { maximumFractionDigits: 2 })}</span>;
 
 /** Verde si paga dentro del plazo, ámbar hasta 1,5× el plazo, rojo más allá. */
 function tono(real: number, plazo: number) {
@@ -56,6 +63,7 @@ const filaGrupo = (titulo: string) => (g: Grupo) => ({
   "Tarda en pagar (días, ponderado por monto)": g.promedioPonderado,
   "Plazo promedio (días)": g.plazoPromedio,
   "Pagadas a tiempo (%)": g.aTiempoPct,
+  "Atraso promedio (días después del vencimiento)": g.promedioAtraso,
   Facturas: g.facturas,
   "Monto (con IVA)": g.monto,
 });
@@ -67,7 +75,7 @@ const filaFactura = (f: Factura) => ({
   "Fecha de pago completo": f.pagada,
   "Días en pagar": f.dias,
   "Plazo (días)": f.plazo,
-  "Días de atraso": Math.max(0, f.dias - f.plazo),
+  "Días de atraso (después del vencimiento)": atrasoDe(f),
   "Monto (con IVA)": f.monto,
 });
 function descargar(nombre: string, hojas: { nombre: string; filas: Record<string, unknown>[] }[]) {
@@ -86,6 +94,7 @@ function resumenDe(fs: Factura[]): Omit<Grupo, "clave"> {
     plazoPromedio: r2(prom("plazo")),
     promedioPonderado: r2(monto > 0 ? fs.reduce((s, f) => s + f.dias * f.monto, 0) / monto : 0),
     aTiempoPct: fs.length ? Math.round((fs.filter((f) => f.dias <= f.plazo).length / fs.length) * 1000) / 10 : 0,
+    promedioAtraso: r2(fs.length ? fs.reduce((s, f) => s + atrasoDe(f), 0) / fs.length : 0),
   };
 }
 
@@ -168,6 +177,7 @@ function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onC
             <Th col="promedioPonderado" label="Ponderado" ayuda={AYUDA.ponderado} />
             <Th col="plazoPromedio" label="Plazo" ayuda={AYUDA.plazo} />
             <Th col="aTiempoPct" label="A tiempo" ayuda={AYUDA.aTiempo} />
+            <Th col="promedioAtraso" label="Atraso" ayuda={AYUDA.atraso} />
             <Th col="facturas" label="Facturas" />
             <Th col="monto" label="Monto" className="py-2 pl-3 text-right" />
           </tr>
@@ -184,6 +194,7 @@ function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onC
               <td className="py-2.5 px-3 text-right text-slate-500">{dias(g.promedioPonderado)}</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{dias(g.plazoPromedio)}</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{g.aTiempoPct}%</td>
+              <td className="py-2.5 px-3 text-right font-medium">{g.promedioAtraso > 0 ? <>{celdaAtraso(g.promedioAtraso)} <span className="text-slate-400 font-normal">días</span></> : celdaAtraso(0)}</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{g.facturas}</td>
               <td className="py-2.5 pl-3 text-right text-slate-700">{formatCurrency(g.monto)}</td>
             </tr>
@@ -298,6 +309,7 @@ export default function TiempoCobroPage() {
           { Indicador: "Plazo promedio (días)", Resultado: r.plazoPromedio },
           { Indicador: "Factura típica / mediana (días)", Resultado: r.mediana },
           { Indicador: "Pagadas a tiempo (%)", Resultado: r.aTiempoPct },
+          { Indicador: "Atraso promedio (días después del vencimiento)", Resultado: r.promedioAtraso },
           { Indicador: "Facturas pagadas", Resultado: r.facturas },
           { Indicador: "Monto pagado (con IVA)", Resultado: r.monto },
           { Indicador: "Período", Resultado: `${data.filters.desde} a ${data.filters.hasta}` },
@@ -430,6 +442,10 @@ export default function TiempoCobroPage() {
                   <p className="text-sm font-semibold text-slate-600">Pagadas a tiempo</p>
                   <p className="text-3xl font-bold text-slate-800 mt-2">{r.aTiempoPct}%</p>
                   <p className="text-xs text-slate-500 mt-2">Dentro del plazo de la factura</p>
+                  <div className="flex items-center gap-1 text-xs text-slate-600 mt-1">
+                    <span>Atraso promedio: <b>{dias(r.promedioAtraso)}</b> después del vencimiento</span>
+                    <ColumnHeader label="" tooltip={AYUDA.atraso} />
+                  </div>
                 </div>
                 <div className="bg-white border border-slate-200 rounded-2xl p-5">
                   <p className="text-sm font-semibold text-slate-600">Facturas pagadas</p>
@@ -603,6 +619,7 @@ export default function TiempoCobroPage() {
                     <th className="text-left py-2.5 px-3">Pagada</th>
                     <th className="text-right py-2.5 px-3">Días</th>
                     <th className="text-right py-2.5 px-3">Plazo</th>
+                    <th className="text-right py-2.5 px-3" title={AYUDA.atraso}>Atraso</th>
                     <th className="text-right py-2.5 px-3">Monto</th>
                   </tr>
                 </thead>
@@ -624,6 +641,7 @@ export default function TiempoCobroPage() {
                             <td className="py-2 px-3 font-semibold text-blue-700 max-w-[260px] truncate" colSpan={3}>{c.cliente}</td>
                             <td className={`py-2 px-3 text-right font-bold ${tono(c.promedioDias, c.plazoPromedio)}`}>{c.promedioDias}</td>
                             <td className="py-2 px-3 text-right text-slate-500">{c.plazoPromedio}</td>
+                            <td className="py-2 px-3 text-right font-bold">{celdaAtraso(c.promedioAtraso)}</td>
                             <td className="py-2 px-3 text-right font-semibold text-slate-800">{formatCurrency(c.monto)}</td>
                           </tr>,
                           ...(abierto ? c.facturas.map((f) => (
@@ -634,6 +652,7 @@ export default function TiempoCobroPage() {
                               <td className="py-2 px-3 text-slate-500">{formatDate(f.pagada)}</td>
                               <td className={`py-2 px-3 text-right font-semibold ${tono(f.dias, f.plazo)}`}>{f.dias}</td>
                               <td className="py-2 px-3 text-right text-slate-500">{f.plazo}</td>
+                              <td className="py-2 px-3 text-right font-semibold">{celdaAtraso(atrasoDe(f))}</td>
                               <td className="py-2 px-3 text-right text-slate-700">{formatCurrency(f.monto)}</td>
                             </tr>
                           )) : []),
@@ -647,6 +666,7 @@ export default function TiempoCobroPage() {
                       <td className="py-2 px-3 text-slate-500">{formatDate(f.pagada)}</td>
                       <td className={`py-2 px-3 text-right font-semibold ${tono(f.dias, f.plazo)}`}>{f.dias}</td>
                       <td className="py-2 px-3 text-right text-slate-500">{f.plazo}</td>
+                      <td className="py-2 px-3 text-right font-semibold">{celdaAtraso(atrasoDe(f))}</td>
                       <td className="py-2 px-3 text-right text-slate-700">{formatCurrency(f.monto)}</td>
                     </tr>
                   ))}

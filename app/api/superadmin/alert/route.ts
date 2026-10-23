@@ -320,7 +320,7 @@ const VENDEDOR_EXCLUSIONS: Record<number, string[]> = {
 };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin"]);
+  const auth = await requireRoles(request, ["superadmin", "gerente de operaciones"]);
   if (auth.error) return auth.error;
 
   try {
@@ -329,8 +329,18 @@ export async function GET(request: NextRequest) {
     const empresaParam = searchParams.get("empresa")?.toLowerCase();
     const cidsParam = searchParams.get("cids");
 
+    // El SuperAdmin elige la sede; el Gerente de Operaciones solo ve la suya
+    // (payload.cids), sin importar lo que pida.
+    const role = String(auth.payload?.role || "").toLowerCase().trim();
+    const esSuperAdmin = role === "superadmin" || role === "super admin";
     let COMPANY_IDS = [9];
-    if (cidsParam) {
+    if (!esSuperAdmin) {
+      const cid = Number(auth.payload?.cids);
+      if (!Number.isFinite(cid) || !Object.values(COMPANY_MAP).includes(cid)) {
+        return NextResponse.json({ error: "Tu usuario no tiene una sede asignada (cids)." }, { status: 403 });
+      }
+      COMPANY_IDS = [cid];
+    } else if (cidsParam) {
       COMPANY_IDS = [parseInt(cidsParam, 10)];
     } else if (empresaParam && COMPANY_MAP[empresaParam]) {
       COMPANY_IDS = [COMPANY_MAP[empresaParam]];

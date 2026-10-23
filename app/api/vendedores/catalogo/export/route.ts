@@ -1,3 +1,4 @@
+import { sedeDelCatalogo } from "@/lib/catalogo/sede";
 import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextResponse } from "next/server";
@@ -38,13 +39,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
     const payload = verifyToken(token);
-    if (!payload || !payload.cids)
+    // BI (sin cids) y el Diseñador ven el catálogo de Valencia.
+    const userCompanyId = sedeDelCatalogo(payload);
+    if (!payload || !userCompanyId)
       return NextResponse.json(
         { error: "Empresa no definida" },
         { status: 403 },
       );
-
-    const userCompanyId = parseInt(payload.cids as string);
 
     const warehouses = await callOdooRPC<any[]>(
       "stock.warehouse",

@@ -273,6 +273,7 @@ export const rolePermissions: RolePermissions = {
       "alert", // Sistema de alertas
       // Ventas dropdown
       "reporte_diario", // Reporte Diario
+      "reporte_ventas", // Reporte de Ventas (de su sede, payload.cids)
       "seller_map", // Mapa de Clientes (sub-item de Ventas)
       // Leads dropdown
       "adminleads", // Leads (permiso principal del dropdown)
@@ -387,6 +388,7 @@ export const rolePermissions: RolePermissions = {
       "sales_dashboard",
       "actividad",
       "catalogo_disenador",
+      "catalogo", // El de los vendedores, de Valencia (lib/catalogo/sede.ts)
       "llegadas_disenador",
       "catalogo_disenos", // Catálogo de Diseños propios (carga masiva por carpeta)
       "editor_ia_disenador", // Editor con IA (Seedream vía KIE)
@@ -487,6 +489,7 @@ export const rolePermissions: RolePermissions = {
       "stoplight_reports",
       "inventory",
       "bi_dias_promedio", // Días promedio de cobro, inventario y pago
+      "catalogo", // El de los vendedores, de Valencia (lib/catalogo/sede.ts)
       "agenteia",
       // Desplegable Leads
       "adminleads",
