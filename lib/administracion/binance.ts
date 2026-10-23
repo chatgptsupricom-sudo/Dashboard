@@ -482,13 +482,15 @@ export async function guardarMovimientos(
   for (const m of movs) {
     const conLinea = estadoId !== null && m.linea;
     const { rows } = await query(
-      // y0/y1 van antes que estado_id: MySQL asigna de izquierda a derecha.
+      // y0/y1 van antes que estado_id: MySQL asigna de izquierda a derecha. Las
+      // columnas van con la tabla delante: el alias `nuevo` tiene las mismas y
+      // sin eso MySQL responde "Column 'estado_id' in field list is ambiguous".
       `INSERT INTO binance_movimientos (fecha, contraparte, monto, moneda, subido_por, estado_id, y0, y1)
          VALUES (?,?,?,?,?,?,?,?) AS nuevo
        ON DUPLICATE KEY UPDATE
-         y0 = IF(estado_id IS NULL, nuevo.y0, y0),
-         y1 = IF(estado_id IS NULL, nuevo.y1, y1),
-         estado_id = COALESCE(estado_id, nuevo.estado_id)`,
+         binance_movimientos.y0 = IF(binance_movimientos.estado_id IS NULL, nuevo.y0, binance_movimientos.y0),
+         binance_movimientos.y1 = IF(binance_movimientos.estado_id IS NULL, nuevo.y1, binance_movimientos.y1),
+         binance_movimientos.estado_id = COALESCE(binance_movimientos.estado_id, nuevo.estado_id)`,
       [
         aMysql(m.fechaMs),
         m.contraparte.slice(0, 120),
