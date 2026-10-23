@@ -74,6 +74,14 @@ export interface GastoDetalle {
   factura: string;
   fecha: string;
   monto: number;
+  /** Que fue el gasto: la etiqueta de la linea ("PAGO DE PEAJE", el producto de la factura...). */
+  concepto: string;
+  /** Referencia del asiento (nro. de factura del proveedor, de la transferencia...). */
+  referencia: string;
+  diario: string;
+  /** Monto en la moneda del documento cuando no es USD (Bs.). */
+  montoMoneda: number | null;
+  moneda: string;
 }
 
 function grupoDeCodigo(codigo: string): string {
@@ -178,7 +186,7 @@ export async function fetchGastoReal(
       ["company_id", "in", companyIds],
       ["account_id", "in", cuentas.map((c) => c.id)],
     ],
-    ["account_id", "balance", "move_id", "partner_id", "date", "name"],
+    ["account_id", "balance", "move_id", "move_name", "partner_id", "date", "name", "ref", "journal_id", "amount_currency", "currency_id"],
     { allowed_company_ids: companyIds },
   );
 
@@ -187,14 +195,21 @@ export async function fetchGastoReal(
     if (!cuenta) return;
     const monto = Number(l.balance) || 0;
     porCuenta[cuenta.codigo] = (porCuenta[cuenta.codigo] || 0) + monto;
+    const concepto = typeof l.name === "string" ? l.name.trim() : "";
+    const moneda = l.currency_id?.[1] || "USD";
     detalles.push({
       cuentaCodigo: cuenta.codigo,
       // Un asiento de nomina o de banco no suele tener contacto: se muestra
       // la etiqueta de la linea para que el detalle diga que es.
-      proveedor: l.partner_id?.[1] || (typeof l.name === "string" && l.name.trim()) || "Sin contacto",
-      factura: l.move_id?.[1] || "",
+      proveedor: l.partner_id?.[1] || concepto || "Sin contacto",
+      factura: l.move_name || l.move_id?.[1] || "",
       fecha: l.date || "",
       monto,
+      concepto,
+      referencia: typeof l.ref === "string" ? l.ref.trim() : "",
+      diario: l.journal_id?.[1] || "",
+      montoMoneda: moneda !== "USD" ? Number(l.amount_currency) || 0 : null,
+      moneda,
     });
   });
 
