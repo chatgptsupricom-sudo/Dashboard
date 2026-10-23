@@ -172,12 +172,12 @@ export default function BinancePage() {
   // Pagos para amarrar a mano un comprobante: solo los de su monto y moneda, y
   // solo si ese monto se repite en el estado de cuenta (si es unico, el cruce ya
   // lo amarro). Van los libres y el que ya tiene (elegirlo confirma el que propuso el panel).
-  const pagosEstado = [...sinComprobante, ...comprobantes.flatMap((c) => (c.binance ? [c.binance] : []))];
+  // `montoRepetido` lo cuenta el servidor: ve tambien los pagos que tomaron otras sedes.
   const opcionesPago = (c: Comprobante) => {
     const mismo = (p: PagoBinance) => p.moneda === c.moneda && Math.abs(p.monto - c.monto) < 1e-6;
     // Uno amarrado antes a mano sigue en la lista, para poder soltarlo.
     const actual = c.estado === "manual" && c.binance ? [c.binance] : [];
-    if (new Set(pagosEstado.filter(mismo).map((p) => p.id)).size < 2) return actual;
+    if (!c.montoRepetido) return actual;
     const libres = sinComprobante.filter(mismo);
     return [...libres, ...(c.binance && (mismo(c.binance) || actual.length) ? [c.binance] : [])].sort((a, b) =>
       a.fecha.localeCompare(b.fecha),

@@ -14,8 +14,11 @@ import {
   hayIA,
   leerComprobante,
   leerEstadoDeCuenta,
+  NOMBRE_SEDE,
   rangoSemana,
+  sedeBinance,
 } from "@/lib/administracion/binance";
+import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const TIPOS = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -29,8 +32,10 @@ export async function GET(request: NextRequest) {
   if (!rangoSemana(semana)) {
     return NextResponse.json({ error: "La semana debe ser un lunes (YYYY-MM-DD)" }, { status: 400 });
   }
+  const sede = sedeBinance(auth.payload);
+  if (sede === undefined) return respuestaSedeNoPermitida();
   try {
-    return NextResponse.json({ success: true, semana, ...(await conciliacionSemana(semana)) });
+    return NextResponse.json({ success: true, semana, ...(await conciliacionSemana(semana, sede)) });
   } catch (e: any) {
     console.error("[binance] conciliacion:", e?.message);
     return NextResponse.json({ error: "No se pudo cargar la conciliación" }, { status: 500 });
@@ -94,10 +99,13 @@ export async function POST(request: NextRequest) {
       { email: String(auth.payload?.email || ""), cids: Number.isInteger(cids) ? cids : null },
     );
     if ("repetido" in r) {
-      return NextResponse.json(
-        { error: `El ID de orden ${leido.orderId} ya estaba cargado (${r.repetido.subidoPor})`, repetido: true },
-        { status: 409 },
-      );
+      // La tabla es de las tres sedes: de otra sede no se dice quien lo subio.
+      const otraSede = r.repetido.companyId !== null && r.repetido.companyId !== (Number.isInteger(cids) ? cids : null);
+      const error = otraSede
+        ? `El ID de orden ${leido.orderId} ya está cargado en ${NOMBRE_SEDE[r.repetido.companyId!] || "otra sede"}: ` +
+          "puede que el cliente haya pasado el mismo comprobante en otra sede"
+        : `El ID de orden ${leido.orderId} ya estaba cargado (${r.repetido.subidoPor})`;
+      return NextResponse.json({ error, repetido: true, otraSede }, { status: 409 });
     }
     return NextResponse.json({
       success: true,
@@ -141,8 +149,10 @@ export async function PATCH(request: NextRequest) {
   if (!Number.isInteger(id) || id <= 0 || (mov !== null && (!Number.isInteger(mov) || mov <= 0))) {
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
   }
+  const sede = sedeBinance(auth.payload);
+  if (sede === undefined) return respuestaSedeNoPermitida();
   try {
-    await asignarMovimiento(id, mov);
+    await asignarMovimiento(id, mov, sede);
     return NextResponse.json({ success: true });
   } catch (e: any) {
     if (e instanceof ArchivoIlegible) return NextResponse.json({ error: e.message }, { status: 409 });
@@ -164,6 +174,8 @@ export async function DELETE(request: NextRequest) {
   }
   const id = Number(request.nextUrl.searchParams.get("id"));
   if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "id inválido" }, { status: 400 });
-  await eliminarComprobante(id);
+  const sede = sedeBinance(auth.payload);
+  if (sede === undefined) return respuestaSedeNoPermitida();
+  await eliminarComprobante(id, sede);
   return NextResponse.json({ success: true });
 }

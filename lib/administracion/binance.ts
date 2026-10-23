@@ -5,6 +5,7 @@ import tls from "tls";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { db, query } from "@/lib/db";
+import { esRolAdministracion, sedeDelToken } from "@/lib/auth/sedeRol";
 
 /**
  * Conciliacion de pagos de Binance Pay (rol Administracion). La cuenta de
@@ -88,6 +89,8 @@ export type Comprobante = {
   subidoEl: string;
   estado: EstadoComprobante;
   binance: PagoBinance | null;
+  /** Su monto sale mas de una vez en los pagos de la semana: se puede amarrar a mano. */
+  montoRepetido?: boolean;
 };
 
 // ---------- Binance ----------
@@ -346,15 +349,20 @@ function ajustarZona(bases: BaseComprobante[], pagos: PagoBinance[]) {
  * la semana sin comprobante. Los pagos salen del estado de cuenta si la semana
  * tiene uno; si no, de la API. Si la API falla, los comprobantes salen
  * `sin_verificar` con el error.
+ *
+ * La tabla de comprobantes es una sola para las tres sedes (la cuenta de Binance
+ * es una), pero cada sede solo ve los suyos (`sede`; null = todas, SuperAdmin).
+ * El cruce se hace con los de todas: un pago que ya tomo el comprobante de otra
+ * sede no sale como "sin comprobante" ni se le ofrece a esta.
  */
-export async function conciliacionSemana(lunes: string) {
+export async function conciliacionSemana(lunes: string, sede: number | null) {
   const rango = rangoSemana(lunes);
   if (!rango) throw new Error("Semana inválida");
   await ensureTabla();
   const { rows } = await query(
     // DATE_FORMAT: la columna guarda UTC y asi no depende de la zona del proceso.
     `SELECT id, order_id, monto, moneda, DATE_FORMAT(fecha_pago, '%Y-%m-%dT%H:%i:%sZ') AS fecha,
-            fecha_estimada, movimiento_id, archivo_nombre, subido_por, created_at
+            fecha_estimada, movimiento_id, archivo_nombre, subido_por, created_at, company_id
        FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? ORDER BY fecha_pago`,
     [aMysql(rango.desde), aMysql(rango.hasta)],
   );
@@ -372,6 +380,10 @@ export async function conciliacionSemana(lunes: string) {
     subidoPor: r.subido_por,
     subidoEl: new Date(r.created_at).toISOString(),
   }));
+  const propios = new Set<number>(
+    rows.filter((r: any) => sede === null || Number(r.company_id) === sede).map((r: any) => r.id),
+  );
+  const deLaSede = (c: Comprobante) => propios.has(c.id);
 
   // Un dia de margen: la hora del comprobante puede no ser exacta.
   const desde = rango.desde - DIA_MS;
@@ -386,7 +398,7 @@ export async function conciliacionSemana(lunes: string) {
       pagos = await pagosRecibidos(desde, hasta);
     } catch (e: any) {
       return {
-        comprobantes: bases.map((b): Comprobante => ({ ...b, estado: "sin_verificar", binance: null })),
+        comprobantes: bases.map((b): Comprobante => ({ ...b, estado: "sin_verificar", binance: null })).filter(deLaSede),
         sinComprobante: [] as PagoBinance[],
         errorBinance: (e?.message as string) || "No se pudo consultar Binance",
         origen,
@@ -401,7 +413,12 @@ export async function conciliacionSemana(lunes: string) {
     return t >= rango.desde && t <= rango.hasta;
   };
   const sinComprobante = pagos.filter((p) => !usados.has(p.id) && enSemana(p));
-  return { comprobantes, sinComprobante, errorBinance: null, origen, movimientos: pagos.filter(enSemana).length };
+  const deLaSemana = pagos.filter(enSemana);
+  const visibles = comprobantes.filter(deLaSede).map((c) => ({
+    ...c,
+    montoRepetido: deLaSemana.filter((p) => mismoMonto(p, c)).length > 1,
+  }));
+  return { comprobantes: visibles, sinComprobante, errorBinance: null, origen, movimientos: deLaSemana.length };
 }
 
 // ---------- Estado de cuenta ----------
@@ -595,11 +612,25 @@ export async function borrarMovimientosSemana(lunes: string) {
   );
 }
 
-export async function imagenComprobante(id: number) {
+// Cada sede solo toca sus comprobantes (sede null = todas, SuperAdmin).
+const DE_LA_SEDE = "(? IS NULL OR company_id = ?)";
+
+/**
+ * Sede cuyos comprobantes ve el usuario: Administracion la de su `cids`, el
+ * SuperAdmin todas (null). undefined = Administracion sin sede valida (403).
+ */
+export function sedeBinance(payload: { role?: unknown; cids?: unknown } | null | undefined) {
+  if (!esRolAdministracion(payload?.role)) return null;
+  return sedeDelToken(payload) ?? undefined;
+}
+
+export const NOMBRE_SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
+
+export async function imagenComprobante(id: number, sede: number | null) {
   await ensureTabla();
   const [rows]: any = await db.execute(
-    "SELECT archivo, archivo_mime, archivo_nombre FROM binance_comprobantes WHERE id = ?",
-    [id],
+    `SELECT archivo, archivo_mime, archivo_nombre FROM binance_comprobantes WHERE id = ? AND ${DE_LA_SEDE}`,
+    [id, sede, sede],
   );
   return rows[0] || null;
 }
@@ -608,8 +639,14 @@ export async function imagenComprobante(id: number) {
  * Amarra a mano un comprobante con un movimiento del estado de cuenta (null =
  * soltarlo). Sirve cuando el comprobante no trae fecha y el monto se repite.
  */
-export async function asignarMovimiento(id: number, movimientoId: number | null) {
+export async function asignarMovimiento(id: number, movimientoId: number | null, sede: number | null) {
   await ensureTabla();
+  const { rows: propio } = await query(`SELECT id FROM binance_comprobantes WHERE id = ? AND ${DE_LA_SEDE}`, [
+    id,
+    sede,
+    sede,
+  ]);
+  if (!propio.length) throw new ArchivoIlegible("Ese comprobante no existe");
   if (movimientoId !== null) {
     await ensureTablaMovimientos();
     const { rows } = await query("SELECT id FROM binance_movimientos WHERE id = ?", [movimientoId]);
@@ -633,9 +670,9 @@ export async function asignarMovimiento(id: number, movimientoId: number | null)
   await query("UPDATE binance_comprobantes SET movimiento_id = ? WHERE id = ?", [movimientoId, id]);
 }
 
-export async function eliminarComprobante(id: number) {
+export async function eliminarComprobante(id: number, sede: number | null) {
   await ensureTabla();
-  await query("DELETE FROM binance_comprobantes WHERE id = ?", [id]);
+  await query(`DELETE FROM binance_comprobantes WHERE id = ? AND ${DE_LA_SEDE}`, [id, sede, sede]);
 }
 
 // ---------- Lectura del comprobante ----------
@@ -1027,7 +1064,7 @@ export async function guardarComprobante(
   leido: Leido & { fechaMs: number; estimada: boolean; soloDia?: boolean },
   archivo: { nombre: string; mime: string; datos: Buffer },
   usuario: { email: string; cids: number | null },
-): Promise<{ id: number } | { repetido: { fecha: string; subidoPor: string } }> {
+): Promise<{ id: number } | { repetido: { fecha: string; subidoPor: string; companyId: number | null } }> {
   await ensureTabla();
   try {
     // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
@@ -1052,9 +1089,15 @@ export async function guardarComprobante(
   } catch (e: any) {
     if (e?.code !== "ER_DUP_ENTRY") throw e;
     const [rows]: any = await db.execute(
-      "SELECT created_at, subido_por FROM binance_comprobantes WHERE order_id = ?",
+      "SELECT created_at, subido_por, company_id FROM binance_comprobantes WHERE order_id = ?",
       [leido.orderId],
     );
-    return { repetido: { fecha: new Date(rows[0]?.created_at).toISOString(), subidoPor: rows[0]?.subido_por || "" } };
+    return {
+      repetido: {
+        fecha: new Date(rows[0]?.created_at).toISOString(),
+        subidoPor: rows[0]?.subido_por || "",
+        companyId: rows[0]?.company_id ?? null,
+      },
+    };
   }
 }

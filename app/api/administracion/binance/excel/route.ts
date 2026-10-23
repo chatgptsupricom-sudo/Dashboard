@@ -7,8 +7,10 @@ import {
   miniaturasDeComprobantes,
   rangoSemana,
   recortesDeMovimientos,
+  sedeBinance,
   type PagoBinance,
 } from "@/lib/administracion/binance";
+import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 
 // GET /api/administracion/binance/excel?semana=YYYY-MM-DD
@@ -51,8 +53,10 @@ export async function GET(request: NextRequest) {
   if (!rangoSemana(semana)) {
     return NextResponse.json({ error: "La semana debe ser un lunes (YYYY-MM-DD)" }, { status: 400 });
   }
+  const sede = sedeBinance(auth.payload);
+  if (sede === undefined) return respuestaSedeNoPermitida();
   try {
-    const { comprobantes, sinComprobante } = await conciliacionSemana(semana);
+    const { comprobantes, sinComprobante } = await conciliacionSemana(semana, sede);
     const miniaturas = await miniaturasDeComprobantes(comprobantes.map((c) => c.id));
     const idsMov = [...comprobantes.map((c) => idMovimiento(c.binance)), ...sinComprobante.map(idMovimiento)];
     const recortes = await recortesDeMovimientos(idsMov.filter((n): n is number => n !== null));
