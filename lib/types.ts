@@ -268,6 +268,7 @@ export const rolePermissions: RolePermissions = {
       "audit", // Auditoria de Odoo
       "auditoria_panel", // Auditoría de acciones
       "spiff", // Gestión de spiffs por marca
+      "planificacion_visitas", // Planificación de visitas (marca realizadas, como Gerencia de Ventas)
       "cuentas_por_cobrar", // Cuentas por Cobrar
       // Alertas
       "alert", // Sistema de alertas

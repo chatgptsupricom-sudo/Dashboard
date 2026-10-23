@@ -5,9 +5,8 @@ import { query } from "@/lib/db";
 /**
  * Acceso a la planificación de visitas:
  *  - Vendedor ("seller"/"vendedor"): solo su propio plan, puede editarlo.
- *  - Gerencia de Ventas y superadmin: cualquier asesor de su sede; además
- *    marcan las visitas como realizadas.
- *  - Gerente de operaciones: solo lectura.
+ *  - Gerencia de Ventas, Gerente de operaciones y superadmin: cualquier
+ *    asesor de su sede; además marcan las visitas como realizadas.
  */
 export type RolPlan = "vendedor" | "gerencia" | "lectura";
 
@@ -27,8 +26,7 @@ export async function accesoPlanificacion(request: NextRequest): Promise<AccesoP
   const role = String(payload.role || "").toLowerCase().trim();
   const rol: RolPlan | null =
     role === "seller" || role === "vendedor" ? "vendedor"
-    : role === "gerencia de ventas" || role === "superadmin" ? "gerencia"
-    : role === "gerente de operaciones" ? "lectura"
+    : role === "gerencia de ventas" || role === "gerente de operaciones" || role === "superadmin" ? "gerencia"
     : null;
   if (!rol) return { error: NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 }) };
 

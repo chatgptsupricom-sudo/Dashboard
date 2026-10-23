@@ -127,11 +127,9 @@ export async function POST(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    // Lista de permitidos (igual que el GET de app/api/superadmin/stoplight/
-    // route.ts, sin "gerente de operaciones" — ese rol es de solo lectura
-    // aca) en vez de bloquear un solo rol: antes cualquier OTRO rol
-    // autenticado (seguridad, rma...) tambien podia escribir.
-    const rolesConEscritura = ["superadmin", "gerencia de ventas", "compras", "cuentas por cobrar"];
+    // Lista de permitidos en vez de bloquear un solo rol: antes cualquier OTRO
+    // rol autenticado (seguridad, rma...) tambien podia escribir.
+    const rolesConEscritura = ["superadmin", "gerencia de ventas", "gerente de operaciones", "compras", "cuentas por cobrar"];
     if (!rolesConEscritura.includes(userRole)) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
@@ -141,7 +139,10 @@ export async function POST(request: NextRequest) {
     const client_name = formData.get("client_name") as string;
     const is_prospect = formData.get("is_prospect") === "true";
     const visit_date = formData.get("visit_date") as string;
-    const company_id = parseInt(formData.get("company_id") as string, 10);
+    // El gerente de operaciones no elige sede en el Stoplight: va a la suya.
+    const company_id = userRole === "gerente de operaciones"
+      ? Number(payload.cids)
+      : parseInt(formData.get("company_id") as string, 10);
 
     if (!seller_name || !client_name || !visit_date || !company_id) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
@@ -171,7 +172,7 @@ export async function DELETE(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    const rolesConEscritura = ["superadmin", "gerencia de ventas", "compras", "cuentas por cobrar"];
+    const rolesConEscritura = ["superadmin", "gerencia de ventas", "gerente de operaciones", "compras", "cuentas por cobrar"];
     if (!rolesConEscritura.includes(userRole)) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
@@ -185,8 +186,11 @@ export async function DELETE(request: NextRequest) {
 
     await ensureTable();
 
-    const existing = await query(`SELECT photo_url FROM weekly_visits WHERE id = ?`, [id]);
+    const existing = await query(`SELECT photo_url, company_id FROM weekly_visits WHERE id = ?`, [id]);
     const row = existing.rows?.[0];
+    if (userRole === "gerente de operaciones" && row && Number(row.company_id) !== Number(payload.cids)) {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
     if (row?.photo_url) {
       const filePath = path.join(process.cwd(), "public", row.photo_url);
       if (rutaDentroDe(UPLOAD_DIR, filePath) && existsSync(filePath)) await unlink(filePath);
