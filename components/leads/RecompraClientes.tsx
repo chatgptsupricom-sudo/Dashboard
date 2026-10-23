@@ -136,13 +136,14 @@ export default function RecompraClientes({
             </div>
             <div className="bg-zinc-50 rounded-2xl border border-zinc-100 p-4 text-xs text-zinc-500 space-y-1.5">
               <p>
-                Las compras se buscan <b>por RIF</b>, en todas las sedes: hasta el {data.corte} en Smartbit y desde esa
+                Las compras se buscan <b>por RIF</b>, en las sedes de la operación del lead (Valencia y Caracas juntas;
+                Panamá aparte): hasta el {data.corte} en Smartbit y desde esa
                 fecha en Odoo (facturas de cliente; las notas de crédito no cuentan).
               </p>
               <p>
                 El cierre del lead es la fecha de su primera compra; las facturas de hasta {data.ventana} días después se
                 toman como parte de ella (la factura del día siguiente, un pedido partido). Las compras después del lead
-                se muestran por sede: puede recomprar en otra. Si un cliente vino por varios leads, cuenta desde el primero.
+                se muestran por sede: un lead de Valencia puede recomprar en Caracas y al revés. Si un cliente vino por varios leads, cuenta desde el primero.
               </p>
               <p>
                 &quot;Ya eran clientes&quot; = compraron antes de que entrara el lead (Smartbit desde un año antes del
