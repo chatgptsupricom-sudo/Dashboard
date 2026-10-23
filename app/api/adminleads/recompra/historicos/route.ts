@@ -2,8 +2,9 @@
 //
 //   GET                -> { leads: [...], facturasSmartbit: { [sede]: { facturas, desde, hasta } } }
 //   PATCH { id, rif }  -> corrige el RIF a mano (vacío = que lo vuelva a buscar el panel)
-//   PATCH { id, accion: "confirmar", rif, cliente, fecha, monto }
-//                      -> el lead sí se vendió (quedó como contactado/negociación en el Excel)
+//   PATCH { id, accion: "confirmar", rif, cliente, fecha, monto, vendedor? }
+//                      -> el lead sí se vendió (quedó como contactado/negociación en el Excel);
+//                         monto y vendedor son los que confirmó la persona (pisan los del Excel)
 //   PATCH { id, accion: "descartar" } -> no es venta: deja de salir en "Por revisar"
 //   PATCH { id, accion: "deshacer" }  -> vuelve al estatus del Excel
 //   PATCH { accion: "campana", company_id, hoja, campana }
@@ -97,14 +98,18 @@ export async function PATCH(request: NextRequest) {
     if (accion === "confirmar") {
       if (!rif || rif.length < 6) return NextResponse.json({ error: "Falta el RIF del cliente" }, { status: 400 });
       const monto = Number(body?.monto);
-      // estatus_original guarda lo que decía el Excel: re-importar no lo pisa y "deshacer" lo devuelve.
+      if (!Number.isFinite(monto) || monto <= 0 || monto > 1e10) {
+        return NextResponse.json({ error: "El monto tiene que ser mayor que cero" }, { status: 400 });
+      }
+      const vendedor = String(body?.vendedor ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || null;
+      // estatus_original guarda lo que decía el Excel: re-importar no pisa estatus, monto ni vendedor, y "deshacer" devuelve el estatus.
       await query(
         `UPDATE leads_historicos
             SET estatus_original = COALESCE(estatus_original, estatus, ''), estatus = 'CONCRETADO',
                 rif = ?, rif_origen = 'confirmado', cliente_rif = ?, primera_venta = ?,
-                monto = COALESCE(monto, ?), revisado = 1
+                monto = ?, vendedor = COALESCE(?, vendedor), revisado = 1
           WHERE id = ?`,
-        [rif, cliente, fecha, Number.isFinite(monto) && monto > 0 ? monto : null, id],
+        [rif, cliente, fecha, Math.round(monto * 100) / 100, vendedor, id],
       );
     } else if (accion === "descartar") {
       await query(`UPDATE leads_historicos SET revisado = 1 WHERE id = ?`, [id]);

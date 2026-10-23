@@ -6,7 +6,7 @@
 
 import type { Candidato, LeadPorRevisar } from "@/lib/adminleads/recompra";
 import { AlertTriangle, Check, Loader2, Phone, Receipt, Type, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 const SEDES: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 const VIA: Record<Candidato["via"], { texto: string; Icono: typeof Phone; clase: string }> = {
@@ -22,6 +22,9 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<number | null>(null);
   const [tipo, setTipo] = useState<"" | "sin_rif" | "posible_venta">("");
+  // Venta que se está confirmando: monto y vendedor se pueden corregir antes de guardar.
+  const [venta, setVenta] = useState<{ id: number; rif: string; monto: string; vendedor: string } | null>(null);
+  const [vendedores, setVendedores] = useState<{ name: string; cids: number }[]>([]);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -41,6 +44,13 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  useEffect(() => {
+    fetch("/api/adminleads/sellers")
+      .then((x) => x.json())
+      .then((r) => Array.isArray(r) && setVendedores(r))
+      .catch(() => {});
+  }, []);
 
   const enviar = async (l: LeadPorRevisar, body: Record<string, unknown>) => {
     setOcupado(l.id);
@@ -64,12 +74,15 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
   };
 
   const elegir = (l: LeadPorRevisar, c: Candidato) =>
-    enviar(
-      l,
-      l.tipo === "posible_venta"
-        ? { accion: "confirmar", rif: c.rif, cliente: c.cliente, fecha: c.fecha, monto: c.monto }
-        : { rif: c.rif, cliente: c.cliente, fecha: c.fecha },
-    );
+    l.tipo === "posible_venta"
+      ? setVenta({ id: l.id, rif: c.rif, monto: String(l.monto || c.monto || ""), vendedor: l.vendedor })
+      : enviar(l, { rif: c.rif, cliente: c.cliente, fecha: c.fecha });
+
+  const confirmarVenta = (l: LeadPorRevisar, c: Candidato) => {
+    const monto = Number(venta!.monto.replace(",", "."));
+    if (!(monto > 0)) return alert("Escribe el monto por el que se cerró la venta.");
+    enviar(l, { accion: "confirmar", rif: c.rif, cliente: c.cliente, fecha: c.fecha, monto, vendedor: venta!.vendedor });
+  };
 
   const visibles = leads.filter((l) => !tipo || l.tipo === tipo);
   const nSinRif = leads.filter((l) => l.tipo === "sin_rif").length;
@@ -91,7 +104,7 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
         </p>
         <p>
           <b>Posibles ventas sin marcar:</b> el lead quedó como contactado, negociación, etc., pero ese cliente compró en
-          los 90 días siguientes. Si fue el vendedor quien cerró, confírmalo; si no, &quot;No es venta&quot; y no vuelve a
+          los 90 días siguientes. Si fue el vendedor quien cerró, confírmalo con el monto y el vendedor de la venta; si no, &quot;No es venta&quot; y no vuelve a
           salir. Volver a subir el Excel no deshace lo que confirmes.
         </p>
         <p>
@@ -155,9 +168,10 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
           <div className="space-y-2">
             {l.candidatos.map((c) => {
               const v = VIA[c.via];
+              const editando = venta?.id === l.id && venta.rif === c.rif;
               return (
+                <Fragment key={c.rif}>
                 <div
-                  key={c.rif}
                   data-tour="revisar-candidato"
                   className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 bg-zinc-50 rounded-xl px-3 py-2"
                 >
@@ -177,7 +191,7 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
                     </p>
                   </div>
                   <button
-                    disabled={ocupado === l.id}
+                    disabled={ocupado === l.id || editando}
                     data-tour="revisar-elegir"
                     onClick={() => elegir(l, c)}
                     className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-40 shrink-0"
@@ -186,6 +200,64 @@ export default function LeadsPorRevisar({ onCambio }: { onCambio?: (n: number) =
                     {l.tipo === "sin_rif" ? "Es este cliente" : "Sí, se vendió"}
                   </button>
                 </div>
+                {editando && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      confirmarVenta(l, c);
+                    }}
+                    className="flex flex-col md:flex-row md:items-end gap-2 md:gap-3 border border-blue-100 bg-blue-50/50 rounded-xl px-3 py-2"
+                  >
+                    <label className="text-[11px] text-zinc-500 flex flex-col gap-1">
+                      Monto de cierre (USD)
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        required
+                        autoFocus
+                        value={venta.monto}
+                        onChange={(e) => setVenta({ ...venta, monto: e.target.value })}
+                        className="w-36 px-2 py-1.5 rounded-lg border border-zinc-200 text-sm text-zinc-800 bg-white"
+                      />
+                    </label>
+                    <label className="text-[11px] text-zinc-500 flex flex-col gap-1 flex-1 min-w-0">
+                      Vendedor
+                      <input
+                        list={`vendedores-${l.company_id}`}
+                        value={venta.vendedor}
+                        onChange={(e) => setVenta({ ...venta, vendedor: e.target.value })}
+                        placeholder="Quién cerró la venta"
+                        className="w-full md:max-w-xs px-2 py-1.5 rounded-lg border border-zinc-200 text-sm text-zinc-800 bg-white"
+                      />
+                      <datalist id={`vendedores-${l.company_id}`}>
+                        {vendedores
+                          .filter((s) => Number(s.cids) === l.company_id)
+                          .map((s) => (
+                            <option key={s.name} value={s.name} />
+                          ))}
+                      </datalist>
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setVenta(null)}
+                        className="px-3 py-1.5 rounded-xl border border-zinc-200 bg-white text-xs text-zinc-500 hover:bg-zinc-50"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={ocupado === l.id}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-40"
+                      >
+                        {ocupado === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        Guardar venta
+                      </button>
+                    </div>
+                  </form>
+                )}
+                </Fragment>
               );
             })}
           </div>

@@ -51,6 +51,7 @@ export const rolePermissions: RolePermissions = {
       "monitoreo_leads", // Clave para el submenú Monitoreo
       "cierres_adminleads", // Clave para el submenú Cierres
       "recompra_adminleads", // Recompra de clientes de leads
+      "compras_mes_adminleads", // Clientes que compraron en el mes
       "stoplight_reports", // Reportes de Stoplight
       "seguridad", // Recepción y despacho de RMA (el módulo vive en /seguridad)
       "salud_financiera", // Administración: índice de salud financiera
@@ -189,6 +190,7 @@ export const rolePermissions: RolePermissions = {
       "monitoreo_leads",
       "cierres_adminleads",
       "recompra_adminleads",
+      "compras_mes_adminleads",
       "configuracion_leads",
       "catalogo_adminleads",
       "catalogo_disenador",
@@ -281,6 +283,7 @@ export const rolePermissions: RolePermissions = {
       "monitoreo_leads", // Monitoreo de Leads
       "cierres_adminleads", // Cierres
       "recompra_adminleads", // Recompra de clientes
+      "compras_mes_adminleads", // Clientes del mes
       "configuracion_leads", // Configuración de Leads
       // CxC dropdown sub-items
       "cxc_alerts", // Alertas CxC
@@ -497,6 +500,7 @@ export const rolePermissions: RolePermissions = {
       "monitoreo_leads",
       "cierres_adminleads",
       "recompra_adminleads",
+      "compras_mes_adminleads",
       "configuracion_leads",
       // Desplegable Ventas
       "reporte_diario",

@@ -61,34 +61,52 @@ export async function GET(request: NextRequest) {
     wsR.addRow([]);
     const nota = wsR.addRow([
       `Filtros: sede ${sede(filtros.sede) || "todas"}, origen ${filtros.origen || "todos"}, primera venta ${filtros.desde || "…"} a ${filtros.hasta || "…"}. ` +
-        `Las compras se buscan por RIF en todas las sedes: hasta el ${data.corte} en Smartbit, desde esa fecha en Odoo (facturas de cliente, sin notas de crédito). ` +
-        `Las facturas de hasta ${data.ventana} días después de la primera venta se toman como parte de ella.`,
+        `Las compras se buscan por RIF en las sedes de la operación del lead (Valencia y Caracas juntas, Panamá aparte): hasta el ${data.corte} en Smartbit, desde esa fecha en Odoo (facturas de cliente, sin notas de crédito). ` +
+        `La fecha de cierre del lead es la de su primera compra; las facturas de hasta ${data.ventana} días después se toman como parte de ella. ` +
+        `"Compras después" son las de después de ese cierre, en cualquier sede de esa operación.`,
     ]);
     wsR.mergeCells(nota.number, 1, nota.number, 2);
     nota.getCell(1).alignment = { wrapText: true, vertical: "top" };
     nota.getCell(1).font = { italic: true, color: { argb: "FF71717A" } };
     nota.height = 75;
 
-    // --- Clientes ---
-    const wsC = wb.addWorksheet("Clientes");
-    encabezar(
-      wsC,
-      [
-        "Cliente", "RIF", "Sede", "Origen del lead", "Vendedor", "Campaña / red", "Entró el lead",
-        "Primera venta", "Monto primera venta (USD)", "Compras antes del lead", "Compras después",
-        "Monto después (USD)", "Primera recompra", "Días hasta recomprar", "Última compra",
-      ],
-      [38, 14, 11, 12, 22, 26, 13, 13, 16, 13, 12, 16, 14, 13, 13],
-    );
-    for (const c of data.clientes) {
-      wsC.addRow([
-        c.cliente, c.rif, sede(c.sede), c.origen, c.vendedor, c.campana, c.entrada, c.primeraVenta, c.montoPrimera,
-        c.comprasAntes, c.comprasDespues, c.montoDespues, c.primeraRecompra ?? "", c.diasHastaRecompra ?? "",
-        c.ultimaCompra ?? "",
-      ]);
+    // --- Clientes: una hoja por operación, con solo sus sedes ---
+    // Lo de después del lead se abre por sede: un cliente que llegó por Valencia puede recomprar en Caracas.
+    const operaciones = [
+      { hoja: "Clientes Venezuela", sedes: [9, 10], clientes: data.clientes.filter((c) => c.sede !== 7) },
+      { hoja: "Clientes Panamá", sedes: [7], clientes: data.clientes.filter((c) => c.sede === 7) },
+    ];
+    for (const { hoja, sedes, clientes } of operaciones) {
+      // Panamá solo si tiene clientes; Venezuela siempre, salvo que todo sea de Panamá.
+      if (!clientes.length && (hoja === "Clientes Panamá" || data.clientes.length)) continue;
+      const wsC = wb.addWorksheet(hoja);
+      encabezar(
+        wsC,
+        [
+          "Cliente", "RIF", "Sede del lead", "Origen del lead", "Vendedor", "Campaña / red", "Entró el lead",
+          "Cierre del lead (primera compra)", "Monto primera compra (USD)", "Compras antes del lead", "Sedes donde compraba antes",
+          "Compras después del lead", "Monto después del lead (USD)",
+          ...sedes.flatMap((s) => [`Compras después en ${SEDES[s]}`, `Monto después en ${SEDES[s]} (USD)`]),
+          "Primera recompra", "Sede de la primera recompra", "Días del cierre a la primera recompra",
+          "Última compra", "Sede de la última compra",
+        ],
+        [38, 14, 11, 12, 22, 26, 13, 16, 16, 13, 18, 13, 16, ...sedes.flatMap(() => [13, 16]), 14, 14, 15, 13, 14],
+      );
+      for (const c of clientes) {
+        const ultima = c.despues[c.despues.length - 1];
+        wsC.addRow([
+          c.cliente, c.rif, sede(c.sede), c.origen, c.vendedor, c.campana, c.entrada, c.primeraVenta, c.montoPrimera,
+          c.comprasAntes, c.sedesAntes.map(sede).join(", "), c.comprasDespues, c.montoDespues,
+          ...sedes.flatMap((s) => {
+            const en = c.despues.filter((d) => d.sede === s);
+            return [en.length, Math.round(en.reduce((t, d) => t + d.monto, 0) * 100) / 100];
+          }),
+          c.primeraRecompra ?? "", sede(c.despues[0]?.sede ?? null), c.diasHastaRecompra ?? "",
+          c.ultimaCompra ?? "", sede(ultima?.sede ?? null),
+        ]);
+      }
+      for (const col of [9, 13, ...sedes.map((_, i) => 15 + i * 2)]) wsC.getColumn(col).numFmt = USD;
     }
-    wsC.getColumn(9).numFmt = USD;
-    wsC.getColumn(12).numFmt = USD;
 
     // --- Compras posteriores ---
     const wsD = wb.addWorksheet("Compras después");

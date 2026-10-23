@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
-import { imagenComprobante } from "@/lib/administracion/binance";
+import { imagenComprobante, sedeBinance } from "@/lib/administracion/binance";
+import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 
 // GET /api/administracion/binance/imagen?id= — el comprobante tal cual se subió.
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
+  const sede = sedeBinance(auth.payload);
+  if (sede === undefined) return respuestaSedeNoPermitida();
   const id = Number(request.nextUrl.searchParams.get("id"));
-  const fila = Number.isInteger(id) && id > 0 ? await imagenComprobante(id) : null;
+  const fila = Number.isInteger(id) && id > 0 ? await imagenComprobante(id, sede) : null;
   if (!fila) return NextResponse.json({ error: "No existe" }, { status: 404 });
   return new NextResponse(fila.archivo, {
     headers: {

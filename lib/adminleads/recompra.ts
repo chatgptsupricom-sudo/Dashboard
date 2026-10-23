@@ -16,6 +16,7 @@ import { leerTodo } from "@/lib/administracion/lectura";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { CORTE_ODOO, normalizarRif, RIF_SQL } from "@/lib/smartbit";
 import { canalNormalizadoSql } from "@/lib/canales";
+import { mismaOperacion } from "@/lib/adminleads/sucursal";
 
 export const SEDES: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 
@@ -366,9 +367,10 @@ export async function importarExcel(
           vendedor, estatus, monto, factura_txt, observacion, importado_por, campana)
        VALUES ?
        ON DUPLICATE KEY UPDATE archivo = VALUES(archivo), hoja = VALUES(hoja), red_social = VALUES(red_social),
-         ubicacion = VALUES(ubicacion), vendedor = VALUES(vendedor),
+         ubicacion = VALUES(ubicacion),
+         vendedor = IF(estatus_original IS NULL, VALUES(vendedor), vendedor),
          estatus = IF(estatus_original IS NULL, VALUES(estatus), estatus),
-         monto = VALUES(monto), factura_txt = VALUES(factura_txt), observacion = VALUES(observacion),
+         monto = IF(estatus_original IS NULL, VALUES(monto), monto), factura_txt = VALUES(factura_txt), observacion = VALUES(observacion),
          importado_por = VALUES(importado_por),
          campana = VALUES(campana)`,
       [leads.slice(i, i + 500)],
@@ -657,6 +659,8 @@ export type ClienteRecompra = {
   primeraVenta: string;
   montoPrimera: number;
   comprasAntes: number;
+  /** Sedes de las compras de antes del lead: si no está la del lead, era cliente de otra sede. */
+  sedesAntes: number[];
   comprasDespues: number;
   montoDespues: number;
   primeraRecompra: string | null;
@@ -784,12 +788,17 @@ export async function calcularRecompra(opts: {
   for (const { rif, ...c } of sb) (compras.get(rif) ?? compras.set(rif, []).get(rif)!).push(c);
   for (const lista of compras.values()) lista.sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
 
+  // Solo cuentan las compras de la operación del lead: Valencia y Caracas son
+  // una (Panamá no entra), Panamá es otra (Valencia y Caracas no entran).
+  const comprasDe = (rif: string, sede: number | null) =>
+    (compras.get(rif) ?? []).filter((c) => mismaOperacion(sede, c.sede));
+
   // Fecha de la primera venta de cada lead: la del panel; en los de Excel, la
   // factura que se ubicó o, si no, la primera compra desde que entró el lead.
   for (const l of leads) {
     if (l.venta) continue;
     const base = l.entrada ? sumarDias(l.entrada, -VENTANA_PRIMERA_VENTA) : null;
-    l.venta = (base && compras.get(l.rif)?.find((c) => c.fecha >= base)?.fecha) || l.entrada;
+    l.venta = (base && comprasDe(l.rif, l.sede).find((c) => c.fecha >= base)?.fecha) || l.entrada;
   }
 
   const porRif = new Map<string, LeadVenta[]>();
@@ -802,9 +811,10 @@ export async function calcularRecompra(opts: {
     // fecha_ingreso del panel a veces es posterior a la venta (se reescribe al
     // reasignar o reactivar): nunca se toma una entrada después de la venta.
     const entrada = [...ls.map((l) => l.entrada), primero.venta].filter(Boolean).sort()[0]!;
-    const lista = compras.get(rif) ?? [];
+    const lista = comprasDe(rif, primero.sede);
     const limite = sumarDias(primero.venta!, VENTANA_PRIMERA_VENTA);
     const despues = lista.filter((c) => c.fecha > limite);
+    const antes = lista.filter((c) => c.fecha < entrada);
     clientes.push({
       rif,
       cliente: nombreCliente.get(rif) || primero.nombre,
@@ -815,7 +825,8 @@ export async function calcularRecompra(opts: {
       entrada,
       primeraVenta: primero.venta!,
       montoPrimera: r2(primero.monto),
-      comprasAntes: lista.filter((c) => c.fecha < entrada).length,
+      comprasAntes: antes.length,
+      sedesAntes: [...new Set(antes.map((c) => c.sede))],
       comprasDespues: despues.length,
       montoDespues: r2(despues.reduce((s, c) => s + c.monto, 0)),
       primeraRecompra: despues[0]?.fecha ?? null,
@@ -891,6 +902,7 @@ export type LeadPorRevisar = {
   telefono: string;
   vendedor: string;
   estatus: string | null;
+  monto: number | null; // el del Excel
   factura_txt: string | null;
   observacion: string | null;
   candidatos: Candidato[];
@@ -913,7 +925,7 @@ export async function revisarLeads(soloSede: number | null): Promise<LeadPorRevi
   await asegurarTablas();
   const { rows: leads } = await query(
     `SELECT id, company_id, nombre, DATE_FORMAT(fecha_interaccion, '%Y-%m-%d') AS fecha, telefono, vendedor,
-            estatus, factura_txt, observacion, rif
+            estatus, monto, factura_txt, observacion, rif
        FROM leads_historicos
       WHERE revisado = 0 AND fecha_interaccion IS NOT NULL
         AND ((estatus = 'CONCRETADO' AND rif IS NULL) OR estatus IS NULL OR estatus <> 'CONCRETADO')
@@ -998,7 +1010,7 @@ export async function revisarLeads(soloSede: number | null): Promise<LeadPorRevi
     candidatos.sort((a, b) => orden[a.via] - orden[b.via] || (a.fecha < b.fecha ? -1 : 1));
     out.push({
       id: l.id, company_id: l.company_id, tipo, nombre: l.nombre, fecha: l.fecha, telefono: l.telefono || "",
-      vendedor: l.vendedor || "", estatus: l.estatus, factura_txt: l.factura_txt, observacion: l.observacion,
+      vendedor: l.vendedor || "", estatus: l.estatus, monto: l.monto != null ? Number(l.monto) : null, factura_txt: l.factura_txt, observacion: l.observacion,
       candidatos: candidatos.slice(0, 3),
     });
   }

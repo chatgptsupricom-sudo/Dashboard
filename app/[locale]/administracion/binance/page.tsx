@@ -4,9 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Aviso, BotonExcel, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
+import { Aviso, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
 import type { Comprobante, EstadoComprobante, OrigenPagos, PagoBinance } from "@/lib/administracion/binance";
-import { Bitcoin, FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
+import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
@@ -20,12 +22,13 @@ type Respuesta = {
 type Subida = { nombre: string; ok: boolean; texto: string };
 type TipoArchivo = "comprobante" | "estado";
 
-const ESTADOS: Record<EstadoComprobante, { label: string; clase: string }> = {
-  conciliado: { label: "Conciliado", clase: "bg-emerald-100 text-emerald-800" },
-  por_monto_hora: { label: "Coincide solo por monto (revisar)", clase: "bg-amber-100 text-amber-800" },
-  monto_distinto: { label: "Monto distinto", clase: "bg-red-100 text-red-800" },
-  no_encontrado: { label: "No está en Binance", clase: "bg-red-100 text-red-800" },
-  sin_verificar: { label: "Sin verificar", clase: "bg-slate-100 text-slate-700" },
+const CLASE_ESTADO: Record<EstadoComprobante, string> = {
+  conciliado: "bg-emerald-100 text-emerald-800",
+  manual: "bg-emerald-100 text-emerald-800",
+  por_monto_hora: "bg-amber-100 text-amber-800",
+  monto_distinto: "bg-red-100 text-red-800",
+  no_encontrado: "bg-red-100 text-red-800",
+  sin_verificar: "bg-slate-100 text-slate-700",
 };
 
 const DIA = 86400_000;
@@ -47,7 +50,22 @@ function semanas(n = 12) {
 const fechaHora = (iso: string) =>
   new Date(iso).toLocaleString("es-VE", { timeZone: "America/Caracas", dateStyle: "short", timeStyle: "short" });
 
+const soloFecha = (iso: string) =>
+  new Date(iso).toLocaleDateString("es-VE", { timeZone: "America/Caracas", dateStyle: "short" });
+
 const cifra = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 });
+
+const fechaComprobante = (c: Comprobante) =>
+  c.fechaEstimada && !c.binance ? (c.soloDia ? `${soloFecha(c.fecha)} (sin hora)` : "Sin fecha") : fechaHora(c.fecha);
+
+// Lo que muestra cada tarjeta al hacerle clic.
+type Lista = "comprobantes" | "conciliados" | "problema" | "sinComprobante";
+const TITULO_LISTA: Record<Lista, string> = {
+  comprobantes: "Comprobantes",
+  conciliados: "Conciliados",
+  problema: "Con diferencia o no encontrados",
+  sinComprobante: "Recibido sin comprobante",
+};
 
 /** Suma por moneda: Binance recibe USDT, USDC, BTC... y no se mezclan. */
 function porMoneda(items: { monto: number; moneda: string }[]) {
@@ -62,8 +80,10 @@ export default function BinancePage() {
   const [datos, setDatos] = useState<Respuesta | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [subiendo, setSubiendo] = useState<{ hecho: number; total: number } | null>(null);
+  const [subiendo, setSubiendo] = useState<{ hecho: number; total: number; tipo: TipoArchivo } | null>(null);
   const [subidas, setSubidas] = useState<Subida[]>([]);
+  const [lista, setLista] = useState<Lista | null>(null);
+  const [verImagen, setVerImagen] = useState<Comprobante | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const inputEstado = useRef<HTMLInputElement>(null);
 
@@ -90,7 +110,7 @@ export default function BinancePage() {
     const resultados: Subida[] = [];
     setSubidas([]);
     for (let i = 0; i < lista.length; i++) {
-      setSubiendo({ hecho: i, total: lista.length });
+      setSubiendo({ hecho: i, total: lista.length, tipo });
       const form = new FormData();
       form.append("archivo", lista[i]);
       form.append("semana", semana);
@@ -105,7 +125,7 @@ export default function BinancePage() {
                 texto: `${json.recibidos} pagos recibidos (${json.nuevos} nuevos, ${json.repetidos} ya estaban)`,
               }
             : json.success
-            ? { nombre: lista[i].name, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${json.fechaEstimada ? "sin fecha, quedó en esta semana" : fechaHora(json.fecha)}` }
+            ? { nombre: lista[i].name, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${json.soloDia ? `${soloFecha(json.fecha)} (fecha del nombre del archivo)` : json.fechaEstimada ? "sin fecha, quedó en esta semana" : fechaHora(json.fecha)}` }
             : { nombre: lista[i].name, ok: false, texto: json.error || "Error" },
         );
       } catch {
@@ -116,6 +136,18 @@ export default function BinancePage() {
     setSubiendo(null);
     if (input.current) input.current.value = "";
     if (inputEstado.current) inputEstado.current.value = "";
+    cargar();
+  };
+
+  const asignar = async (c: Comprobante, valor: string) => {
+    const json = await (
+      await fetch("/api/administracion/binance", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: c.id, movimiento_id: valor ? Number(valor) : null }),
+      })
+    ).json();
+    if (!json.success) setError(json.error || "No se pudo guardar");
     cargar();
   };
 
@@ -133,9 +165,24 @@ export default function BinancePage() {
 
   const comprobantes = datos?.comprobantes || [];
   const sinComprobante = datos?.sinComprobante || [];
-  const conciliados = comprobantes.filter((c) => c.estado === "conciliado");
-  const conProblema = comprobantes.filter((c) => c.estado !== "conciliado");
-  const etiquetaSemana = opciones.find((o) => o.value === semana)?.label || semana;
+  const esConciliado = (c: Comprobante) => c.estado === "conciliado" || c.estado === "manual";
+  const conciliados = comprobantes.filter(esConciliado);
+  const conProblema = comprobantes.filter((c) => !esConciliado(c));
+  const COMPROBANTES_LISTA = { comprobantes, conciliados, problema: conProblema };
+  // Pagos para amarrar a mano un comprobante: solo los de su monto y moneda, y
+  // solo si ese monto se repite en el estado de cuenta (si es unico, el cruce ya
+  // lo amarro). Van los libres y el que ya tiene (elegirlo confirma el que propuso el panel).
+  // `montoRepetido` lo cuenta el servidor: ve tambien los pagos que tomaron otras sedes.
+  const opcionesPago = (c: Comprobante) => {
+    const mismo = (p: PagoBinance) => p.moneda === c.moneda && Math.abs(p.monto - c.monto) < 1e-6;
+    // Uno amarrado antes a mano sigue en la lista, para poder soltarlo.
+    const actual = c.estado === "manual" && c.binance ? [c.binance] : [];
+    if (!c.montoRepetido) return actual;
+    const libres = sinComprobante.filter(mismo);
+    return [...libres, ...(c.binance && (mismo(c.binance) || actual.length) ? [c.binance] : [])].sort((a, b) =>
+      a.fecha.localeCompare(b.fecha),
+    );
+  };
   // El estado de cuenta no trae ID de orden: su id es interno y no se muestra.
   const idBinance = (id?: string) => (datos?.origen === "estado" || !id ? "" : id);
 
@@ -164,83 +211,14 @@ export default function BinancePage() {
               </option>
             ))}
           </select>
-          <input
-            ref={input}
-            type="file"
-            multiple
-            accept="image/jpeg,image/png,image/webp,application/pdf"
-            className="hidden"
-            onChange={(e) => subir(e.target.files, "comprobante")}
-          />
-          <input
-            ref={inputEstado}
-            type="file"
-            multiple
-            accept="image/jpeg,image/png,image/webp,application/pdf"
-            className="hidden"
-            onChange={(e) => subir(e.target.files, "estado")}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-9"
-            disabled={!!subiendo}
-            onClick={() => inputEstado.current?.click()}
-          >
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Subir estado de cuenta
-          </Button>
-          <Button size="sm" className="h-9" disabled={!!subiendo} onClick={() => input.current?.click()}>
-            {subiendo ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
-            {subiendo ? `Leyendo ${subiendo.hecho + 1} de ${subiendo.total}` : "Subir comprobantes"}
-          </Button>
+          {/* Lo arma el servidor: el Excel lleva la imagen de cada comprobante y su línea del estado de cuenta. */}
           {datos && (
-            <BotonExcel
-              archivo={`Conciliacion_Binance_${semana}`}
-              hojas={() => [
-                {
-                  nombre: "Resumen",
-                  filas: [
-                    { Concepto: "Semana", Valor: etiquetaSemana },
-                    { Concepto: "Comprobantes subidos", Valor: comprobantes.length },
-                    { Concepto: "Monto de comprobantes", Valor: porMoneda(comprobantes) },
-                    { Concepto: "Conciliados", Valor: conciliados.length },
-                    { Concepto: "Monto conciliado", Valor: porMoneda(conciliados) },
-                    { Concepto: "Con diferencia o no encontrados", Valor: conProblema.length },
-                    { Concepto: "Pagos en Binance sin comprobante", Valor: sinComprobante.length },
-                    { Concepto: "Monto sin comprobante", Valor: porMoneda(sinComprobante) },
-                  ],
-                },
-                {
-                  nombre: "Comprobantes",
-                  filas: comprobantes.map((c) => ({
-                    "Fecha comprobante": c.fechaEstimada ? "Sin fecha" : fechaHora(c.fecha),
-                    "ID de orden": c.orderId,
-                    "Monto comprobante": c.monto,
-                    Moneda: c.moneda,
-                    Estado: ESTADOS[c.estado].label,
-                    "ID en Binance": idBinance(c.binance?.id),
-                    "Fecha Binance": c.binance ? fechaHora(c.binance.fecha) : "",
-                    "Monto Binance": c.binance?.monto ?? "",
-                    "Moneda Binance": c.binance?.moneda || "",
-                    Pagador: c.binance?.pagador || "",
-                    Archivo: c.archivoNombre,
-                    "Subido por": c.subidoPor,
-                  })),
-                },
-                {
-                  nombre: "Sin comprobante",
-                  filas: sinComprobante.map((p) => ({
-                    Fecha: fechaHora(p.fecha),
-                    "ID de orden": idBinance(p.id),
-                    Monto: p.monto,
-                    Moneda: p.moneda,
-                    Pagador: p.pagador,
-                    Tipo: p.tipo,
-                  })),
-                },
-              ]}
-            />
+            <Button asChild variant="outline" size="sm" className="h-9">
+              <a href={`/api/administracion/binance/excel?semana=${semana}`}>
+                <Download className="h-4 w-4 mr-2" />
+                Excel
+              </a>
+            </Button>
           )}
         </div>
       </div>
@@ -263,15 +241,22 @@ export default function BinancePage() {
           de Binance Pay) para conciliar. La consulta directa a Binance tampoco respondió ({datos.errorBinance}).
         </Aviso>
       )}
-      {datos?.origen === "estado" && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-          Estado de cuenta cargado: {datos.movimientos} pagos recibidos en la semana.
-          <Button variant="ghost" size="sm" className="h-7 text-gray-500" onClick={borrarEstado}>
-            <Trash2 className="h-3.5 w-3.5 mr-1" />
-            Borrar y volver a subir
-          </Button>
-        </div>
-      )}
+      <input
+        ref={input}
+        type="file"
+        multiple
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(e) => subir(e.target.files, "comprobante")}
+      />
+      <input
+        ref={inputEstado}
+        type="file"
+        multiple
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(e) => subir(e.target.files, "estado")}
+      />
       {error && <Aviso tono="rojo">{error}</Aviso>}
 
       {cargando && !datos ? (
@@ -282,25 +267,139 @@ export default function BinancePage() {
         datos && (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Tarjeta titulo="Comprobantes" valor={comprobantes.length} detalle={porMoneda(comprobantes)} />
-              <Tarjeta tono="verde" titulo="Conciliados" valor={conciliados.length} detalle={porMoneda(conciliados)} />
-              <Tarjeta
-                tono={conProblema.length ? "rojo" : "neutro"}
-                titulo="Con diferencia o no encontrados"
-                valor={conProblema.length}
-                detalle={porMoneda(conProblema)}
-              />
-              <Tarjeta
-                tono={sinComprobante.length ? "ambar" : "neutro"}
-                titulo="Recibido sin comprobante"
-                valor={sinComprobante.length}
-                detalle={porMoneda(sinComprobante)}
-              />
+              {(
+                [
+                  ["comprobantes", "neutro", comprobantes],
+                  ["conciliados", "verde", conciliados],
+                  ["problema", conProblema.length ? "rojo" : "neutro", conProblema],
+                  ["sinComprobante", sinComprobante.length ? "ambar" : "neutro", sinComprobante],
+                ] as const
+              ).map(([clave, tono, items]) => (
+                <button
+                  key={clave}
+                  type="button"
+                  onClick={() => setLista(clave)}
+                  className="text-left rounded-xl transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  <Tarjeta tono={tono} titulo={TITULO_LISTA[clave]} valor={items.length} detalle={porMoneda(items)} />
+                </button>
+              ))}
             </div>
 
+            <Dialog
+              open={lista !== null}
+              onOpenChange={(abierto) => {
+                if (!abierto) {
+                  setLista(null);
+                  setVerImagen(null);
+                }
+              }}
+            >
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>{verImagen ? `Comprobante ${verImagen.orderId}` : lista && TITULO_LISTA[lista]}</DialogTitle>
+                </DialogHeader>
+                {verImagen ? (
+                  <div className="space-y-3">
+                    <Button variant="outline" size="sm" onClick={() => setVerImagen(null)}>
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Volver a la lista
+                    </Button>
+                    <p className="text-sm text-gray-600">
+                      {fechaComprobante(verImagen)} · {cifra(verImagen.monto)} {verImagen.moneda} ·{" "}
+                      {ETIQUETA_ESTADO[verImagen.estado]}
+                    </p>
+                    {/\.pdf$/i.test(verImagen.archivoNombre || "") ? (
+                      <iframe
+                        src={`/api/administracion/binance/imagen?id=${verImagen.id}`}
+                        title={`Comprobante ${verImagen.orderId}`}
+                        className="w-full h-[70vh] border rounded-lg"
+                      />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/administracion/binance/imagen?id=${verImagen.id}`}
+                        alt={`Comprobante ${verImagen.orderId}`}
+                        className="mx-auto max-h-[70vh] rounded-lg border"
+                      />
+                    )}
+                  </div>
+                ) : lista === "sinComprobante" ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
+                        <TableHead>Pagador</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sinComprobante.length === 0 && <FilaVacia columnas={3} texto="Todo lo recibido tiene comprobante." />}
+                      {sinComprobante.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell className="whitespace-nowrap">{fechaHora(p.fecha)}</TableCell>
+                          <TableCell className="text-right whitespace-nowrap">
+                            {cifra(p.monto)} {p.moneda}
+                          </TableCell>
+                          <TableCell>{p.pagador || "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  lista && (
+                    <>
+                      <p className="text-xs text-gray-500">Haz clic en un comprobante para ver su imagen.</p>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Fecha</TableHead>
+                            <TableHead>ID de orden</TableHead>
+                            <TableHead className="text-right">Monto</TableHead>
+                            <TableHead>Pagador</TableHead>
+                            <TableHead>Estado</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {COMPROBANTES_LISTA[lista].length === 0 && (
+                            <FilaVacia columnas={5} texto="No hay comprobantes aquí." />
+                          )}
+                          {COMPROBANTES_LISTA[lista].map((c) => (
+                            <TableRow key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setVerImagen(c)}>
+                              <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
+                              <TableCell className="font-mono text-xs text-blue-600">{c.orderId}</TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                {cifra(c.monto)} {c.moneda}
+                              </TableCell>
+                              <TableCell>{c.binance?.pagador || "—"}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
+                                  {ETIQUETA_ESTADO[c.estado]}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </>
+                  )
+                )}
+              </DialogContent>
+            </Dialog>
+
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
+                <Button size="sm" className="h-9" disabled={!!subiendo} onClick={() => input.current?.click()}>
+                  {subiendo?.tipo === "comprobante" ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4 mr-2" />
+                  )}
+                  {subiendo?.tipo === "comprobante"
+                    ? `Leyendo ${subiendo.hecho + 1} de ${subiendo.total}`
+                    : "Subir comprobantes"}
+                </Button>
               </CardHeader>
               <CardContent className="overflow-x-auto">
                 <Table>
@@ -319,9 +418,7 @@ export default function BinancePage() {
                     {comprobantes.length === 0 && <FilaVacia columnas={7} texto="No hay comprobantes en esta semana." />}
                     {comprobantes.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="whitespace-nowrap">
-                          {c.fechaEstimada && !c.binance ? "Sin fecha" : fechaHora(c.fecha)}
-                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
                         <TableCell className="font-mono text-xs">
                           <a
                             href={`/api/administracion/binance/imagen?id=${c.id}`}
@@ -345,9 +442,26 @@ export default function BinancePage() {
                         </TableCell>
                         <TableCell>{c.binance?.pagador || "—"}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={`border-0 ${ESTADOS[c.estado].clase}`}>
-                            {ESTADOS[c.estado].label}
+                          <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
+                            {ETIQUETA_ESTADO[c.estado]}
                           </Badge>
+                          {datos.origen === "estado" && c.estado !== "conciliado" && opcionesPago(c).length > 0 && (
+                            <select
+                              value={c.estado === "manual" ? String(c.movimientoId) : ""}
+                              onChange={(e) => asignar(c, e.target.value)}
+                              className="mt-1 block w-full max-w-[260px] border rounded-md px-2 py-1 text-xs bg-white"
+                              aria-label="Amarrar a un pago del estado de cuenta"
+                            >
+                              <option value="">
+                                {c.estado === "manual" ? "Soltar" : "Amarrar a un pago…"}
+                              </option>
+                              {opcionesPago(c).map((p) => (
+                                <option key={p.id} value={p.id.slice(1)}>
+                                  {fechaHora(p.fecha)} · {cifra(p.monto)} {p.moneda} · {p.pagador || "—"}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" onClick={() => eliminar(c)} aria-label="Quitar comprobante">
@@ -362,8 +476,39 @@ export default function BinancePage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Pagos recibidos en Binance sin comprobante</CardTitle>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+                <div>
+                  <CardTitle className="text-base">Estado de cuenta: pagos sin comprobante</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {datos.origen === "estado"
+                      ? `Estado de cuenta cargado: ${datos.movimientos} pagos recibidos en la semana.`
+                      : "Esta semana todavía no tiene estado de cuenta."}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {datos.origen === "estado" && (
+                    <Button variant="ghost" size="sm" className="h-9 text-gray-500" onClick={borrarEstado}>
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Borrar y volver a subir
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9"
+                    disabled={!!subiendo}
+                    onClick={() => inputEstado.current?.click()}
+                  >
+                    {subiendo?.tipo === "estado" ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <FileSpreadsheet className="h-4 w-4 mr-2" />
+                    )}
+                    {subiendo?.tipo === "estado"
+                      ? `Leyendo ${subiendo.hecho + 1} de ${subiendo.total}`
+                      : "Subir estado de cuenta"}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
                 <Table>

@@ -136,12 +136,14 @@ export default function RecompraClientes({
             </div>
             <div className="bg-zinc-50 rounded-2xl border border-zinc-100 p-4 text-xs text-zinc-500 space-y-1.5">
               <p>
-                Las compras se buscan <b>por RIF</b>, en todas las sedes: hasta el {data.corte} en Smartbit y desde esa
+                Las compras se buscan <b>por RIF</b>, en las sedes de la operación del lead (Valencia y Caracas juntas;
+                Panamá aparte): hasta el {data.corte} en Smartbit y desde esa
                 fecha en Odoo (facturas de cliente; las notas de crédito no cuentan).
               </p>
               <p>
-                Las facturas de hasta {data.ventana} días después de la primera venta se toman como parte de ella (la
-                factura del día siguiente, un pedido partido). Si un cliente vino por varios leads, cuenta desde el primero.
+                El cierre del lead es la fecha de su primera compra; las facturas de hasta {data.ventana} días después se
+                toman como parte de ella (la factura del día siguiente, un pedido partido). Las compras después del lead
+                se muestran por sede: un lead de Valencia puede recomprar en Caracas y al revés. Si un cliente vino por varios leads, cuenta desde el primero.
               </p>
               <p>
                 &quot;Ya eran clientes&quot; = compraron antes de que entrara el lead (Smartbit desde un año antes del
@@ -178,19 +180,29 @@ export default function RecompraClientes({
                   <tr>
                     <th className="w-8" />
                     <th className="text-left px-3 py-2">Cliente</th>
-                    <th className="text-left px-3 py-2">Sede</th>
+                    <th className="text-left px-3 py-2">Sede del lead</th>
                     <th className="text-left px-3 py-2">Lead</th>
                     <th className="text-left px-3 py-2">Vendedor</th>
-                    <th className="text-left px-3 py-2">Primera venta</th>
+                    <th className="text-left px-3 py-2">Cierre del lead (1.ª compra)</th>
                     <th className="text-right px-3 py-2">Compras después</th>
                     <th className="text-right px-3 py-2">Monto después</th>
-                    <th className="text-right px-3 py-2">Días a la 2.ª</th>
+                    <th className="text-left px-3 py-2">Primera recompra</th>
                     <th className="text-left px-3 py-2">Última compra</th>
                   </tr>
                 </thead>
                 <tbody>
                   {clientes.map((c) => {
                     const ver = abierto === c.rif;
+                    const primera = c.despues[0];
+                    const ultima = c.despues[c.despues.length - 1];
+                    // Compras después del lead por sede (puede recomprar en otra sede).
+                    const porSede = Object.keys(SEDES)
+                      .map(Number)
+                      .map((s) => {
+                        const en = c.despues.filter((d) => d.sede === s);
+                        return { s, n: en.length, monto: en.reduce((t, d) => t + d.monto, 0) };
+                      })
+                      .filter((x) => x.n > 0);
                     return (
                       <Fragment key={c.rif}>
                         <tr
@@ -205,7 +217,16 @@ export default function RecompraClientes({
                             <p className="text-[11px] text-zinc-400">
                               {c.rif}
                               {c.comprasAntes > 0 && (
-                                <span className="ml-2 text-amber-600">ya era cliente ({c.comprasAntes} compras antes)</span>
+                                <span className="ml-2 text-amber-600">
+                                  ya era cliente ({c.comprasAntes} compras antes)
+                                  {(() => {
+                                    const otras = c.sedesAntes.filter((s) => s !== c.sede).map((s) => SEDES[s] ?? s);
+                                    if (!otras.length) return null;
+                                    return c.sede != null && !c.sedesAntes.includes(c.sede)
+                                      ? <b> de otra sede: {otras.join(", ")}</b>
+                                      : <> · también en {otras.join(", ")}</>;
+                                  })()}
+                                </span>
                               )}
                             </p>
                           </td>
@@ -220,9 +241,36 @@ export default function RecompraClientes({
                             {c.montoPrimera > 0 && <p className="text-[11px] text-zinc-400">{usd(c.montoPrimera)}</p>}
                           </td>
                           <td className="px-3 py-2 text-right font-bold tabular-nums text-zinc-800">{c.comprasDespues}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-zinc-700">{usd(c.montoDespues)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{c.diasHastaRecompra ?? "—"}</td>
-                          <td className="px-3 py-2 text-zinc-600 tabular-nums whitespace-nowrap">{c.ultimaCompra ?? "—"}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-zinc-700 whitespace-nowrap">
+                            <p>{usd(c.montoDespues)}</p>
+                            {porSede.map((x) => (
+                              <p key={x.s} className="text-[11px] text-zinc-400">
+                                {SEDES[x.s]}: {x.n} · {usd(x.monto)}
+                              </p>
+                            ))}
+                          </td>
+                          <td className="px-3 py-2 text-zinc-600 tabular-nums whitespace-nowrap">
+                            {primera ? (
+                              <>
+                                <p>{primera.fecha}</p>
+                                <p className="text-[11px] text-zinc-400">
+                                  {SEDES[primera.sede] ?? primera.sede} · {c.diasHastaRecompra} días después
+                                </p>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-zinc-600 tabular-nums whitespace-nowrap">
+                            {ultima ? (
+                              <>
+                                <p>{ultima.fecha}</p>
+                                <p className="text-[11px] text-zinc-400">{SEDES[ultima.sede] ?? ultima.sede}</p>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
                         </tr>
                         {ver && c.despues.length > 0 && (
                           <tr className="bg-zinc-50/60">
