@@ -153,12 +153,19 @@ export default function BinancePage() {
   const esConciliado = (c: Comprobante) => c.estado === "conciliado" || c.estado === "manual";
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
-  // Pagos para amarrar a mano un comprobante: los libres, primero los de su
-  // monto, y el que ya tiene (elegirlo confirma el que propuso el panel).
+  // Pagos para amarrar a mano un comprobante: solo los de su monto y moneda, y
+  // solo si ese monto se repite en el estado de cuenta (si es unico, el cruce ya
+  // lo amarro). Van los libres y el que ya tiene (elegirlo confirma el que propuso el panel).
+  const pagosEstado = [...sinComprobante, ...comprobantes.flatMap((c) => (c.binance ? [c.binance] : []))];
   const opcionesPago = (c: Comprobante) => {
-    const libres = [...sinComprobante, ...(c.binance ? [c.binance] : [])];
     const mismo = (p: PagoBinance) => p.moneda === c.moneda && Math.abs(p.monto - c.monto) < 1e-6;
-    return libres.sort((a, b) => Number(mismo(b)) - Number(mismo(a)) || a.fecha.localeCompare(b.fecha));
+    // Uno amarrado antes a mano sigue en la lista, para poder soltarlo.
+    const actual = c.estado === "manual" && c.binance ? [c.binance] : [];
+    if (new Set(pagosEstado.filter(mismo).map((p) => p.id)).size < 2) return actual;
+    const libres = sinComprobante.filter(mismo);
+    return [...libres, ...(c.binance && (mismo(c.binance) || actual.length) ? [c.binance] : [])].sort((a, b) =>
+      a.fecha.localeCompare(b.fecha),
+    );
   };
   // El estado de cuenta no trae ID de orden: su id es interno y no se muestra.
   const idBinance = (id?: string) => (datos?.origen === "estado" || !id ? "" : id);
@@ -324,7 +331,7 @@ export default function BinancePage() {
                           <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
                             {ETIQUETA_ESTADO[c.estado]}
                           </Badge>
-                          {datos.origen === "estado" && c.estado !== "conciliado" && (
+                          {datos.origen === "estado" && c.estado !== "conciliado" && opcionesPago(c).length > 0 && (
                             <select
                               value={c.estado === "manual" ? String(c.movimientoId) : ""}
                               onChange={(e) => asignar(c, e.target.value)}

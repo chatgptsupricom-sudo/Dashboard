@@ -610,6 +610,21 @@ export async function asignarMovimiento(id: number, movimientoId: number | null)
     await ensureTablaMovimientos();
     const { rows } = await query("SELECT id FROM binance_movimientos WHERE id = ?", [movimientoId]);
     if (!rows.length) throw new ArchivoIlegible("Ese pago ya no está en el estado de cuenta");
+    // Solo se cambia de pago cuando el monto del comprobante se repite en el
+    // estado de cuenta de esa semana (lunes a domingo, hora de Caracas): si es
+    // unico, el cruce ya lo amarro y otro monto no es ese pago.
+    const { rows: iguales } = await query(
+      `SELECT COUNT(*) AS n
+         FROM binance_comprobantes c
+         JOIN binance_movimientos m ON m.id = ? AND m.monto = c.monto AND m.moneda = c.moneda
+         JOIN binance_movimientos o ON o.monto = m.monto AND o.moneda = m.moneda
+          AND YEARWEEK(o.fecha - INTERVAL 4 HOUR, 3) = YEARWEEK(m.fecha - INTERVAL 4 HOUR, 3)
+        WHERE c.id = ?`,
+      [movimientoId, id],
+    );
+    if (Number(iguales[0]?.n || 0) < 2) {
+      throw new ArchivoIlegible("Solo se puede amarrar a otro pago del mismo monto cuando ese monto se repite en el estado de cuenta");
+    }
   }
   await query("UPDATE binance_comprobantes SET movimiento_id = ? WHERE id = ?", [movimientoId, id]);
 }
