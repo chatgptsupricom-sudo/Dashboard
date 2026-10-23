@@ -388,6 +388,7 @@ export function Sidebar({
     { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
     { id: "cierres_adminleads", label: t("cierres"), icon: FileText, slug: "/cierres", adminLeadsOnly: true },
     { id: "recompra_adminleads", label: "Recompra de clientes", icon: Repeat, slug: "/recompra", adminLeadsOnly: true },
+    { id: "compras_mes_adminleads", label: "Clientes del mes", icon: UserCheck, slug: "/compras-mes", adminLeadsOnly: true },
     { id: "configuracion_leads", label: t("configuracion"), icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
     // Material POP: inventario de material publicitario. Solo lo ve AdminLeads
     // de Valencia (cids=9) y superAdmin — el middleware impone el corte.
@@ -540,7 +541,7 @@ export function Sidebar({
         // cidsOnly: el item se oculta si el rol tiene un cids asignado que no
         // coincide. superAdmin (sin cids) siempre lo ve.
         ((item as any).cidsOnly == null || userRole === "superAdmin" || Number(userCids) === (item as any).cidsOnly) &&
-        !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads", "recompra_adminleads"].includes(item.id)) &&
+        !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads", "recompra_adminleads", "compras_mes_adminleads"].includes(item.id)) &&
         !((userRole === "superAdmin" || isBIRole) && ["banco_imagenes", "banco_imagenes_seller", "vista_custom", "frecuencia_cpm"].includes(item.id)) &&
         // El item del vendedor duplicaria a "material_pop" para superAdmin, y
         // con un basePath que no existe (/superadmin/material-pop).
@@ -788,6 +789,11 @@ export function Sidebar({
                           label: "Recompra de clientes",
                           href: `/${locale}/adminleads/recompra`,
                           permission: "recompra_adminleads",
+                        },
+                        {
+                          label: "Clientes del mes",
+                          href: `/${locale}/adminleads/compras-mes`,
+                          permission: "compras_mes_adminleads",
                         },
                         {
                           label: t("configuracion"),
