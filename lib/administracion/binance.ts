@@ -491,6 +491,7 @@ const INSTRUCCIONES =
   "Muchas veces viene recortada (sin el titulo, la fecha ni el boton): si trae un ID de orden y un monto, es un comprobante. " +
   "Devuelve SOLO lo que esta en la imagen, sin inventar. " +
   "order_id: el 'ID de orden' / 'Order ID' completo, solo digitos; copia cada digito con cuidado, es lo que se usa para conciliar. " +
+  "Normalmente tiene 18 digitos: si cuentas menos, vuelve a leerlo, sobre todo donde hay digitos repetidos seguidos (777, 000). " +
   "monto: el monto pagado, sin signo ni separador de miles. moneda: el codigo (USDT, USDC, BTC...). " +
   "fecha: fecha y hora del pago como 'YYYY-MM-DD HH:MM:SS'; fecha_en_utc = true si el comprobante dice UTC. " +
   "Si la captura no muestra la fecha, fecha = '' (no la inventes). " +
@@ -598,7 +599,7 @@ export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: n
  * `ArchivoIlegible` diciendo que se leyo, para que quien sube sepa por que.
  */
 export async function leerComprobante(datos: Buffer, mime: string): Promise<Leido> {
-  const l = await leerConIA(INSTRUCCIONES, ESQUEMA, [bloqueArchivo(datos, mime)], "Lee este comprobante.", 1000);
+  const l = await leerConIA(INSTRUCCIONES, ESQUEMA, [await ampliar(datos, mime)], "Lee este comprobante.", 1000);
   const orderId = String(l?.order_id || "").replace(/\D/g, "");
   const monto = Number(l?.monto);
   const moneda = String(l?.moneda || "").trim().toUpperCase().slice(0, 12);
@@ -659,6 +660,19 @@ async function bloquesEstado(datos: Buffer, mime: string): Promise<Archivo[]> {
     if (top + alto >= height) break;
   }
   return bloques;
+}
+
+// Un recorte de WhatsApp puede venir de 400 px: el ID de 18 digitos queda tan
+// chico que la IA se come digitos repetidos (oct-2026: 777 leido como 77).
+const ANCHO_MIN_COMPROBANTE = 1200;
+
+async function ampliar(datos: Buffer, mime: string): Promise<Archivo> {
+  if (mime === "application/pdf") return bloqueArchivo(datos, mime);
+  const sharp = (await import("sharp")).default;
+  const { width = 0 } = await sharp(datos).metadata();
+  if (!width || width >= ANCHO_MIN_COMPROBANTE) return bloqueArchivo(datos, mime);
+  const grande = await sharp(datos).resize({ width: ANCHO_MIN_COMPROBANTE, kernel: "lanczos3" }).png().toBuffer();
+  return bloqueArchivo(grande, "image/png");
 }
 
 /** Un archivo que no se puede leer: el mensaje se le muestra a quien lo subio. */
