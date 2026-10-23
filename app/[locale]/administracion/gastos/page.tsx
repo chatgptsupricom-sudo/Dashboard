@@ -24,7 +24,7 @@ import {
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { SEDES } from "@/lib/compras/constants";
-import { useSedeFija } from "@/components/administracion/comunes";
+import { fechaCorta, useSedeFija } from "@/components/administracion/comunes";
 
 interface Kpi {
   id: string;
@@ -55,6 +55,11 @@ interface CuentaDesglose {
     factura: string;
     fecha: string;
     monto: number;
+    concepto?: string;
+    referencia?: string;
+    diario?: string;
+    montoMoneda?: number | null;
+    moneda?: string;
   }[];
 }
 
@@ -606,26 +611,62 @@ export default function GastosPresupuestoPage() {
                                     ? `Los ${c.proveedores.length} mayores de ${c.movimientos} movimientos`
                                     : `Movimientos (${c.proveedores.length})`}
                                 </p>
-                                <div className="space-y-1">
-                                  {c.proveedores.map((p, i) => (
-                                    <div
-                                      key={`${p.factura}-${i}`}
-                                      className="flex items-center justify-between text-sm py-1 border-b border-slate-200 last:border-0"
-                                    >
-                                      <span className="text-gray-700">
-                                        {p.proveedor}
-                                      </span>
-                                      <span className="text-gray-400 text-xs font-mono">
-                                        {p.factura}
-                                      </span>
-                                      <span className="text-gray-500 text-xs">
-                                        {p.fecha}
-                                      </span>
-                                      <span className="font-semibold text-gray-800">
-                                        {money(p.monto)}
-                                      </span>
-                                    </div>
-                                  ))}
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead className="text-xs text-gray-500">
+                                      <tr className="border-b border-slate-200">
+                                        <th className="py-1.5 pr-3 text-left font-medium">Fecha</th>
+                                        <th className="py-1.5 pr-3 text-left font-medium">Qué fue el gasto</th>
+                                        <th className="py-1.5 pr-3 text-left font-medium hidden md:table-cell">Documento</th>
+                                        <th className="py-1.5 text-right font-medium">Monto</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {c.proveedores.map((p, i) => (
+                                        <tr key={`${p.factura}-${i}`} className="border-b border-slate-200 last:border-0 align-top">
+                                          <td className="py-2 pr-3 text-xs text-gray-500 whitespace-nowrap">
+                                            {fechaCorta(p.fecha)}
+                                          </td>
+                                          <td className="py-2 pr-3 whitespace-normal">
+                                            <div className="font-medium text-gray-800 break-words">
+                                              {p.concepto || p.proveedor}
+                                            </div>
+                                            <div className="text-xs text-gray-500 break-words">
+                                              {p.concepto && p.proveedor !== p.concepto ? p.proveedor : ""}
+                                              {p.diario && (
+                                                <span className="text-gray-400">
+                                                  {p.concepto && p.proveedor !== p.concepto ? " · " : ""}
+                                                  {p.diario}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-[11px] text-gray-400 font-mono md:hidden">
+                                              {p.factura}
+                                              {p.referencia && ` · Ref. ${p.referencia}`}
+                                            </div>
+                                          </td>
+                                          <td className="py-2 pr-3 hidden md:table-cell">
+                                            <div className="text-xs font-mono text-gray-600">{p.factura}</div>
+                                            {p.referencia && (
+                                              <div className="text-[11px] text-gray-400 font-mono">Ref. {p.referencia}</div>
+                                            )}
+                                          </td>
+                                          <td className="py-2 text-right whitespace-nowrap">
+                                            <div className="font-semibold text-gray-800">{money(p.monto)}</div>
+                                            {p.montoMoneda != null && (
+                                              <div className="text-[11px] text-gray-400">
+                                                {p.moneda}{" "}
+                                                {p.montoMoneda.toLocaleString("es-VE", {
+                                                  minimumFractionDigits: 2,
+                                                  maximumFractionDigits: 2,
+                                                })}
+                                              </div>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
                                 </div>
                               </div>
                             </TableCell>
