@@ -12,10 +12,10 @@ interface VisitasSemanalesModalProps {
   apiPrefix: string;
   /** company_id para las lecturas (GET); null cuando no se manda (vendedor / gerente de operaciones). */
   queryCompanyId: number | null;
-  /** company_id para el alta (POST); null cuando no se manda (vendedor). */
+  /** company_id para el alta (POST); null cuando no se manda (vendedor / gerente de operaciones: la API usa su sede). */
   postCompanyId: number | null;
-  /** El gerente de operaciones ve el modal en solo lectura: sin formulario ni borrar. */
-  gerenteOpsMode: boolean;
+  /** Solo lectura (Inteligencia de Negocio): sin formulario ni borrar. */
+  soloLectura: boolean;
   /** Vendedores disponibles para el selector (de kpiData.sellers). */
   sellers: any[];
   defaultMes: string;
@@ -36,7 +36,7 @@ const EMPTY_FORM = {
 // StoplightReport.tsx (audit #23).
 export default function VisitasSemanalesModal({
   resumen,
-  isOpen, onClose, apiPrefix, queryCompanyId, postCompanyId, gerenteOpsMode, sellers, defaultMes,
+  isOpen, onClose, apiPrefix, queryCompanyId, postCompanyId, soloLectura, sellers, defaultMes,
 }: VisitasSemanalesModalProps) {
   const t = useTranslations("stoplight");
   const locale = useLocale();
@@ -196,7 +196,7 @@ export default function VisitasSemanalesModal({
           ) : (
             <div className="space-y-6">
               {/* Formulario Nueva Visita */}
-              {!gerenteOpsMode && (
+              {!soloLectura && (
               <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
                 <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("registrar_visita")}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -341,7 +341,7 @@ export default function VisitasSemanalesModal({
                           <th className="p-3 text-left font-medium text-slate-600">{t("vendedor")}</th>
                           <th className="p-3 text-left font-medium text-slate-600">{t("cliente")}</th>
                           <th className="p-3 text-center font-medium text-slate-600">{t("tipo")}</th>
-                          {!gerenteOpsMode && <th className="p-3 text-center font-medium text-slate-600">{t("acciones")}</th>}
+                          {!soloLectura && <th className="p-3 text-center font-medium text-slate-600">{t("acciones")}</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -364,7 +364,7 @@ export default function VisitasSemanalesModal({
                               )}
                             </td>
                             <td className="p-3 text-center">
-                              {!gerenteOpsMode && (
+                              {!soloLectura && (
                               <button
                                 onClick={() => remove(visita.id)}
                                 className="text-red-500 hover:text-red-700 text-xs"

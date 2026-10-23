@@ -4,7 +4,7 @@ import { marcarVisita, type EstadoVisita } from "@/lib/visitas/planificacion";
 
 /**
  * POST { item_id, estado: "realizada" | "no_realizada" | "planificada", nota }
- * Solo gerencia / superadmin (igual que registrar visitas en el Stoplight).
+ * Solo gerencia de ventas, gerente de operaciones y superadmin (igual que registrar visitas en el Stoplight).
  */
 export async function POST(request: NextRequest) {
   const acceso = await accesoPlanificacion(request);
