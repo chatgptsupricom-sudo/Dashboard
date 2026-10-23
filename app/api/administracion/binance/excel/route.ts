@@ -75,7 +75,12 @@ export async function GET(request: NextRequest) {
     cabecera(ws);
     for (const c of comprobantes) {
       const fila = ws.addRow({
-        fecha: c.fechaEstimada && !c.binance ? "Sin fecha" : fechaHora(c.fecha),
+        fecha:
+          c.fechaEstimada && !c.binance
+            ? c.soloDia
+              ? `${new Date(c.fecha).toLocaleDateString("es-VE", { timeZone: "America/Caracas", dateStyle: "short" })} (sin hora)`
+              : "Sin fecha"
+            : fechaHora(c.fecha),
         orden: c.orderId,
         monto: c.monto,
         moneda: c.moneda,

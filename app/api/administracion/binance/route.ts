@@ -7,6 +7,7 @@ import {
   borrarMovimientosSemana,
   conciliacionSemana,
   eliminarComprobante,
+  fechaDelNombre,
   fechaSinComprobante,
   guardarComprobante,
   guardarMovimientos,
@@ -71,13 +72,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, estado: true, leidas, recibidos: movs.length, ...r });
     }
     const leido = await leerComprobante(datos, archivo.type);
-    // Una captura recortada puede no traer la fecha: va a la semana elegida.
-    const fecha =
-      leido.fechaMs !== null
-        ? { fechaMs: leido.fechaMs, estimada: false }
-        : await fechaSinComprobante(leido.orderId, String(form.get("semana") || ""));
-    if (!fecha) {
-      return NextResponse.json({ error: "El comprobante no trae la fecha y falta la semana" }, { status: 400 });
+    // Una captura recortada puede no traer la fecha: se toma el dia del nombre
+    // del archivo ("1-02-10-2026.jpg") y, si tampoco, va a la semana elegida.
+    let fecha: { fechaMs: number; estimada: boolean; soloDia: boolean };
+    const diaDelNombre = fechaDelNombre(archivo.name);
+    if (leido.fechaMs !== null) {
+      fecha = { fechaMs: leido.fechaMs, estimada: false, soloDia: false };
+    } else if (diaDelNombre !== null) {
+      fecha = { fechaMs: diaDelNombre, estimada: true, soloDia: true };
+    } else {
+      const enSemana = await fechaSinComprobante(leido.orderId, String(form.get("semana") || ""));
+      if (!enSemana) {
+        return NextResponse.json({ error: "El comprobante no trae la fecha y falta la semana" }, { status: 400 });
+      }
+      fecha = { ...enSemana, soloDia: false };
     }
     const cids = Number(auth.payload?.cids);
     const r = await guardarComprobante(
@@ -99,6 +107,7 @@ export async function POST(request: NextRequest) {
       moneda: leido.moneda,
       fecha: new Date(fecha.fechaMs).toISOString(),
       fechaEstimada: fecha.estimada,
+      soloDia: fecha.soloDia,
     });
   } catch (e: any) {
     if (e instanceof ArchivoIlegible) {

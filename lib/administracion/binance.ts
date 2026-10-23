@@ -79,6 +79,8 @@ export type Comprobante = {
   fecha: string; // ISO UTC
   /** El comprobante no traia fecha: se guardo en la semana elegida al subirlo. */
   fechaEstimada: boolean;
+  /** Sin hora, pero con el dia: la fecha salio del nombre del archivo (1-02-10-2026.jpg). */
+  soloDia: boolean;
   /** Movimiento del estado de cuenta que se le asigno a mano, o null. */
   movimientoId: number | null;
   archivoNombre: string;
@@ -265,6 +267,9 @@ export function rangoSemana(lunes: string): { desde: number; hasta: number } | n
 const aMysql = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
 type BaseComprobante = Omit<Comprobante, "estado" | "binance">;
 
+/** Dia (YYYY-MM-DD) en hora de Caracas de una fecha ISO. */
+const diaCaracas = (iso: string) => new Date(Date.parse(iso) - OFFSET_CARACAS_MS).toISOString().slice(0, 10);
+
 const mismoMonto = (p: PagoBinance, c: BaseComprobante) =>
   p.moneda === c.moneda.toUpperCase() && Math.abs(p.monto - c.monto) < 1e-6;
 
@@ -300,7 +305,9 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     const libres = pagos.filter((p) => !usados.has(p.id) && mismoMonto(p, base));
     let pago: PagoBinance | null = null;
     if (base.fechaEstimada) {
-      pago = libres.length === 1 ? libres[0] : null;
+      // Con el dia del nombre del archivo solo cuentan los pagos de ese dia.
+      const posibles = base.soloDia ? libres.filter((p) => diaCaracas(p.fecha) === diaCaracas(base.fecha)) : libres;
+      pago = posibles.length === 1 ? posibles[0] : null;
     } else {
       const t = Date.parse(base.fecha);
       const dt = (p: PagoBinance) => Math.abs(Date.parse(p.fecha) - t);
@@ -353,7 +360,9 @@ export async function conciliacionSemana(lunes: string) {
     monto: Number(r.monto),
     moneda: String(r.moneda),
     fecha: r.fecha,
-    fechaEstimada: !!r.fecha_estimada,
+    // 0 = hora del comprobante, 1 = semana elegida, 2 = dia del nombre del archivo.
+    fechaEstimada: Number(r.fecha_estimada) > 0,
+    soloDia: Number(r.fecha_estimada) === 2,
     movimientoId: r.movimiento_id ?? null,
     archivoNombre: r.archivo_nombre,
     subidoPor: r.subido_por,
@@ -962,9 +971,41 @@ export async function fechaSinComprobante(orderId: string, lunes: string) {
   return { fechaMs: rango.desde + MEDIODIA_MS, estimada: true };
 }
 
+/**
+ * Dia del pago escrito en el nombre del archivo, para los comprobantes que no
+ * traen fecha. Administracion los nombra con un numero de secuencia delante:
+ * "1-02-10-2026.jpg", "2_02.10.2026.png", "3-20261002.jpeg". Solo vale si el
+ * nombre empieza con ese numero: "WhatsApp Image 2026-10-22..." es cuando se
+ * guardo la imagen, no cuando se pago. Dos cifras antes del año = dia-mes.
+ * Devuelve el mediodia de Caracas de ese dia, o null.
+ */
+export function fechaDelNombre(nombre: string): number | null {
+  const m = /^\s*\d+\s*[-_.\s]\s*(.+)$/.exec(nombre.replace(/\.[a-z0-9]{2,5}$/i, ""));
+  if (!m) return null;
+  const t = m[1];
+  const candidatos: [string, string, string][] = [];
+  let r: RegExpExecArray | null;
+  if ((r = /^(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})(?!\d)/.exec(t))) candidatos.push([r[1], r[2], r[3]]);
+  else if ((r = /^(\d{1,2})[-_.](\d{1,2})[-_.](\d{4}|\d{2})(?!\d)/.exec(t))) candidatos.push([r[3], r[2], r[1]]);
+  else if ((r = /^(\d{8})(?!\d)/.exec(t))) {
+    const s = r[1];
+    candidatos.push([s.slice(0, 4), s.slice(4, 6), s.slice(6, 8)]); // 20261002
+    candidatos.push([s.slice(4, 8), s.slice(2, 4), s.slice(0, 2)]); // 02102026
+  }
+  for (const [ys, ms, ds] of candidatos) {
+    const y = ys.length === 2 ? 2000 + Number(ys) : Number(ys);
+    const mes = Number(ms);
+    const dia = Number(ds);
+    const f = new Date(Date.UTC(y, mes - 1, dia));
+    if (y < 2020 || y > 2100 || f.getUTCMonth() !== mes - 1 || f.getUTCDate() !== dia) continue;
+    return Date.UTC(y, mes - 1, dia) + OFFSET_CARACAS_MS + MEDIODIA_MS;
+  }
+  return null;
+}
+
 /** Guarda el comprobante. Devuelve el que ya estaba si el ID de orden se repite. */
 export async function guardarComprobante(
-  leido: Leido & { fechaMs: number; estimada: boolean },
+  leido: Leido & { fechaMs: number; estimada: boolean; soloDia?: boolean },
   archivo: { nombre: string; mime: string; datos: Buffer },
   usuario: { email: string; cids: number | null },
 ): Promise<{ id: number } | { repetido: { fecha: string; subidoPor: string } }> {
@@ -980,7 +1021,7 @@ export async function guardarComprobante(
         leido.monto,
         leido.moneda,
         aMysql(leido.fechaMs),
-        leido.estimada ? 1 : 0,
+        leido.soloDia ? 2 : leido.estimada ? 1 : 0,
         archivo.nombre.slice(0, 200),
         archivo.mime,
         archivo.datos,

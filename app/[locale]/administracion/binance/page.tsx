@@ -49,6 +49,9 @@ function semanas(n = 12) {
 const fechaHora = (iso: string) =>
   new Date(iso).toLocaleString("es-VE", { timeZone: "America/Caracas", dateStyle: "short", timeStyle: "short" });
 
+const soloFecha = (iso: string) =>
+  new Date(iso).toLocaleDateString("es-VE", { timeZone: "America/Caracas", dateStyle: "short" });
+
 const cifra = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 
 /** Suma por moneda: Binance recibe USDT, USDC, BTC... y no se mezclan. */
@@ -107,7 +110,7 @@ export default function BinancePage() {
                 texto: `${json.recibidos} pagos recibidos (${json.nuevos} nuevos, ${json.repetidos} ya estaban)`,
               }
             : json.success
-            ? { nombre: lista[i].name, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${json.fechaEstimada ? "sin fecha, quedó en esta semana" : fechaHora(json.fecha)}` }
+            ? { nombre: lista[i].name, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${json.soloDia ? `${soloFecha(json.fecha)} (fecha del nombre del archivo)` : json.fechaEstimada ? "sin fecha, quedó en esta semana" : fechaHora(json.fecha)}` }
             : { nombre: lista[i].name, ok: false, texto: json.error || "Error" },
         );
       } catch {
@@ -289,7 +292,11 @@ export default function BinancePage() {
                     {comprobantes.map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">
-                          {c.fechaEstimada && !c.binance ? "Sin fecha" : fechaHora(c.fecha)}
+                          {c.fechaEstimada && !c.binance
+                            ? c.soloDia
+                              ? `${soloFecha(c.fecha)} (sin hora)`
+                              : "Sin fecha"
+                            : fechaHora(c.fecha)}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           <a
