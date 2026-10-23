@@ -205,7 +205,16 @@ export default function RecompraClientes({
                             <p className="text-[11px] text-zinc-400">
                               {c.rif}
                               {c.comprasAntes > 0 && (
-                                <span className="ml-2 text-amber-600">ya era cliente ({c.comprasAntes} compras antes)</span>
+                                <span className="ml-2 text-amber-600">
+                                  ya era cliente ({c.comprasAntes} compras antes)
+                                  {(() => {
+                                    const otras = c.sedesAntes.filter((s) => s !== c.sede).map((s) => SEDES[s] ?? s);
+                                    if (!otras.length) return null;
+                                    return c.sede != null && !c.sedesAntes.includes(c.sede)
+                                      ? <b> de otra sede: {otras.join(", ")}</b>
+                                      : <> · también en {otras.join(", ")}</>;
+                                  })()}
+                                </span>
                               )}
                             </p>
                           </td>

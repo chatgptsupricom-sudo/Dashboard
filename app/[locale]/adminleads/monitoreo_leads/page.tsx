@@ -856,6 +856,7 @@ export default function MonitoringPage() {
     seller: "",
     ubicacion: "",
     ciudad: "",
+    estatus: "",
   });
   const [viewMode, setViewMode] = useState<ViewMode>("tabla");
   const [reassigningId, setReassigningId] = useState<string | null>(null);
@@ -1080,6 +1081,7 @@ export default function MonitoringPage() {
           lead.name?.toLowerCase().includes(filters.search.toLowerCase()) &&
           (!filters.seller || String(lead.seller_id) === filters.seller) &&
           (!filters.ubicacion || lead.ubicacion_estado === filters.ubicacion) &&
+          (!filters.estatus || (lead.status || "NUEVO") === filters.estatus) &&
           (!sellerIdsByCiudad || sellerIdsByCiudad.has(String(lead.seller_id))),
       ),
     [rawLeads, filters, sellerIdsByCiudad],
@@ -1093,6 +1095,7 @@ export default function MonitoringPage() {
           lead.empresa?.toLowerCase().includes(filters.search.toLowerCase()) &&
           (!filters.seller || lead.sellerId === filters.seller) &&
           (!filters.ubicacion || lead.ubicacionEstado === filters.ubicacion) &&
+          (!filters.estatus || lead.estatus === filters.estatus) &&
           (!sellerIdsByCiudad || sellerIdsByCiudad.has(lead.sellerId ?? "")),
       ),
     [leads, filters, sellerIdsByCiudad],
@@ -1365,7 +1368,7 @@ export default function MonitoringPage() {
   return (
     <div className="space-y-6">
       {/* ── Filtros + Toggle ── */}
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1fr_auto_auto] gap-4 bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm items-center">
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto_auto] gap-4 bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm items-center">
         <div className="relative">
           <Search className="absolute left-3 top-3 w-4 h-4 text-zinc-400" />
           <input
@@ -1423,6 +1426,22 @@ export default function MonitoringPage() {
           {ubicacionOptions.map((u) => (
             <option key={u} value={u}>
               {u}
+            </option>
+          ))}
+        </select>
+
+        {/* Filtro estatus */}
+        <select
+          className="w-full py-2 px-3 bg-zinc-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-blue-500 text-zinc-600"
+          value={filters.estatus}
+          onChange={(e) =>
+            setFilters((f) => ({ ...f, estatus: e.target.value }))
+          }
+        >
+          <option value="">Todos los estatus</option>
+          {columns.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.title}
             </option>
           ))}
         </select>

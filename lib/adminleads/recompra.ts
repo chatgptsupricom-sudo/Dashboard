@@ -366,9 +366,10 @@ export async function importarExcel(
           vendedor, estatus, monto, factura_txt, observacion, importado_por, campana)
        VALUES ?
        ON DUPLICATE KEY UPDATE archivo = VALUES(archivo), hoja = VALUES(hoja), red_social = VALUES(red_social),
-         ubicacion = VALUES(ubicacion), vendedor = VALUES(vendedor),
+         ubicacion = VALUES(ubicacion),
+         vendedor = IF(estatus_original IS NULL, VALUES(vendedor), vendedor),
          estatus = IF(estatus_original IS NULL, VALUES(estatus), estatus),
-         monto = VALUES(monto), factura_txt = VALUES(factura_txt), observacion = VALUES(observacion),
+         monto = IF(estatus_original IS NULL, VALUES(monto), monto), factura_txt = VALUES(factura_txt), observacion = VALUES(observacion),
          importado_por = VALUES(importado_por),
          campana = VALUES(campana)`,
       [leads.slice(i, i + 500)],
@@ -657,6 +658,8 @@ export type ClienteRecompra = {
   primeraVenta: string;
   montoPrimera: number;
   comprasAntes: number;
+  /** Sedes de las compras de antes del lead: si no está la del lead, era cliente de otra sede. */
+  sedesAntes: number[];
   comprasDespues: number;
   montoDespues: number;
   primeraRecompra: string | null;
@@ -805,6 +808,7 @@ export async function calcularRecompra(opts: {
     const lista = compras.get(rif) ?? [];
     const limite = sumarDias(primero.venta!, VENTANA_PRIMERA_VENTA);
     const despues = lista.filter((c) => c.fecha > limite);
+    const antes = lista.filter((c) => c.fecha < entrada);
     clientes.push({
       rif,
       cliente: nombreCliente.get(rif) || primero.nombre,
@@ -815,7 +819,8 @@ export async function calcularRecompra(opts: {
       entrada,
       primeraVenta: primero.venta!,
       montoPrimera: r2(primero.monto),
-      comprasAntes: lista.filter((c) => c.fecha < entrada).length,
+      comprasAntes: antes.length,
+      sedesAntes: [...new Set(antes.map((c) => c.sede))],
       comprasDespues: despues.length,
       montoDespues: r2(despues.reduce((s, c) => s + c.monto, 0)),
       primeraRecompra: despues[0]?.fecha ?? null,
@@ -891,6 +896,7 @@ export type LeadPorRevisar = {
   telefono: string;
   vendedor: string;
   estatus: string | null;
+  monto: number | null; // el del Excel
   factura_txt: string | null;
   observacion: string | null;
   candidatos: Candidato[];
@@ -913,7 +919,7 @@ export async function revisarLeads(soloSede: number | null): Promise<LeadPorRevi
   await asegurarTablas();
   const { rows: leads } = await query(
     `SELECT id, company_id, nombre, DATE_FORMAT(fecha_interaccion, '%Y-%m-%d') AS fecha, telefono, vendedor,
-            estatus, factura_txt, observacion, rif
+            estatus, monto, factura_txt, observacion, rif
        FROM leads_historicos
       WHERE revisado = 0 AND fecha_interaccion IS NOT NULL
         AND ((estatus = 'CONCRETADO' AND rif IS NULL) OR estatus IS NULL OR estatus <> 'CONCRETADO')
@@ -998,7 +1004,7 @@ export async function revisarLeads(soloSede: number | null): Promise<LeadPorRevi
     candidatos.sort((a, b) => orden[a.via] - orden[b.via] || (a.fecha < b.fecha ? -1 : 1));
     out.push({
       id: l.id, company_id: l.company_id, tipo, nombre: l.nombre, fecha: l.fecha, telefono: l.telefono || "",
-      vendedor: l.vendedor || "", estatus: l.estatus, factura_txt: l.factura_txt, observacion: l.observacion,
+      vendedor: l.vendedor || "", estatus: l.estatus, monto: l.monto != null ? Number(l.monto) : null, factura_txt: l.factura_txt, observacion: l.observacion,
       candidatos: candidatos.slice(0, 3),
     });
   }

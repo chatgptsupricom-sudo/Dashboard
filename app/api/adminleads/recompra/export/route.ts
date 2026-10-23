@@ -75,20 +75,20 @@ export async function GET(request: NextRequest) {
       wsC,
       [
         "Cliente", "RIF", "Sede", "Origen del lead", "Vendedor", "Campaña / red", "Entró el lead",
-        "Primera venta", "Monto primera venta (USD)", "Compras antes del lead", "Compras después",
+        "Primera venta", "Monto primera venta (USD)", "Compras antes del lead", "Sedes donde compraba antes", "Compras después",
         "Monto después (USD)", "Primera recompra", "Días hasta recomprar", "Última compra",
       ],
-      [38, 14, 11, 12, 22, 26, 13, 13, 16, 13, 12, 16, 14, 13, 13],
+      [38, 14, 11, 12, 22, 26, 13, 13, 16, 13, 18, 12, 16, 14, 13, 13],
     );
     for (const c of data.clientes) {
       wsC.addRow([
         c.cliente, c.rif, sede(c.sede), c.origen, c.vendedor, c.campana, c.entrada, c.primeraVenta, c.montoPrimera,
-        c.comprasAntes, c.comprasDespues, c.montoDespues, c.primeraRecompra ?? "", c.diasHastaRecompra ?? "",
+        c.comprasAntes, c.sedesAntes.map(sede).join(", "), c.comprasDespues, c.montoDespues, c.primeraRecompra ?? "", c.diasHastaRecompra ?? "",
         c.ultimaCompra ?? "",
       ]);
     }
     wsC.getColumn(9).numFmt = USD;
-    wsC.getColumn(12).numFmt = USD;
+    wsC.getColumn(13).numFmt = USD;
 
     // --- Compras posteriores ---
     const wsD = wb.addWorksheet("Compras después");
