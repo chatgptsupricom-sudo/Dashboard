@@ -3,6 +3,7 @@ import http from "http";
 import https from "https";
 import tls from "tls";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { db, query } from "@/lib/db";
 
 /**
@@ -10,13 +11,13 @@ import { db, query } from "@/lib/db";
  * Binance de Supricom es una sola para todas las sedes.
  *
  * Administracion sube los comprobantes (capturas de la app de quien pago),
- * Claude lee de cada uno el ID de orden, el monto, la moneda y la fecha, y se
+ * la IA (OpenAI si hay OPENAI_API_KEY, si no Claude) lee de cada uno el ID de orden, el monto, la moneda y la fecha, y se
  * guardan en `binance_comprobantes` (se crea sola). El cruce contra Binance no
  * se guarda: se hace cada vez que se abre la semana, con el historial de
  * Binance Pay (`GET /sapi/v1/pay/transactions`, 18 meses hacia atras).
  *
  * Necesita BINANCE_API_KEY / BINANCE_API_SECRET (una key de solo lectura) y
- * ANTHROPIC_API_KEY para leer los comprobantes.
+ * OPENAI_API_KEY (o ANTHROPIC_API_KEY) para leer los comprobantes.
  *
  * Sin la API, Administracion sube el estado de cuenta de Binance Pay (capturas o
  * PDF de la lista de movimientos: fecha, quien, monto, moneda). Eso no trae el
@@ -480,12 +481,80 @@ let cliente: Anthropic | null = null;
 const WORKSPACE = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
 const anthropic = () =>
   (cliente ??= new Anthropic(WORKSPACE ? { defaultHeaders: { "anthropic-workspace-id": WORKSPACE } } : {}));
+let clienteOpenAI: OpenAI | null = null;
+const openai = () => (clienteOpenAI ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY }));
+// El mismo modelo de vision que usa el resto del panel.
+const MODELO_OPENAI = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
 
-function bloqueArchivo(datos: Buffer, mime: string): Anthropic.ContentBlockParam {
-  const data = datos.toString("base64");
-  return mime === "application/pdf"
-    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data } }
-    : { type: "image", source: { type: "base64", media_type: mime as "image/jpeg", data } };
+/** Hay con que leer: OpenAI (el que se usa si esta) o Claude. */
+export const hayIA = () => !!(process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY);
+
+type Archivo = { mime: string; data: string };
+
+function bloqueArchivo(datos: Buffer, mime: string): Archivo {
+  return { mime, data: datos.toString("base64") };
+}
+
+/**
+ * Pide a la IA que lea los archivos y devuelva JSON con `esquema`. Usa OpenAI
+ * si hay OPENAI_API_KEY y si no Claude. null = la respuesta no era JSON.
+ */
+async function leerConIA(
+  sistema: string,
+  esquema: object,
+  archivos: Archivo[],
+  pedido: string,
+  maxTokens: number,
+): Promise<any> {
+  let texto = "";
+  if (process.env.OPENAI_API_KEY) {
+    const r = await openai().chat.completions.create({
+      model: MODELO_OPENAI,
+      max_tokens: maxTokens,
+      response_format: { type: "json_schema", json_schema: { name: "lectura", strict: true, schema: esquema as any } },
+      messages: [
+        { role: "system", content: sistema },
+        {
+          role: "user",
+          content: [
+            ...archivos.map((a): OpenAI.Chat.ChatCompletionContentPart =>
+              a.mime === "application/pdf"
+                ? { type: "file", file: { filename: "archivo.pdf", file_data: `data:application/pdf;base64,${a.data}` } }
+                : { type: "image_url", image_url: { url: `data:${a.mime};base64,${a.data}`, detail: "high" } },
+            ),
+            { type: "text", text: pedido },
+          ],
+        },
+      ],
+    });
+    texto = r.choices[0]?.message?.content || "";
+  } else {
+    const r = await anthropic().messages.create({
+      model: MODELO,
+      max_tokens: maxTokens,
+      system: sistema,
+      output_config: { format: { type: "json_schema", schema: esquema as any }, effort: "low" },
+      messages: [
+        {
+          role: "user",
+          content: [
+            ...archivos.map((a): Anthropic.ContentBlockParam =>
+              a.mime === "application/pdf"
+                ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data } }
+                : { type: "image", source: { type: "base64", media_type: a.mime as "image/jpeg", data: a.data } },
+            ),
+            { type: "text", text: pedido },
+          ],
+        },
+      ],
+    });
+    texto = r.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  }
+  try {
+    return JSON.parse(texto);
+  } catch {
+    return null;
+  }
 }
 
 /** fechaMs null = la captura no trae la fecha. */
@@ -493,20 +562,7 @@ export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: n
 
 /** Lee el comprobante. null = no es un comprobante de Binance o le faltan datos. */
 export async function leerComprobante(datos: Buffer, mime: string): Promise<Leido | null> {
-  const documento = bloqueArchivo(datos, mime);
-  const respuesta = await anthropic().messages.create({
-    model: MODELO,
-    max_tokens: 1000,
-    system: INSTRUCCIONES,
-    output_config: { format: { type: "json_schema", schema: ESQUEMA as any }, effort: "low" },
-    messages: [{ role: "user", content: [documento, { type: "text", text: "Lee este comprobante." }] }],
-  });
-  let l: any;
-  try {
-    l = JSON.parse(respuesta.content.map((b) => (b.type === "text" ? b.text : "")).join(""));
-  } catch {
-    return null;
-  }
+  const l = await leerConIA(INSTRUCCIONES, ESQUEMA, [bloqueArchivo(datos, mime)], "Lee este comprobante.", 1000);
   const orderId = String(l?.order_id || "").replace(/\D/g, "");
   const monto = Number(l?.monto);
   const moneda = String(l?.moneda || "").trim().toUpperCase().slice(0, 12);
@@ -529,17 +585,18 @@ const INSTRUCCIONES_ESTADO =
   "una fila que sale en dos pedazos va una sola vez. " +
   "Si la imagen no es un historial de Binance, devuelve la lista vacia.";
 
-// Claude achica cada imagen a ~1568 px de lado largo: una captura larga del
-// historial quedaria con los montos ilegibles. Se parte en franjas que se
-// solapan un poco (la fila repetida la descarta el UNIQUE de la tabla).
-const ANCHO_MAX = 1600;
-const ALTO_FRANJA = 1400;
-const SOLAPE = 150;
-const MAX_FRANJAS = 20;
+// La IA achica cada imagen (OpenAI deja el lado corto en 768 px; Claude, el
+// largo en ~1568): una captura larga del historial quedaria con los montos
+// ilegibles. Se parte en franjas bajas que se solapan un poco (la fila
+// repetida la descarta el UNIQUE de la tabla).
+const ANCHO_MAX = 1500;
+const ALTO_FRANJA = 700;
+const SOLAPE = 100;
+const MAX_FRANJAS = 30;
 // El limite de la API por imagen es 5 MB.
 const MAX_IMAGEN_BYTES = 4.5 * 1024 * 1024;
 
-async function bloquesEstado(datos: Buffer, mime: string): Promise<Anthropic.ContentBlockParam[]> {
+async function bloquesEstado(datos: Buffer, mime: string): Promise<Archivo[]> {
   if (mime === "application/pdf") return [bloqueArchivo(datos, mime)];
   const sharp = (await import("sharp")).default;
   const meta = await sharp(datos).metadata();
@@ -550,7 +607,7 @@ async function bloquesEstado(datos: Buffer, mime: string): Promise<Anthropic.Con
     if (img === datos && datos.length <= MAX_IMAGEN_BYTES) return [bloqueArchivo(datos, mime)];
     return [bloqueArchivo(await sharp(img).png().toBuffer(), "image/png")];
   }
-  const bloques: Anthropic.ContentBlockParam[] = [];
+  const bloques: Archivo[] = [];
   for (let top = 0; top < height; top += ALTO_FRANJA - SOLAPE) {
     if (bloques.length >= MAX_FRANJAS) {
       throw new ArchivoIlegible("La captura es demasiado larga: súbela en varias partes");
@@ -596,24 +653,8 @@ const ESQUEMA_ESTADO = {
  * toma como de Caracas (`ajustarZona` corrige si venia en UTC).
  */
 export async function leerEstadoDeCuenta(datos: Buffer, mime: string): Promise<{ movs: Movimiento[]; leidas: number }> {
-  // En streaming: un PDF de muchas paginas puede pasar del tiempo de una llamada normal.
-  const respuesta = await anthropic()
-    .messages.stream({
-      model: MODELO,
-      max_tokens: 32000,
-      system: INSTRUCCIONES_ESTADO,
-      output_config: { format: { type: "json_schema", schema: ESQUEMA_ESTADO as any }, effort: "low" },
-      messages: [
-        { role: "user", content: [...(await bloquesEstado(datos, mime)), { type: "text", text: "Lee estos movimientos." }] },
-      ],
-    })
-    .finalMessage();
-  let l: any;
-  try {
-    l = JSON.parse(respuesta.content.map((b) => (b.type === "text" ? b.text : "")).join(""));
-  } catch {
-    return { movs: [], leidas: 0 };
-  }
+  // 16000: el tope de salida de gpt-4o (unas 300 filas).
+  const l = await leerConIA(INSTRUCCIONES_ESTADO, ESQUEMA_ESTADO, await bloquesEstado(datos, mime), "Lee estos movimientos.", 16000);
   const filas: any[] = Array.isArray(l?.movimientos) ? l.movimientos : [];
   const movs: Movimiento[] = [];
   for (const f of filas) {

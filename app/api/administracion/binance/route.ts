@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
@@ -10,6 +9,7 @@ import {
   fechaSinComprobante,
   guardarComprobante,
   guardarMovimientos,
+  hayIA,
   leerComprobante,
   leerEstadoDeCuenta,
   rangoSemana,
@@ -41,8 +41,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: "Falta configurar ANTHROPIC_API_KEY en el servidor" }, { status: 503 });
+  if (!hayIA()) {
+    return NextResponse.json({ error: "Falta configurar OPENAI_API_KEY en el servidor" }, { status: 503 });
   }
   try {
     const form = await request.formData();
@@ -102,17 +102,16 @@ export async function POST(request: NextRequest) {
       fechaEstimada: fecha.estimada,
     });
   } catch (e: any) {
-    if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {
-      return NextResponse.json({ error: "La IA no está configurada en el servidor" }, { status: 503 });
-    }
-    if (e instanceof Anthropic.RateLimitError) {
-      return NextResponse.json({ error: "La IA está saturada, intenta en un minuto" }, { status: 429 });
-    }
     if (e instanceof ArchivoIlegible) {
       return NextResponse.json({ error: e.message }, { status: 422 });
     }
-    if (e instanceof Anthropic.BadRequestError) {
-      return NextResponse.json({ error: `La IA no pudo leer el archivo: ${e.message.slice(0, 200)}` }, { status: 422 });
+    // Error de la API de OpenAI o de Claude (los dos SDK traen `status`): sin
+    // saldo, key mala, saturada... el mensaje del proveedor dice cual.
+    if (typeof e?.status === "number") {
+      return NextResponse.json(
+        { error: `La IA no pudo leer el archivo: ${String(e.message).slice(0, 200)}` },
+        { status: 422 },
+      );
     }
     console.error("[binance] subir archivo:", e?.message);
     // Pantalla interna: el detalle ayuda a saber si fallo la IA o la base.
