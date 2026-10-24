@@ -1,6 +1,8 @@
 import { query } from "@/lib/db";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import { filtroBancoGerente } from "@/lib/gerente-marca/banco";
+import { ROL_GERENTE_MARCA } from "@/lib/gerente-marca/tipos";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -11,12 +13,17 @@ export async function GET(request: NextRequest) {
     "seller",
     "diseñador",
     ROL_BI,
+    ROL_GERENTE_MARCA,
   ]);
   if (auth.error) return auth.error;
 
   try {
+    const deSusMarcas = await filtroBancoGerente(auth.payload);
     const result = await query(
-      `SELECT DISTINCT category FROM product_images WHERE category IS NOT NULL AND category != '' ORDER BY category ASC`
+      `SELECT DISTINCT category FROM product_images pi
+        WHERE category IS NOT NULL AND category != ''${deSusMarcas ? ` AND ${deSusMarcas.sql}` : ""}
+        ORDER BY category ASC`,
+      deSusMarcas?.params ?? []
     );
     const categories = (result.rows || []).map((r: any) => r.category);
     return NextResponse.json({ success: true, categories });

@@ -22,6 +22,7 @@ export enum UserRole {
   PROCESOS = "procesos",
   IT = "it",
   INTELIGENCIA_NEGOCIO = "inteligencia de negocio",
+  GERENTE_MARCA = "gerente de marca",
 }
 
 // Permisos por rol
@@ -102,6 +103,7 @@ export const rolePermissions: RolePermissions = {
       "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
       "organigrama", // Organigrama y actividades de cada cargo (también rol Procesos)
       "flujogramas", // Flujogramas de procesos (también rol Procesos)
+      "gerencia_marca", // Lo que ve cada Gerente de Marca y a quién se le asigna cada marca
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -525,6 +527,16 @@ export const rolePermissions: RolePermissions = {
       "cxc_tiempo_cobro",
       "cxc_sobregiro",
     ],
+  },
+  // Gerente de Marca: solo las marcas que el SuperAdmin le asigna, en
+  // Valencia y Caracas (lib/gerente-marca/). Solo lee.
+  [UserRole.GERENTE_MARCA]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "gm_banco_imagenes", "actividad"],
   },
 };
 
