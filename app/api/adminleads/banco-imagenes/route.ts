@@ -1,6 +1,8 @@
 import { query } from "@/lib/db";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import { filtroBancoGerente } from "@/lib/gerente-marca/banco";
+import { ROL_GERENTE_MARCA } from "@/lib/gerente-marca/tipos";
 import { NextRequest, NextResponse } from "next/server";
 
 // Vendedores solo consultan (GET, desde /vendedores/banco-imagenes); subir y
@@ -10,7 +12,9 @@ import { NextRequest, NextResponse } from "next/server";
 // El diseñador tambien administra el banco completo: su pantalla
 // /disenador/banco-imagenes reexporta la de adminleads, asi que necesita
 // lectura y escritura. Sin el en estas listas la pantalla no cargaba nada.
-const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador", ROL_BI];
+// El Gerente de Marca solo consulta, y solo los flyers de sus marcas
+// (lib/gerente-marca/banco.ts).
+const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador", ROL_BI, ROL_GERENTE_MARCA];
 const ROLES_ESCRITURA = ["adminleads", "gerente de operaciones", "diseñador"];
 
 // Tamano maximo por archivo.
@@ -82,6 +86,12 @@ export async function GET(request: NextRequest) {
     if (category) {
       where += " AND pi.category = ?";
       params.push(category);
+    }
+
+    const deSusMarcas = await filtroBancoGerente(auth.payload);
+    if (deSusMarcas) {
+      where += ` AND ${deSusMarcas.sql}`;
+      params.push(...deSusMarcas.params);
     }
 
     const countResult = await query(

@@ -274,6 +274,8 @@ export function LoginForm() {
         router.push(`/${locale}/notas-credito`);
       } else if (role === "inteligencia de negocio") {
         router.push(`/${locale}/inteligencia_negocio`);
+      } else if (role === "gerente de marca") {
+        router.push(`/${locale}/gerente_marca`);
       } else {
         console.log("Redirigiendo a /dashboard por fallo de coincidencia");
         router.push(`/${locale}/dashboard`);
