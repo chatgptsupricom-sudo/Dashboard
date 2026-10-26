@@ -18,11 +18,14 @@
 // ventas lo recortan con rangoSmartbit() de lib/smartbit.ts.
 //
 // Requiere antes sql/ventas_smartbit_numero_serial.sql (columnas numero y
-// serial). Se pegan/importan en el phpMyAdmin en orden: 01_borrar, 02_facturas,
-// 03_renglones_*, 99_control. Se puede volver a correr todo: 01 borra la sede.
+// serial). Se importan (.sql.gz) en el phpMyAdmin de a uno y en orden:
+// 01_borrar, 02_facturas, 03_renglones_*, 99_control. Cualquier archivo se
+// puede volver a importar si se corta: 02 actualiza lo repetido y cada 03 borra
+// antes sus documentos. 01 borra la sede entera (empezar de cero).
 
 const fs = require("fs");
 const path = require("path");
+const zlib = require("zlib");
 const XLSX = require("xlsx");
 
 const [cidArg, excel, salidaDir = "."] = process.argv.slice(2);
@@ -31,7 +34,9 @@ if (!companyId || !excel) {
   console.error("uso: node scripts/smartbit-historico-a-sql.cjs <company_id> <Ventas_historico.xlsx> [carpeta_salida]");
   process.exit(1);
 }
-const POR_ARCHIVO = 25000;
+// El phpMyAdmin de EasyPanel corta la conexión con un archivo grande (el de
+// 260.000 renglones juntos no pasó): cada parte tiene que importarse en segundos.
+const POR_ARCHIVO = 15000;
 const POR_INSERT = 500;
 
 // Serial de Excel o "2026-03-02" / "02/03/2026" -> "2026-03-02"
@@ -76,7 +81,11 @@ const c = {
   vend: d.i("Vendedor"), sku: d.i("SKU"), prod: d.i("Producto"), serial: d.i("Serial"), unid: d.i("Unidades"),
   monto: d.i("Monto USD"),
 };
-const renglones = [];
+// Los renglones se agrupan por documento: cada archivo 03_* lleva documentos
+// enteros y empieza borrando los suyos, así se puede volver a importar uno que
+// se cortó sin duplicar nada.
+const porDoc = new Map(); // numero -> valores
+let renglones = 0;
 const porAnio = new Map(); // año -> { renglones, venta }
 let conSerial = 0;
 for (const r of d.filas) {
@@ -90,11 +99,14 @@ for (const r of d.filas) {
   a.renglones++;
   a.venta += venta;
   porAnio.set(f.slice(0, 4), a);
-  renglones.push(
-    `(${companyId},'${f}',${esc(numeroDoc(r[c.doc], trn === "NCC"), 30)},NULL,NULL,${esc(r[c.vend], 150)},` +
+  const numero = numeroDoc(r[c.doc], trn === "NCC");
+  if (!porDoc.has(numero)) porDoc.set(numero, []);
+  porDoc.get(numero).push(
+    `(${companyId},'${f}',${esc(numero, 30)},NULL,NULL,${esc(r[c.vend], 150)},` +
       `${esc(r[c.rif], 60)},${esc(r[c.cliente], 255)},${esc(r[c.sku], 80)},${esc(r[c.prod], 255)},` +
       `${esc(r[c.serial], 80)},NULL,${venta.toFixed(2)},${unidades},NULL)`,
   );
+  renglones++;
 }
 
 // ── Resumen por factura -> ventas_smartbit_facturas ──
@@ -115,22 +127,24 @@ for (const r of h.filas) {
   );
 }
 
-if (!renglones.length || !facturas.length) {
+if (!renglones || !facturas.length) {
   console.error("El Excel no trae renglones FV/NCC o facturas.");
   process.exit(1);
 }
 
 const ventaRenglones = [...porAnio.values()].reduce((s, a) => s + a.venta, 0);
-const inserts = (tabla, columnas, valores) => {
+const inserts = (tabla, columnas, valores, alFinal = "") => {
   const out = [];
   for (let i = 0; i < valores.length; i += POR_INSERT) {
-    out.push(`INSERT INTO supricom_panel.${tabla} (${columnas}) VALUES\n${valores.slice(i, i + POR_INSERT).join(",\n")};`);
+    out.push(`INSERT INTO supricom_panel.${tabla} (${columnas}) VALUES\n${valores.slice(i, i + POR_INSERT).join(",\n")}${alFinal};`);
   }
   return out;
 };
 const escribir = (nombre, lineas) => {
   const destino = path.join(salidaDir, nombre);
   fs.writeFileSync(destino, lineas.join("\n") + "\n");
+  // phpMyAdmin importa el .gz directo: sube mucho menos.
+  fs.writeFileSync(`${destino}.gz`, zlib.gzipSync(fs.readFileSync(destino)));
   console.log(`${destino}  (${(fs.statSync(destino).size / 1e6).toFixed(1)} MB)`);
 };
 
@@ -144,29 +158,50 @@ escribir("01_borrar_sede.sql", [
   `DELETE FROM supricom_panel.ventas_smartbit WHERE company_id = ${companyId};`,
   `DELETE FROM supricom_panel.ventas_smartbit_facturas WHERE company_id = ${companyId};`,
 ]);
+// Se puede volver a importar: lo repetido se actualiza (llave company_id + numero).
 escribir("02_facturas.sql", [
   `-- ${facturas.length} facturas y devoluciones de la sede ${companyId}, venta neta ${ventaFacturas.toFixed(2)}`,
-  ...inserts("ventas_smartbit_facturas", "company_id, fecha, numero, rif, cliente, vendedor, unidades, venta", facturas),
+  ...inserts(
+    "ventas_smartbit_facturas",
+    "company_id, fecha, numero, rif, cliente, vendedor, unidades, venta",
+    facturas,
+    "\nON DUPLICATE KEY UPDATE fecha = VALUES(fecha), rif = VALUES(rif), cliente = VALUES(cliente), vendedor = VALUES(vendedor), unidades = VALUES(unidades), venta = VALUES(venta)",
+  ),
 ]);
-const partes = Math.ceil(renglones.length / POR_ARCHIVO);
-for (let p = 0; p < partes; p++) {
-  const tramo = renglones.slice(p * POR_ARCHIVO, (p + 1) * POR_ARCHIVO);
-  escribir(`03_renglones_${String(p + 1).padStart(2, "0")}_de_${String(partes).padStart(2, "0")}.sql`, [
-    `-- Renglones ${p * POR_ARCHIVO + 1} a ${p * POR_ARCHIVO + tramo.length} de ${renglones.length} (sede ${companyId})`,
+// Documentos enteros por archivo, hasta ~POR_ARCHIVO renglones.
+const tramos = [];
+let actual = null;
+for (const [numero, valores] of porDoc) {
+  if (!actual || actual.valores.length >= POR_ARCHIVO) tramos.push((actual = { numeros: [], valores: [] }));
+  actual.numeros.push(numero);
+  actual.valores.push(...valores);
+}
+let hechos = 0;
+tramos.forEach((t, p) => {
+  const lista = t.numeros.map((n) => esc(n, 30));
+  const borrar = [];
+  for (let i = 0; i < lista.length; i += 1000) {
+    borrar.push(`DELETE FROM supricom_panel.ventas_smartbit WHERE company_id = ${companyId} AND numero IN (${lista.slice(i, i + 1000).join(",")});`);
+  }
+  escribir(`03_renglones_${String(p + 1).padStart(2, "0")}_de_${String(tramos.length).padStart(2, "0")}.sql`, [
+    `-- Renglones ${hechos + 1} a ${hechos + t.valores.length} de ${renglones} (sede ${companyId}), ${t.numeros.length} documentos.`,
+    `-- Si se corta, se vuelve a importar este mismo archivo: primero borra sus documentos.`,
+    ...borrar,
     ...inserts(
       "ventas_smartbit",
       "company_id, fecha, numero, id_sucursal, sucursal, vendedor, codigo_cliente, cliente, codigo_articulo, articulo, serial, linea, venta, unidades, costo",
-      tramo,
+      t.valores,
     ),
   ]);
-}
+  hechos += t.valores.length;
+});
 escribir("99_control.sql", [
-  `-- Tiene que dar: ${renglones.length} renglones (${conSerial} con serial), venta ${ventaRenglones.toFixed(2)}; ${facturas.length} facturas, venta ${ventaFacturas.toFixed(2)}`,
+  `-- Tiene que dar: ${renglones} renglones (${conSerial} con serial), venta ${ventaRenglones.toFixed(2)}; ${facturas.length} facturas, venta ${ventaFacturas.toFixed(2)}`,
   `SELECT COUNT(*) AS renglones, SUM(serial IS NOT NULL) AS con_serial, SUM(venta) AS venta FROM supricom_panel.ventas_smartbit WHERE company_id = ${companyId};`,
   `SELECT COUNT(*) AS facturas, SUM(venta) AS venta FROM supricom_panel.ventas_smartbit_facturas WHERE company_id = ${companyId};`,
   `-- Por año:`,
   ...[...porAnio].sort().map(([anio, a]) => `--   ${anio}: ${a.renglones} renglones, venta ${a.venta.toFixed(2)}`),
   `SELECT YEAR(fecha) AS anio, COUNT(*) AS renglones, SUM(venta) AS venta FROM supricom_panel.ventas_smartbit WHERE company_id = ${companyId} GROUP BY anio ORDER BY anio;`,
 ]);
-console.log(`${renglones.length} renglones (${conSerial} con serial), venta ${ventaRenglones.toFixed(2)}; ${facturas.length} facturas, venta ${ventaFacturas.toFixed(2)}`);
+console.log(`${renglones} renglones (${conSerial} con serial), venta ${ventaRenglones.toFixed(2)}; ${facturas.length} facturas, venta ${ventaFacturas.toFixed(2)}`);
 if (Math.abs(ventaRenglones - ventaFacturas) > 5) console.warn("OJO: la suma de los renglones no cuadra con la del resumen por factura.");
