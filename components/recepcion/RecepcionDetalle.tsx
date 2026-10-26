@@ -55,6 +55,7 @@ import {
 } from "@/components/seguridad/mercancia-ui";
 import FotoCaptura, { type ArchivoRecepcion } from "./FotoCaptura";
 import EscenaRecepcion from "./EscenaRecepcion";
+import CruceOdoo from "./CruceOdoo";
 
 /**
  * Detalle de una recepcion por packing list.
@@ -1778,16 +1779,26 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     ))}
                   </ul>
                 )}
-                {(resultadoOdoo.sin_producto || []).length > 0 && (
-                  <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    <p className="font-semibold">{t("odoo.sin_producto")}</p>
-                    <ul className="list-disc list-inside">
-                      {resultadoOdoo.sin_producto!.map((x) => (
-                        <li key={x}>{x}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                {(resultadoOdoo.sin_producto || []).length > 0 &&
+                  rec.odoo_estado !== "cargando" &&
+                  (rec.odoo_purchase_order_id ? (
+                    // Cruzar con IA los renglones sin producto y cargar lo que faltaba.
+                    <CruceOdoo
+                      recepcionId={rec.id}
+                      faltaCargar={rec.odoo_estado === "cargado"}
+                      puedeCrearFicha={esCompras}
+                      onCambio={(detalle) => (detalle?.recepcion ? aplicar(detalle, false) : void cargar(false))}
+                    />
+                  ) : (
+                    <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      <p className="font-semibold">{t("odoo.sin_producto")}</p>
+                      <ul className="list-disc list-inside">
+                        {resultadoOdoo.sin_producto!.map((x) => (
+                          <li key={x}>{x}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 {(resultadoOdoo.en_entrada || []).length > 0 && (
                   <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     {t("odoo.en_entrada", { lista: resultadoOdoo.en_entrada!.join(", ") })}
