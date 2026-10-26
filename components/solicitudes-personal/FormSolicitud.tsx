@@ -95,10 +95,10 @@ export function FormSolicitud({
         </DialogHeader>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Etiqueta texto="Cargo *">
+          <Etiqueta texto="Cargo *" ayuda="El nombre del puesto. Ej.: Vendedor de calle, Analista de cobranza">
             <input className={inputCls} value={f.cargo} onChange={(e) => set("cargo", e.target.value)} maxLength={160} />
           </Etiqueta>
-          <Etiqueta texto="Área o unidad *">
+          <Etiqueta texto="Área o unidad *" ayuda="El área donde va a trabajar la persona">
             <select className={inputCls} value={f.area} onChange={(e) => set("area", e.target.value)}>
               <option value="">Elige…</option>
               {UNIDADES.map((a) => (
@@ -108,7 +108,7 @@ export function FormSolicitud({
               ))}
             </select>
           </Etiqueta>
-          <Etiqueta texto="Sede *" ayuda={sedeFija ? "La de tu usuario" : undefined}>
+          <Etiqueta texto="Sede *" ayuda={sedeFija ? "La de tu usuario" : "Dónde va a trabajar"}>
             <select className={inputCls} value={f.sede} disabled={!!sedeFija} onChange={(e) => set("sede", Number(e.target.value))}>
               {Object.entries(SEDES_SELECCION).map(([id, n]) => (
                 <option key={id} value={id}>
@@ -117,11 +117,11 @@ export function FormSolicitud({
               ))}
             </select>
           </Etiqueta>
-          <Etiqueta texto="Cantidad de personas *">
+          <Etiqueta texto="Cantidad de personas *" ayuda="Cuántas personas para este mismo cargo">
             <input type="number" min={1} max={50} className={inputCls} value={f.cantidad} onChange={(e) => set("cantidad", Number(e.target.value))} />
           </Etiqueta>
 
-          <Etiqueta texto="Motivo *">
+          <Etiqueta texto="Motivo *" ayuda="Puesto nuevo = no existía. Reemplazo = alguien se va o se fue">
             <select className={inputCls} value={f.motivo} onChange={(e) => set("motivo", e.target.value as Motivo)}>
               {(Object.keys(MOTIVOS) as Motivo[]).map((m) => (
                 <option key={m} value={m}>
@@ -131,7 +131,7 @@ export function FormSolicitud({
             </select>
           </Etiqueta>
           {f.motivo === "reemplazo" ? (
-            <Etiqueta texto="¿A quién reemplaza? *">
+            <Etiqueta texto="¿A quién reemplaza? *" ayuda="Nombre de quien deja el puesto. Ej.: María Pérez (renunció el 15/10)">
               <input className={inputCls} value={f.reemplaza} onChange={(e) => set("reemplaza", e.target.value)} maxLength={160} />
             </Etiqueta>
           ) : (
@@ -155,21 +155,21 @@ export function FormSolicitud({
               ))}
             </div>
           </Etiqueta>
-          <Etiqueta texto="Fecha deseada de ingreso">
+          <Etiqueta texto="Fecha deseada de ingreso" ayuda="Cuándo te gustaría que empiece. Opcional">
             <input type="date" className={inputCls} value={f.fecha_deseada} onChange={(e) => set("fecha_deseada", e.target.value)} />
           </Etiqueta>
 
           <div className="sm:col-span-2">
-            <Etiqueta texto="Perfil y funciones *" ayuda="Qué va a hacer la persona y qué se espera de ella">
+            <Etiqueta texto="Perfil y funciones *" ayuda="Qué va a hacer y qué se espera de ella. Ej.: Visitar 8 clientes al día en la zona centro, levantar pedidos y cobrar">
               <textarea className={`${inputCls} min-h-24`} value={f.perfil} onChange={(e) => set("perfil", e.target.value)} maxLength={4000} />
             </Etiqueta>
           </div>
           <div className="sm:col-span-2">
-            <Etiqueta texto="Requisitos" ayuda="Estudios, experiencia, conocimientos">
+            <Etiqueta texto="Requisitos" ayuda="Estudios, experiencia, conocimientos. Ej.: TSU en administración, 2 años en ventas, carro propio">
               <textarea className={`${inputCls} min-h-20`} value={f.requisitos} onChange={(e) => set("requisitos", e.target.value)} maxLength={4000} />
             </Etiqueta>
           </div>
-          <Etiqueta texto="Salario o rango" ayuda="Opcional">
+          <Etiqueta texto="Salario o rango" ayuda="Opcional. Ej.: $500–$700 + comisión">
             <input className={inputCls} value={f.salario} onChange={(e) => set("salario", e.target.value)} maxLength={120} />
           </Etiqueta>
         </div>
