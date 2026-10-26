@@ -102,6 +102,7 @@ export const rolePermissions: RolePermissions = {
       "organigrama", // Organigrama y actividades de cada cargo (también rol Procesos)
       "flujogramas", // Flujogramas de procesos (también rol Procesos)
       "seleccion_personal", // Matriz de selección de personal (también RRHH)
+      "asistencia", // Asistencia por biométrico (también RRHH)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -305,7 +306,7 @@ export const rolePermissions: RolePermissions = {
     sections: [
       "politicas", // Políticas y Acuerdos (lib/politicas)
       "dashboard", // KPIs globales de personal
-      "asistencia", // Control de biométricos (Valencia/Caracas)
+      "asistencia", // Asistencia por biométrico: carga del Excel, retardos y ausencias (lib/asistencia)
       "recibos_pago", // Emisión automatizada con firma digital
       "seleccion_personal", // Matriz de rastreo de selección de personal (lib/seleccion)
       "solicitudes_permiso", // Gestión de ausencias y vacaciones
