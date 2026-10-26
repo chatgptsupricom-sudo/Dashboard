@@ -10,6 +10,7 @@ import {
   FUENTES,
   META_DIAS_DEFECTO,
   SEDES_SELECCION,
+  UNIDADES,
   hoyCaracas,
   opcion,
   type CampoCandidato,
@@ -19,20 +20,6 @@ import {
 import { History, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { inputCls } from "./comunes";
-
-const UNIDADES_SUGERIDAS = [
-  "Administración",
-  "Almacén",
-  "Compras",
-  "Cuentas por Cobrar",
-  "Gerencia General",
-  "Marketing",
-  "Recursos Humanos",
-  "RMA / Servicio Técnico",
-  "Seguridad",
-  "Tecnología",
-  "Ventas",
-];
 
 async function enviar(url: string, method: string, cuerpo?: object) {
   const r = await fetch(url, {
@@ -82,6 +69,7 @@ export function FormRequisicion({
     meta_dias: META_DIAS_DEFECTO,
     estado: "abierta",
     notas: "",
+    motivo_estado: "",
   });
   const [f, setF] = useState(nuevo);
   const [guardando, setGuardando] = useState(false);
@@ -90,7 +78,7 @@ export function FormRequisicion({
   useEffect(() => {
     if (!abierto) return;
     setError(null);
-    setF(requisicion ? { ...requisicion } : nuevo());
+    setF(requisicion ? { ...requisicion, motivo_estado: "" } : nuevo());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abierto, requisicion]);
 
@@ -100,8 +88,8 @@ export function FormRequisicion({
     setGuardando(true);
     setError(null);
     try {
+      // Las requisiciones nacen de las solicitudes de personal aprobadas: aquí solo se editan.
       if (requisicion) await enviar(`/api/rrhh/seleccion/requisiciones/${requisicion.id}`, "PUT", f);
-      else await enviar("/api/rrhh/seleccion/requisiciones", "POST", f);
       onGuardado();
     } catch (e: any) {
       setError(e.message);
@@ -122,7 +110,7 @@ export function FormRequisicion({
     }
   };
 
-  const listaUnidades = [...new Set([...UNIDADES_SUGERIDAS, ...unidades])].sort();
+  const listaUnidades = [...new Set([...UNIDADES, ...unidades])].sort();
 
   return (
     <Dialog open={abierto} onOpenChange={(o) => !o && onCerrar()}>
@@ -131,7 +119,7 @@ export function FormRequisicion({
           <DialogTitle>{requisicion ? `Requisición ${requisicion.codigo}` : "Nueva requisición de personal"}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Etiqueta texto="ID requisición" ayuda="Identifica la solicitud formal de personal.">
+          <Etiqueta texto="ID requisición" ayuda="Identifica la solicitud formal de personal. Ej.: REQ-2026-004">
             <input
               className={inputCls}
               value={f.codigo}
@@ -142,7 +130,7 @@ export function FormRequisicion({
           <Etiqueta texto="Fecha de recepción" ayuda="Desde aquí se cuentan los días del proceso.">
             <input type="date" className={inputCls} value={f.fecha_recepcion} onChange={(e) => set("fecha_recepcion", e.target.value)} />
           </Etiqueta>
-          <Etiqueta texto="Unidad solicitante" ayuda="Cliente interno / entrevistador técnico.">
+          <Etiqueta texto="Unidad solicitante" ayuda="Cliente interno / entrevistador técnico. Ej.: Ventas">
             <input
               className={inputCls}
               list="seleccion-unidades"
@@ -155,10 +143,10 @@ export function FormRequisicion({
               ))}
             </datalist>
           </Etiqueta>
-          <Etiqueta texto="Cargo vacante" ayuda="Según el perfil de cargo.">
+          <Etiqueta texto="Cargo vacante" ayuda="Según el perfil de cargo. Ej.: Vendedor de calle">
             <input className={inputCls} value={f.cargo} onChange={(e) => set("cargo", e.target.value)} />
           </Etiqueta>
-          <Etiqueta texto="Sede">
+          <Etiqueta texto="Sede" ayuda="Dónde va a trabajar la persona.">
             <select className={inputCls} value={f.sede} onChange={(e) => set("sede", Number(e.target.value))}>
               {Object.entries(SEDES_SELECCION).map(([id, n]) => (
                 <option key={id} value={id}>
@@ -168,10 +156,10 @@ export function FormRequisicion({
             </select>
           </Etiqueta>
           <div className="grid grid-cols-2 gap-3">
-            <Etiqueta texto="Vacantes">
+            <Etiqueta texto="Vacantes" ayuda="Personas a contratar.">
               <input type="number" min={1} className={inputCls} value={f.vacantes} onChange={(e) => set("vacantes", e.target.value)} />
             </Etiqueta>
-            <Etiqueta texto="Meta (días)" ayuda="Tiempo de cobertura esperado.">
+            <Etiqueta texto="Meta (días)" ayuda="Tiempo de cobertura esperado. Alta 15, Media 30, Baja 60.">
               <input type="number" min={1} className={inputCls} value={f.meta_dias} onChange={(e) => set("meta_dias", e.target.value)} />
             </Etiqueta>
           </div>
@@ -186,8 +174,15 @@ export function FormRequisicion({
               </select>
             </Etiqueta>
           )}
+          {requisicion && f.estado !== requisicion.estado && (f.estado === "pausada" || f.estado === "cancelada") && (
+            <div className="sm:col-span-2">
+              <Etiqueta texto="Motivo *" ayuda="Lo ve el gerente que pidió el cargo y le llega por correo.">
+                <textarea rows={2} className={inputCls} value={f.motivo_estado} onChange={(e) => set("motivo_estado", e.target.value)} />
+              </Etiqueta>
+            </div>
+          )}
           <div className="sm:col-span-2">
-            <Etiqueta texto="Notas">
+            <Etiqueta texto="Notas" ayuda="Lo que sirva para la búsqueda. Si viene de una solicitud, aquí están el perfil y quién la aprobó.">
               <textarea rows={3} className={inputCls} value={f.notas} onChange={(e) => set("notas", e.target.value)} />
             </Etiqueta>
           </div>

@@ -7,6 +7,7 @@ import { jwtSecretBytes } from "@/lib/secretos";
 import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
 import { esHostNC, RUTA_INTERNA, RUTA_PUBLICA } from "@/lib/notas-credito/hostCliente";
 import { puedeEditarPoliticas, puedeVerPoliticas } from "@/lib/politicas/permisos";
+import { puedeVerSolicitudesPersonal } from "@/lib/solicitudes-personal/tipos";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -161,16 +162,18 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/agente-ia") ||
     // Manuales de procedimiento (por ahora, solo el rol Procesos).
     pathname.includes("/manuales") ||
-    // Organigrama con las actividades de cada cargo (SuperAdmin y Procesos).
+    // Organigrama con las actividades de cada cargo (SuperAdmin, Procesos y RRHH).
     pathname.includes("/organigrama") ||
-    // Flujogramas de procesos (SuperAdmin y Procesos).
+    // Flujogramas de procesos (SuperAdmin, Procesos y RRHH).
     pathname.includes("/flujogramas") ||
     // Políticas y Acuerdos: publican Procesos y SuperAdmin, leen los roles
     // administrativos (lib/politicas/permisos.ts).
     pathname.includes("/politicas") ||
     // Notas de crédito: entra quien sea responsable de un paso, por correo
     // (lib/notas-credito/acceso.ts); aquí solo se exige la sesión.
-    pathname.includes("/notas-credito");
+    pathname.includes("/notas-credito") ||
+    // Solicitudes de personal: gerentes, RRHH y SuperAdmin (lib/solicitudes-personal/tipos.ts).
+    pathname.includes("/solicitudes-personal");
 
   if (isProtectedPath) {
     if (!token) {
@@ -395,13 +398,13 @@ export default async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 
-      // 10c. Organigrama: SuperAdmin y Procesos (los dos lo editan).
-      if (pathname.includes("/organigrama") && !isProcesos && !isSuperAdmin) {
+      // 10c. Organigrama: SuperAdmin, Procesos y RRHH (los tres lo editan).
+      if (pathname.includes("/organigrama") && !isProcesos && !isSuperAdmin && !isRecursosHumanos) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 
-      // 10c-bis. Flujogramas: igual que el Organigrama (SuperAdmin y Procesos editan).
-      if (pathname.includes("/flujogramas") && !isProcesos && !isSuperAdmin) {
+      // 10c-bis. Flujogramas: igual que el Organigrama (SuperAdmin, Procesos y RRHH editan).
+      if (pathname.includes("/flujogramas") && !isProcesos && !isSuperAdmin && !isRecursosHumanos) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 
@@ -412,6 +415,11 @@ export default async function middleware(request: NextRequest) {
           return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
         if (/\/politicas\/(nuevo|\d+\/editar)(\/|$)/.test(pathname) && !puedeEditarPoliticas(userRole))
           return NextResponse.redirect(new URL(`/${locale}/politicas`, request.url));
+      }
+
+      // 10e. Solicitudes de personal: los gerentes que piden, RRHH y SuperAdmin.
+      if (pathname.includes("/solicitudes-personal") && !puedeVerSolicitudesPersonal(userRole)) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 
       // 11. Lógica para Seguridad (Almacén / Control de acceso)

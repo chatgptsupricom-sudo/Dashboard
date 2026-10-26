@@ -43,8 +43,8 @@ export const META_VACIA: Meta = {
   aprobadoFecha: "",
 };
 
-/** Quién entra a Flujogramas: los mismos del Organigrama (SuperAdmin y Procesos; los dos editan). */
-export const ROLES_FLUJOGRAMAS = ["superadmin", "procesos"];
+/** Quién entra a Flujogramas: los mismos del Organigrama (SuperAdmin, Procesos y RRHH; los tres editan). */
+export const ROLES_FLUJOGRAMAS = ["superadmin", "procesos", "recursos humanos"];
 export const puedeFlujogramas = (rol: unknown) =>
   ROLES_FLUJOGRAMAS.includes(String(rol ?? "").toLowerCase().trim());
 

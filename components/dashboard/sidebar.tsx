@@ -35,6 +35,7 @@ import {
   Network,
   Workflow,
   UserSearch,
+  UserPlus,
   Fingerprint,
   ScrollText,
   Calendar,
@@ -144,6 +145,7 @@ export function Sidebar({
   const [isMarketingOpen, setIsMarketingOpen] = useState(false);
   const [isAdministracionOpen, setIsAdministracionOpen] = useState(false);
   const [isITOpen, setIsITOpen] = useState(false);
+  const [isRRHHOpen, setIsRRHHOpen] = useState(false);
   const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
   const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
   const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
@@ -258,7 +260,11 @@ export function Sidebar({
 
   const userRole = user.role;
   const userCids = (user as any).cids;
-  const permissions = rolePermissions[userRole as UserRole];
+  // En la tabla `roles` el nombre puede venir con otras mayúsculas que el enum
+  // ("Recursos Humanos" vs "recursos humanos"): sin esto el menú salía vacío.
+  const permissions =
+    rolePermissions[userRole as UserRole] ??
+    Object.entries(rolePermissions).find(([k]) => k.toLowerCase().trim() === String(userRole).toLowerCase().trim())?.[1];
   if (!permissions) return null;
 
   // Extraemos las secciones permitidas de forma segura
@@ -292,12 +298,14 @@ export function Sidebar({
     { id: "bi_dias_promedio", label: "Días promedio", icon: Timer, slug: "/dias-promedio" },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
-    // Organigrama con las actividades de cada cargo (SuperAdmin y Procesos).
+    // Organigrama con las actividades de cada cargo (SuperAdmin, Procesos y RRHH).
     { id: "organigrama", label: "Organigrama", icon: Network, slug: "/organigrama", absoluteHref: true },
-    // Flujogramas de procesos (SuperAdmin y Procesos).
+    // Flujogramas de procesos (SuperAdmin, Procesos y RRHH).
     { id: "flujogramas", label: "Flujogramas", icon: Workflow, slug: "/flujogramas", absoluteHref: true },
     // Matriz de rastreo de selección de personal de RRHH (lib/seleccion/).
     { id: "seleccion_personal", label: "Selección de personal", icon: UserSearch, slug: "/recursos_humanos/seleccion", absoluteHref: true },
+    // Solicitudes de personal: gerente pide, SuperAdmin aprueba, RRHH busca (lib/solicitudes-personal/).
+    { id: "solicitudes_personal", label: "Solicitudes de personal", icon: UserPlus, slug: "/solicitudes-personal", absoluteHref: true },
     // Asistencia por biométrico de RRHH: Excel del equipo, retardos y ausencias (lib/asistencia/).
     { id: "asistencia", label: "Asistencia", icon: Fingerprint, slug: "/recursos_humanos/asistencia", absoluteHref: true },
     // Políticas, acuerdos y circulares de la empresa (lib/politicas/permisos.ts).
@@ -529,6 +537,8 @@ export function Sidebar({
   // SuperAdmin: lo que hace el rol IT (hoy, preaprobar notas de credito)
   // va en su propio desplegable "IT".
   const itSuperAdminIds = ["notas_credito"];
+  // En el SuperAdmin van dentro del desplegable "Recursos Humanos".
+  const rrhhSuperAdminIds = ["seleccion_personal", "solicitudes_personal", "asistencia", "organigrama", "flujogramas"];
   const administracionDropdownIds = [
     "salud_financiera",
     "gastos_presupuesto",
@@ -576,7 +586,7 @@ export function Sidebar({
         (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
         (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
         !(isSuperAdminRole &&
-          [...administracionDropdownIds, ...itSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+          [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
@@ -1849,6 +1859,61 @@ export function Sidebar({
                           label: `Notas de crédito${notasCredito.pendientes ? ` (${notasCredito.pendientes})` : ""}`,
                           href: `/${locale}/notas-credito`,
                         },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de RECURSOS HUMANOS (solo superadmin) */}
+            {userRole === "superAdmin" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsRRHHOpen(!isRRHHOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <UserSearch size={20} className="text-slate-400" />
+                    <span className="text-sm">Recursos Humanos</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isRRHHOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isRRHHOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: "Solicitudes de personal", href: `/${locale}/solicitudes-personal` },
+                        { label: "Selección de personal", href: `/${locale}/recursos_humanos/seleccion` },
+                        { label: "Asistencia", href: `/${locale}/recursos_humanos/asistencia` },
+                        { label: "Organigrama", href: `/${locale}/organigrama` },
+                        { label: "Flujogramas", href: `/${locale}/flujogramas` },
                       ].map((subItem, index) => {
                         const isSubActive = pathname === subItem.href;
                         return (
