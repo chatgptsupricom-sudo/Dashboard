@@ -14,7 +14,11 @@ import {
   type Candidato,
   type Requisicion,
 } from "@/lib/seleccion/tipos";
-import { ClipboardList, Loader2, Plus, UserPlus, X } from "lucide-react";
+import { diasEntre } from "@/lib/seleccion/tipos";
+import type { OrigenSolicitud } from "@/lib/solicitudes-personal/tipos";
+import { ClipboardList, Loader2, UserPlus, X } from "lucide-react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FormCandidato, FormRequisicion } from "./Formularios";
 import { Indicadores } from "./Indicadores";
@@ -26,7 +30,9 @@ type FiltroEstado = "todas" | "activas" | "cubierta" | "cancelada";
 const selCls = "rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700";
 
 export default function PantallaSeleccion() {
+  const { locale } = useParams<{ locale: string }>();
   const [requisiciones, setRequisiciones] = useState<Requisicion[]>([]);
+  const [origenes, setOrigenes] = useState<Record<number, OrigenSolicitud>>({});
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +58,7 @@ export default function PantallaSeleccion() {
       if (!r.ok) throw new Error(j?.error || "No se pudo cargar la matriz");
       setRequisiciones(j.requisiciones || []);
       setCandidatos(j.candidatos || []);
+      setOrigenes(j.solicitudes || {});
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -116,6 +123,16 @@ export default function PantallaSeleccion() {
   }, [reqsFiltradas, candidatos, busqueda, estatus, hoy]);
 
   const datosIndicadores = useMemo(() => indicadores(reqsFiltradas, candidatos, hoy), [reqsFiltradas, candidatos, hoy]);
+
+  // Días que esperaron las solicitudes por la aprobación del SuperAdmin (antes de llegar a RRHH).
+  const espera = useMemo(() => {
+    const dias = reqsFiltradas
+      .map((r) => origenes[r.id])
+      .filter(Boolean)
+      .map((o) => diasEntre(o.created_at?.slice(0, 10) ?? null, o.decidido_at?.slice(0, 10) ?? null))
+      .filter((d): d is number => d != null);
+    return { promedio: dias.length ? Math.round((dias.reduce((a, b) => a + b, 0) / dias.length) * 10) / 10 : null, n: dias.length };
+  }, [reqsFiltradas, origenes]);
 
   const hojasExcel = () => {
     const filas = grupos.flatMap(({ requisicion: r, estado: e, candidatos: cs }) => {
@@ -194,12 +211,12 @@ export default function PantallaSeleccion() {
           >
             <UserPlus className="h-4 w-4" /> Candidato
           </button>
-          <button
-            onClick={() => setFormReq({ abierto: true, req: null })}
+          <Link
+            href={`/${locale}/solicitudes-personal`}
             className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
           >
-            <Plus className="h-4 w-4" /> Nueva requisición
-          </button>
+            Solicitudes de personal
+          </Link>
         </div>
       </div>
 
@@ -278,19 +295,20 @@ export default function PantallaSeleccion() {
           <ClipboardList className="mx-auto h-10 w-10 text-slate-300" />
           <h2 className="mt-3 text-lg font-bold text-slate-800">Todavía no hay requisiciones</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Cada proceso empieza con la requisición de personal que manda la unidad solicitante. Regístrala y luego agrega a
-            los candidatos para seguirlos fase por fase.
+            Cada requisición nace sola cuando el SuperAdmin aprueba una solicitud de personal. Luego agrega a los
+            candidatos para seguirlos fase por fase.
           </p>
-          <button
-            onClick={() => setFormReq({ abierto: true, req: null })}
-            className="mx-auto mt-5 flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          <Link
+            href={`/${locale}/solicitudes-personal`}
+            className="mx-auto mt-5 inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
           >
-            <Plus className="h-4 w-4" /> Nueva requisición
-          </button>
+            Ver solicitudes de personal
+          </Link>
         </div>
       ) : vista === "matriz" ? (
         <Matriz
           grupos={grupos}
+          origenes={origenes}
           puedeEditar
           onCambiar={cambiar}
           onEditarCandidato={(c) => setFormCand({ abierto: true, cand: c, reqId: c.requisicion_id })}
@@ -298,7 +316,7 @@ export default function PantallaSeleccion() {
           onEditarRequisicion={(r) => setFormReq({ abierto: true, req: r })}
         />
       ) : (
-        <Indicadores datos={datosIndicadores} />
+        <Indicadores datos={datosIndicadores} espera={espera} />
       )}
 
       <FormRequisicion

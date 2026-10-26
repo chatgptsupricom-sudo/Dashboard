@@ -93,7 +93,7 @@ export default function PantallaSolicitudes() {
     }`;
 
   const subtitulo = esSuper
-    ? "Aprueba o rechaza lo que piden los gerentes; lo aprobado pasa a RRHH"
+    ? "Aprueba o rechaza lo que piden los gerentes; lo aprobado pasa a RRHH. Las que creas tú nacen aprobadas"
     : esRRHH
       ? "Solicitudes aprobadas por el SuperAdmin, para empezar la búsqueda"
       : "Pide personal para tu área y sigue en qué va la búsqueda";
@@ -221,6 +221,7 @@ export default function PantallaSolicitudes() {
         abierto={form.abierto}
         solicitud={form.sol}
         sedeFija={sedeFija}
+        esSuper={esSuper}
         onCerrar={() => setForm({ abierto: false, sol: null })}
         onGuardado={() => {
           setForm({ abierto: false, sol: null });

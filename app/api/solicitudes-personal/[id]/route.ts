@@ -1,13 +1,14 @@
 import { requireRoles } from "@/lib/auth/roles";
 import { avisarPersonal } from "@/lib/solicitudes-personal/aviso";
-import { aprobar, editar, historial, obtener, rechazar, retirar, usuarioDe } from "@/lib/solicitudes-personal/datos";
+import { aprobar, candidatosParaGerente, editar, historial, obtener, rechazar, retirar, usuarioDe } from "@/lib/solicitudes-personal/datos";
 import { ROLES_SOLICITAN, ROLES_SOLICITUDES_PERSONAL } from "@/lib/solicitudes-personal/tipos";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
 // Una solicitud de personal.
-//   GET   -> { solicitud, historial }  solo si quien llama la puede ver.
+//   GET   -> { solicitud, historial, candidatos }  solo si quien llama la puede ver;
+//            candidatos = los del proceso desde la entrevista técnica, sin contacto.
 //   PUT   {campos}                     quien la pidió, mientras esté por aprobar.
 //   PATCH {accion: "retirar"}          quien la pidió, mientras esté por aprobar.
 //   PATCH {accion: "aprobar" | "rechazar", motivo?}  solo el SuperAdmin.
@@ -22,7 +23,8 @@ export async function GET(request: NextRequest, { params }: Ctx) {
   const id = Number((await params).id);
   const solicitud = await obtener(id, usuarioDe(auth.payload));
   if (!solicitud) return NextResponse.json({ error: "No existe o no la puedes ver" }, { status: 404 });
-  return NextResponse.json({ solicitud, historial: await historial(id) });
+  const candidatos = solicitud.requisicion_id ? await candidatosParaGerente(solicitud.requisicion_id) : [];
+  return NextResponse.json({ solicitud, historial: await historial(id), candidatos });
 }
 
 export async function PUT(request: NextRequest, { params }: Ctx) {

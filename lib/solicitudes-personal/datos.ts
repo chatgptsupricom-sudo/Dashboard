@@ -1,13 +1,18 @@
 import { db } from "@/lib/db";
-import { crearRequisicion, listarMatriz } from "@/lib/seleccion/datos";
-import { estadoRequisicion, FASES, hoyCaracas, SEDES_SELECCION, situacion } from "@/lib/seleccion/tipos";
+import { crearRequisicion, editarCandidato, listarMatriz } from "@/lib/seleccion/datos";
+import { estadoRequisicion, FASES, hoyCaracas, SEDES_SELECCION, situacion, UNIDADES, type Candidato } from "@/lib/seleccion/tipos";
+import { avisarPersonal } from "@/lib/solicitudes-personal/aviso";
 import {
+  CAMPOS_GERENTE,
+  ESTADOS_CON_MOTIVO,
   MOTIVOS,
   normRol,
   ROL_RRHH,
   URGENCIAS,
   type Avance,
+  type CandidatoGerente,
   type Evento,
+  type OrigenSolicitud,
   type Solicitud,
 } from "@/lib/solicitudes-personal/tipos";
 
@@ -104,6 +109,8 @@ const aSolicitud = (r: any): Solicitud => ({
 function limpiar(b: any, u: Usuario) {
   const cargo = texto(b?.cargo, 160);
   if (!cargo) throw new Error("Indica el cargo.");
+  const area = texto(b?.area, 120);
+  if (!UNIDADES.includes(area)) throw new Error("Elige el área.");
   const sede = !esSuper(u) && u.cids && SEDES_SELECCION[u.cids] ? u.cids : Number(b?.sede);
   if (!SEDES_SELECCION[sede]) throw new Error("Elige la sede.");
   const motivo = b?.motivo in MOTIVOS ? b.motivo : null;
@@ -118,7 +125,7 @@ function limpiar(b: any, u: Usuario) {
   const cantidad = Math.round(Number(b?.cantidad));
   return {
     cargo,
-    area: texto(b?.area, 120),
+    area,
     sede,
     cantidad: Number.isFinite(cantidad) ? Math.max(1, Math.min(50, cantidad)) : 1,
     motivo,
@@ -296,4 +303,117 @@ export async function aprobar(id: number, u: Usuario): Promise<void> {
     throw e;
   }
   await evento(id, "aprobada", "", u.nombre);
+}
+
+/* ------------------------------------------------- unión con la matriz de Selección */
+
+/** La solicitud de donde nació cada requisición (las que RRHH creó a mano antes no tienen). */
+export async function solicitudesPorRequisicion(): Promise<Record<number, OrigenSolicitud>> {
+  await ensureTablas();
+  const [filas] = await db.execute(
+    `SELECT id, requisicion_id, urgencia, solicitante_nombre, decidido_por_nombre,
+       DATE_FORMAT(fecha_deseada, '%Y-%m-%d') AS fecha_deseada, created_at, decidido_at
+     FROM personal_solicitudes WHERE requisicion_id IS NOT NULL`,
+  );
+  const mapa: Record<number, OrigenSolicitud> = {};
+  for (const r of filas as any[]) {
+    mapa[Number(r.requisicion_id)] = {
+      id: r.id,
+      urgencia: r.urgencia,
+      solicitante_nombre: r.solicitante_nombre,
+      decidido_por_nombre: r.decidido_por_nombre,
+      fecha_deseada: r.fecha_deseada,
+      created_at: iso(r.created_at),
+      decidido_at: iso(r.decidido_at),
+    };
+  }
+  return mapa;
+}
+
+/** id de la solicitud enlazada a una requisición, o null. */
+export async function solicitudDeRequisicion(requisicionId: number): Promise<number | null> {
+  await ensureTablas();
+  const [f] = await db.execute("SELECT id FROM personal_solicitudes WHERE requisicion_id = ?", [requisicionId]);
+  return (f as any[])[0]?.id ?? null;
+}
+
+/** Estado guardado de la requisición (antes de editarla), para saber si cambió. */
+export async function estadoGuardado(requisicionId: number): Promise<string | null> {
+  const [f] = await db.execute("SELECT estado FROM seleccion_requisiciones WHERE id = ?", [requisicionId]);
+  return (f as any[])[0]?.estado ?? null;
+}
+
+/**
+ * RRHH pausó, canceló o reabrió la requisición: queda en el historial de la
+ * solicitud y, si pausó o canceló, se le avisa al gerente con el motivo.
+ */
+export async function cambioDeRequisicion(requisicionId: number, antes: string | null, despues: string, motivo: string, usuario: string) {
+  if (antes === despues) return;
+  const id = await solicitudDeRequisicion(requisicionId);
+  if (!id) return;
+  if (ESTADOS_CON_MOTIVO.includes(despues)) {
+    await evento(id, despues, texto(motivo, 2000), usuario);
+    avisarPersonal(despues as "pausada" | "cancelada", id);
+  } else if (despues === "abierta") {
+    await evento(id, "reabierta", "", usuario);
+  }
+}
+
+/**
+ * Tras guardar un candidato: si con él la requisición llegó a sus vacantes, la
+ * solicitud queda "cubierta" y se le avisa al gerente. Una sola vez por solicitud.
+ */
+export async function revisarCubierta(requisicionId: number, usuario: string) {
+  const id = await solicitudDeRequisicion(requisicionId);
+  if (!id) return;
+  const [ya] = await db.execute("SELECT 1 FROM personal_solicitudes_eventos WHERE solicitud_id = ? AND accion = 'cubierta'", [id]);
+  if ((ya as any[]).length) return;
+  const [f] = await db.execute(
+    `SELECT r.vacantes, (SELECT COUNT(*) FROM seleccion_candidatos c WHERE c.requisicion_id = r.id AND c.estatus = 'contratado') AS contratados
+     FROM seleccion_requisiciones r WHERE r.id = ?`,
+    [requisicionId],
+  );
+  const r = (f as any[])[0];
+  if (!r || Number(r.contratados) < Math.max(1, Number(r.vacantes))) return;
+  await evento(id, "cubierta", `${r.contratados} contratado${Number(r.contratados) === 1 ? "" : "s"}`, usuario);
+  avisarPersonal("cubierta", id);
+}
+
+/* ---------------------------------------------- candidatos que ve el gerente */
+
+/** Desde que pasó las evaluaciones (le toca la entrevista técnica) y mientras no lo descalificaron. */
+const veGerente = (c: Candidato) =>
+  c.estatus !== "descalificado" && (c.evaluacion === "favorable" || !!c.entrevista_tecnica || c.terna === "si" || c.estatus === "contratado");
+
+export async function candidatosParaGerente(requisicionId: number): Promise<CandidatoGerente[]> {
+  const { candidatos } = await listarMatriz();
+  return candidatos
+    .filter((c) => c.requisicion_id === requisicionId && veGerente(c))
+    .map((c) => {
+      const sit = situacion(c);
+      return {
+        id: c.id,
+        nombre: c.nombre,
+        fase: sit.texto,
+        tono: sit.tono,
+        terna: c.terna === "si",
+        entrevista_tecnica_fecha: c.entrevista_tecnica_fecha,
+        entrevista_tecnica: c.entrevista_tecnica,
+        entrevista_tecnica_concepto: c.entrevista_tecnica_concepto,
+      };
+    });
+}
+
+/** El gerente que pidió el cargo (o el SuperAdmin) anota la entrevista técnica de un candidato. */
+export async function entrevistaDelGerente(solicitudId: number, candidatoId: number, b: any, u: Usuario): Promise<void> {
+  const s = await obtener(solicitudId, u);
+  if (!s || !s.requisicion_id || (!esSuper(u) && s.solicitante_email !== u.email)) {
+    throw new Error("Solo quien pidió el cargo anota la entrevista técnica.");
+  }
+  if (!(await candidatosParaGerente(s.requisicion_id)).some((c) => c.id === candidatoId)) {
+    throw new Error("Ese candidato no está en tu proceso.");
+  }
+  const cambios: Record<string, unknown> = {};
+  for (const k of CAMPOS_GERENTE) if (k in (b ?? {})) cambios[k] = b[k];
+  await editarCandidato(candidatoId, cambios, u.email);
 }

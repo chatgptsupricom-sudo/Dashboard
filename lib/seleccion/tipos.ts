@@ -27,6 +27,25 @@ export const FUENTES = [
   "Otro",
 ];
 
+/**
+ * Áreas / unidades solicitantes. Una sola lista para Solicitudes de personal y
+ * la matriz: escrita a mano, "Ventas" y "ventas" partían el indicador por unidad.
+ */
+export const UNIDADES = [
+  "Administración",
+  "Almacén",
+  "Compras",
+  "Cuentas por Cobrar",
+  "Gerencia General",
+  "Marketing",
+  "Operaciones",
+  "Recursos Humanos",
+  "RMA / Servicio Técnico",
+  "Seguridad",
+  "Tecnología",
+  "Ventas",
+];
+
 /** Meta de tiempo de cobertura por defecto (días calendario). */
 export const META_DIAS_DEFECTO = 30;
 
