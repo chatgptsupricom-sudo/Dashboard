@@ -95,6 +95,8 @@ export default function Pistola({
   onNovedad,
   permitirSobrante = false,
   permitirAprender = true,
+  serialEnCualquiera = false,
+  seguirPasadoEsperado = false,
 }: {
   /** POST { codigo, item_id?, aprender_item_id?, forzar_serial? } */
   endpoint: string;
@@ -117,6 +119,16 @@ export default function Pistola({
    * siempre). En la verificacion del egreso no: ahi se buscan sobrantes.
    */
   permitirAprender?: boolean;
+  /**
+   * Cualquier producto puede recibir seriales, no solo los marcados con
+   * serial (la recepcion; el servidor tiene que aceptarlo igual).
+   */
+  serialEnCualquiera?: boolean;
+  /**
+   * Al completar lo esperado no sale del modo seriales: puede llegar de mas
+   * (la recepcion, donde lo que sobra se carga igual). En el egreso si sale.
+   */
+  seguirPasadoEsperado?: boolean;
 }) {
   const t = useTranslations(textos);
   const campo = useRef<HTMLInputElement>(null);
@@ -209,13 +221,29 @@ export default function Pistola({
               }
             : { tipo: "ok", texto: t("pistola_serial", { serial: j.serial.serial, cantidad: j.cantidad }) },
         );
-        // Completo lo esperado: sale solo del modo seriales.
-        if (p && j.cantidad >= p.esperado) {
+        if (p && seguirPasadoEsperado && j.cantidad > p.esperado) {
+          // Llego mas de lo que dice el documento: sigue contando, como sobrante.
+          setMensaje({
+            tipo: "aviso",
+            texto: t("pistola_sobrante", {
+              producto: p.producto,
+              cantidad: j.cantidad,
+              esperado: p.esperado,
+              sobran: j.cantidad - p.esperado,
+            }),
+          });
+        } else if (p && j.cantidad >= p.esperado) {
+          // Completo lo esperado: sale solo del modo seriales (salvo que
+          // pueda llegar de mas: ahi sigue, y se sale con "Terminar").
           setMensaje({
             tipo: "ok",
-            texto: t("pistola_completo", { producto: p.producto, cantidad: j.cantidad, esperado: p.esperado }),
+            texto: t(seguirPasadoEsperado ? "pistola_completo_sigue" : "pistola_completo", {
+              producto: p.producto,
+              cantidad: j.cantidad,
+              esperado: p.esperado,
+            }),
           });
-          onTerminar();
+          if (!seguirPasadoEsperado) onTerminar();
         }
       }
     } catch {
@@ -315,6 +343,11 @@ export default function Pistola({
             <span className="ml-1 opacity-90 tabular-nums">
               · {t("pistola_van_de", { recibido: activo.recibido, esperado: activo.esperado })}
             </span>
+            {seguirPasadoEsperado && activo.recibido > activo.esperado && (
+              <span className="ml-1.5 rounded bg-amber-300 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-950">
+                {t("pistola_sobran", { sobran: activo.recibido - activo.esperado })}
+              </span>
+            )}
           </p>
           <button
             type="button"
@@ -360,7 +393,7 @@ export default function Pistola({
           <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
             {items
               // Sin "Es su codigo", un producto sin serial no tiene boton: no se lista.
-              .filter((i) => permitirAprender || i.lleva_serial)
+              .filter((i) => permitirAprender || i.lleva_serial || serialEnCualquiera)
               .filter(
                 (i) =>
                   !busca.trim() ||
@@ -372,7 +405,7 @@ export default function Pistola({
                   <p className="text-sm text-slate-800 truncate">{i.producto}</p>
                   <p className="text-[11px] text-slate-400">{i.codigo || "—"}</p>
                 </div>
-                {i.lleva_serial && (
+                {(i.lleva_serial || serialEnCualquiera) && (
                   <button
                     type="button"
                     onClick={() => void asignar(i, true)}

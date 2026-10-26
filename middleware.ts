@@ -7,6 +7,7 @@ import { jwtSecretBytes } from "@/lib/secretos";
 import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
 import { esHostNC, RUTA_INTERNA, RUTA_PUBLICA } from "@/lib/notas-credito/hostCliente";
 import { puedeEditarPoliticas, puedeVerPoliticas } from "@/lib/politicas/permisos";
+import { puedeVerSolicitudesPersonal } from "@/lib/solicitudes-personal/tipos";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -148,6 +149,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/recursos_humanos") ||
     // Inteligencia de Negocio (lib/auth/inteligenciaNegocio.ts).
     pathname.includes("/inteligencia_negocio") ||
+    // Gerente de Marca (lib/gerente-marca/).
+    pathname.includes("/gerente_marca") ||
     pathname.includes("/compras") ||
     pathname.includes("/rma") ||
     pathname.includes("/disenador") ||
@@ -168,7 +171,9 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/politicas") ||
     // Notas de crédito: entra quien sea responsable de un paso, por correo
     // (lib/notas-credito/acceso.ts); aquí solo se exige la sesión.
-    pathname.includes("/notas-credito");
+    pathname.includes("/notas-credito") ||
+    // Solicitudes de personal: gerentes, RRHH y SuperAdmin (lib/solicitudes-personal/tipos.ts).
+    pathname.includes("/solicitudes-personal");
 
   if (isProtectedPath) {
     if (!token) {
@@ -216,6 +221,8 @@ export default async function middleware(request: NextRequest) {
       const isIt = userRole === "it";
       // Inteligencia de Negocio: tableros de las tres sedes, solo lectura.
       const isBI = userRole === "inteligencia de negocio";
+      // Gerente de Marca: solo sus marcas (lib/gerente-marca/).
+      const isGerenteMarca = userRole === "gerente de marca";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -281,6 +288,15 @@ export default async function middleware(request: NextRequest) {
       // /inteligencia_negocio.
       if (pathname.includes("/inteligencia_negocio") && !isBI && !isSuperAdmin) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
+      // 4c. Gerente de Marca. La configuración (qué marcas lleva cada uno)
+      // es solo del SuperAdmin.
+      if (pathname.includes("/gerente_marca") && !isGerenteMarca && !isSuperAdmin) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+      if (pathname.includes("/gerente_marca/configuracion") && !isSuperAdmin) {
+        return NextResponse.redirect(new URL(`/${locale}/gerente_marca`, request.url));
       }
 
       // 5. Lógica para AdminLeads (BI entra a leer: desplegable Leads y Material POP)
@@ -401,6 +417,11 @@ export default async function middleware(request: NextRequest) {
           return NextResponse.redirect(new URL(`/${locale}/politicas`, request.url));
       }
 
+      // 10e. Solicitudes de personal: los gerentes que piden, RRHH y SuperAdmin.
+      if (pathname.includes("/solicitudes-personal") && !puedeVerSolicitudesPersonal(userRole)) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
       // 11. Lógica para Seguridad (Almacén / Control de acceso)
       // El modulo vive en /seguridad y NO en el dashboard principal.
       // Por eso redirigimos al login del modulo (no al /dashboard comun).
@@ -468,6 +489,10 @@ export default async function middleware(request: NextRequest) {
       // Inteligencia de Negocio tiene su Dashboard en /inteligencia_negocio.
       if (esDashboardComun && isBI) {
         return NextResponse.redirect(new URL(`/${locale}/inteligencia_negocio`, request.url));
+      }
+      // El Gerente de Marca tiene su Dashboard en /gerente_marca.
+      if (esDashboardComun && isGerenteMarca) {
+        return NextResponse.redirect(new URL(`/${locale}/gerente_marca`, request.url));
       }
       if (esDashboardComun && isDisenador) {
         return NextResponse.redirect(

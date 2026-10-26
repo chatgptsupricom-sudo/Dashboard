@@ -11,7 +11,8 @@ import { useState, type FormEvent, type ReactNode } from "react";
  * Buscar Factura (rol RMA): valida si un equipo se compró en la empresa.
  * Por factura (sus productos con serial y garantía), por serial (por dónde
  * pasó y el veredicto) o por los dos (además, si el serial es de esa
- * factura). API: GET /api/rma/buscar-factura (lib/rma/buscarSerial.ts y
+ * factura), en Odoo y en Smartbit. API: GET /api/rma/buscar-factura
+ * (lib/rma/buscarSerial.ts, lib/rma/buscarCompras.ts y
  * lib/servicio-tecnico/factura.ts).
  */
 
@@ -24,8 +25,10 @@ type Movimiento = {
   cliente: string;
   intercompania: boolean;
   facturas: { numero: string; fecha: string | null }[];
+  producto?: string;
 };
 type ResultadoSerial = { serial: string; veredicto: Veredicto; productos: string[]; venta: Movimiento | null; movimientos: Movimiento[] };
+type Garantia = { estado: string; fecha_vencimiento: string | null };
 type Item = {
   id: string;
   codigo: string;
@@ -34,7 +37,7 @@ type Item = {
   serial: string;
   cantidad: number;
   despacho: string;
-  garantia: { estado: string; fecha_vencimiento: string | null };
+  garantia: Garantia;
   ya_reportado: boolean;
   rma_case_number: string | null;
 };
@@ -51,7 +54,9 @@ type FacturaSmartbit = {
   rif: string;
   unidades: number | null;
   devolucion: boolean;
-  productos: { codigo: string; articulo: string; unidades: number }[];
+  /** true = productos de la factura; false = lo que el cliente compró ese día. */
+  porNumero: boolean;
+  productos: { codigo: string; articulo: string; unidades: number; seriales: string[]; garantia: Garantia }[];
 };
 type Compra = {
   origen: "odoo" | "smartbit";
@@ -61,12 +66,14 @@ type Compra = {
   factura: string | null;
   codigo: string;
   producto: string;
+  serial: string | null;
   unidades: number;
 };
 type Respuesta = {
   factura: Factura | null;
   facturasSmartbit: FacturaSmartbit[] | null;
   serial: ResultadoSerial | null;
+  serialSmartbit: (ResultadoSerial & { garantia: Garantia | null; cargado: boolean }) | null;
   enFactura: boolean | null;
   compras: { compras: Compra[]; productosOdoo: string[] } | null;
 };
@@ -99,8 +106,8 @@ export function BuscarFactura() {
   const [error, setError] = useState("");
   const [res, setRes] = useState<Respuesta | null>(null);
 
-  async function buscar(sedeElegida = sede) {
-    if (!factura.trim() && !serial.trim() && !producto.trim()) {
+  async function buscar(sedeElegida = sede, campos = { factura, serial, producto, cliente }) {
+    if (!campos.factura.trim() && !campos.serial.trim() && !campos.producto.trim() && !campos.cliente.trim()) {
       setError(t("falta_dato"));
       return;
     }
@@ -108,10 +115,10 @@ export function BuscarFactura() {
     setError("");
     try {
       const qs = new URLSearchParams({
-        factura: factura.trim(),
-        serial: serial.trim(),
-        producto: producto.trim(),
-        cliente: cliente.trim(),
+        factura: campos.factura.trim(),
+        serial: campos.serial.trim(),
+        producto: campos.producto.trim(),
+        cliente: campos.cliente.trim(),
         sede: sedeElegida,
       });
       const r = await fetch(`/api/rma/buscar-factura?${qs}`);
@@ -140,7 +147,20 @@ export function BuscarFactura() {
     buscar(v);
   };
 
+  // Desde una compra o un serial: abre esa factura (y conserva el serial para marcarlo).
+  const abrirFactura = (numero: string, sedeId: number | null) => {
+    const v = sedeId ? String(sedeId) : "";
+    const campos = { factura: numero, serial, producto: "", cliente: "" };
+    setFactura(numero);
+    setProducto("");
+    setCliente("");
+    setSede(v);
+    buscar(v, campos);
+  };
+
   const s = res?.serial;
+  const ss = res?.serialSmartbit;
+  const enSmartbit = !!ss && ss.veredicto !== "no_existe";
   const f = res?.factura;
   const sb = res?.facturasSmartbit ?? [];
   const compras = res?.compras;
@@ -211,56 +231,19 @@ export function BuscarFactura() {
         </div>
       )}
 
-      {!cargando && s && (
-        <section className={`rounded-3xl border p-5 space-y-4 ${VEREDICTO[s.veredicto].estilo}`}>
-          <div className="flex items-start gap-3">
-            {VEREDICTO[s.veredicto].icono}
-            <div className="min-w-0">
-              <p className="text-lg font-bold">{t(`ver_${s.veredicto}`)}</p>
-              <p className="text-sm font-mono break-all">
-                {s.serial}
-                {s.productos.length > 0 && <span className="font-sans"> · {s.productos.join(" / ")}</span>}
-              </p>
-            </div>
-          </div>
-
-          {s.venta && (
-            <dl className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-              <Dato titulo={t("vendido_a")} valor={s.venta.cliente} />
-              <Dato
-                titulo={t("vendido_factura")}
-                valor={s.venta.facturas.length ? s.venta.facturas.map((x) => x.numero).join(", ") : t("sin_factura")}
-              />
-              <Dato titulo={t("vendido_fecha")} valor={fechaCorta(s.venta.fecha)} />
-              <Dato titulo={t("vendido_sede")} valor={sedeDe(s.venta.sede, "—")} />
-              <Dato titulo={t("vendido_despacho")} valor={s.venta.despacho || "—"} />
-            </dl>
-          )}
-
-          {(s.veredicto === "no_existe" || s.veredicto === "sin_salida") && (
-            <p className="text-xs opacity-80">{t("nota_smartbit")}</p>
-          )}
-
-          {s.movimientos.length > 0 && (
-            <div className="rounded-2xl bg-white/70 p-3">
-              <p className="text-xs font-semibold text-slate-600 mb-2">{t("movimientos")}</p>
-              <ol className="space-y-1.5 text-xs text-slate-700">
-                {s.movimientos.map((m, i) => (
-                  <li key={i} className="flex flex-wrap gap-x-2">
-                    <span className="tabular-nums text-slate-500">{fechaCorta(m.fecha)}</span>
-                    <span className="font-medium">
-                      {m.intercompania ? t("mov_entre_sedes") : m.tipo === "salida" ? t("mov_salida") : t("mov_devolucion")}
-                    </span>
-                    <span>{m.cliente}</span>
-                    <span className="text-slate-500">
-                      {[sedeDe(m.sede), m.despacho, ...m.facturas.map((x) => x.numero)].filter(Boolean).join(" · ")}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-        </section>
+      {/* Si el serial no está en Odoo pero sí se vendió en Smartbit, la tarjeta de Odoo no dice nada útil. */}
+      {!cargando && enSmartbit && ss && <TarjetaSerial s={ss} origen="smartbit" garantia={ss.garantia} onFactura={abrirFactura} />}
+      {!cargando && s && !(enSmartbit && s.veredicto === "no_existe") && (
+        <TarjetaSerial
+          s={s}
+          origen="odoo"
+          onFactura={abrirFactura}
+          nota={
+            !enSmartbit && (s.veredicto === "no_existe" || s.veredicto === "sin_salida")
+              ? t(ss && !ss.cargado ? "nota_smartbit_sin_datos" : "nota_smartbit")
+              : ""
+          }
+        />
       )}
 
       {!cargando && f && f.estado === "no_encontrada" && sb.length === 0 && (
@@ -341,19 +324,7 @@ export function BuscarFactura() {
                       </td>
                       <td className="py-2 pr-3 text-xs text-slate-600">{it.despacho || t("sin_despacho")}</td>
                       <td className="py-2">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${
-                            GARANTIA[it.garantia.estado] || "bg-slate-50 text-slate-600 border-slate-200"
-                          }`}
-                        >
-                          {!GARANTIA[it.garantia.estado] && <HelpCircle className="w-3 h-3" />}
-                          {t(`gar_${["en_garantia", "vencida", "vida_util"].includes(it.garantia.estado) ? it.garantia.estado : "indeterminada"}`)}
-                        </span>
-                        {it.garantia.fecha_vencimiento && (
-                          <span className="block text-[11px] text-slate-500 mt-0.5">
-                            {t("vence", { fecha: fechaCorta(it.garantia.fecha_vencimiento) })}
-                          </span>
-                        )}
+                        <EtiquetaGarantia g={it.garantia} />
                       </td>
                     </tr>
                   );
@@ -369,52 +340,102 @@ export function BuscarFactura() {
             <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-800">Smartbit</span>
             <p className="text-sm text-slate-600">{t("smartbit_factura")}</p>
           </div>
-          {sb.map((x) => (
-            <div key={`${x.sede}-${x.numero}`} className="rounded-2xl border border-slate-100 p-4 space-y-2">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="font-bold text-slate-900">
-                  {x.numero}
-                  {x.devolucion && <span className="ml-2 text-xs font-medium text-amber-700">{t("devolucion")}</span>}
-                </p>
-                <p className="text-sm text-slate-500">
-                  {[x.cliente, x.rif, sedeDe(x.sede), fechaCorta(x.fecha)].filter(Boolean).join(" · ")}
-                </p>
+          {sb.map((x) => {
+            const buscado = serial.trim();
+            // Con número, se sabe si el serial buscado es de esta factura.
+            const tieneSerial =
+              buscado && x.porNumero ? x.productos.some((p) => p.seriales.some((z) => comparable(z) === comparable(buscado))) : null;
+            return (
+              <div key={`${x.sede}-${x.numero}`} className="rounded-2xl border border-slate-100 p-4 space-y-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="font-bold text-slate-900">
+                    {x.numero}
+                    {x.devolucion && <span className="ml-2 text-xs font-medium text-amber-700">{t("devolucion")}</span>}
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    {[x.cliente, x.rif, sedeDe(x.sede), fechaCorta(x.fecha)].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+                {tieneSerial !== null && (
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium ${
+                      tieneSerial ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-red-50 text-red-800 border-red-200"
+                    }`}
+                  >
+                    {tieneSerial ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                    {t(tieneSerial ? "en_factura_si" : "en_factura_no", { serial: buscado })}
+                  </span>
+                )}
+                {x.productos.length ? (
+                  <>
+                    <p className="text-xs text-slate-500">{t(x.porNumero ? "smartbit_productos_factura" : "smartbit_productos")}</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-xs text-slate-500 border-b">
+                            <th className="py-2 pr-3 font-medium">{t("producto")}</th>
+                            <th className="py-2 pr-3 font-medium">{t("serial")}</th>
+                            <th className="py-2 font-medium">{t("garantia")}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {x.productos.map((p, i) => (
+                            <tr key={i}>
+                              <td className="py-2 pr-3">
+                                <p className="font-medium text-slate-800">{p.articulo}</p>
+                                <p className="text-xs text-slate-500">
+                                  {p.codigo}
+                                  {p.unidades !== 1 ? ` · ×${p.unidades}` : ""}
+                                </p>
+                              </td>
+                              <td className="py-2 pr-3 font-mono text-xs">
+                                {p.seriales.length ? (
+                                  <ul className="space-y-0.5">
+                                    {p.seriales.map((z, j) => (
+                                      <li
+                                        key={j}
+                                        className={`break-all ${buscado && comparable(z) === comparable(buscado) ? "rounded bg-emerald-100 px-1 text-emerald-900" : ""}`}
+                                      >
+                                        {z}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <span className="font-sans text-slate-400">{x.porNumero ? t("sin_serial") : "—"}</span>
+                                )}
+                              </td>
+                              <td className="py-2">{x.devolucion ? "—" : <EtiquetaGarantia g={p.garantia} />}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500">{t("smartbit_sin_productos")}</p>
+                )}
               </div>
-              {x.productos.length ? (
-                <>
-                  <p className="text-xs text-slate-500">{t("smartbit_productos")}</p>
-                  <ul className="divide-y divide-slate-100 text-sm">
-                    {x.productos.map((p, i) => (
-                      <li key={i} className="flex justify-between gap-3 py-1.5">
-                        <span className="text-slate-800">
-                          {p.articulo}
-                          {p.codigo && <span className="ml-2 text-xs text-slate-500">{p.codigo}</span>}
-                        </span>
-                        <span className="tabular-nums text-slate-600">×{p.unidades}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : (
-                <p className="text-xs text-slate-500">{t("smartbit_sin_productos")}</p>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </section>
       )}
 
       {!cargando && compras && (
         <section className="rounded-3xl bg-white p-5 shadow-sm space-y-3">
           <div>
-            <p className="text-lg font-bold text-slate-900">{t("compras_titulo")}</p>
-            <p className="text-xs text-slate-500">
-              {compras.productosOdoo.length
-                ? t("compras_productos_odoo", { productos: compras.productosOdoo.slice(0, 3).join(" / ") + (compras.productosOdoo.length > 3 ? "…" : "") })
-                : t("compras_sin_producto_odoo")}
-            </p>
+            <p className="text-lg font-bold text-slate-900">{t(producto.trim() ? "compras_titulo" : "compras_titulo_cliente")}</p>
+            {producto.trim() && (
+              <p className="text-xs text-slate-500">
+                {compras.productosOdoo.length
+                  ? t("compras_productos_odoo", { productos: compras.productosOdoo.slice(0, 3).join(" / ") + (compras.productosOdoo.length > 3 ? "…" : "") })
+                  : t("compras_sin_producto_odoo")}
+              </p>
+            )}
           </div>
           {compras.compras.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-500">{t(cliente.trim() ? "compras_vacio_cliente" : "compras_vacio")}</p>
+            <p className="py-6 text-center text-sm text-slate-500">
+              {t(!producto.trim() ? "compras_vacio_solo_cliente" : cliente.trim() ? "compras_vacio_cliente" : "compras_vacio")}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -436,12 +457,16 @@ export function BuscarFactura() {
                       <td className="py-2 pr-3 text-slate-700">
                         {c.producto}
                         {c.codigo && <span className="ml-1 text-xs text-slate-500">{c.codigo}</span>}
+                        {c.serial && <span className="block font-mono text-xs text-slate-500">{c.serial}</span>}
                       </td>
-                      <td className="py-2 pr-3 text-xs">
-                        {c.origen === "smartbit" ? (
+                      <td className="py-2 pr-3 text-xs whitespace-nowrap">
+                        {c.origen === "smartbit" && (
                           <span className="rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-800">Smartbit</span>
-                        ) : (
-                          <span className="text-slate-700">{c.factura}</span>
+                        )}
+                        {c.factura && (
+                          <span className="ml-1">
+                            <EnlaceFactura numero={c.factura} onClick={() => abrirFactura(c.factura!, c.sede)} />
+                          </span>
                         )}
                       </td>
                       <td className="py-2 pr-3 text-xs text-slate-600">{sedeDe(c.sede, "—")}</td>
@@ -455,6 +480,117 @@ export function BuscarFactura() {
         </section>
       )}
     </div>
+  );
+}
+
+/** Veredicto de un serial en Odoo o en Smartbit (misma forma de datos). */
+function TarjetaSerial({
+  s,
+  origen,
+  nota = "",
+  garantia = null,
+  onFactura,
+}: {
+  s: ResultadoSerial;
+  origen: "odoo" | "smartbit";
+  nota?: string;
+  garantia?: Garantia | null;
+  onFactura: (numero: string, sede: number | null) => void;
+}) {
+  const t = useTranslations("rma.buscar_factura");
+  const smartbit = origen === "smartbit";
+  return (
+    <section className={`rounded-3xl border p-5 space-y-4 ${VEREDICTO[s.veredicto].estilo}`}>
+      <div className="flex items-start gap-3">
+        {VEREDICTO[s.veredicto].icono}
+        <div className="min-w-0">
+          <p className="text-lg font-bold">
+            {smartbit && (
+              <span className="mr-2 align-middle rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-800">Smartbit</span>
+            )}
+            {t(`${smartbit ? "sb_" : ""}ver_${s.veredicto}`)}
+          </p>
+          <p className="text-sm font-mono break-all">
+            {s.serial}
+            {s.productos.length > 0 && <span className="font-sans"> · {s.productos.join(" / ")}</span>}
+          </p>
+        </div>
+      </div>
+
+      {s.venta && (
+        <dl className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+          <Dato titulo={t("vendido_a")} valor={s.venta.cliente} />
+          <Dato
+            titulo={t("vendido_factura")}
+            valor={
+              s.venta.facturas.length
+                ? s.venta.facturas.map((x) => (
+                    <EnlaceFactura key={x.numero} numero={x.numero} onClick={() => onFactura(x.numero, s.venta?.sede ?? null)} />
+                  ))
+                : t("sin_factura")
+            }
+          />
+          <Dato titulo={t("vendido_fecha")} valor={fechaCorta(s.venta.fecha)} />
+          <Dato titulo={t("vendido_sede")} valor={sedeDe(s.venta.sede, "—")} />
+          {smartbit ? (
+            <Dato titulo={t("garantia")} valor={garantia ? <EtiquetaGarantia g={garantia} /> : "—"} />
+          ) : (
+            <Dato titulo={t("vendido_despacho")} valor={s.venta.despacho || "—"} />
+          )}
+        </dl>
+      )}
+
+      {nota && <p className="text-xs opacity-80">{nota}</p>}
+
+      {s.movimientos.length > 0 && (
+        <div className="rounded-2xl bg-white/70 p-3">
+          <p className="text-xs font-semibold text-slate-600 mb-2">{t("movimientos")}</p>
+          <ol className="space-y-1.5 text-xs text-slate-700">
+            {s.movimientos.map((m, i) => (
+              <li key={i} className="flex flex-wrap gap-x-2">
+                <span className="tabular-nums text-slate-500">{fechaCorta(m.fecha)}</span>
+                <span className="font-medium">
+                  {m.intercompania ? t("mov_entre_sedes") : m.tipo === "salida" ? t(smartbit ? "mov_factura" : "mov_salida") : t("mov_devolucion")}
+                </span>
+                <span>{m.cliente}</span>
+                <span className="text-slate-500">
+                  {[sedeDe(m.sede), m.despacho, ...m.facturas.map((x) => x.numero), s.productos.length > 1 ? m.producto : ""]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EnlaceFactura({ numero, onClick }: { numero: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="mr-2 text-violet-700 underline underline-offset-2 hover:text-violet-900">
+      {numero}
+    </button>
+  );
+}
+
+function EtiquetaGarantia({ g }: { g: Garantia }) {
+  const t = useTranslations("rma.buscar_factura");
+  return (
+    <>
+      <span
+        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${
+          GARANTIA[g.estado] || "bg-slate-50 text-slate-600 border-slate-200"
+        }`}
+      >
+        {!GARANTIA[g.estado] && <HelpCircle className="w-3 h-3" />}
+        {t(`gar_${["en_garantia", "vencida", "vida_util"].includes(g.estado) ? g.estado : "indeterminada"}`)}
+      </span>
+      {g.fecha_vencimiento && (
+        <span className="block text-[11px] text-slate-500 mt-0.5">{t("vence", { fecha: fechaCorta(g.fecha_vencimiento) })}</span>
+      )}
+    </>
   );
 }
 

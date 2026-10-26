@@ -1764,8 +1764,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         onClose={() => setVisitasModalOpen(false)}
         apiPrefix={apiPrefix}
         queryCompanyId={(!vendorMode && !gerenteOpsMode) ? selectedCompanyId : null}
-        postCompanyId={vendorMode ? null : selectedCompanyId}
-        gerenteOpsMode={gerenteOpsMode}
+        postCompanyId={(vendorMode || gerenteOpsMode) ? null : selectedCompanyId}
+        soloLectura={biMode}
         sellers={kpiData?.sellers || []}
         defaultMes={selectedMes}
       />

@@ -476,7 +476,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       prev.map((i) => {
         if (i.id !== r.item_id) return i;
         const nuevo = conFila(i, cid, enCont, r.cantidad);
-        return r.resultado === "serial" ? { ...nuevo, seriales: [...(i.seriales || []), r.serial] } : nuevo;
+        // El primer serial de un producto elegido a mano lo pasa a contarse por serial.
+        return r.resultado === "serial"
+          ? { ...nuevo, lleva_serial: true, seriales: [...(i.seriales || []), r.serial] }
+          : nuevo;
       }),
     );
   };
@@ -497,6 +500,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
         i.id === itemId
           ? {
               ...conFila(i, cid, enCont, Number(j.cantidad) > 0 ? Number(j.cantidad) : null),
+              // Sin seriales vuelve a lo que diga Odoo (se habia elegido a mano).
+              lleva_serial: typeof j.lleva_serial === "boolean" ? j.lleva_serial : i.lleva_serial,
               seriales: (i.seriales || []).filter((x) => x.id !== serialId),
             }
           : i,
@@ -1245,6 +1250,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     recibido: i.lleva_serial ? (i.seriales || []).length : totalDe(i) ?? 0,
                   }))}
                   seleccionado={seleccionado}
+                  serialEnCualquiera
+                  seguirPasadoEsperado
                   onResultado={alEscanear}
                   onTerminar={() => setSeleccionado(null)}
                 />
@@ -1366,6 +1373,11 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           </span>
                         )}
                         <p className="text-sm text-slate-800 truncate">{i.producto}</p>
+                        {total !== null && total > esperado && (
+                          <span className="inline-block mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 rounded px-1.5 py-0.5">
+                            {t("sobrante")} +{fmt(total - esperado)}
+                          </span>
+                        )}
                         <p className="text-[11px] text-slate-400 truncate">
                           {[i.codigo, i.cajas_esperadas !== null ? `${i.cajas_esperadas} ${t("cajas").toLowerCase()}` : null]
                             .filter(Boolean)
@@ -1398,11 +1410,15 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                             </p>
                           );
                         })()}
-                        {i.lleva_serial && (
+                        {(i.lleva_serial || contando) && (
+                          // Cualquier producto se puede elegir para pistolear sus
+                          // seriales (el packing list sin codigo no dice cual lleva).
                           <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
-                              {t("con_serial")}
-                            </span>
+                            {i.lleva_serial && (
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-100 rounded px-1.5 py-0.5">
+                                {t("con_serial")}
+                              </span>
+                            )}
                             {contando && (
                               <button
                                 type="button"

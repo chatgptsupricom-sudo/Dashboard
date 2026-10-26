@@ -16,6 +16,7 @@ export const ROLE_HIERARCHY: Record<string, { canView: string[] | "all" }> = {
       "gerenteVentas",
       "vendedor",
       "brandManagement",
+      "gerente de marca",
       "audit",
       "marketing",
       "adminleads",
@@ -27,6 +28,7 @@ export const ROLE_HIERARCHY: Record<string, { canView: string[] | "all" }> = {
   // Los roles operativos base: por defecto solo ven su propia información
   marketing: { canView: ["marketing"] },
   brandManagement: { canView: ["brandManagement"] },
+  "gerente de marca": { canView: ["gerente de marca"] },
   adminleads: { canView: ["adminleads"] },
   vendedor: { canView: ["vendedor"] },
   rma: { canView: ["rma"] },

@@ -24,6 +24,10 @@ import { NextRequest, NextResponse } from "next/server";
  * flujos y solo conoce su endpoint). La respuesta trae `cantidad` (el total
  * del renglon) y `cantidad_contenedor` (lo de ese contenedor).
  *
+ * El producto seleccionado recibe seriales aunque no este marcado como con
+ * serial: el primero lo marca (`lleva_serial = 1`) y desde ahi se cuenta
+ * pistoleando. Si se quitan todos, vuelve a lo que diga Odoo.
+ *
  * Un serial repetido en el mismo packing list -> 409 "repetido". Si ya entro
  * en otro packing list se avisa (`en_otro`) pero no se bloquea.
  *
@@ -71,6 +75,9 @@ export async function POST(
 
     const r = await procesarEscaneo(body, items, {
       quien: sesion!.nombre,
+      // Almacen elige el producto y pistolea sus seriales aunque Odoo no lo
+      // marque (packing list sin codigo): desde ahi se cuenta por serial.
+      serialEnCualquiera: true,
       sumarUno: async (item) => {
         const c = await sumarUno(id, Number(item.id), cont.id, sesion!.nombre);
         enContenedor = c.contenedor;
@@ -105,6 +112,9 @@ export async function POST(
             return { status: 409, body: { resultado: "repetido", item_id: item.id, serial } };
           }
           throw e;
+        }
+        if (!item.lleva_serial) {
+          await query("UPDATE recepcion_packing_items SET lleva_serial = 1 WHERE id = ?", [item.id]);
         }
         const c = await recontarSeriales(id, Number(item.id), cont.id, sesion!.nombre);
         enContenedor = c.contenedor;

@@ -34,6 +34,8 @@ import {
   BrainCircuit,
   Network,
   Workflow,
+  UserSearch,
+  UserPlus,
   ScrollText,
   Calendar,
   Camera,
@@ -294,6 +296,10 @@ export function Sidebar({
     { id: "organigrama", label: "Organigrama", icon: Network, slug: "/organigrama", absoluteHref: true },
     // Flujogramas de procesos (SuperAdmin y Procesos).
     { id: "flujogramas", label: "Flujogramas", icon: Workflow, slug: "/flujogramas", absoluteHref: true },
+    // Matriz de rastreo de selección de personal de RRHH (lib/seleccion/).
+    { id: "seleccion_personal", label: "Selección de personal", icon: UserSearch, slug: "/recursos_humanos/seleccion", absoluteHref: true },
+    // Solicitudes de personal: gerente pide, SuperAdmin aprueba, RRHH busca (lib/solicitudes-personal/).
+    { id: "solicitudes_personal", label: "Solicitudes de personal", icon: UserPlus, slug: "/solicitudes-personal", absoluteHref: true },
     // Políticas, acuerdos y circulares de la empresa (lib/politicas/permisos.ts).
     { id: "politicas", label: "Políticas y Acuerdos", icon: ScrollText, slug: "/politicas", absoluteHref: true },
     {
@@ -420,6 +426,14 @@ export function Sidebar({
     { id: "admin_binance", label: "Conciliación Binance", icon: Bitcoin, slug: "/administracion/binance", absoluteHref: true },
     { id: "admin_fiscal", label: "Fiscal", icon: FileText, slug: "/administracion/fiscal", absoluteHref: true },
     { id: "admin_contabilidad", label: "Contabilidad y cierre", icon: BookOpenCheck, slug: "/administracion/contabilidad", absoluteHref: true },
+    // Gerente de Marca (lib/gerente-marca/): sus marcas, en Valencia y Caracas.
+    { id: "gm_dashboard", label: t("dashboard"), icon: LayoutDashboard, slug: "" },
+    { id: "gm_inventario", label: t("inventario"), icon: Package, slug: "/inventario" },
+    { id: "gm_antiguedad", label: "Antigüedad de inventario", icon: Timer, slug: "/antiguedad" },
+    { id: "gm_ventas", label: "Ventas por marca", icon: TrendingUp, slug: "/ventas" },
+    { id: "gm_banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
+    // SuperAdmin: lo que ve cada Gerente de Marca y a quién se le asigna cada marca.
+    { id: "gerencia_marca", label: "Gerencia de Marca", icon: Award, slug: "/gerente_marca", absoluteHref: true },
   ];
 
   const getBasePath = () => {
@@ -454,6 +468,8 @@ export function Sidebar({
       // Inteligencia de Negocio: las mismas pantallas del SuperAdmin, en solo lectura.
       case "inteligencia de negocio":
         return `/${locale}/inteligencia_negocio`;
+      case "gerente de marca":
+        return `/${locale}/gerente_marca`;
       case "it":
         return `/${locale}/notas-credito`;
       case "diseñador":

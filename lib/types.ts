@@ -22,6 +22,7 @@ export enum UserRole {
   PROCESOS = "procesos",
   IT = "it",
   INTELIGENCIA_NEGOCIO = "inteligencia de negocio",
+  GERENTE_MARCA = "gerente de marca",
 }
 
 // Permisos por rol
@@ -102,6 +103,9 @@ export const rolePermissions: RolePermissions = {
       "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
       "organigrama", // Organigrama y actividades de cada cargo (también rol Procesos)
       "flujogramas", // Flujogramas de procesos (también rol Procesos)
+      "gerencia_marca", // Lo que ve cada Gerente de Marca y a quién se le asigna cada marca
+      "seleccion_personal", // Matriz de selección de personal (también RRHH)
+      "solicitudes_personal", // Aprueba las solicitudes de personal de los gerentes
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -208,7 +212,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["politicas", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -227,6 +231,7 @@ export const rolePermissions: RolePermissions = {
     // Sin "dashboard": su inicio es Salud Administrativa (/administracion).
     sections: [
       "politicas", // Políticas y Acuerdos (lib/politicas)
+      "solicitudes_personal", // Solicitudes de personal (lib/solicitudes-personal)
       "salud_financiera",
       "gastos_presupuesto",
       "admin_cxp",
@@ -259,6 +264,7 @@ export const rolePermissions: RolePermissions = {
     canViewAudit: true,
     sections: [
       "politicas", // Políticas y Acuerdos (lib/politicas)
+      "solicitudes_personal", // Solicitudes de personal (lib/solicitudes-personal)
       "dashboard", // Stats y KPIs generales
       "actividad", // Activaciones
       "users", // Gestión de usuarios
@@ -270,6 +276,7 @@ export const rolePermissions: RolePermissions = {
       "audit", // Auditoria de Odoo
       "auditoria_panel", // Auditoría de acciones
       "spiff", // Gestión de spiffs por marca
+      "planificacion_visitas", // Planificación de visitas (marca realizadas, como Gerencia de Ventas)
       "cuentas_por_cobrar", // Cuentas por Cobrar
       // Alertas
       "alert", // Sistema de alertas
@@ -308,7 +315,8 @@ export const rolePermissions: RolePermissions = {
       "dashboard", // KPIs globales de personal
       "asistencia", // Control de biométricos (Valencia/Caracas)
       "recibos_pago", // Emisión automatizada con firma digital
-      "reclutamiento", // Banco de empleo y CVs
+      "seleccion_personal", // Matriz de rastreo de selección de personal (lib/seleccion)
+      "solicitudes_personal", // Solicitudes de personal aprobadas (lib/solicitudes-personal)
       "solicitudes_permiso", // Gestión de ausencias y vacaciones
       "onboarding", // Digitalización de inducciones y rutograma
       "documentacion_institucional", // Manuales, cargo y código de vestimenta
@@ -324,6 +332,7 @@ export const rolePermissions: RolePermissions = {
     canViewAudit: false,
     sections: [
       "politicas", // Políticas y Acuerdos (lib/politicas)
+      "solicitudes_personal", // Solicitudes de personal (lib/solicitudes-personal)
       "dashboard",
       "sugeridos",
       "moq",
@@ -524,6 +533,16 @@ export const rolePermissions: RolePermissions = {
       "cxc_tiempo_cobro",
       "cxc_sobregiro",
     ],
+  },
+  // Gerente de Marca: solo las marcas que el SuperAdmin le asigna, en
+  // Valencia y Caracas (lib/gerente-marca/). Solo lee.
+  [UserRole.GERENTE_MARCA]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "gm_banco_imagenes", "actividad"],
   },
 };
 

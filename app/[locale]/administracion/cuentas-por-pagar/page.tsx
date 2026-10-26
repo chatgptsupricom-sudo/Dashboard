@@ -19,8 +19,10 @@ import {
   useDatosAdmin,
 } from "@/components/administracion/comunes";
 import type { Banda, DatosCxPAdmin } from "@/lib/administracion/cxp";
-import { Receipt } from "lucide-react";
-import { useMemo, useState } from "react";
+import { DetalleDocumentoCxP } from "@/components/administracion/DetalleDocumentoCxP";
+import type { DocumentoCxP } from "@/lib/administracion/cxp";
+import { ChevronDown, ChevronRight, Eye, Receipt } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
 
 type Respuesta = DatosCxPAdmin & { success: true; hoy: string };
 type Vista = "proveedores" | "calendario" | "documentos" | "borradores" | "pagos";
@@ -48,6 +50,16 @@ export default function CuentasPorPagarPage() {
   const [vista, setVista] = useState<Vista>("proveedores");
   const [buscar, setBuscar] = useState("");
   const [soloVencidos, setSoloVencidos] = useState(false);
+  const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
+  const [docId, setDocId] = useState<number | null>(null);
+
+  const alternar = (clave: string) =>
+    setAbiertos((prev) => {
+      const next = new Set(prev);
+      if (next.has(clave)) next.delete(clave);
+      else next.add(clave);
+      return next;
+    });
 
   const { datos, cargando, error } = useDatosAdmin<Respuesta>(
     "/api/administracion/cuentas-por-pagar",
@@ -73,6 +85,16 @@ export default function CuentasPorPagarPage() {
     () => (datos?.proveedores ?? []).filter((p) => !texto || p.proveedor.toLowerCase().includes(texto)),
     [datos, texto],
   );
+
+  // Documentos de cada proveedor, para desplegarlos en "Por proveedor".
+  const docsPorProveedor = useMemo(() => {
+    const mapa = new Map<string, DocumentoCxP[]>();
+    (datos?.documentos ?? []).forEach((d) => {
+      const clave = d.proveedorId ? String(d.proveedorId) : d.proveedor;
+      mapa.set(clave, [...(mapa.get(clave) || []), d]);
+    });
+    return mapa;
+  }, [datos]);
 
   const totalBandas = datos ? BANDAS.reduce((s, b) => s + Math.max(0, datos.bandas[b]), 0) : 0;
   const maxSemana = datos ? Math.max(1, ...datos.calendario.map((s) => s.monto)) : 1;
@@ -166,13 +188,13 @@ export default function CuentasPorPagarPage() {
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <Tarjeta
               titulo="Saldo por pagar"
-              valor={money(datos.resumen.saldo)}
+              valor={money(datos.resumen.saldo, 2)}
               detalle={`${datos.resumen.documentos} documentos · ${datos.resumen.proveedores} proveedores`}
               tono="azul"
             />
             <Tarjeta
               titulo="Vencido"
-              valor={money(datos.resumen.vencido)}
+              valor={money(datos.resumen.vencido, 2)}
               detalle={
                 datos.resumen.saldo > 0
                   ? `${Math.round((datos.resumen.vencido / datos.resumen.saldo) * 100)}% del saldo`
@@ -180,11 +202,11 @@ export default function CuentasPorPagarPage() {
               }
               tono={datos.resumen.vencido > 0 ? "rojo" : "verde"}
             />
-            <Tarjeta titulo="Vence en 7 días" valor={money(datos.resumen.porVencer7)} tono="ambar" />
-            <Tarjeta titulo="Vence en 30 días" valor={money(datos.resumen.porVencer30)} />
+            <Tarjeta titulo="Vence en 7 días" valor={money(datos.resumen.porVencer7, 2)} tono="ambar" />
+            <Tarjeta titulo="Vence en 30 días" valor={money(datos.resumen.porVencer30, 2)} />
             <Tarjeta
               titulo="Pagado en el mes"
-              valor={money(datos.resumen.pagadoEnElMes)}
+              valor={money(datos.resumen.pagadoEnElMes, 2)}
               detalle={`${datos.pagosDelMes.length} pagos a proveedores`}
               tono="verde"
             />
@@ -192,7 +214,7 @@ export default function CuentasPorPagarPage() {
 
           {datos.resumen.sinCondicionPago.documentos > 0 && (
             <Aviso>
-              <b>{datos.resumen.sinCondicionPago.documentos}</b> facturas ({money(datos.resumen.sinCondicionPago.monto)})
+              <b>{datos.resumen.sinCondicionPago.documentos}</b> facturas ({money(datos.resumen.sinCondicionPago.monto, 2)})
               no tienen condiciones de pago en Odoo: vencen el mismo día de la factura y figuran vencidas desde que se
               cargan. Cargar el plazo del proveedor corrige la antigüedad.
             </Aviso>
@@ -210,7 +232,7 @@ export default function CuentasPorPagarPage() {
                       key={b}
                       className={COLOR_BANDA[b]}
                       style={{ width: `${(datos.bandas[b] / totalBandas) * 100}%` }}
-                      title={`${ETIQUETA_BANDA[b]}: ${money(datos.bandas[b])}`}
+                      title={`${ETIQUETA_BANDA[b]}: ${money(datos.bandas[b], 2)}`}
                     />
                   ) : null,
                 )}
@@ -220,7 +242,7 @@ export default function CuentasPorPagarPage() {
                   <div key={b} className="flex items-center gap-2">
                     <span className={`h-2.5 w-2.5 rounded-full ${COLOR_BANDA[b]}`} />
                     <span className="text-gray-500">{ETIQUETA_BANDA[b]}</span>
-                    <span className="font-semibold ml-auto sm:ml-0">{money(datos.bandas[b])}</span>
+                    <span className="font-semibold ml-auto sm:ml-0">{money(datos.bandas[b], 2)}</span>
                   </div>
                 ))}
               </div>
@@ -285,29 +307,56 @@ export default function CuentasPorPagarPage() {
                       {proveedores.length === 0 ? (
                         <FilaVacia columnas={8} />
                       ) : (
-                        proveedores.map((p) => (
-                          <TableRow key={`${p.proveedorId ?? p.proveedor}`}>
-                            <TableCell className="px-2 sm:px-4 whitespace-normal">
-                              <div className="font-medium text-sm break-words">{p.proveedor}</div>
-                              <div className="text-xs text-gray-400">
-                                {p.documentos} doc.
-                                {p.intercompania && <span className="ml-1 text-violet-600">· intercompañía</span>}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">{money(p.saldo)}</TableCell>
-                            <TableCell className={`text-right ${p.vencido > 0 ? "text-red-600" : "text-gray-400"}`}>
-                              {money(p.vencido)}
-                            </TableCell>
-                            {BANDAS.slice(1).map((b) => (
-                              <TableCell key={b} className="text-right text-sm text-gray-600 hidden lg:table-cell">
-                                {p.bandas[b] ? money(p.bandas[b]) : "—"}
-                              </TableCell>
-                            ))}
-                            <TableCell className="text-right text-sm text-gray-500 hidden md:table-cell pr-4">
-                              {fechaCorta(p.venceMasViejo)}
-                            </TableCell>
-                          </TableRow>
-                        ))
+                        proveedores.map((p) => {
+                          const clave = p.proveedorId ? String(p.proveedorId) : p.proveedor;
+                          const abierto = abiertos.has(clave);
+                          return (
+                            <Fragment key={clave}>
+                              <TableRow className="cursor-pointer hover:bg-slate-50" onClick={() => alternar(clave)}>
+                                <TableCell className="px-2 sm:px-4 whitespace-normal">
+                                  <div className="flex items-start gap-1.5">
+                                    {abierto ? (
+                                      <ChevronDown className="h-4 w-4 mt-0.5 shrink-0 text-gray-400" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4 mt-0.5 shrink-0 text-gray-400" />
+                                    )}
+                                    <div className="min-w-0">
+                                      <div className="font-medium text-sm break-words">{p.proveedor}</div>
+                                      <div className="text-xs text-gray-400">
+                                        {p.documentos} doc.
+                                        {p.intercompania && <span className="ml-1 text-violet-600">· intercompañía</span>}
+                                        <span className="ml-1 text-blue-600">· {abierto ? "ocultar" : "ver detalle"}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right font-semibold">{money(p.saldo, 2)}</TableCell>
+                                <TableCell className={`text-right ${p.vencido > 0 ? "text-red-600" : "text-gray-400"}`}>
+                                  {money(p.vencido, 2)}
+                                </TableCell>
+                                {BANDAS.slice(1).map((b) => (
+                                  <TableCell key={b} className="text-right text-sm text-gray-600 hidden lg:table-cell">
+                                    {p.bandas[b] ? money(p.bandas[b], 2) : "—"}
+                                  </TableCell>
+                                ))}
+                                <TableCell className="text-right text-sm text-gray-500 hidden md:table-cell pr-4">
+                                  {fechaCorta(p.venceMasViejo)}
+                                </TableCell>
+                              </TableRow>
+                              {abierto && (
+                                <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
+                                  <TableCell colSpan={8} className="p-0">
+                                    <DocumentosDelProveedor
+                                      documentos={docsPorProveedor.get(clave) || []}
+                                      todasLasSedes={!empresa}
+                                      onVer={setDocId}
+                                    />
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </Fragment>
+                          );
+                        })
                       )}
                     </TableBody>
                   </Table>
@@ -317,7 +366,7 @@ export default function CuentasPorPagarPage() {
               {vista === "calendario" && (
                 <div className="p-4 space-y-3">
                   <p className="text-sm text-gray-500">
-                    Facturas por semana de vencimiento. Lo ya vencido ({money(datos.resumen.vencido)}) no entra aquí:
+                    Facturas por semana de vencimiento. Lo ya vencido ({money(datos.resumen.vencido, 2)}) no entra aquí:
                     está en la tarjeta "Vencido".
                   </p>
                   {datos.calendario.map((s, i) => (
@@ -331,7 +380,7 @@ export default function CuentasPorPagarPage() {
                           style={{ width: `${(s.monto / maxSemana) * 100}%` }}
                         />
                       </div>
-                      <div className="w-28 text-right font-semibold">{money(s.monto)}</div>
+                      <div className="w-28 text-right font-semibold">{money(s.monto, 2)}</div>
                       <div className="w-14 text-right text-xs text-gray-400 hidden sm:block">{s.documentos} fact.</div>
                     </div>
                   ))}
@@ -347,12 +396,13 @@ export default function CuentasPorPagarPage() {
                         <TableHead className="hidden md:table-cell">Proveedor</TableHead>
                         <TableHead className="text-center">Vence</TableHead>
                         <TableHead className="text-right">Saldo</TableHead>
-                        <TableHead className="text-right hidden lg:table-cell pr-4">Total</TableHead>
+                        <TableHead className="text-right hidden lg:table-cell">Total</TableHead>
+                        <TableHead className="text-right pr-4">Detalle</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {documentos.length === 0 ? (
-                        <FilaVacia columnas={5} />
+                        <FilaVacia columnas={6} />
                       ) : (
                         documentos.map((d) => (
                           <TableRow key={d.id}>
@@ -385,12 +435,15 @@ export default function CuentasPorPagarPage() {
                               <div className="font-semibold">{money(d.saldo, 2)}</div>
                               {d.saldoMonedaOrigen !== null && (
                                 <div className="text-[11px] text-gray-400">
-                                  {d.moneda} {d.saldoMonedaOrigen.toLocaleString("es-VE")}
+                                  {d.moneda} {d.saldoMonedaOrigen.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                                 </div>
                               )}
                             </TableCell>
-                            <TableCell className="text-right text-sm text-gray-500 hidden lg:table-cell pr-4">
+                            <TableCell className="text-right text-sm text-gray-500 hidden lg:table-cell">
                               {money(d.total, 2)}
+                            </TableCell>
+                            <TableCell className="text-right pr-4">
+                              <BotonVer onClick={() => setDocId(d.id)} />
                             </TableCell>
                           </TableRow>
                         ))
@@ -475,6 +528,83 @@ export default function CuentasPorPagarPage() {
           </Card>
         </>
       )}
+
+      <DetalleDocumentoCxP id={docId} empresa={empresa} onClose={() => setDocId(null)} />
+    </div>
+  );
+}
+
+function BotonVer({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50"
+    >
+      <Eye className="h-3.5 w-3.5" /> Ver
+    </button>
+  );
+}
+
+function DocumentosDelProveedor({
+  documentos,
+  todasLasSedes,
+  onVer,
+}: {
+  documentos: DocumentoCxP[];
+  todasLasSedes: boolean;
+  onVer: (id: number) => void;
+}) {
+  return (
+    <div className="overflow-x-auto px-2 sm:pl-10 sm:pr-4 py-2">
+      <table className="w-full text-sm">
+        <thead className="text-xs text-gray-500">
+          <tr>
+            <th className="py-1.5 text-left font-medium">Documento</th>
+            <th className="py-1.5 text-center font-medium hidden sm:table-cell">Fecha</th>
+            <th className="py-1.5 text-center font-medium">Vence</th>
+            <th className="py-1.5 text-right font-medium hidden md:table-cell">Total</th>
+            <th className="py-1.5 text-right font-medium">Saldo</th>
+            <th className="py-1.5 text-right font-medium w-16" />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-200">
+          {documentos.map((d) => (
+            <tr key={d.id}>
+              <td className="py-2 pr-2">
+                <div className="font-mono text-xs">
+                  {d.numero}
+                  {d.tipo === "nota_credito" && <span className="ml-1 text-[10px] text-red-600">NC</span>}
+                </div>
+                <div className="text-[11px] text-gray-400">
+                  {d.referencia && `Ref. ${d.referencia}`}
+                  {todasLasSedes && ` · ${NOMBRE_SEDE[d.sede] || d.sede}`}
+                </div>
+              </td>
+              <td className="py-2 text-center text-xs hidden sm:table-cell">{fechaCorta(d.fecha)}</td>
+              <td className="py-2 text-center text-xs">
+                <div>{fechaCorta(d.vence)}</div>
+                {d.diasVencido > 0 && <div className="text-[11px] text-red-600">hace {d.diasVencido} d</div>}
+              </td>
+              <td className="py-2 text-right text-xs text-gray-500 hidden md:table-cell">{money(d.total, 2)}</td>
+              <td className="py-2 text-right">
+                <div className="font-semibold">{money(d.saldo, 2)}</div>
+                {d.saldoMonedaOrigen !== null && (
+                  <div className="text-[11px] text-gray-400">
+                    {d.moneda} {d.saldoMonedaOrigen.toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                  </div>
+                )}
+              </td>
+              <td className="py-2 text-right">
+                <BotonVer onClick={() => onVer(d.id)} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
