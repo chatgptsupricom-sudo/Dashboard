@@ -61,7 +61,8 @@ import { useEffect } from "react";
 // "/credito-clientes" es el servicio de notas de crédito para clientes por
 // dentro; en su dominio la URL es /notas-credito y llega `publico` desde el
 // layout (lib/notas-credito/hostCliente.ts).
-const RUTAS_PUBLICAS = ["/servicio-tecnico", "/credito-clientes"];
+// "/mi-ruta" es el rutagrama que llena el nuevo ingreso con su enlace (lib/rutagrama/).
+const RUTAS_PUBLICAS = ["/servicio-tecnico", "/credito-clientes", "/mi-ruta"];
 
 export function AuthProvider({ children, publico = false }: { children: React.ReactNode; publico?: boolean }) {
   const { isLoading, user, initializeFromToken } = useAuthStore();

@@ -107,6 +107,7 @@ export const rolePermissions: RolePermissions = {
       "seleccion_personal", // Matriz de selección de personal (también RRHH)
       "solicitudes_personal", // Aprueba las solicitudes de personal de los gerentes
       "asistencia", // Asistencia por biométrico (también RRHH)
+      "rutagrama", // Rutagrama de los nuevos ingresos (también RRHH)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -320,6 +321,7 @@ export const rolePermissions: RolePermissions = {
       "solicitudes_personal", // Solicitudes de personal aprobadas (lib/solicitudes-personal)
       "organigrama", // Organigrama (también lo edita)
       "flujogramas", // Flujogramas (también los edita)
+      "rutagrama", // Rutagrama de los nuevos ingresos: enlace, mapa y planilla LOPCYMAT (lib/rutagrama)
       "solicitudes_permiso", // Gestión de ausencias y vacaciones
       "onboarding", // Digitalización de inducciones y rutograma
       "documentacion_institucional", // Manuales, cargo y código de vestimenta
