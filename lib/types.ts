@@ -317,6 +317,8 @@ export const rolePermissions: RolePermissions = {
       "recibos_pago", // Emisión automatizada con firma digital
       "seleccion_personal", // Matriz de rastreo de selección de personal (lib/seleccion)
       "solicitudes_personal", // Solicitudes de personal aprobadas (lib/solicitudes-personal)
+      "organigrama", // Organigrama (también lo edita)
+      "flujogramas", // Flujogramas (también los edita)
       "solicitudes_permiso", // Gestión de ausencias y vacaciones
       "onboarding", // Digitalización de inducciones y rutograma
       "documentacion_institucional", // Manuales, cargo y código de vestimenta

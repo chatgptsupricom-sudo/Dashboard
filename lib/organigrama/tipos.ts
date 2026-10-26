@@ -43,8 +43,8 @@ export type Nodo = {
   updatedAt: string | null;
 };
 
-/** Quién entra al Organigrama: SuperAdmin y el rol Procesos (los dos editan). */
-export const ROLES_ORGANIGRAMA = ["superadmin", "procesos"];
+/** Quién entra al Organigrama: SuperAdmin, Procesos y RRHH (los tres editan). */
+export const ROLES_ORGANIGRAMA = ["superadmin", "procesos", "recursos humanos"];
 export const puedeOrganigrama = (rol: unknown) =>
   ROLES_ORGANIGRAMA.includes(String(rol ?? "").toLowerCase().trim());
 
