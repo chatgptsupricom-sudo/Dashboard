@@ -83,25 +83,33 @@ export function CargarExcel({ sede, onCargado }: { sede: number; onCargado: () =
 
   const listo = mapeo && mapeo.codigo >= 0 && mapeo.horas.length > 0;
   const lectura = useMemo(() => (hoja && listo ? extraerMarcas(hoja, mapeo!, orden) : null), [hoja, mapeo, orden, listo]);
+  const zk = hoja?.zkteco;
   const resumen = useMemo(() => {
-    if (!lectura?.marcas.length) return null;
+    if (!lectura) return null;
+    const conMarcas = new Set(lectura.marcas.map((m) => m.codigo));
+    if (zk) {
+      const sinMarcas = zk.empleados.filter((e) => !conMarcas.has(e.codigo)).length;
+      return { empleados: zk.empleados.length, sinMarcas, desde: zk.desde, hasta: zk.hasta };
+    }
+    if (!lectura.marcas.length) return null;
     const fechas = lectura.marcas.map((m) => m.fecha).sort();
-    return {
-      empleados: new Set(lectura.marcas.map((m) => m.codigo)).size,
-      desde: fechas[0],
-      hasta: fechas[fechas.length - 1],
-    };
-  }, [lectura]);
+    return { empleados: conMarcas.size, sinMarcas: 0, desde: fechas[0], hasta: fechas[fechas.length - 1] };
+  }, [lectura, zk]);
 
   const subir = async () => {
-    if (!lectura?.marcas.length || !archivo) return;
+    if (!lectura || !resumen || !archivo) return;
     setSubiendo(true);
     setError(null);
     try {
       const r = await fetch("/api/rrhh/asistencia/cargas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sede, archivo: archivo.name, marcas: lectura.marcas }),
+        body: JSON.stringify({
+          sede,
+          archivo: archivo.name,
+          marcas: lectura.marcas,
+          ...(zk && { periodo: { desde: zk.desde, hasta: zk.hasta }, empleados: zk.empleados }),
+        }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "No se pudo cargar");
@@ -170,7 +178,14 @@ export function CargarExcel({ sede, onCargado }: { sede: number; onCargado: () =
 
         {hoja && mapeo && (
           <div className="mt-5 space-y-4">
-            {hojas.length > 1 && (
+            {zk && (
+              <p className="rounded-xl bg-blue-50 p-3 text-sm text-blue-800">
+                Reporte del biométrico ZKTeco: se toma la hoja «{hoja.nombre}» con las marcas de cada empleado; las demás hojas del archivo
+                (resumen, anormal, detalle) no hacen falta. Los días del período en que alguien no marcó cuentan como ausencia.
+              </p>
+            )}
+
+            {!zk && hojas.length > 1 && (
               <label className="flex items-center gap-2 text-sm text-slate-600">
                 Hoja
                 <select
@@ -190,41 +205,45 @@ export function CargarExcel({ sede, onCargado }: { sede: number; onCargado: () =
               </label>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {columna("codigo", "Código del empleado", false)}
-              {columna("nombre", "Nombre", true)}
-              {columna("fecha", "Fecha (si va aparte de la hora)", true)}
-              <label className="block space-y-1">
-                <span className="text-xs font-semibold text-slate-600">Orden de la fecha</span>
-                <select className={`${selCls} w-full`} value={orden} onChange={(e) => setOrden(e.target.value as OrdenFecha)}>
-                  <option value="dmy">Día/mes/año</option>
-                  <option value="mdy">Mes/día/año</option>
-                </select>
-              </label>
-            </div>
-            <div>
-              <span className="text-xs font-semibold text-slate-600">Columnas con la hora de las marcas (o fecha y hora juntas)</span>
-              <div className="mt-1 flex flex-wrap gap-2">
-                {hoja.encabezados.map((h, i) => {
-                  const marcado = mapeo.horas.includes(i);
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() =>
-                        setMapeo((m) => (m ? { ...m, horas: marcado ? m.horas.filter((x) => x !== i) : [...m.horas, i].sort((a, b) => a - b) } : m))
-                      }
-                      className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${
-                        marcado ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:border-slate-300"
-                      }`}
-                    >
-                      {marcado ? "✓ " : ""}
-                      {h}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {!zk && (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {columna("codigo", "Código del empleado", false)}
+                  {columna("nombre", "Nombre", true)}
+                  {columna("fecha", "Fecha (si va aparte de la hora)", true)}
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-slate-600">Orden de la fecha</span>
+                    <select className={`${selCls} w-full`} value={orden} onChange={(e) => setOrden(e.target.value as OrdenFecha)}>
+                      <option value="dmy">Día/mes/año</option>
+                      <option value="mdy">Mes/día/año</option>
+                    </select>
+                  </label>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-600">Columnas con la hora de las marcas (o fecha y hora juntas)</span>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {hoja.encabezados.map((h, i) => {
+                      const marcado = mapeo.horas.includes(i);
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() =>
+                            setMapeo((m) => (m ? { ...m, horas: marcado ? m.horas.filter((x) => x !== i) : [...m.horas, i].sort((a, b) => a - b) } : m))
+                          }
+                          className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${
+                            marcado ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:border-slate-300"
+                          }`}
+                        >
+                          {marcado ? "✓ " : ""}
+                          {h}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="overflow-x-auto rounded-xl border border-slate-200">
               <table className="w-full text-xs">
@@ -258,6 +277,12 @@ export function CargarExcel({ sede, onCargado }: { sede: number; onCargado: () =
                 <span>
                   <b>{lectura!.marcas.length}</b> marcas de <b>{resumen.empleados}</b> empleados, del {fechaCorta(resumen.desde)} al{" "}
                   {fechaCorta(resumen.hasta)}
+                  {resumen.sinMarcas > 0 && (
+                    <span className="text-slate-500">
+                      {" "}
+                      · {resumen.sinMarcas} {resumen.sinMarcas === 1 ? "no marcó" : "no marcaron"} en todo el período
+                    </span>
+                  )}
                   {lectura!.omitidas > 0 && <span className="text-slate-500"> · {lectura!.omitidas} filas sin código o sin hora no se toman</span>}
                 </span>
                 <Button onClick={subir} disabled={subiendo}>
