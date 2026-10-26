@@ -73,7 +73,7 @@ type Respuesta = {
   factura: Factura | null;
   facturasSmartbit: FacturaSmartbit[] | null;
   serial: ResultadoSerial | null;
-  serialSmartbit: (ResultadoSerial & { garantia: Garantia | null }) | null;
+  serialSmartbit: (ResultadoSerial & { garantia: Garantia | null; cargado: boolean }) | null;
   enFactura: boolean | null;
   compras: { compras: Compra[]; productosOdoo: string[] } | null;
 };
@@ -106,8 +106,8 @@ export function BuscarFactura() {
   const [error, setError] = useState("");
   const [res, setRes] = useState<Respuesta | null>(null);
 
-  async function buscar(sedeElegida = sede) {
-    if (!factura.trim() && !serial.trim() && !producto.trim()) {
+  async function buscar(sedeElegida = sede, campos = { factura, serial, producto, cliente }) {
+    if (!campos.factura.trim() && !campos.serial.trim() && !campos.producto.trim() && !campos.cliente.trim()) {
       setError(t("falta_dato"));
       return;
     }
@@ -115,10 +115,10 @@ export function BuscarFactura() {
     setError("");
     try {
       const qs = new URLSearchParams({
-        factura: factura.trim(),
-        serial: serial.trim(),
-        producto: producto.trim(),
-        cliente: cliente.trim(),
+        factura: campos.factura.trim(),
+        serial: campos.serial.trim(),
+        producto: campos.producto.trim(),
+        cliente: campos.cliente.trim(),
         sede: sedeElegida,
       });
       const r = await fetch(`/api/rma/buscar-factura?${qs}`);
@@ -145,6 +145,17 @@ export function BuscarFactura() {
     const v = id ? String(id) : "";
     setSede(v);
     buscar(v);
+  };
+
+  // Desde una compra o un serial: abre esa factura (y conserva el serial para marcarlo).
+  const abrirFactura = (numero: string, sedeId: number | null) => {
+    const v = sedeId ? String(sedeId) : "";
+    const campos = { factura: numero, serial, producto: "", cliente: "" };
+    setFactura(numero);
+    setProducto("");
+    setCliente("");
+    setSede(v);
+    buscar(v, campos);
   };
 
   const s = res?.serial;
@@ -221,9 +232,18 @@ export function BuscarFactura() {
       )}
 
       {/* Si el serial no está en Odoo pero sí se vendió en Smartbit, la tarjeta de Odoo no dice nada útil. */}
-      {!cargando && enSmartbit && ss && <TarjetaSerial s={ss} origen="smartbit" garantia={ss.garantia} />}
+      {!cargando && enSmartbit && ss && <TarjetaSerial s={ss} origen="smartbit" garantia={ss.garantia} onFactura={abrirFactura} />}
       {!cargando && s && !(enSmartbit && s.veredicto === "no_existe") && (
-        <TarjetaSerial s={s} origen="odoo" nota={!enSmartbit && (s.veredicto === "no_existe" || s.veredicto === "sin_salida")} />
+        <TarjetaSerial
+          s={s}
+          origen="odoo"
+          onFactura={abrirFactura}
+          nota={
+            !enSmartbit && (s.veredicto === "no_existe" || s.veredicto === "sin_salida")
+              ? t(ss && !ss.cargado ? "nota_smartbit_sin_datos" : "nota_smartbit")
+              : ""
+          }
+        />
       )}
 
       {!cargando && f && f.estado === "no_encontrada" && sb.length === 0 && (
@@ -403,15 +423,19 @@ export function BuscarFactura() {
       {!cargando && compras && (
         <section className="rounded-3xl bg-white p-5 shadow-sm space-y-3">
           <div>
-            <p className="text-lg font-bold text-slate-900">{t("compras_titulo")}</p>
-            <p className="text-xs text-slate-500">
-              {compras.productosOdoo.length
-                ? t("compras_productos_odoo", { productos: compras.productosOdoo.slice(0, 3).join(" / ") + (compras.productosOdoo.length > 3 ? "…" : "") })
-                : t("compras_sin_producto_odoo")}
-            </p>
+            <p className="text-lg font-bold text-slate-900">{t(producto.trim() ? "compras_titulo" : "compras_titulo_cliente")}</p>
+            {producto.trim() && (
+              <p className="text-xs text-slate-500">
+                {compras.productosOdoo.length
+                  ? t("compras_productos_odoo", { productos: compras.productosOdoo.slice(0, 3).join(" / ") + (compras.productosOdoo.length > 3 ? "…" : "") })
+                  : t("compras_sin_producto_odoo")}
+              </p>
+            )}
           </div>
           {compras.compras.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-500">{t(cliente.trim() ? "compras_vacio_cliente" : "compras_vacio")}</p>
+            <p className="py-6 text-center text-sm text-slate-500">
+              {t(!producto.trim() ? "compras_vacio_solo_cliente" : cliente.trim() ? "compras_vacio_cliente" : "compras_vacio")}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -439,7 +463,11 @@ export function BuscarFactura() {
                         {c.origen === "smartbit" && (
                           <span className="rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-800">Smartbit</span>
                         )}
-                        {c.factura && <span className="ml-1 text-slate-700">{c.factura}</span>}
+                        {c.factura && (
+                          <span className="ml-1">
+                            <EnlaceFactura numero={c.factura} onClick={() => abrirFactura(c.factura!, c.sede)} />
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 pr-3 text-xs text-slate-600">{sedeDe(c.sede, "—")}</td>
                       <td className="py-2 text-right tabular-nums text-slate-700">{c.unidades}</td>
@@ -459,13 +487,15 @@ export function BuscarFactura() {
 function TarjetaSerial({
   s,
   origen,
-  nota = false,
+  nota = "",
   garantia = null,
+  onFactura,
 }: {
   s: ResultadoSerial;
   origen: "odoo" | "smartbit";
-  nota?: boolean;
+  nota?: string;
   garantia?: Garantia | null;
+  onFactura: (numero: string, sede: number | null) => void;
 }) {
   const t = useTranslations("rma.buscar_factura");
   const smartbit = origen === "smartbit";
@@ -492,7 +522,13 @@ function TarjetaSerial({
           <Dato titulo={t("vendido_a")} valor={s.venta.cliente} />
           <Dato
             titulo={t("vendido_factura")}
-            valor={s.venta.facturas.length ? s.venta.facturas.map((x) => x.numero).join(", ") : t("sin_factura")}
+            valor={
+              s.venta.facturas.length
+                ? s.venta.facturas.map((x) => (
+                    <EnlaceFactura key={x.numero} numero={x.numero} onClick={() => onFactura(x.numero, s.venta?.sede ?? null)} />
+                  ))
+                : t("sin_factura")
+            }
           />
           <Dato titulo={t("vendido_fecha")} valor={fechaCorta(s.venta.fecha)} />
           <Dato titulo={t("vendido_sede")} valor={sedeDe(s.venta.sede, "—")} />
@@ -504,7 +540,7 @@ function TarjetaSerial({
         </dl>
       )}
 
-      {nota && <p className="text-xs opacity-80">{t("nota_smartbit")}</p>}
+      {nota && <p className="text-xs opacity-80">{nota}</p>}
 
       {s.movimientos.length > 0 && (
         <div className="rounded-2xl bg-white/70 p-3">
@@ -528,6 +564,14 @@ function TarjetaSerial({
         </div>
       )}
     </section>
+  );
+}
+
+function EnlaceFactura({ numero, onClick }: { numero: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="mr-2 text-violet-700 underline underline-offset-2 hover:text-violet-900">
+      {numero}
+    </button>
   );
 }
 

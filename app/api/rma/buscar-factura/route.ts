@@ -21,7 +21,8 @@ const comparable = (s: string) => s.trim().toUpperCase();
  * - serial: por dónde pasó en Odoo y el veredicto (lib/rma/buscarSerial.ts), y
  *   en qué facturas de Smartbit salió (`serialSmartbit`, sedes cargadas con
  *   serial). Con producto, solo los seriales de ese producto.
- * - producto (+ cliente): quién lo compró y cuándo, en Odoo y en Smartbit.
+ * - producto y/o cliente: quién lo compró y cuándo (o qué compró ese cliente),
+ *   en Odoo y en Smartbit, con factura y serial.
  * - Factura + serial: `enFactura` dice si el serial es de esa factura de Odoo
  *   (en Smartbit lo marca la pantalla con los seriales de cada producto).
  * Busca en las tres sedes salvo que se pida una. No devuelve precios ni montos.
@@ -37,8 +38,11 @@ export async function GET(request: NextRequest) {
   const cliente = (sp.get("cliente") || "").trim();
   const sedePedida = Number(sp.get("sede"));
   const sede = SEDES.includes(sedePedida) ? sedePedida : undefined;
-  if (!numero && !serial && !producto) {
-    return NextResponse.json({ error: "Escribe una factura, un serial o un producto." }, { status: 400 });
+  if (!numero && !serial && !producto && !cliente) {
+    return NextResponse.json({ error: "Escribe una factura, un serial, un producto o un cliente." }, { status: 400 });
+  }
+  if (cliente && cliente.length < 3) {
+    return NextResponse.json({ error: "El cliente debe tener al menos 3 caracteres." }, { status: 400 });
   }
   if (serial && serial.length < 3) {
     return NextResponse.json({ error: "El serial debe tener al menos 3 caracteres." }, { status: 400 });
@@ -54,7 +58,7 @@ export async function GET(request: NextRequest) {
       numero ? facturasSmartbit(numero, sede) : Promise.resolve(null),
       serial ? buscarSerial(serial, productoIds) : Promise.resolve(null),
       serial ? serialSmartbit(serial, producto, sede) : Promise.resolve(null),
-      producto ? comprasDelProducto(producto, cliente, sede) : Promise.resolve(null),
+      producto || cliente ? comprasDelProducto(producto, cliente, sede) : Promise.resolve(null),
     ]);
     // partner_id es interno de la creación de tickets: no sale.
     const facturaPublica = factura && factura.estado === "ok" ? (({ partner_id, ...resto }) => resto)(factura) : factura;
