@@ -3657,7 +3657,7 @@
     "pistola_tocar": "Toque aquí para pistolear",
     "pistola_teclado": "Escribir un código con el teclado",
     "pistola_activo": "Pistoleando seriales de",
-    "pistola_ayuda": "Productos sin serial: pistolee su código y suma 1. Productos con serial: toque \"Pistolear seriales\" en el renglón y pistolee cada serial.",
+    "pistola_ayuda": "Para cargar seriales: toque \"Pistolear seriales\" en el producto y pistolee cada serial. Sin elegir producto, pistolear el código de un producto suma 1.",
     "pistola_repetido": "El serial {serial} ya estaba pistoleado ({producto}). No se sumó.",
     "pistola_conteo": "+1 {producto} · van {cantidad}",
     "pistola_seleccionado": "{producto}: ahora pistolee sus seriales.",
