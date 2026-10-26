@@ -1,19 +1,21 @@
-// GET /api/adminleads/compras-mes/export?mes=YYYY-MM&sede=
+// GET /api/adminleads/compras-mes/export?desde=YYYY-MM&hasta=YYYY-MM&sede= (o ?mes= para uno)
 //
-// Clientes del mes en Excel: resumen, un renglón por cliente, una por factura
-// y el detalle de cada factura (producto por producto). Mismas sedes que la
-// pantalla (AdminLeads solo la suya).
+// Clientes del período en Excel: resumen por mes y sede, un renglón por
+// cliente, una por factura y una hoja por mes con el detalle de cada factura
+// (producto por producto). Mismas sedes que la pantalla (AdminLeads solo la suya).
 
-import { comprasDelMes, mesPedido, SEDES_COMPRAS, sedesDelUsuario } from "@/lib/adminleads/comprasMes";
+import { comprasDelPeriodo, periodoPedido, SEDES_COMPRAS, sedesDelUsuario } from "@/lib/adminleads/comprasMes";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const AZUL = "FF2563EB";
 const USD = '"$"#,##0.00';
+const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const nombreMes = (mes: string) => `${MESES[Number(mes.slice(5, 7)) - 1]} ${mes.slice(0, 4)}`;
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
@@ -24,7 +26,8 @@ export async function GET(request: NextRequest) {
   if (!sedes) return respuestaSedeNoPermitida();
 
   try {
-    const data = await comprasDelMes(mesPedido(sp), sedes);
+    const { desde, hasta } = periodoPedido(sp);
+    const data = await comprasDelPeriodo(desde, hasta, sedes);
 
     const ExcelJS = (await import("exceljs")).default;
     const wb = new ExcelJS.Workbook();
@@ -44,32 +47,29 @@ export async function GET(request: NextRequest) {
     };
     const sede = (n: number) => SEDES_COMPRAS[n] || "";
     const tipo = (nc: boolean) => (nc ? "Nota de crédito" : "Factura");
+    const periodo = desde === hasta ? nombreMes(desde) : `${nombreMes(desde)} a ${nombreMes(hasta)}`;
 
-    // --- Resumen ---
+    // --- Resumen: totales del período y un renglón por mes y sede ---
     const r = data.resumen;
     const wsR = wb.addWorksheet("Resumen");
-    wsR.columns = [{ width: 40 }, { width: 22 }];
-    for (const fila of [
-      ["Mes", data.mes],
-      ["Sedes", data.sedes.map(sede).join(", ")],
-      ["Clientes que compraron", r.clientes],
-      ["Facturas", r.facturas],
-      ["Monto sin IVA (USD, NC restan)", r.subtotal],
-      ["Total con IVA (USD, NC restan)", r.total],
-    ]) wsR.addRow(fila);
-    wsR.getCell("B5").numFmt = USD;
-    wsR.getCell("B6").numFmt = USD;
+    encabezar(wsR, ["Mes", "Sede", "Clientes que compraron", "Facturas", "Notas de crédito", "Sin IVA (USD)", "IVA (USD)", "Total (USD)"],
+      [14, 12, 14, 11, 12, 16, 14, 16], [6, 7, 8]);
+    for (const m of data.porMes) wsR.addRow([nombreMes(m.mes), sede(m.sede), m.clientes, m.facturas, m.nc, m.subtotal, m.iva, m.total]);
+    const total = wsR.addRow([periodo, data.sedes.map(sede).join(", "), r.clientes, r.facturas, null, r.subtotal, null, r.total]);
+    total.font = { bold: true };
     wsR.addRow([]);
     const nota = wsR.addRow([
-      "Facturas de cliente publicadas en Odoo, por fecha de factura, sin empresas del grupo. Las notas de crédito del mes " +
-        "aparecen en la lista y restan. Montos en USD.",
+      "Facturas de cliente publicadas en Odoo por fecha de factura, sin empresas del grupo. Las notas de crédito restan. " +
+        "Un cliente cuenta si tuvo al menos una factura (el mismo cliente en dos sedes cuenta en cada una); en la fila del período " +
+        "cada cliente cuenta una vez aunque haya comprado varios meses. Montos en USD. En las hojas de cada mes, IVA y total de la " +
+        "factura van solo en su primer renglón.",
     ]);
-    wsR.mergeCells(nota.number, 1, nota.number, 2);
+    wsR.mergeCells(nota.number, 1, nota.number, 8);
     nota.getCell(1).alignment = { wrapText: true, vertical: "top" };
     nota.getCell(1).font = { italic: true, color: { argb: "FF71717A" } };
-    nota.height = 45;
+    nota.height = 60;
 
-    // --- Clientes ---
+    // --- Clientes del período ---
     const wsC = wb.addWorksheet("Clientes");
     encabezar(wsC, ["Cliente", "RIF", "Sede", "Facturas", "Notas de crédito", "Sin IVA (USD)", "IVA (USD)", "Total (USD)"],
       [42, 16, 11, 10, 12, 15, 13, 15], [6, 7, 8]);
@@ -80,35 +80,43 @@ export async function GET(request: NextRequest) {
 
     // --- Facturas ---
     const wsF = wb.addWorksheet("Facturas");
-    encabezar(wsF, ["Cliente", "RIF", "Sede", "Documento", "Tipo", "Fecha", "Vendedor", "Origen / referencia", "Sin IVA (USD)", "IVA (USD)", "Total (USD)"],
-      [42, 16, 11, 20, 15, 12, 24, 28, 15, 13, 15], [9, 10, 11]);
+    encabezar(wsF, ["Mes", "Cliente", "RIF", "Sede", "Documento", "Tipo", "Fecha", "Vendedor", "Origen / referencia", "Sin IVA (USD)", "IVA (USD)", "Total (USD)"],
+      [11, 42, 16, 11, 20, 15, 12, 24, 28, 15, 13, 15], [10, 11, 12]);
     for (const c of data.clientes) {
       for (const f of c.facturas) {
-        wsF.addRow([c.cliente, c.rif, sede(c.sede), f.numero, tipo(f.nc), f.fecha, f.vendedor, f.referencia, f.subtotal, f.iva, f.total]);
+        wsF.addRow([nombreMes(f.fecha.slice(0, 7)), c.cliente, c.rif, sede(c.sede), f.numero, tipo(f.nc), f.fecha, f.vendedor, f.referencia, f.subtotal, f.iva, f.total]);
       }
     }
 
-    // --- Detalle ---
-    const wsD = wb.addWorksheet("Detalle de facturas");
-    encabezar(wsD, ["Cliente", "RIF", "Sede", "Documento", "Tipo", "Fecha", "Vendedor", "Producto", "Descripción", "Cantidad", "Precio unit. (USD)", "Descuento %", "Subtotal (USD)"],
-      [42, 16, 11, 20, 15, 12, 24, 40, 40, 10, 15, 11, 15], [11, 13]);
-    for (const c of data.clientes) {
-      for (const f of c.facturas) {
-        for (const l of f.lineas) {
-          wsD.addRow([c.cliente, c.rif, sede(c.sede), f.numero, tipo(f.nc), f.fecha, f.vendedor, l.producto, l.descripcion,
-            l.cantidad, l.precio, l.descuento / 100, l.subtotal]);
+    // --- Detalle: una hoja por mes ---
+    for (const mes of data.meses) {
+      const ws = wb.addWorksheet(nombreMes(mes));
+      encabezar(ws, ["Cliente", "RIF", "Sede", "Documento", "Tipo", "Fecha", "Vendedor", "Origen / referencia", "Producto", "Descripción",
+        "Cantidad", "Precio unit. (USD)", "Descuento %", "Subtotal sin IVA (USD)", "IVA factura (USD)", "Total factura (USD)"],
+      [40, 15, 10, 20, 14, 11, 24, 26, 40, 40, 10, 14, 10, 15, 14, 15], [12, 14, 15, 16]);
+      ws.getColumn(13).numFmt = "0.##%";
+      for (const c of data.clientes) {
+        for (const f of c.facturas) {
+          if (!f.fecha.startsWith(mes)) continue;
+          const base = [c.cliente, c.rif, sede(c.sede), f.numero, tipo(f.nc), f.fecha, f.vendedor, f.referencia];
+          if (!f.lineas.length) ws.addRow([...base, "", "", null, null, null, f.subtotal, f.iva, f.total]);
+          // IVA y total de la factura solo en su primer renglón, para que sumar la columna no los repita.
+          f.lineas.forEach((l, i) =>
+            ws.addRow([...base, l.producto, l.descripcion, l.cantidad, l.precio, l.descuento / 100, l.subtotal,
+              i === 0 ? f.iva : null, i === 0 ? f.total : null]),
+          );
         }
       }
     }
-    wsD.getColumn(12).numFmt = "0.##%";
 
     const buffer = await wb.xlsx.writeBuffer();
     const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer as ArrayBuffer);
     const sufijo = data.sedes.length === 1 ? `_${sede(data.sedes[0]).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")}` : "";
+    const nombre = desde === hasta ? desde : `${desde}_a_${hasta}`;
     return new NextResponse(bytes, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="clientes_${data.mes}${sufijo}.xlsx"`,
+        "Content-Disposition": `attachment; filename="clientes_${nombre}${sufijo}.xlsx"`,
       },
     });
   } catch (error: any) {

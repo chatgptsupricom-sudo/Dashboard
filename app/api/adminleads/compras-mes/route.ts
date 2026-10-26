@@ -1,11 +1,11 @@
-// GET /api/adminleads/compras-mes?mes=YYYY-MM&sede=
+// GET /api/adminleads/compras-mes?desde=YYYY-MM&hasta=YYYY-MM&sede= (o ?mes= para uno)
 //
 // Clientes que compraron en el mes, sus facturas y el detalle de cada una.
 // Ver lib/adminleads/comprasMes.ts. AdminLeads queda en la sede de su `cids`
 // (sin cids válido: 403); los demás roles de Leads y el SuperAdmin eligen
 // sede o ven todas.
 
-import { comprasDelMes, mesPedido, sedesDelUsuario } from "@/lib/adminleads/comprasMes";
+import { comprasDelPeriodo, periodoPedido, sedesDelUsuario } from "@/lib/adminleads/comprasMes";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { respuestaDeError } from "@/lib/administracion/lectura";
@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
   if (!sedes) return respuestaSedeNoPermitida();
 
   try {
-    return NextResponse.json(await comprasDelMes(mesPedido(sp), sedes));
+    const { desde, hasta } = periodoPedido(sp);
+    return NextResponse.json(await comprasDelPeriodo(desde, hasta, sedes));
   } catch (error: any) {
     return respuestaDeError(error, "GET /api/adminleads/compras-mes");
   }
