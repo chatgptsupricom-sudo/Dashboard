@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS supricom_panel.biometrico_empleados (
   sede INT NOT NULL,
   codigo VARCHAR(40) NOT NULL,
   nombre VARCHAR(160) NOT NULL DEFAULT '',
+  departamento VARCHAR(80) NOT NULL DEFAULT '',
+  desde DATE NULL,
   activo TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (sede, codigo)
@@ -49,3 +51,10 @@ CREATE TABLE IF NOT EXISTS supricom_panel.biometrico_dias (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SHOW TABLES FROM supricom_panel LIKE 'biometrico_%';
+
+-- Si biometrico_empleados ya existía sin departamento/desde (la app las agrega
+-- sola; a mano, solo si SHOW COLUMNS FROM supricom_panel.biometrico_empleados
+-- no las muestra):
+-- ALTER TABLE supricom_panel.biometrico_empleados
+--   ADD COLUMN departamento VARCHAR(80) NOT NULL DEFAULT '' AFTER nombre,
+--   ADD COLUMN desde DATE NULL AFTER departamento;

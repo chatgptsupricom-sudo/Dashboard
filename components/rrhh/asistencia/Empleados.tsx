@@ -40,14 +40,14 @@ export function Empleados({ sede, onCambio }: { sede: number; onCambio: () => vo
   };
 
   const q = busqueda.trim().toLowerCase();
-  const lista = empleados.filter((e) => !q || `${e.codigo} ${e.nombre}`.toLowerCase().includes(q));
+  const lista = empleados.filter((e) => !q || `${e.codigo} ${e.nombre} ${e.departamento}`.toLowerCase().includes(q));
 
   return (
     <div className="space-y-3">
       <input
         value={busqueda}
         onChange={(e) => setBusqueda(e.target.value)}
-        placeholder="Buscar empleado o código…"
+        placeholder="Buscar empleado, código o departamento…"
         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm sm:w-72"
       />
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -55,7 +55,7 @@ export function Empleados({ sede, onCambio }: { sede: number; onCambio: () => vo
         <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-slate-50">
             <tr>
-              {["Código", "Nombre", "Primera marca", "Última marca", "Activo"].map((h) => (
+              {["Código", "Nombre", "Departamento", "Primera marca", "Última marca", "Activo"].map((h) => (
                 <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-slate-600">
                   {h}
                 </th>
@@ -65,14 +65,14 @@ export function Empleados({ sede, onCambio }: { sede: number; onCambio: () => vo
           <tbody>
             {cargando && (
               <tr>
-                <td colSpan={5} className="py-6">
+                <td colSpan={6} className="py-6">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin text-slate-400" />
                 </td>
               </tr>
             )}
             {!cargando && !lista.length && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={6} className="px-3 py-6 text-center text-slate-400">
                   Sin empleados: aparecen al cargar el Excel del biométrico.
                 </td>
               </tr>
@@ -87,6 +87,7 @@ export function Empleados({ sede, onCambio }: { sede: number; onCambio: () => vo
                     className="w-full rounded-md border border-transparent px-2 py-1 hover:border-slate-200 focus:border-blue-300 focus:outline-none"
                   />
                 </td>
+                <td className="px-3 py-2 text-slate-600">{e.departamento}</td>
                 <td className="px-3 py-2 tabular-nums">{fechaCorta(e.primera_fecha)}</td>
                 <td className="px-3 py-2 tabular-nums">{fechaCorta(e.ultima_fecha)}</td>
                 <td className="px-3 py-2">

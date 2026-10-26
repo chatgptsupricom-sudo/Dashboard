@@ -32,6 +32,9 @@ export type Empleado = {
   sede: number;
   codigo: string;
   nombre: string;
+  departamento: string;
+  /** Inicio del primer reporte del ZKTeco en que salió (null si solo vino en registros de marcas). */
+  desde: string | null;
   activo: boolean;
   /** Primer y último día con marcas (de todo lo cargado, no solo del rango). */
   primera_fecha: string | null;
@@ -60,6 +63,7 @@ export type Dia = {
 export type ResumenEmpleado = {
   codigo: string;
   nombre: string;
+  departamento: string;
   activo: boolean;
   laborables: number;
   asistencias: number;
@@ -180,8 +184,9 @@ export function evaluarDia(fecha: string, marcasDelDia: string[], laborable: boo
 
 /**
  * Reporte de una sede en un rango. A cada empleado se le evalúan los días
- * desde su primera marca (no estaba antes) hasta la cobertura de la sede (no
- * hay datos después); a uno inactivo, hasta su última marca.
+ * desde que aparece (el inicio del primer reporte del ZKTeco en que salió, o
+ * su primera marca) hasta la cobertura de la sede (no hay datos después); a
+ * uno inactivo, hasta su última marca (y si nunca marcó, nada).
  */
 export function calcularReporte({
   sede,
@@ -212,9 +217,11 @@ export function calcularReporte({
 
   const resumenes = empleados.map((e): ResumenEmpleado => {
     const marcasEmp = porEmpleado.get(e.codigo) ?? new Map<string, string[]>();
-    const finEmp = !e.activo && e.ultima_fecha && e.ultima_fecha < fin ? e.ultima_fecha : fin;
+    const inicio = [e.desde, e.primera_fecha].filter((f): f is string => !!f).sort()[0] ?? null;
+    let finEmp = fin;
+    if (!e.activo) finEmp = !e.ultima_fecha ? "" : e.ultima_fecha < fin ? e.ultima_fecha : fin;
     const dias = fechas
-      .filter((f) => (!e.primera_fecha || f >= e.primera_fecha) && f <= finEmp)
+      .filter((f) => (!inicio || f >= inicio) && f <= finEmp)
       .map((f) => {
         const l = laborables.get(f)!;
         return evaluarDia(f, marcasEmp.get(f) ?? [], l.laborable, l.especial);
@@ -224,6 +231,7 @@ export function calcularReporte({
     return {
       codigo: e.codigo,
       nombre: e.nombre,
+      departamento: e.departamento,
       activo: e.activo,
       laborables: lab.length,
       asistencias: lab.filter((d) => d.marcas.length).length,
