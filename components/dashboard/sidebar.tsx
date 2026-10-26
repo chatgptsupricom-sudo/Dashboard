@@ -258,7 +258,11 @@ export function Sidebar({
 
   const userRole = user.role;
   const userCids = (user as any).cids;
-  const permissions = rolePermissions[userRole as UserRole];
+  // En la tabla `roles` el nombre puede venir con otras mayúsculas que el enum
+  // ("Recursos Humanos" vs "recursos humanos"): sin esto el menú salía vacío.
+  const permissions =
+    rolePermissions[userRole as UserRole] ??
+    Object.entries(rolePermissions).find(([k]) => k.toLowerCase().trim() === String(userRole).toLowerCase().trim())?.[1];
   if (!permissions) return null;
 
   // Extraemos las secciones permitidas de forma segura
