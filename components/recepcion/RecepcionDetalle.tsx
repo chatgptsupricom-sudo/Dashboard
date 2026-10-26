@@ -1251,6 +1251,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                   }))}
                   seleccionado={seleccionado}
                   serialEnCualquiera
+                  seguirPasadoEsperado
                   onResultado={alEscanear}
                   onTerminar={() => setSeleccionado(null)}
                 />
@@ -1372,6 +1373,11 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           </span>
                         )}
                         <p className="text-sm text-slate-800 truncate">{i.producto}</p>
+                        {total !== null && total > esperado && (
+                          <span className="inline-block mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 rounded px-1.5 py-0.5">
+                            {t("sobrante")} +{fmt(total - esperado)}
+                          </span>
+                        )}
                         <p className="text-[11px] text-slate-400 truncate">
                           {[i.codigo, i.cajas_esperadas !== null ? `${i.cajas_esperadas} ${t("cajas").toLowerCase()}` : null]
                             .filter(Boolean)
