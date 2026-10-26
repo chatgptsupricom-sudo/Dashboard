@@ -497,6 +497,7 @@ export const rolePermissions: RolePermissions = {
       "stoplight_reports",
       "inventory",
       "bi_dias_promedio", // Días promedio de cobro, inventario y pago
+      "bi_reportes", // Desplegable Reportes: Facturación, Productos, Clientes (lib/inteligencia-negocio/reportes.ts)
       "catalogo", // El de los vendedores, de Valencia (lib/catalogo/sede.ts)
       "agenteia",
       // Desplegable Leads
