@@ -101,6 +101,7 @@ export const rolePermissions: RolePermissions = {
       "material_pop", // Inventario de Material POP (solo AdminLeads Valencia)
       "organigrama", // Organigrama y actividades de cada cargo (también rol Procesos)
       "flujogramas", // Flujogramas de procesos (también rol Procesos)
+      "seleccion_personal", // Matriz de selección de personal (también RRHH)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -306,7 +307,7 @@ export const rolePermissions: RolePermissions = {
       "dashboard", // KPIs globales de personal
       "asistencia", // Control de biométricos (Valencia/Caracas)
       "recibos_pago", // Emisión automatizada con firma digital
-      "reclutamiento", // Banco de empleo y CVs
+      "seleccion_personal", // Matriz de rastreo de selección de personal (lib/seleccion)
       "solicitudes_permiso", // Gestión de ausencias y vacaciones
       "onboarding", // Digitalización de inducciones y rutograma
       "documentacion_institucional", // Manuales, cargo y código de vestimenta
