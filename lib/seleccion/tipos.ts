@@ -162,26 +162,26 @@ export type CampoCandidato = {
 
 /** Campos editables del candidato, en el orden de la matriz. */
 export const CAMPOS_CANDIDATO: CampoCandidato[] = [
-  { clave: "nombre", etiqueta: "Nombre del candidato", bloque: "candidato", tipo: "texto", max: 160, enMatriz: true },
-  { clave: "telefono", etiqueta: "Teléfono", bloque: "candidato", tipo: "texto", max: 40, enMatriz: true },
-  { clave: "correo", etiqueta: "Correo", bloque: "candidato", tipo: "texto", max: 160, enMatriz: true },
+  { clave: "nombre", etiqueta: "Nombre del candidato", bloque: "candidato", tipo: "texto", max: 160, enMatriz: true, ayuda: "Nombre y apellido. Ej.: José Rodríguez" },
+  { clave: "telefono", etiqueta: "Teléfono", bloque: "candidato", tipo: "texto", max: 40, enMatriz: true, ayuda: "Ej.: 0414-1234567" },
+  { clave: "correo", etiqueta: "Correo", bloque: "candidato", tipo: "texto", max: 160, enMatriz: true, ayuda: "Ej.: jose.rodriguez@gmail.com" },
   { clave: "fuente", etiqueta: "Fuente de reclutamiento", bloque: "candidato", tipo: "fuente", max: 60, enMatriz: true, ayuda: "Permite evaluar qué portal de empleo es más efectivo." },
   { clave: "sondeo", etiqueta: "Sondeo telefónico", bloque: "fases", tipo: "opcion", opciones: SONDEO, enMatriz: true, ayuda: "Filtro inicial tras la preselección curricular." },
-  { clave: "entrevista_rrhh_fecha", etiqueta: "Entrevista RRHH (fecha)", bloque: "fases", tipo: "fecha", enMatriz: true },
+  { clave: "entrevista_rrhh_fecha", etiqueta: "Entrevista RRHH (fecha)", bloque: "fases", tipo: "fecha", enMatriz: true, ayuda: "El día de la entrevista con RRHH." },
   { clave: "entrevista_rrhh", etiqueta: "Entrevista RRHH", bloque: "fases", tipo: "opcion", opciones: APTO, enMatriz: true, ayuda: "Entrevista presencial u online." },
   { clave: "evaluacion", etiqueta: "Evaluaciones / Test", bloque: "fases", tipo: "opcion", opciones: FAVORABLE, enMatriz: true, ayuda: "Resultado de los test proyectivos." },
-  { clave: "evaluacion_puntaje", etiqueta: "Puntuación / diagnóstico", bloque: "fases", tipo: "texto", max: 120, enMatriz: true },
-  { clave: "entrevista_tecnica_fecha", etiqueta: "Entrevista técnica (fecha)", bloque: "fases", tipo: "fecha", enMatriz: true },
+  { clave: "evaluacion_puntaje", etiqueta: "Puntuación / diagnóstico", bloque: "fases", tipo: "texto", max: 120, enMatriz: true, ayuda: "Resultado de los test. Ej.: 82/100, perfil analítico" },
+  { clave: "entrevista_tecnica_fecha", etiqueta: "Entrevista técnica (fecha)", bloque: "fases", tipo: "fecha", enMatriz: true, ayuda: "El día de la entrevista con el jefe del área (también la puede anotar él desde su solicitud)." },
   { clave: "entrevista_tecnica", etiqueta: "Entrevista técnica", bloque: "fases", tipo: "opcion", opciones: APTO, enMatriz: true, ayuda: "Validación de competencias con la unidad solicitante." },
-  { clave: "entrevista_tecnica_concepto", etiqueta: "Concepto del jefe inmediato", bloque: "fases", tipo: "textoLargo", max: 2000 },
+  { clave: "entrevista_tecnica_concepto", etiqueta: "Concepto del jefe inmediato", bloque: "fases", tipo: "textoLargo", max: 2000, ayuda: "Lo que opina el jefe del área. Ej.: Conoce bien la zona, le falta experiencia en cobranza" },
   { clave: "referencias", etiqueta: "Chequeo de referencias", bloque: "fases", tipo: "opcion", opciones: REFERENCIAS, enMatriz: true, ayuda: "Referencias laborales y otros datos." },
-  { clave: "referencias_nota", etiqueta: "Observaciones de referencias", bloque: "fases", tipo: "textoLargo", max: 2000 },
+  { clave: "referencias_nota", etiqueta: "Observaciones de referencias", bloque: "fases", tipo: "textoLargo", max: 2000, ayuda: "Qué dijeron. Ej.: Ex jefe en Farmatodo: puntual, salió por reducción de personal" },
   { clave: "terna", etiqueta: "Terna (top 3)", bloque: "fases", tipo: "opcion", opciones: TERNA, enMatriz: true, ayuda: "Si entra al grupo de los 3 finalistas." },
-  { clave: "oferta", etiqueta: "Oferta salarial", bloque: "fases", tipo: "opcion", opciones: OFERTA, enMatriz: true },
+  { clave: "oferta", etiqueta: "Oferta salarial", bloque: "fases", tipo: "opcion", opciones: OFERTA, enMatriz: true, ayuda: "Si aceptó la oferta, la está negociando o la rechazó." },
   { clave: "examenes", etiqueta: "Exámenes médicos", bloque: "fases", tipo: "opcion", opciones: EXAMENES, enMatriz: true, ayuda: "Evaluaciones médicas pre-empleo." },
-  { clave: "estatus", etiqueta: "Estatus final", bloque: "cierre", tipo: "opcion", opciones: ESTATUS_FINAL, enMatriz: true },
+  { clave: "estatus", etiqueta: "Estatus final", bloque: "cierre", tipo: "opcion", opciones: ESTATUS_FINAL, enMatriz: true, ayuda: "En proceso mientras avanza. Contratado pide la fecha de ingreso. Banco de elegibles = sirve para una vacante futura." },
   { clave: "fecha_ingreso", etiqueta: "Fecha de ingreso", bloque: "cierre", tipo: "fecha", enMatriz: true, ayuda: "Fecha efectiva de contratación; detona el onboarding." },
-  { clave: "notas", etiqueta: "Notas", bloque: "cierre", tipo: "textoLargo", max: 4000 },
+  { clave: "notas", etiqueta: "Notas", bloque: "cierre", tipo: "textoLargo", max: 4000, ayuda: "Cualquier otro dato del proceso." },
 ];
 
 export const CAMPO_POR_CLAVE = new Map(CAMPOS_CANDIDATO.map((c) => [c.clave as string, c]));

@@ -119,7 +119,7 @@ export function FormRequisicion({
           <DialogTitle>{requisicion ? `Requisición ${requisicion.codigo}` : "Nueva requisición de personal"}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Etiqueta texto="ID requisición" ayuda="Identifica la solicitud formal de personal.">
+          <Etiqueta texto="ID requisición" ayuda="Identifica la solicitud formal de personal. Ej.: REQ-2026-004">
             <input
               className={inputCls}
               value={f.codigo}
@@ -130,7 +130,7 @@ export function FormRequisicion({
           <Etiqueta texto="Fecha de recepción" ayuda="Desde aquí se cuentan los días del proceso.">
             <input type="date" className={inputCls} value={f.fecha_recepcion} onChange={(e) => set("fecha_recepcion", e.target.value)} />
           </Etiqueta>
-          <Etiqueta texto="Unidad solicitante" ayuda="Cliente interno / entrevistador técnico.">
+          <Etiqueta texto="Unidad solicitante" ayuda="Cliente interno / entrevistador técnico. Ej.: Ventas">
             <input
               className={inputCls}
               list="seleccion-unidades"
@@ -143,10 +143,10 @@ export function FormRequisicion({
               ))}
             </datalist>
           </Etiqueta>
-          <Etiqueta texto="Cargo vacante" ayuda="Según el perfil de cargo.">
+          <Etiqueta texto="Cargo vacante" ayuda="Según el perfil de cargo. Ej.: Vendedor de calle">
             <input className={inputCls} value={f.cargo} onChange={(e) => set("cargo", e.target.value)} />
           </Etiqueta>
-          <Etiqueta texto="Sede">
+          <Etiqueta texto="Sede" ayuda="Dónde va a trabajar la persona.">
             <select className={inputCls} value={f.sede} onChange={(e) => set("sede", Number(e.target.value))}>
               {Object.entries(SEDES_SELECCION).map(([id, n]) => (
                 <option key={id} value={id}>
@@ -156,10 +156,10 @@ export function FormRequisicion({
             </select>
           </Etiqueta>
           <div className="grid grid-cols-2 gap-3">
-            <Etiqueta texto="Vacantes">
+            <Etiqueta texto="Vacantes" ayuda="Personas a contratar.">
               <input type="number" min={1} className={inputCls} value={f.vacantes} onChange={(e) => set("vacantes", e.target.value)} />
             </Etiqueta>
-            <Etiqueta texto="Meta (días)" ayuda="Tiempo de cobertura esperado.">
+            <Etiqueta texto="Meta (días)" ayuda="Tiempo de cobertura esperado. Alta 15, Media 30, Baja 60.">
               <input type="number" min={1} className={inputCls} value={f.meta_dias} onChange={(e) => set("meta_dias", e.target.value)} />
             </Etiqueta>
           </div>
@@ -182,7 +182,7 @@ export function FormRequisicion({
             </div>
           )}
           <div className="sm:col-span-2">
-            <Etiqueta texto="Notas">
+            <Etiqueta texto="Notas" ayuda="Lo que sirva para la búsqueda. Si viene de una solicitud, aquí están el perfil y quién la aprobó.">
               <textarea rows={3} className={inputCls} value={f.notas} onChange={(e) => set("notas", e.target.value)} />
             </Etiqueta>
           </div>
