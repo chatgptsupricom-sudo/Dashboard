@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { recontarSeriales } from "@/lib/recepcion/conteo";
+import { completarLlevaSerial } from "@/lib/recepcion/seriales";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -49,6 +50,16 @@ export async function DELETE(
     await query("DELETE FROM recepcion_packing_seriales WHERE id = ? AND recepcion_id = ?", [serialId, id]);
     // Se resta en el contenedor donde se habia pistoleado.
     const c = await recontarSeriales(id, Number(itemId), contenedorId, sesion!.nombre);
+    // Sin seriales, el renglon vuelve a lo que diga Odoo: si se habia elegido
+    // a mano por error, se puede volver a escribir la cantidad.
+    const item = (datos.items as any[]).find((i) => Number(i.id) === Number(itemId));
+    let llevaSerial = !!item?.lleva_serial;
+    const quedan = await query("SELECT 1 FROM recepcion_packing_seriales WHERE item_id = ? LIMIT 1", [itemId]);
+    if ((quedan.rows as any[]).length === 0 && item) {
+      await query("UPDATE recepcion_packing_items SET lleva_serial = NULL WHERE id = ?", [itemId]);
+      const [r2] = await completarLlevaSerial([{ id: Number(itemId), codigo: item.codigo ?? null, lleva_serial: null }]);
+      llevaSerial = Number(r2.lleva_serial) === 1;
+    }
     emitirRecepcion({ accion: "conteo", id, cids: Number(datos.recepcion.cids) });
     return NextResponse.json({
       success: true,
@@ -56,6 +67,7 @@ export async function DELETE(
       cantidad: Number(c.total || 0),
       contenedor_id: contenedorId,
       cantidad_contenedor: c.contenedor ?? 0,
+      lleva_serial: llevaSerial,
     });
   } catch (e: any) {
     console.error("[recepcion] no se pudo quitar el serial:", e?.message);
