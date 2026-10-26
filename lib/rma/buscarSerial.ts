@@ -21,9 +21,10 @@ import { OdooNoDisponibleError } from "@/lib/servicio-tecnico/factura";
  * salida a un cliente de afuera, y si después volvió (devolución), queda como
  * devuelto.
  *
- * Antes de abril de 2026 la venta estaba en Smartbit, que no guarda seriales:
- * un equipo vendido entonces sale "no está en Odoo" o "sin salida" aunque sí
- * se haya vendido.
+ * Antes de abril de 2026 la venta estaba en Smartbit: un equipo vendido
+ * entonces sale "no está en Odoo" o "sin salida" aunque sí se haya vendido.
+ * Para eso está serialSmartbit() de lib/rma/buscarCompras.ts (sedes cargadas
+ * con serial).
  */
 
 export type Veredicto = "comprado" | "devuelto" | "solo_entre_sedes" | "sin_salida" | "no_existe";
@@ -37,6 +38,8 @@ export interface MovimientoSerial {
   /** Empresa del grupo (traspaso entre sedes, no venta). */
   intercompania: boolean;
   facturas: { numero: string; fecha: string | null }[];
+  /** Artículo del movimiento (Smartbit, donde un serial corto se repite entre productos). */
+  producto?: string;
 }
 
 export interface ResultadoSerial {
