@@ -34,6 +34,7 @@ import {
   BrainCircuit,
   Network,
   Workflow,
+  UserSearch,
   ScrollText,
   Calendar,
   Camera,
@@ -294,6 +295,8 @@ export function Sidebar({
     { id: "organigrama", label: "Organigrama", icon: Network, slug: "/organigrama", absoluteHref: true },
     // Flujogramas de procesos (SuperAdmin y Procesos).
     { id: "flujogramas", label: "Flujogramas", icon: Workflow, slug: "/flujogramas", absoluteHref: true },
+    // Matriz de rastreo de selección de personal de RRHH (lib/seleccion/).
+    { id: "seleccion_personal", label: "Selección de personal", icon: UserSearch, slug: "/recursos_humanos/seleccion", absoluteHref: true },
     // Políticas, acuerdos y circulares de la empresa (lib/politicas/permisos.ts).
     { id: "politicas", label: "Políticas y Acuerdos", icon: ScrollText, slug: "/politicas", absoluteHref: true },
     {
