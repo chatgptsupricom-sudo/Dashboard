@@ -1,30 +1,32 @@
 import { query } from "@/lib/db";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { partnersIntercompania } from "@/lib/intercompania";
+import { calcularGarantia, type ResultadoGarantia } from "@/lib/garantia";
 import { normalizarRif, RIF_SQL, SQL_SIN_INTERCOMPANIA } from "@/lib/smartbit";
 import { OdooNoDisponibleError } from "@/lib/servicio-tecnico/factura";
+import type { MovimientoSerial, ResultadoSerial } from "@/lib/rma/buscarSerial";
 
 /**
- * Compras de un producto y facturas de Smartbit, para Buscar Factura de RMA
- * (/rma/buscar-factura). Completa a lib/rma/buscarSerial.ts, que solo puede
- * mirar Odoo: Smartbit (las ventas antes de abril de 2026) no guarda
- * seriales, así que para esos equipos la validación es por producto y
- * cliente.
+ * Compras de un producto, facturas y seriales de Smartbit, para Buscar
+ * Factura de RMA (/rma/buscar-factura). Completa a lib/rma/buscarSerial.ts,
+ * que mira Odoo (desde abril de 2026).
  *
  * - `ventas_smartbit`: un renglón por artículo vendido (sede, día, cliente,
- *   RIF en `codigo_cliente`, código y nombre del artículo, unidades). No
- *   trae número de factura.
+ *   RIF en `codigo_cliente`, código y nombre del artículo, unidades). Lo
+ *   cargado con el Excel "Ventas histórico" (scripts/smartbit-historico-a-sql.cjs,
+ *   hoy Valencia) trae además `numero` (el de la factura) y `serial` (un
+ *   renglón por unidad); lo cargado por API o con los exports anteriores no
+ *   (columnas de sql/ventas_smartbit_numero_serial.sql, NULL).
  * - `ventas_smartbit_facturas`: la cabecera de cada factura (número, día, RIF
- *   normalizado, cliente, unidades), sin productos. Solo de las sedes que
- *   subieron el Excel "Ventas / Devoluciones" en Recompra; las devoluciones
- *   vienen con prefijo `NC-`.
+ *   normalizado, cliente, unidades), sin productos. Las devoluciones vienen
+ *   con prefijo `NC-`, igual que `ventas_smartbit.numero`.
  *
- * Las dos tablas no tienen una llave en común: los productos de una factura
- * de Smartbit son los que ese cliente compró ese día en esa sede (mismo
+ * Los productos de una factura salen de `ventas_smartbit.numero`; si la sede
+ * no lo tiene, son los que ese cliente compró ese día en esa sede (mismo
  * criterio que Recompra, "una compra = cliente + día").
  *
  * Nada devuelve precios ni montos. Las compras de empresas del grupo no
- * cuentan como compra de un cliente y se dejan fuera.
+ * cuentan como compra de un cliente.
  */
 
 export interface CompraProducto {
@@ -32,11 +34,21 @@ export interface CompraProducto {
   fecha: string;
   sede: number | null;
   cliente: string;
-  /** Factura (Odoo); en Smartbit el renglón no la trae. */
+  /** Factura; en Smartbit solo si la sede se cargó con número. */
   factura: string | null;
   codigo: string;
   producto: string;
+  /** Solo Smartbit con serial (un renglón por unidad). */
+  serial: string | null;
   unidades: number;
+}
+
+export interface ProductoSmartbit {
+  codigo: string;
+  articulo: string;
+  unidades: number;
+  seriales: string[];
+  garantia: ResultadoGarantia;
 }
 
 export interface FacturaSmartbit {
@@ -47,8 +59,9 @@ export interface FacturaSmartbit {
   rif: string;
   unidades: number | null;
   devolucion: boolean;
-  /** Lo que ese cliente compró ese día en esa sede (ventas_smartbit). */
-  productos: { codigo: string; articulo: string; unidades: number }[];
+  /** true = los productos de la factura; false = lo que ese cliente compró ese día en esa sede. */
+  porNumero: boolean;
+  productos: ProductoSmartbit[];
 }
 
 const LIMITE = 100;
@@ -71,7 +84,41 @@ async function filas(sql: string, params: any[]): Promise<any[]> {
   }
 }
 
+/**
+ * Columnas de ventas_smartbit que no están en todas las bases: `numero` y
+ * `serial` (sql/ventas_smartbit_numero_serial.sql) y `marca`. Sin la
+ * migración se vuelve a mirar en la próxima búsqueda.
+ */
+let columnas: Promise<Set<string>> | null = null;
+function columnasSmartbit(): Promise<Set<string>> {
+  columnas ??= filas("SHOW COLUMNS FROM ventas_smartbit", []).then((r) => {
+    const set = new Set(r.map((c) => String(c.Field)));
+    if (!set.has("serial")) columnas = null;
+    return set;
+  });
+  return columnas;
+}
+
+/** Garantía de un artículo de Smartbit, sin poder tumbar la búsqueda. */
+async function garantiaSmartbit(marca: string, articulo: string, fecha: string): Promise<ResultadoGarantia> {
+  try {
+    return await calcularGarantia({ marcaOdoo: marca, productoNombre: articulo, fechaFactura: fecha });
+  } catch (e: any) {
+    console.error("[rma/buscarCompras] garantía:", e?.message);
+    return { estado: "indeterminada", meses_cubiertos: null, fecha_vencimiento: null, dias_restantes: null, marca_resuelta: null, motivo: "error_calculo" };
+  }
+}
+
 const sinComodines = (s: string) => s.trim().replace(/[%_]/g, " ").replace(/\s+/g, " ").slice(0, 80);
+
+/** Filtro SQL de un artículo de Smartbit por código (exacto, `/` = `-`) o por nombre. */
+function filtroArticulo(texto: string): { sql: string; params: any[] } {
+  const codigo = texto.toUpperCase();
+  return {
+    sql: "(UPPER(TRIM(codigo_articulo)) IN (?, ?) OR articulo LIKE ?)",
+    params: [codigo, codigo.replace(/\//g, "-"), `%${texto}%`],
+  };
+}
 
 /** Productos de Odoo por código exacto o por nombre. */
 export async function idsDeProducto(texto: string): Promise<{ ids: number[]; nombres: string[] }> {
@@ -155,14 +202,16 @@ export async function comprasDelProducto(
         factura: nombre(l.move_id) || null,
         codigo: "",
         producto: nombre(l.product_id),
+        serial: null,
         unidades: Number(l.quantity) || 0,
       }));
   }
 
   // ── Smartbit (antes de abril 2026): renglones por artículo ──
-  const codigo = q.toUpperCase();
-  const params: any[] = [codigo, codigo.replace(/\//g, "-"), `%${q}%`];
-  let filtro = `(UPPER(TRIM(codigo_articulo)) IN (?, ?) OR articulo LIKE ?)`;
+  const conSerial = (await columnasSmartbit()).has("serial");
+  const articulo = filtroArticulo(q);
+  const params: any[] = [...articulo.params];
+  let filtro = articulo.sql;
   if (c) {
     filtro += ` AND (cliente LIKE ?${digitosCliente.length >= 6 ? ` OR ${RIF_SQL} LIKE ?` : ""})`;
     params.push(`%${c}%`);
@@ -174,6 +223,7 @@ export async function comprasDelProducto(
   }
   const sb = await filas(
     `SELECT company_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, cliente, codigo_articulo, articulo, unidades
+            ${conSerial ? ", numero, serial" : ""}
        FROM ventas_smartbit
       WHERE ${filtro} AND unidades > 0 AND ${SQL_SIN_INTERCOMPANIA}
       ORDER BY fecha DESC
@@ -185,9 +235,10 @@ export async function comprasDelProducto(
     fecha: r.fecha,
     sede: Number(r.company_id) || null,
     cliente: r.cliente || "Sin cliente",
-    factura: null,
+    factura: r.numero || null,
     codigo: r.codigo_articulo || "",
     producto: r.articulo || "",
+    serial: r.serial || null,
     unidades: Number(r.unidades) || 0,
   }));
 
@@ -211,18 +262,42 @@ export async function facturasSmartbit(numeroCrudo: string, sede?: number): Prom
        FROM ventas_smartbit_facturas WHERE ${filtro} ORDER BY fecha DESC LIMIT 10`,
     params,
   );
+  const cols = await columnasSmartbit();
+  const marca = cols.has("marca") ? "MAX(marca)" : "''";
   return Promise.all(
     cabeceras.map(async (f) => {
-      const productos = await filas(
-        `SELECT codigo_articulo, articulo, SUM(unidades) AS unidades
-           FROM ventas_smartbit
-          WHERE company_id = ? AND fecha = ? AND (${RIF_SQL} = ? OR cliente = ?)
-          GROUP BY codigo_articulo, articulo
-          HAVING SUM(unidades) <> 0
-          ORDER BY articulo
-          LIMIT 200`,
-        [f.company_id, f.fecha, f.rif || "", f.cliente || ""],
-      );
+      // Por número (con sus seriales) si la sede lo tiene; si no, cliente + día.
+      // Se agrupa aquí y no con GROUP_CONCAT, que corta en 1024 bytes.
+      const renglones = cols.has("serial")
+        ? await filas(
+            `SELECT codigo_articulo, articulo, ${cols.has("marca") ? "marca" : "''"} AS marca, unidades, serial
+               FROM ventas_smartbit
+              WHERE company_id = ? AND numero = ?
+              ORDER BY articulo, serial
+              LIMIT 2000`,
+            [f.company_id, f.numero],
+          )
+        : [];
+      const porNumero = new Map<string, { codigo_articulo: string; articulo: string; marca: string; unidades: number; seriales: string[] }>();
+      for (const r of renglones) {
+        const clave = `${r.codigo_articulo}|${r.articulo}`;
+        const p = porNumero.get(clave) ?? { ...r, unidades: 0, seriales: [] };
+        p.unidades += Number(r.unidades) || 0;
+        if (r.serial) p.seriales.push(String(r.serial));
+        porNumero.set(clave, p);
+      }
+      const productos: any[] = porNumero.size
+        ? [...porNumero.values()]
+        : await filas(
+            `SELECT codigo_articulo, articulo, ${marca} AS marca, SUM(unidades) AS unidades
+               FROM ventas_smartbit
+              WHERE company_id = ? AND fecha = ? AND (${RIF_SQL} = ? OR cliente = ?)
+              GROUP BY codigo_articulo, articulo
+              HAVING SUM(unidades) <> 0
+              ORDER BY articulo
+              LIMIT 200`,
+            [f.company_id, f.fecha, f.rif || "", f.cliente || ""],
+          );
       return {
         sede: Number(f.company_id),
         fecha: f.fecha,
@@ -231,12 +306,90 @@ export async function facturasSmartbit(numeroCrudo: string, sede?: number): Prom
         rif: f.rif || "",
         unidades: f.unidades == null ? null : Number(f.unidades),
         devolucion: String(f.numero).toUpperCase().startsWith("NC-"),
-        productos: productos.map((p) => ({
-          codigo: p.codigo_articulo || "",
-          articulo: p.articulo || "",
-          unidades: Number(p.unidades) || 0,
-        })),
+        porNumero: porNumero.size > 0,
+        productos: await Promise.all(
+          productos.map(async (p) => ({
+            codigo: p.codigo_articulo || "",
+            articulo: p.articulo || "",
+            unidades: Number(p.unidades) || 0,
+            seriales: p.seriales ?? [],
+            garantia: await garantiaSmartbit(p.marca || "", p.articulo || "", f.fecha),
+          })),
+        ),
       };
     }),
   );
+}
+
+/**
+ * Un serial en las ventas de Smartbit (solo las sedes cargadas con serial),
+ * con la misma forma que buscarSerial() de Odoo: cada factura es una
+ * "salida" y cada devolución (NC) una "devolucion". Las ventas a empresas del
+ * grupo se muestran pero no cuentan; el veredicto sale de la última venta a
+ * un cliente de afuera y de si después volvió. Smartbit tiene seriales
+ * cortos internos ("7750") que se repiten entre productos: con `producto`
+ * solo cuentan los de ese artículo.
+ */
+export async function serialSmartbit(
+  serial: string,
+  producto = "",
+  sede?: number,
+): Promise<ResultadoSerial & { garantia: ResultadoGarantia | null }> {
+  const vacio = { serial, veredicto: "no_existe" as const, productos: [], venta: null, movimientos: [], garantia: null };
+  const cols = await columnasSmartbit();
+  if (!serial || !cols.has("serial")) return vacio;
+
+  // Los seriales se guardan sin espacios a los lados y la columna no distingue
+  // mayúsculas: `=` usa el índice.
+  const params: any[] = [serial.trim()];
+  let filtro = "serial = ?";
+  const q = sinComodines(producto);
+  if (q.length >= 3) {
+    const a = filtroArticulo(q);
+    filtro += ` AND ${a.sql}`;
+    params.push(...a.params);
+  }
+  if (sede) {
+    filtro += " AND company_id = ?";
+    params.push(sede);
+  }
+  const r = await filas(
+    `SELECT company_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, numero, cliente, articulo,
+            ${cols.has("marca") ? "marca" : "''"} AS marca, unidades,
+            (${SQL_SIN_INTERCOMPANIA}) AS externo
+       FROM ventas_smartbit
+      WHERE ${filtro}
+      ORDER BY fecha, id
+      LIMIT 200`,
+    params,
+  );
+  if (!r.length) return vacio;
+
+  const movimientos: (MovimientoSerial & { marca: string })[] = r.map((m) => ({
+    tipo: Number(m.unidades) < 0 ? "devolucion" : "salida",
+    fecha: m.fecha,
+    sede: Number(m.company_id) || null,
+    despacho: "",
+    cliente: m.cliente || "Sin cliente",
+    intercompania: !Number(m.externo),
+    facturas: m.numero ? [{ numero: m.numero, fecha: m.fecha }] : [],
+    producto: m.articulo || "",
+    marca: m.marca || "",
+  }));
+  // Ya vienen en orden: una devolución del mismo día cuenta solo si va después de la venta.
+  const aClientes = movimientos.filter((m) => !m.intercompania);
+  const iVenta = aClientes.map((m) => m.tipo).lastIndexOf("salida");
+  const venta = iVenta >= 0 ? aClientes[iVenta] : null;
+  const veredicto = venta
+    ? aClientes.slice(iVenta + 1).some((m) => m.tipo === "devolucion") ? "devuelto" : "comprado"
+    : "solo_entre_sedes";
+  const sinMarca = ({ marca, ...m }: MovimientoSerial & { marca: string }): MovimientoSerial => m;
+  return {
+    serial,
+    veredicto,
+    productos: [...new Set(movimientos.map((m) => m.producto || "").filter(Boolean))],
+    venta: venta && sinMarca(venta),
+    movimientos: movimientos.map(sinMarca),
+    garantia: venta && veredicto === "comprado" ? await garantiaSmartbit(venta.marca, venta.producto || "", venta.fecha) : null,
+  };
 }
