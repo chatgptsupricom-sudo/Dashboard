@@ -1,9 +1,9 @@
-// Clientes que compraron en un mes: cuántos, cuáles, sus facturas del mes y
-// el detalle de cada una. Facturas de cliente publicadas de Odoo por fecha de
-// factura (las NC del mes salen en la lista y restan), sin intercompañía.
-// Montos en USD (`*_signed` / `balance`, moneda de la sede; Caracas factura
-// en bolívares). Antes del corte (CORTE_ODOO) Odoo no tiene la venta real:
-// esos meses salen vacíos.
+// Clientes que compraron en un mes o en varios (desde/hasta): cuántos,
+// cuáles, sus facturas del período y el detalle de cada una. Facturas de
+// cliente publicadas de Odoo por fecha de factura (las NC salen en la lista y
+// restan), sin intercompañía. Montos en USD (`*_signed` / `balance`, moneda
+// de la sede; Caracas factura en bolívares). Antes del corte (CORTE_ODOO)
+// Odoo no tiene la venta real: esos meses salen vacíos.
 
 import { idM2o, leerTodo, nombreM2o, redondear } from "@/lib/administracion/lectura";
 import { sedeDelToken } from "@/lib/auth/sedeRol";
@@ -12,6 +12,8 @@ import { sinIntercompania } from "@/lib/intercompania";
 export const SEDES_COMPRAS: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 
 const TIPOS = ["out_invoice", "out_receipt", "out_refund"];
+// ponytail: tope para que la respuesta (con el detalle de cada factura) no pase de ~20 MB; paginar si piden más.
+export const MAX_MESES = 12;
 
 export type LineaFactura = { producto: string; descripcion: string; cantidad: number; precio: number; descuento: number; subtotal: number };
 export type FacturaMes = {
@@ -27,10 +29,15 @@ export type FacturaMes = {
   lineas: LineaFactura[];
 };
 export type ClienteMes = { id: number; cliente: string; rif: string; sede: number; subtotal: number; iva: number; total: number; facturas: FacturaMes[] };
+/** Un mes de una sede, con el mismo criterio que si se pidiera solo ese mes. */
+export type ResumenMes = { mes: string; sede: number; clientes: number; facturas: number; nc: number; subtotal: number; iva: number; total: number };
 export type ReporteComprasMes = {
-  mes: string;
+  desde: string;
+  hasta: string;
+  meses: string[];
   sedes: number[];
   clientes: ClienteMes[];
+  porMes: ResumenMes[];
   resumen: { clientes: number; facturas: number; subtotal: number; total: number };
 };
 
@@ -47,12 +54,29 @@ export function sedesDelUsuario(payload: any, sp: URLSearchParams): number[] | n
   return SEDES_COMPRAS[pedida] ? [pedida] : Object.keys(SEDES_COMPRAS).map(Number);
 }
 
-/** `?mes=YYYY-MM`; si no viene o no es válido, el mes en curso (hora de Caracas). */
-export function mesPedido(sp: URLSearchParams): string {
-  const m = sp.get("mes") || "";
-  return /^\d{4}-(0[1-9]|1[0-2])$/.test(m)
-    ? m
-    : new Date().toLocaleDateString("sv-SE", { timeZone: "America/Caracas" }).slice(0, 7);
+const ES_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function sumarMeses(mes: string, n: number): string {
+  const [a, m] = mes.split("-").map(Number);
+  const d = new Date(a, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * `?desde=YYYY-MM&hasta=YYYY-MM` (o `?mes=` para uno solo). Sin fechas
+ * válidas, el mes en curso (hora de Caracas). Al revés se invierten y más de
+ * MAX_MESES se recorta por el principio.
+ */
+export function periodoPedido(sp: URLSearchParams): { desde: string; hasta: string } {
+  const actual = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Caracas" }).slice(0, 7);
+  const leer = (k: string) => (ES_MES.test(sp.get(k) || "") ? sp.get(k)! : null);
+  let desde = leer("desde") ?? leer("mes");
+  let hasta = leer("hasta") ?? leer("mes");
+  desde ??= hasta ?? actual;
+  hasta ??= desde;
+  if (desde > hasta) [desde, hasta] = [hasta, desde];
+  if (desde < sumarMeses(hasta, 1 - MAX_MESES)) desde = sumarMeses(hasta, 1 - MAX_MESES);
+  return { desde, hasta };
 }
 
 function finDeMes(mes: string): string {
@@ -60,8 +84,8 @@ function finDeMes(mes: string): string {
   return `${mes}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`;
 }
 
-async function leerSede(mes: string, sede: number) {
-  const fechas = [["invoice_date", ">=", `${mes}-01`], ["invoice_date", "<=", finDeMes(mes)]];
+async function leerSede(desde: string, hasta: string, sede: number) {
+  const fechas = [["invoice_date", ">=", `${desde}-01`], ["invoice_date", "<=", finDeMes(hasta)]];
   const [facturas, lineas] = await Promise.all([
     leerTodo(
       "account.move",
@@ -83,8 +107,11 @@ async function leerSede(mes: string, sede: number) {
   return { sede, facturas, lineas };
 }
 
-export async function comprasDelMes(mes: string, sedes: number[]): Promise<ReporteComprasMes> {
-  const leido = await Promise.all(sedes.map((s) => leerSede(mes, s)));
+export async function comprasDelPeriodo(desde: string, hasta: string, sedes: number[]): Promise<ReporteComprasMes> {
+  const meses: string[] = [];
+  for (let m = desde; m <= hasta; m = sumarMeses(m, 1)) meses.push(m);
+
+  const leido = await Promise.all(sedes.map((s) => leerSede(desde, hasta, s)));
 
   const partners = [...new Set(leido.flatMap((l) => l.facturas.map((f) => idM2o(f.commercial_partner_id))).filter((x): x is number => x != null))];
   const rifs = new Map<number, string>();
@@ -94,6 +121,7 @@ export async function comprasDelMes(mes: string, sedes: number[]): Promise<Repor
   }
 
   const clientes = new Map<string, ClienteMes>();
+  const porMes: ResumenMes[] = [];
   for (const { sede, facturas, lineas } of leido) {
     const lineasDe = new Map<number, LineaFactura[]>();
     for (const l of lineas) {
@@ -113,6 +141,26 @@ export async function comprasDelMes(mes: string, sedes: number[]): Promise<Repor
       });
       lineasDe.set(move, lista);
     }
+
+    // Por mes: cuenta quien tuvo al menos una factura ese mes (igual que pedir el mes solo).
+    const delMes = new Map<string, any[]>(meses.map((m) => [m, []]));
+    for (const f of facturas) delMes.get(String(f.invoice_date || "").slice(0, 7))?.push(f);
+    for (const [mes, fs] of delMes) {
+      const compraron = new Set(fs.filter((f) => f.move_type !== "out_refund").map((f) => idM2o(f.commercial_partner_id)));
+      const suyas = fs.filter((f) => compraron.has(idM2o(f.commercial_partner_id)));
+      const suma = (k: string) => redondear(suyas.reduce((s, f) => s + (Number(f[k]) || 0), 0));
+      porMes.push({
+        mes,
+        sede,
+        clientes: compraron.size,
+        facturas: suyas.filter((f) => f.move_type !== "out_refund").length,
+        nc: suyas.filter((f) => f.move_type === "out_refund").length,
+        subtotal: suma("amount_untaxed_signed"),
+        iva: suma("amount_tax_signed"),
+        total: suma("amount_total_signed"),
+      });
+    }
+
     for (const f of facturas) {
       const id = idM2o(f.commercial_partner_id);
       if (id == null) continue;
@@ -141,16 +189,19 @@ export async function comprasDelMes(mes: string, sedes: number[]): Promise<Repor
     }
   }
 
-  // Compró = al menos una factura en el mes; quien solo tuvo una NC no entra.
+  // Compró = al menos una factura en el período; quien solo tuvo NC no entra.
   const lista = [...clientes.values()]
     .filter((c) => c.facturas.some((f) => !f.nc))
     .map((c) => ({ ...c, subtotal: redondear(c.subtotal), iva: redondear(c.iva), total: redondear(c.total) }))
     .sort((a, b) => b.subtotal - a.subtotal);
 
   return {
-    mes,
+    desde,
+    hasta,
+    meses,
     sedes,
     clientes: lista,
+    porMes,
     resumen: {
       clientes: lista.length,
       facturas: lista.reduce((s, c) => s + c.facturas.filter((f) => !f.nc).length, 0),

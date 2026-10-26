@@ -1,11 +1,13 @@
 "use client";
 
-// Clientes que compraron en el mes: cuántos, cuáles, sus facturas del mes y
+// Clientes que compraron en un mes o en varios (desde/hasta): cuántos, cuáles, sus facturas y
 // el detalle de cada una, con export a Excel.
 // Vive bajo /adminleads para heredar el guard de rol; el SuperAdmin entra por
 // el desplegable Leads. Datos de /api/adminleads/compras-mes (AdminLeads ve
-// solo su sede: la API la fija).
+// solo su sede: la API la fija). Con un solo mes se pide también el anterior
+// para la comparativa (components/adminleads/ComparativaComprasMes.tsx).
 
+import { ComparativaComprasMes, mesAnterior } from "@/components/adminleads/ComparativaComprasMes";
 import type { ClienteMes, FacturaMes, ReporteComprasMes } from "@/lib/adminleads/comprasMes";
 import { ChevronDown, ChevronRight, Download, Loader2, Search } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
@@ -14,6 +16,10 @@ const SEDES: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panam�
 const usd = (n: number) => `$${n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (n: number) => n.toLocaleString("es-VE", { maximumFractionDigits: 2 });
 const campo = "py-2 px-3 bg-zinc-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-blue-500 text-zinc-600";
+const MES_ACTUAL = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Caracas" }).slice(0, 7);
+const MAX_MESES = 12; // el mismo tope de lib/adminleads/comprasMes.ts
+const nombreMes = (mes: string) =>
+  new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)) - 1, 1).toLocaleDateString("es-VE", { month: "long", year: "numeric" });
 const fecha = (iso: string) => (iso ? iso.split("-").reverse().join("/") : "");
 
 function DetalleFactura({ f }: { f: FacturaMes }) {
@@ -119,10 +125,12 @@ function FacturasCliente({ c }: { c: ClienteMes }) {
 }
 
 export default function ComprasMesPage() {
-  const [mes, setMes] = useState(() => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Caracas" }).slice(0, 7));
+  const [desde, setDesde] = useState(MES_ACTUAL);
+  const [hasta, setHasta] = useState(MES_ACTUAL);
   const [sede, setSede] = useState("");
   const [buscar, setBuscar] = useState("");
   const [data, setData] = useState<ReporteComprasMes | null>(null);
+  const [anterior, setAnterior] = useState<ReporteComprasMes | null>(null);
   // Sin elegir sede la API devuelve las que el usuario puede ver: una sola = AdminLeads, sin selector.
   const [sedeFija, setSedeFija] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -130,20 +138,28 @@ export default function ComprasMesPage() {
   const [abierto, setAbierto] = useState<string | null>(null);
 
   const qs = useMemo(() => {
-    const p = new URLSearchParams({ mes });
+    const p = new URLSearchParams({ desde, hasta });
     if (sede) p.set("sede", sede);
     return p.toString();
-  }, [mes, sede]);
+  }, [desde, hasta, sede]);
 
   useEffect(() => {
     const ctrl = new AbortController();
     setCargando(true);
     setError(null);
-    fetch(`/api/adminleads/compras-mes?${qs}`, { signal: ctrl.signal })
-      .then((r) => r.json())
-      .then((r) => {
-        if (r.error) throw new Error(r.error);
+    const pedir = (query: string) =>
+      fetch(`/api/adminleads/compras-mes?${query}`, { signal: ctrl.signal })
+        .then((r) => r.json())
+        .then((r) => {
+          if (r.error) throw new Error(r.error);
+          return r as ReporteComprasMes;
+        });
+    const previo = new URLSearchParams({ mes: mesAnterior(desde) });
+    if (sede) previo.set("sede", sede);
+    Promise.all([pedir(qs), desde === hasta ? pedir(previo.toString()) : null])
+      .then(([r, ant]) => {
         setData(r);
+        setAnterior(ant);
         if (!sede && r.sedes.length === 1) setSedeFija(r.sedes[0]);
       })
       .catch((e) => e.name !== "AbortError" && setError(e.message))
@@ -165,23 +181,58 @@ export default function ComprasMesPage() {
 
   const r = data?.resumen;
   const variasSedes = (data?.sedes.length ?? 0) > 1;
-  const columnas = variasSedes ? 7 : 6;
+  // Solo con un mes: comparativa y columna "Mes anterior".
+  const comparar = anterior && data && data.meses.length === 1 ? anterior : null;
+  const columnas = (variasSedes ? 7 : 6) + (comparar ? 1 : 0);
+  const previoDe = useMemo(() => new Map((comparar?.clientes ?? []).map((c) => [`${c.sede}|${c.id}`, c.subtotal])), [comparar]);
+  // Varios meses: un renglón por mes con las sedes sumadas (el mismo cliente en dos sedes cuenta en cada una).
+  const porMes = useMemo(() => {
+    if (!data || data.meses.length < 2) return [];
+    return data.meses.map((mes) => {
+      const filas = data.porMes.filter((m) => m.mes === mes);
+      const suma = (k: "clientes" | "facturas" | "nc" | "subtotal" | "total") => filas.reduce((s, m) => s + m[k], 0);
+      return { mes, clientes: suma("clientes"), facturas: suma("facturas"), nc: suma("nc"), subtotal: suma("subtotal"), total: suma("total") };
+    });
+  }, [data]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
       <div>
         <h1 className="text-3xl font-black text-slate-900">Clientes del mes</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Quién compró en el mes, sus facturas y qué compró en cada una
+          Quién compró en el período, sus facturas y qué compró en cada una
           {sedeFija != null ? ` · ${SEDES[sedeFija]}` : ""}.
         </p>
       </div>
 
       <div className="flex flex-col md:flex-row gap-3 bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm md:items-center">
         <label className="flex items-center gap-2 text-xs text-zinc-500">
-          Mes
-          <input type="month" className={campo} value={mes} onChange={(e) => e.target.value && setMes(e.target.value)} />
+          Desde
+          <input
+            type="month"
+            className={campo}
+            value={desde}
+            max={MES_ACTUAL}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (!v) return;
+              setDesde(v);
+              if (v > hasta) setHasta(v);
+            }}
+          />
         </label>
+        <label className="flex items-center gap-2 text-xs text-zinc-500">
+          hasta
+          <input
+            type="month"
+            className={campo}
+            value={hasta}
+            min={desde}
+            max={MES_ACTUAL}
+            onChange={(e) => e.target.value && setHasta(e.target.value < desde ? desde : e.target.value)}
+          />
+        </label>
+        {desde !== hasta && <span className="text-xs text-zinc-400">Hasta {MAX_MESES} meses.</span>}
         {sedeFija == null && (
           <select className={campo} value={sede} onChange={(e) => setSede(e.target.value)} aria-label="Sede">
             <option value="">Todas las sedes</option>
@@ -207,23 +258,57 @@ export default function ComprasMesPage() {
 
       {r && data && (
         <div className={cargando ? "opacity-50 pointer-events-none transition-opacity" : ""}>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              ["Clientes que compraron", r.clientes.toLocaleString()],
-              ["Facturas", r.facturas.toLocaleString()],
-              ["Monto sin IVA", usd(r.subtotal)],
-              ["Total con IVA", usd(r.total)],
-            ].map(([k, v]) => (
-              <div key={k} className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-4">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">{k}</p>
-                <p className="text-xl font-black text-zinc-800 mt-1 tabular-nums">{v}</p>
-              </div>
-            ))}
-          </div>
+          {comparar ? (
+            <ComparativaComprasMes actual={data} anterior={comparar} />
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                ["Clientes que compraron", r.clientes.toLocaleString()],
+                ["Facturas", r.facturas.toLocaleString()],
+                ["Monto sin IVA", usd(r.subtotal)],
+                ["Total con IVA", usd(r.total)],
+              ].map(([k, v]) => (
+                <div key={k} className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">{k}</p>
+                  <p className="text-xl font-black text-zinc-800 mt-1 tabular-nums">{v}</p>
+                </div>
+              ))}
+            </div>
+          )}
           <p className="text-xs text-zinc-400 mt-2">
-            Facturas de cliente de Odoo por fecha de factura, sin empresas del grupo. Las notas de crédito del mes salen
-            en la lista del cliente y restan. Montos en USD.
+            Facturas de cliente de Odoo por fecha de factura, sin empresas del grupo. Las notas de crédito del período
+            salen en la lista del cliente y restan. Montos en USD.
+            {porMes.length > 0 && " En el total del período cada cliente cuenta una vez aunque haya comprado varios meses."}
           </p>
+
+          {porMes.length > 0 && (
+            <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm mt-4 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-[11px] uppercase tracking-wide text-zinc-400 bg-zinc-50">
+                  <tr>
+                    <th className="text-left px-3 py-2">Mes</th>
+                    <th className="text-right px-3 py-2">Clientes</th>
+                    <th className="text-right px-3 py-2">Facturas</th>
+                    <th className="text-right px-3 py-2">Notas de crédito</th>
+                    <th className="text-right px-3 py-2">Sin IVA</th>
+                    <th className="text-right px-3 py-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {porMes.map((m) => (
+                    <tr key={m.mes} className="border-t border-zinc-100">
+                      <td className="px-3 py-2 font-semibold text-zinc-700 capitalize">{nombreMes(m.mes)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{m.clientes.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{m.facturas.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{m.nc.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{usd(m.subtotal)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold">{usd(m.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm mt-4">
             <div className="p-4 flex items-center gap-3 border-b border-zinc-100">
@@ -248,6 +333,7 @@ export default function ComprasMesPage() {
                     {variasSedes && <th className="text-left px-3 py-2">Sede</th>}
                     <th className="text-right px-3 py-2">Facturas</th>
                     <th className="text-right px-3 py-2">Sin IVA</th>
+                    {comparar && <th className="text-right px-3 py-2">Mes anterior</th>}
                     <th className="text-right px-3 py-2">Total</th>
                   </tr>
                 </thead>
@@ -255,6 +341,7 @@ export default function ComprasMesPage() {
                   {clientes.map((c) => {
                     const llave = `${c.sede}|${c.id}`;
                     const ver = abierto === llave;
+                    const previo = previoDe.get(llave);
                     return (
                       <Fragment key={llave}>
                         <tr
@@ -269,6 +356,20 @@ export default function ComprasMesPage() {
                           {variasSedes && <td className="px-3 py-2 text-zinc-500">{SEDES[c.sede]}</td>}
                           <td className="px-3 py-2 text-right tabular-nums">{c.facturas.length}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{usd(c.subtotal)}</td>
+                          {comparar && (
+                            <td className="px-3 py-2 text-right tabular-nums text-xs">
+                              {previo == null ? (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">Nuevo</span>
+                              ) : (
+                                <>
+                                  <span className="text-zinc-500">{usd(previo)}</span>
+                                  <span className={`ml-1 font-bold ${c.subtotal >= previo ? "text-emerald-600" : "text-red-500"}`}>
+                                    {c.subtotal >= previo ? "▲" : "▼"}
+                                  </span>
+                                </>
+                              )}
+                            </td>
+                          )}
                           <td className="px-3 py-2 text-right tabular-nums font-semibold">{usd(c.total)}</td>
                         </tr>
                         {ver && (
@@ -285,7 +386,7 @@ export default function ComprasMesPage() {
                   {clientes.length === 0 && (
                     <tr>
                       <td colSpan={columnas} className="px-3 py-10 text-center text-zinc-400">
-                        Ningún cliente compró en este mes.
+                        Ningún cliente compró en este período.
                       </td>
                     </tr>
                   )}

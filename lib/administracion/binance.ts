@@ -224,6 +224,25 @@ export async function pagosRecibidos(desde: number, hasta: number): Promise<Pago
 
 // ---------- Tabla ----------
 
+async function agregarColumna(tabla: string, columna: string) {
+  try {
+    await query(`ALTER TABLE ${tabla} ADD COLUMN ${columna}`);
+  } catch (e: any) {
+    if (e?.code !== "ER_DUP_FIELDNAME") throw e;
+  }
+}
+
+async function agregarIndice(tabla: string, nombre: string, columna: string) {
+  try {
+    await query(`ALTER TABLE ${tabla} ADD INDEX ${nombre} (${columna})`);
+  } catch (e: any) {
+    if (e?.code !== "ER_DUP_KEYNAME") throw e;
+  }
+}
+
+/** Huella SHA-256 de un archivo subido. */
+export const huella = (datos: Buffer) => crypto.createHash("sha256").update(datos).digest("hex");
+
 let tablaLista = false;
 async function ensureTabla() {
   if (tablaLista) return;
@@ -249,12 +268,11 @@ async function ensureTabla() {
   } catch (e: any) {
     if (e?.code !== "ER_DUP_FIELDNAME") throw e;
   }
-  try {
-    // El pago del estado de cuenta que Administracion le asigno a mano.
-    await query("ALTER TABLE binance_comprobantes ADD COLUMN movimiento_id INT NULL");
-  } catch (e: any) {
-    if (e?.code !== "ER_DUP_FIELDNAME") throw e;
-  }
+  // El pago del estado de cuenta que Administracion le asigno a mano.
+  await agregarColumna("binance_comprobantes", "movimiento_id INT NULL");
+  // Huella del archivo: el mismo archivo no se vuelve a leer con la IA.
+  await agregarColumna("binance_comprobantes", "archivo_sha CHAR(64) NULL");
+  await agregarIndice("binance_comprobantes", "idx_sha", "archivo_sha");
   tablaLista = true;
 }
 
@@ -449,14 +467,21 @@ async function ensureTablaMovimientos() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
-  // De que captura salio cada pago y entre que pixeles esta su linea.
-  for (const col of ["estado_id INT NULL", "y0 INT NULL", "y1 INT NULL"]) {
-    try {
-      await query(`ALTER TABLE binance_movimientos ADD COLUMN ${col}`);
-    } catch (e: any) {
-      if (e?.code !== "ER_DUP_FIELDNAME") throw e;
-    }
+  // De que captura salio cada pago y entre que pixeles esta su linea; que sede
+  // lo subio primero (null = SuperAdmin o de antes) y si otra sede subio el
+  // mismo pago despues: entonces es de las dos y no se borra.
+  for (const col of [
+    "estado_id INT NULL",
+    "y0 INT NULL",
+    "y1 INT NULL",
+    "company_id INT NULL",
+    "otras_sedes TINYINT(1) NOT NULL DEFAULT 0",
+  ]) {
+    await agregarColumna("binance_movimientos", col);
   }
+  // Huella del archivo subido: la misma captura no se vuelve a leer con la IA.
+  await agregarColumna("binance_estados", "archivo_sha CHAR(64) NULL");
+  await agregarIndice("binance_estados", "idx_sha", "archivo_sha");
   tablaMovimientosLista = true;
 }
 
@@ -495,41 +520,45 @@ export type Movimiento = {
  */
 export async function guardarMovimientos(
   movs: Movimiento[],
-  email: string,
-  captura: { datos: Buffer; nombre: string } | null,
+  usuario: { email: string; sede: number | null },
+  archivo: { datos: Buffer; nombre: string; sha: string; captura: Buffer | null },
 ) {
   await ensureTablaMovimientos();
-  let estadoId: number | null = null;
-  if (captura && movs.some((m) => m.linea)) {
-    // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
-    const [res]: any = await db.execute(
-      "INSERT INTO binance_estados (archivo_nombre, archivo, subido_por) VALUES (?,?,?)",
-      [captura.nombre.slice(0, 200), captura.datos, email],
-    );
-    estadoId = res.insertId;
-  }
+  // Siempre queda la fila de la captura (tambien de un PDF): su huella evita
+  // leer otra vez el mismo archivo. El recorte sale de `captura`; un PDF guarda
+  // el PDF y no tiene recorte.
+  // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
+  const [res]: any = await db.execute(
+    "INSERT INTO binance_estados (archivo_nombre, archivo, subido_por, archivo_sha) VALUES (?,?,?,?)",
+    [archivo.nombre.slice(0, 200), archivo.captura ?? archivo.datos, usuario.email, archivo.sha],
+  );
+  const estadoId: number | null = archivo.captura ? res.insertId : null;
   let nuevos = 0;
   for (const m of movs) {
     const conLinea = estadoId !== null && m.linea;
     const { rows } = await query(
-      // y0/y1 van antes que estado_id: MySQL asigna de izquierda a derecha. Las
-      // columnas van con la tabla delante: el alias `nuevo` tiene las mismas y
-      // sin eso MySQL responde "Column 'estado_id' in field list is ambiguous".
-      `INSERT INTO binance_movimientos (fecha, contraparte, monto, moneda, subido_por, estado_id, y0, y1)
-         VALUES (?,?,?,?,?,?,?,?) AS nuevo
+      // y0/y1 van antes que estado_id y otras_sedes no toca company_id: MySQL
+      // asigna de izquierda a derecha. Las columnas van con la tabla delante: el
+      // alias `nuevo` tiene las mismas y sin eso MySQL responde "Column
+      // 'estado_id' in field list is ambiguous".
+      `INSERT INTO binance_movimientos (fecha, contraparte, monto, moneda, subido_por, estado_id, y0, y1, company_id)
+         VALUES (?,?,?,?,?,?,?,?,?) AS nuevo
        ON DUPLICATE KEY UPDATE
          binance_movimientos.y0 = IF(binance_movimientos.estado_id IS NULL, nuevo.y0, binance_movimientos.y0),
          binance_movimientos.y1 = IF(binance_movimientos.estado_id IS NULL, nuevo.y1, binance_movimientos.y1),
-         binance_movimientos.estado_id = COALESCE(binance_movimientos.estado_id, nuevo.estado_id)`,
+         binance_movimientos.estado_id = COALESCE(binance_movimientos.estado_id, nuevo.estado_id),
+         binance_movimientos.otras_sedes = IF(binance_movimientos.company_id <=> nuevo.company_id,
+           binance_movimientos.otras_sedes, 1)`,
       [
         aMysql(m.fechaMs),
         m.contraparte.slice(0, 120),
         m.monto,
         m.moneda,
-        email,
+        usuario.email,
         conLinea ? estadoId : null,
         conLinea ? m.linea!.y0 : null,
         conLinea ? m.linea!.y1 : null,
+        usuario.sede,
       ],
     );
     // 1 = fila nueva; 2 = ya estaba y tomo el recorte; 0 = ya estaba igual.
@@ -579,37 +608,89 @@ export async function miniaturasDeComprobantes(ids: number[]) {
   if (!ids.length) return salida;
   await ensureTabla();
   const sharp = (await import("sharp")).default;
-  const [rows]: any = await db.execute(
-    `SELECT id, archivo, archivo_mime FROM binance_comprobantes WHERE id IN (${ids.map(() => "?").join(",")})`,
-    ids,
-  );
-  for (const r of rows) {
-    if (r.archivo_mime === "application/pdf") continue;
-    try {
-      const datos = await sharp(r.archivo).resize({ width: 220, height: 260, fit: "inside" }).jpeg({ quality: 80 }).toBuffer();
-      const meta = await sharp(datos).metadata();
-      salida.set(r.id, { datos, ancho: meta.width || 0, alto: meta.height || 0 });
-    } catch (e: any) {
-      console.error("[binance] miniatura", r.id, e?.message);
+  // En tandas: una semana puede traer cientos de comprobantes de varios MB y
+  // traerlos todos juntos dejaba el proceso sin memoria.
+  for (let i = 0; i < ids.length; i += 25) {
+    const tanda = ids.slice(i, i + 25);
+    const [rows]: any = await db.execute(
+      `SELECT id, archivo, archivo_mime FROM binance_comprobantes WHERE id IN (${tanda.map(() => "?").join(",")})`,
+      tanda,
+    );
+    for (const r of rows) {
+      if (r.archivo_mime === "application/pdf") continue;
+      try {
+        const datos = await sharp(r.archivo).resize({ width: 220, height: 260, fit: "inside" }).jpeg({ quality: 80 }).toBuffer();
+        const meta = await sharp(datos).metadata();
+        salida.set(r.id, { datos, ancho: meta.width || 0, alto: meta.height || 0 });
+      } catch (e: any) {
+        console.error("[binance] miniatura", r.id, e?.message);
+      }
     }
   }
   return salida;
 }
 
-/** Borra el estado de cuenta de la semana, para volver a subirlo. */
-export async function borrarMovimientosSemana(lunes: string) {
+// El estado de cuenta es uno para las tres sedes (la cuenta de Binance es una):
+// cada sede solo borra los pagos que subio ella y que ninguna otra sede subio
+// tambien; el SuperAdmin (sede null) borra todos.
+const BORRABLE_POR_SEDE = "(? IS NULL OR (company_id = ? AND otras_sedes = 0))";
+
+/** Cuantos pagos de la semana puede borrar esta sede. */
+export async function movimientosBorrables(lunes: string, sede: number | null) {
+  const rango = rangoSemana(lunes);
+  if (!rango) return 0;
+  await ensureTablaMovimientos();
+  const { rows } = await query(
+    `SELECT COUNT(*) AS n FROM binance_movimientos WHERE fecha BETWEEN ? AND ? AND ${BORRABLE_POR_SEDE}`,
+    [aMysql(rango.desde), aMysql(rango.hasta), sede, sede],
+  );
+  return Number((rows as any)[0]?.n || 0);
+}
+
+/** Borra los pagos de la semana que esta sede puede borrar, para volver a subirlos. */
+export async function borrarMovimientosSemana(lunes: string, sede: number | null) {
   const rango = rangoSemana(lunes);
   if (!rango) throw new Error("Semana inválida");
   await ensureTablaMovimientos();
-  await query("DELETE FROM binance_movimientos WHERE fecha BETWEEN ? AND ?", [
-    aMysql(rango.desde),
-    aMysql(rango.hasta),
-  ]);
-  // Las capturas que ya no tienen ningun pago.
-  await query(
-    `DELETE FROM binance_estados WHERE id NOT IN
-       (SELECT estado_id FROM (SELECT DISTINCT estado_id FROM binance_movimientos WHERE estado_id IS NOT NULL) t)`,
+  const filtro = [aMysql(rango.desde), aMysql(rango.hasta), sede, sede];
+  const { rows: capturas } = await query(
+    `SELECT DISTINCT estado_id FROM binance_movimientos
+      WHERE estado_id IS NOT NULL AND fecha BETWEEN ? AND ? AND ${BORRABLE_POR_SEDE}`,
+    filtro,
   );
+  const { rows } = await query(
+    `DELETE FROM binance_movimientos WHERE fecha BETWEEN ? AND ? AND ${BORRABLE_POR_SEDE}`,
+    filtro,
+  );
+  // Las capturas de esos pagos que ya no tienen ninguno (asi se pueden volver a subir).
+  const ids = (capturas as any[]).map((c) => Number(c.estado_id));
+  if (ids.length) {
+    await query(
+      `DELETE FROM binance_estados WHERE id IN (${ids.map(() => "?").join(",")})
+         AND id NOT IN (SELECT estado_id FROM (SELECT DISTINCT estado_id FROM binance_movimientos
+                                               WHERE estado_id IS NOT NULL) t)`,
+      ids,
+    );
+  }
+  return Number((rows as any)?.affectedRows || 0);
+}
+
+/** La captura del estado de cuenta ya se subio (misma huella): no se vuelve a leer. */
+export async function capturaYaSubida(sha: string) {
+  await ensureTablaMovimientos();
+  const { rows } = await query("SELECT id FROM binance_estados WHERE archivo_sha = ? LIMIT 1", [sha]);
+  return rows.length > 0;
+}
+
+/** El comprobante con este mismo archivo (misma huella), si ya se subio. */
+export async function comprobantePorHuella(sha: string) {
+  await ensureTabla();
+  const { rows } = await query(
+    "SELECT order_id, subido_por, company_id FROM binance_comprobantes WHERE archivo_sha = ? LIMIT 1",
+    [sha],
+  );
+  const r: any = rows[0];
+  return r ? { orderId: String(r.order_id), subidoPor: r.subido_por || "", companyId: r.company_id ?? null } : null;
 }
 
 // Cada sede solo toca sus comprobantes (sede null = todas, SuperAdmin).
@@ -707,7 +788,9 @@ const WORKSPACE = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
 const anthropic = () =>
   (cliente ??= new Anthropic(WORKSPACE ? { defaultHeaders: { "anthropic-workspace-id": WORKSPACE } } : {}));
 let clienteOpenAI: OpenAI | null = null;
-const openai = () => (clienteOpenAI ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY }));
+// maxRetries: al subir una carpeta van varios a la vez y OpenAI puede responder
+// 429 por tokens por minuto; el SDK espera lo que dice retry-after y reintenta.
+const openai = () => (clienteOpenAI ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 5 }));
 // El mismo modelo de vision que usa el resto del panel.
 const MODELO_OPENAI = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
 
@@ -719,6 +802,10 @@ type Archivo = { mime: string; data: string };
 function bloqueArchivo(datos: Buffer, mime: string): Archivo {
   return { mime, data: datos.toString("base64") };
 }
+
+// La respuesta se corta si la captura trae mas filas de las que entran en el
+// tope de salida: sin esto el JSON llega a medias y parecia "no es un estado".
+const MUY_LARGO = "El archivo tiene demasiadas filas para leerlo de una vez: súbelo en varias partes";
 
 /**
  * Pide a la IA que lea los archivos y devuelva JSON con `esquema`. Usa OpenAI
@@ -752,6 +839,7 @@ async function leerConIA(
         },
       ],
     });
+    if (r.choices[0]?.finish_reason === "length") throw new ArchivoIlegible(MUY_LARGO);
     texto = r.choices[0]?.message?.content || "";
   } else {
     const r = await anthropic().messages.create({
@@ -773,6 +861,7 @@ async function leerConIA(
         },
       ],
     });
+    if (r.stop_reason === "max_tokens") throw new ArchivoIlegible(MUY_LARGO);
     texto = r.content.map((b) => (b.type === "text" ? b.text : "")).join("");
   }
   try {
@@ -1070,8 +1159,8 @@ export async function guardarComprobante(
     // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
     const [res]: any = await db.execute(
       `INSERT INTO binance_comprobantes
-         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, archivo_mime, archivo, subido_por, company_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, archivo_mime, archivo, archivo_sha, subido_por, company_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [
         leido.orderId,
         leido.monto,
@@ -1081,6 +1170,7 @@ export async function guardarComprobante(
         archivo.nombre.slice(0, 200),
         archivo.mime,
         archivo.datos,
+        huella(archivo.datos),
         usuario.email,
         usuario.cids,
       ],

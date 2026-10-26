@@ -391,7 +391,7 @@ export function Sidebar({
     { id: "monitoreo_leads", label: t("monitoreo_leads"), icon: Target, slug: "/monitoreo_leads", adminLeadsOnly: true },
     { id: "cierres_adminleads", label: t("cierres"), icon: FileText, slug: "/cierres", adminLeadsOnly: true },
     { id: "recompra_adminleads", label: "Recompra de clientes", icon: Repeat, slug: "/recompra", adminLeadsOnly: true },
-    { id: "compras_mes_adminleads", label: "Clientes del mes", icon: UserCheck, slug: "/compras-mes", adminLeadsOnly: true },
+    { id: "compras_mes_adminleads", label: "Clientes del mes", icon: UserCheck, slug: "/clientes-mes", adminLeadsOnly: true },
     { id: "configuracion_leads", label: t("configuracion"), icon: Settings2, slug: "/configuracion", adminLeadsOnly: true },
     // Material POP: inventario de material publicitario. Solo lo ve AdminLeads
     // de Valencia (cids=9) y superAdmin — el middleware impone el corte.
@@ -805,7 +805,7 @@ export function Sidebar({
                         },
                         {
                           label: "Clientes del mes",
-                          href: `/${locale}/adminleads/compras-mes`,
+                          href: `/${locale}/adminleads/clientes-mes`,
                           permission: "compras_mes_adminleads",
                         },
                         {

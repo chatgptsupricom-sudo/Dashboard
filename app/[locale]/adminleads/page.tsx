@@ -661,6 +661,7 @@ import {
   Users,
 } from "lucide-react";
 import CampaignMetricsTab from "@/components/leads/CampaignMetricsTab";
+import HistoricoExcelTab from "@/components/leads/HistoricoExcelTab";
 import ServiciosTab from "@/components/leads/ServiciosTab";
 import { useEffect, useState } from "react";
 import {
@@ -683,14 +684,17 @@ const DATE_PRESETS = [
   { label: "Este año", getValue: () => { const now = new Date(); return [fmt(new Date(now.getFullYear(), 0, 1)), fmt(now)]; } },
 ];
 
+// Fecha en hora de Caracas: con toISOString (UTC), después de las 8 p. m. "Hoy" salía mañana.
 function fmt(d: Date) {
-  return d.toISOString().slice(0, 10);
+  return d.toLocaleDateString("sv-SE", { timeZone: "America/Caracas" });
 }
 
 
 const SEDES = [
   { label: "Valencia", value: "9" },
   { label: "Caracas", value: "10" },
+  // Solo para quien no está atado a una sede (la API manda puedePanama).
+  { label: "Panamá", value: "7", soloSinSede: true },
 ];
 
 export default function MetricsDashboardPage() {
@@ -702,7 +706,7 @@ export default function MetricsDashboardPage() {
   const [preset, setPreset] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
-  const [activeTab, setActiveTab] = useState<"general" | "campanas" | "servicios">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "campanas" | "servicios" | "historico">("general");
   const [canal, setCanal] = useState("");
   // La lista de canales llega en la respuesta de stats y no se pierde cuando el
   // filtro deja un solo canal en los datos.
@@ -802,7 +806,7 @@ export default function MetricsDashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          {activeTab === "general" && (
+          {(activeTab === "general" || activeTab === "historico") && (
             <>
           <select
             className="px-4 py-2 rounded-xl border border-zinc-200 bg-white text-sm font-medium shadow-sm"
@@ -812,13 +816,15 @@ export default function MetricsDashboardPage() {
               setSellerId("");
             }}
           >
-            <option value="">Todas las sedes</option>
-            {SEDES.map((s) => (
+            <option value="">{data?.puedePanama ? "Venezuela (Valencia + Caracas)" : "Todas las sedes"}</option>
+            {SEDES.filter((s) => !s.soloSinSede || data?.puedePanama).map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
               </option>
             ))}
           </select>
+          {activeTab === "general" && (
+          <>
           <select
             className="px-4 py-2 rounded-xl border border-zinc-200 bg-white text-sm font-medium shadow-sm"
             value={sellerId}
@@ -844,6 +850,8 @@ export default function MetricsDashboardPage() {
             ))}
             <option value="Sin canal">Sin canal</option>
           </select>
+          </>
+          )}
             </>
           )}
           <div className="flex items-center gap-1">
@@ -911,6 +919,16 @@ export default function MetricsDashboardPage() {
           Campañas Meta
         </button>
         <button
+          onClick={() => setActiveTab("historico")}
+          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+            activeTab === "historico"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50"
+          }`}
+        >
+          Histórico (Excel)
+        </button>
+        <button
           onClick={() => setActiveTab("servicios")}
           className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
             activeTab === "servicios"
@@ -925,7 +943,7 @@ export default function MetricsDashboardPage() {
       {activeTab === "general" && (
       <>
       {/* 1. KPIs Principales en Grid optimizado */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
         <MetricCard
           title="Total Leads"
           value={
@@ -963,7 +981,23 @@ export default function MetricsDashboardPage() {
           title="Cierres (Ventas)"
           value={data.stats?.total_ventas > 0 ? data.stats.total_ventas : null}
           emptyText="Sin cierres"
+          nota={
+            Number(data.stats?.ventas_excel) > 0
+              ? `Incluye ${data.stats.ventas_excel} de leads de Excel ($${Number(data.stats.monto_excel).toLocaleString()})`
+              : undefined
+          }
           icon={<TrendingUp className="w-4 h-4" />}
+        />
+        <MetricCard
+          title="Ya es cliente"
+          value={Number(data.stats?.ventas_ya_cliente) > 0 ? data.stats.ventas_ya_cliente : null}
+          emptyText="Sin cierres"
+          icon={<Users className="w-4 h-4" />}
+          nota={
+            Number(data.stats?.ventas_ya_cliente) > 0
+              ? `$${Number(data.stats.monto_ya_cliente).toLocaleString()}, no suma a Cierres ni a Monto`
+              : undefined
+          }
         />
         <MetricCard
           title="Avg. Contacto"
@@ -976,7 +1010,7 @@ export default function MetricsDashboardPage() {
           icon={<Clock className="w-4 h-4" />}
         />
         <MetricCard
-          title="Avg. Cierre"
+          title="Avg. Cierre (ganados)"
           value={
             data.stats?.avg_tiempo_cierre > 0
               ? formatMinutos(data.stats.avg_tiempo_cierre)
@@ -1017,6 +1051,12 @@ export default function MetricsDashboardPage() {
                           name: "Venta",
                           value: parseInt(e.venta) || 0,
                           color: "#10b981",
+                          group: "CERRADO",
+                        });
+                        flat.push({
+                          name: "Ya es cliente",
+                          value: parseInt(e.ya_cliente) || 0,
+                          color: "#8b5cf6",
                           group: "CERRADO",
                         });
                         flat.push({
@@ -1076,6 +1116,7 @@ export default function MetricsDashboardPage() {
                       (data.stageData || []).forEach((e: any) => {
                         if (e.status === "CERRADO") {
                           flat.push(<Cell key="venta" fill="#10b981" />);
+                          flat.push(<Cell key="ya_cliente" fill="#8b5cf6" />);
                           flat.push(<Cell key="abandono" fill="#ef4444" />);
                         } else {
                           flat.push(
@@ -1277,6 +1318,8 @@ export default function MetricsDashboardPage() {
           fechaFin={fechaFin}
         />
       )}
+
+      {activeTab === "historico" && <HistoricoExcelTab sede={sede} />}
 
       {activeTab === "servicios" && <ServiciosTab />}
     </div>

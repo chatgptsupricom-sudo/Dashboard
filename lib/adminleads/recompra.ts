@@ -77,6 +77,26 @@ export function asegurarTablas(): Promise<void> {
     if (!hay.has("campana_editada")) {
       await query("ALTER TABLE leads_historicos ADD COLUMN campana_editada VARCHAR(160) NULL AFTER campana");
     }
+    // Lo que se trabaja en el tablero de leads de Excel de Monitoreo Leads
+    // (lib/adminleads/leadsExcel.ts). Re-importar el Excel no lo toca.
+    const delTablero: [string, string][] = [
+      ["seller_id", "INT NULL"],
+      ["panel_status", "VARCHAR(50) NULL"],
+      ["panel_motivo", "VARCHAR(40) NULL"],
+      ["panel_monto", "DECIMAL(14,2) NULL"],
+      ["panel_factura", "VARCHAR(100) NULL"],
+      ["panel_fecha_cierre", "DATETIME NULL"],
+      ["panel_motivo_perdido", "VARCHAR(120) NULL"],
+      ["panel_producto_perdido", "VARCHAR(255) NULL"],
+      ["panel_observaciones", "TEXT NULL"],
+      ["panel_obs_cierre", "TEXT NULL"],
+      ["panel_segunda_compra", "TINYINT NOT NULL DEFAULT 0"],
+      ["panel_reactivacion", "TINYINT NOT NULL DEFAULT 0"],
+      ["cerrado_en_panel", "TINYINT NOT NULL DEFAULT 0"],
+    ];
+    for (const [col, tipo] of delTablero) {
+      if (!hay.has(col)) await query(`ALTER TABLE leads_historicos ADD COLUMN ${col} ${tipo}`);
+    }
     await query(`
       CREATE TABLE IF NOT EXISTS ventas_smartbit_facturas (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -573,7 +593,8 @@ export async function resolverRifs(companyId: number): Promise<{ resueltos: numb
 // ---------------------------------------------------------------------------
 // Compras por RIF
 
-export type Compra = { fecha: string; sede: number; documento: string; monto: number; fuente: "Smartbit" | "Odoo" };
+/** `nc`: nota de crédito/devolución. Resta del monto pero no es una compra. */
+export type Compra = { fecha: string; sede: number; documento: string; monto: number; fuente: "Smartbit" | "Odoo"; nc?: boolean };
 
 type FacturaOdoo = Compra & { rif: string; cliente: string; claves: string[] };
 
@@ -581,14 +602,18 @@ type FacturaOdoo = Compra & { rif: string; cliente: string; claves: string[] };
 // mucho y hace falta al instante lo facturado hoy, bajar el TTL.
 let cacheOdoo: { t: number; datos: Promise<FacturaOdoo[]> } | null = null;
 
-/** Facturas de cliente de Odoo desde el corte, en las tres sedes, con su RIF. */
+/**
+ * Facturas de cliente (y sus notas de crédito) de Odoo desde el corte, en las
+ * tres sedes, con su RIF. Monto sin IVA (`amount_untaxed_signed`, USD), igual
+ * que Clientes del mes; las NC vienen en negativo.
+ */
 function facturasOdoo(): Promise<FacturaOdoo[]> {
   if (cacheOdoo && Date.now() - cacheOdoo.t < 10 * 60_000) return cacheOdoo.datos;
   const datos = (async () => {
     const movs = await leerTodo(
       "account.move",
-      [["move_type", "=", "out_invoice"], ["state", "=", "posted"], ["invoice_date", ">=", CORTE_ODOO]],
-      ["name", "invoice_date", "amount_total_signed", "commercial_partner_id", "company_id", "invoice_origin"],
+      [["move_type", "in", ["out_invoice", "out_refund"]], ["state", "=", "posted"], ["invoice_date", ">=", CORTE_ODOO]],
+      ["name", "move_type", "invoice_date", "amount_untaxed_signed", "commercial_partner_id", "company_id", "invoice_origin"],
       Object.keys(SEDES).map(Number),
     );
     const partners = await vatsDePartners(movs.map((m) => m.commercial_partner_id?.[0]).filter(Boolean));
@@ -596,19 +621,24 @@ function facturasOdoo(): Promise<FacturaOdoo[]> {
       .map((m) => {
         const p = partners.get(m.commercial_partner_id?.[0]);
         const name = String(m.name || "");
+        const nc = m.move_type === "out_refund";
         // Claves para ubicar el num_factura del panel: el nombre completo, su
         // último tramo numérico (FCLIE/2026/04879 → 4879) y los pedidos de origen.
-        const claves = [normalizarRif(name), String(Number(name.split("/").pop()) || "")]
-          .concat((String(m.invoice_origin || "").toUpperCase().match(/S-?\d+/g) || []).map(normalizarRif))
-          .filter(Boolean);
+        // Una NC nunca es la factura del lead.
+        const claves = nc
+          ? []
+          : [normalizarRif(name), String(Number(name.split("/").pop()) || "")]
+              .concat((String(m.invoice_origin || "").toUpperCase().match(/S-?\d+/g) || []).map(normalizarRif))
+              .filter(Boolean);
         return {
           rif: p?.rif || "",
           cliente: p?.nombre || m.commercial_partner_id?.[1] || "",
           fecha: m.invoice_date,
           sede: m.company_id?.[0],
           documento: name,
-          monto: Number(m.amount_total_signed) || 0,
+          monto: Number(m.amount_untaxed_signed) || 0,
           fuente: "Odoo" as const,
+          nc,
           claves,
         };
       })
@@ -622,25 +652,31 @@ function facturasOdoo(): Promise<FacturaOdoo[]> {
 async function comprasSmartbit(rifs: string[], desde: string): Promise<(Compra & { rif: string })[]> {
   if (!rifs.length) return [];
   const marcas = rifs.map(() => "?").join(",");
+  // Facturas y devoluciones (venta negativa, numero "NC-…") del Excel "Ventas / Devoluciones".
   const { rows: fact } = await query(
     `SELECT company_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, numero, rif, venta
        FROM ventas_smartbit_facturas
-      WHERE fecha < ? AND fecha >= ? AND venta > 0 AND rif IN (${marcas})`,
+      WHERE fecha < ? AND fecha >= ? AND venta <> 0 AND rif IN (${marcas})`,
     [CORTE_ODOO, desde, ...rifs],
   );
-  // Las sedes sin el Excel de facturas salen del histórico por artículo: una compra = un cliente en un día.
+  // Los días que el Excel de facturas no cubre (sedes sin Excel o fuera de sus
+  // fechas) salen del histórico por artículo: una compra = un cliente en un día.
   const { rows: art } = await query(
-    `SELECT company_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, ${RIF_SQL} AS rif, SUM(venta) AS venta
-       FROM ventas_smartbit
-      WHERE fecha < ? AND fecha >= ?
-        AND company_id NOT IN (SELECT DISTINCT company_id FROM ventas_smartbit_facturas)
+    `SELECT v.company_id, DATE_FORMAT(v.fecha, '%Y-%m-%d') AS fecha, ${RIF_SQL} AS rif, SUM(v.venta) AS venta
+       FROM ventas_smartbit v
+       LEFT JOIN (SELECT DISTINCT company_id, fecha FROM ventas_smartbit_facturas) d
+              ON d.company_id = v.company_id AND d.fecha = v.fecha
+      WHERE v.fecha < ? AND v.fecha >= ? AND d.fecha IS NULL
         AND ${RIF_SQL} IN (${marcas})
-      GROUP BY company_id, fecha, rif
-     HAVING SUM(venta) > 0`,
+      GROUP BY v.company_id, v.fecha, rif
+     HAVING SUM(v.venta) > 0`,
     [CORTE_ODOO, desde, ...rifs],
   );
   return [
-    ...fact.map((r: any) => ({ rif: r.rif, fecha: r.fecha, sede: r.company_id, documento: String(r.numero), monto: Number(r.venta), fuente: "Smartbit" as const })),
+    ...fact.map((r: any) => ({
+      rif: r.rif, fecha: r.fecha, sede: r.company_id, documento: String(r.numero), monto: Number(r.venta),
+      fuente: "Smartbit" as const, nc: Number(r.venta) < 0,
+    })),
     ...art.map((r: any) => ({ rif: r.rif, fecha: r.fecha, sede: r.company_id, documento: "", monto: Number(r.venta), fuente: "Smartbit" as const })),
   ];
 }
@@ -685,6 +721,8 @@ export type ReporteRecompra = {
   };
   clientes: ClienteRecompra[];
   sinRif: SinRif[];
+  /** Sedes que el usuario puede elegir en el filtro. */
+  sedes: number[];
 };
 
 const ES_VENTA = "l.status = 'CERRADO' AND l.motivo_cierre IN ('VENTA', 'GANADO')";
@@ -711,8 +749,14 @@ export async function calcularRecompra(opts: {
   origen: "Excel" | "Panel" | null;
 }): Promise<ReporteRecompra> {
   await asegurarTablas();
-  // Panamá solo ve Panamá, igual que el resto de los reportes de leads.
-  const sede = opts.userCids === 7 ? 7 : opts.sede;
+  // Venezuela (Valencia + Caracas) y Panamá no se mezclan, igual que el
+  // Dashboard Leads: AdminLeads de Panamá ve Panamá; el de Valencia o Caracas,
+  // Venezuela (o una de sus dos sedes). Sin sede asignada se ve todo.
+  const userCids = Number(opts.userCids) || null;
+  const deVenezuela = userCids === 9 || userCids === 10;
+  const sede = userCids === 7 ? 7 : deVenezuela && opts.sede === 7 ? null : opts.sede;
+  const enAlcance = (s: number | null) =>
+    sede != null ? s === sede : deVenezuela ? s !== 7 : true;
 
   const [{ rows: panel }, { rows: excel }, odoo] = await Promise.all([
     query(
@@ -733,29 +777,36 @@ export async function calcularRecompra(opts: {
     facturasOdoo(),
   ]);
 
-  // num_factura del panel → RIF, para los leads que no tienen el RIF cargado.
-  const porClave = new Map<string, string>();
-  for (const f of odoo) for (const k of f.claves) porClave.set(`${f.sede}|${k}`, f.rif);
-  const rifDeFactura = (txt: string, cids: number | null) => {
+  // num_factura del panel → factura de Odoo (RIF y fecha): da el RIF a los
+  // leads que no lo tienen cargado y la fecha real de la primera venta.
+  const porClave = new Map<string, { rif: string; fecha: string }>();
+  for (const f of odoo) for (const k of f.claves) porClave.set(`${f.sede}|${k}`, { rif: f.rif, fecha: f.fecha });
+  const facturaDe = (txt: string, cids: number | null) => {
     const piezas = [txt, ...txt.split(/[\s,;|/]+/)].map(normalizarRif).filter(Boolean);
     for (const p of piezas) {
       const k = /^\d+$/.test(p) ? String(Number(p)) : p;
       for (const s of cids ? [cids] : Object.keys(SEDES).map(Number)) {
-        const r = porClave.get(`${s}|${k}`);
-        if (r) return r;
+        const f = porClave.get(`${s}|${k}`);
+        if (f) return f;
       }
     }
-    return "";
+    return null;
   };
 
   const leads: LeadVenta[] = [];
   const sinRif: SinRif[] = [];
   for (const l of panel) {
     const cids = l.cids != null ? Number(l.cids) : null;
-    const rif = normalizarRif(String(l.rif || "")) || rifDeFactura(String(l.num_factura || ""), cids);
+    const factura = facturaDe(String(l.num_factura || ""), cids);
+    const rif = normalizarRif(String(l.rif || "")) || factura?.rif || "";
     const lead: LeadVenta = {
       origen: "Panel", id: l.id, rif, nombre: l.nombre || "", sede: cids, vendedor: l.vendedor || "",
-      campana: l.campana || "", entrada: l.entrada, venta: l.venta, monto: Number(l.monto_cerrado_usd) || 0,
+      campana: l.campana || "", entrada: l.entrada,
+      // La fecha de la factura que cargó el vendedor, si está en Odoo y es de este
+      // cliente; si no, la de cierre. Con la de cierre, una factura que salió
+      // días después contaba como recompra.
+      venta: factura && factura.rif === rif ? factura.fecha : l.venta,
+      monto: Number(l.monto_cerrado_usd) || 0,
       factura: String(l.num_factura || ""),
     };
     if (rif.length >= 6) leads.push(lead);
@@ -798,7 +849,7 @@ export async function calcularRecompra(opts: {
   for (const l of leads) {
     if (l.venta) continue;
     const base = l.entrada ? sumarDias(l.entrada, -VENTANA_PRIMERA_VENTA) : null;
-    l.venta = (base && comprasDe(l.rif, l.sede).find((c) => c.fecha >= base)?.fecha) || l.entrada;
+    l.venta = (base && comprasDe(l.rif, l.sede).find((c) => !c.nc && c.fecha >= base)?.fecha) || l.entrada;
   }
 
   const porRif = new Map<string, LeadVenta[]>();
@@ -813,8 +864,10 @@ export async function calcularRecompra(opts: {
     const entrada = [...ls.map((l) => l.entrada), primero.venta].filter(Boolean).sort()[0]!;
     const lista = comprasDe(rif, primero.sede);
     const limite = sumarDias(primero.venta!, VENTANA_PRIMERA_VENTA);
+    // Las NC de después restan del monto pero no cuentan como compra.
     const despues = lista.filter((c) => c.fecha > limite);
-    const antes = lista.filter((c) => c.fecha < entrada);
+    const recompras = despues.filter((c) => !c.nc);
+    const antes = lista.filter((c) => !c.nc && c.fecha < entrada);
     clientes.push({
       rif,
       cliente: nombreCliente.get(rif) || primero.nombre,
@@ -827,17 +880,17 @@ export async function calcularRecompra(opts: {
       montoPrimera: r2(primero.monto),
       comprasAntes: antes.length,
       sedesAntes: [...new Set(antes.map((c) => c.sede))],
-      comprasDespues: despues.length,
+      comprasDespues: recompras.length,
       montoDespues: r2(despues.reduce((s, c) => s + c.monto, 0)),
-      primeraRecompra: despues[0]?.fecha ?? null,
-      diasHastaRecompra: despues[0] ? diasEntre(primero.venta!, despues[0].fecha) : null,
-      ultimaCompra: despues.length ? despues[despues.length - 1].fecha : null,
+      primeraRecompra: recompras[0]?.fecha ?? null,
+      diasHastaRecompra: recompras[0] ? diasEntre(primero.venta!, recompras[0].fecha) : null,
+      ultimaCompra: recompras.length ? recompras[recompras.length - 1].fecha : null,
       despues,
     });
   }
 
   clientes = clientes
-    .filter((c) => sede == null || c.sede === sede)
+    .filter((c) => enAlcance(c.sede))
     .filter((c) => !opts.origen || c.origen === opts.origen)
     .filter((c) => !opts.desde || c.primeraVenta >= opts.desde)
     .filter((c) => !opts.hasta || c.primeraVenta <= opts.hasta)
@@ -861,7 +914,8 @@ export async function calcularRecompra(opts: {
       distribucion: rangos.map(([rango, f]) => ({ rango, clientes: clientes.filter((c) => f(c.comprasDespues)).length })),
     },
     clientes,
-    sinRif: sinRif.filter((s) => (sede == null || s.sede === sede) && (!opts.origen || s.origen === opts.origen)),
+    sinRif: sinRif.filter((s) => enAlcance(s.sede) && (!opts.origen || s.origen === opts.origen)),
+    sedes: userCids === 7 ? [7] : deVenezuela ? [9, 10] : [9, 10, 7],
   };
 }
 
@@ -953,7 +1007,7 @@ export async function revisarLeads(soloSede: number | null): Promise<LeadPorRevi
   for (const r of sb) {
     if (r.fecha < CORTE_ODOO) agregar(r.rif, r.cliente, { fecha: r.fecha, documento: String(r.numero), sistema: "Smartbit", monto: Number(r.venta) });
   }
-  for (const f of odoo) agregar(f.rif, f.cliente, { fecha: f.fecha, documento: f.documento, sistema: "Odoo", monto: f.monto });
+  for (const f of odoo) if (!f.nc) agregar(f.rif, f.cliente, { fecha: f.fecha, documento: f.documento, sistema: "Odoo", monto: f.monto });
   for (const l of compras.values()) l.sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
 
   const porNumero = new Map<string, any>(sb.map((r: any) => [`${r.company_id}|${r.numero}`, r]));

@@ -355,8 +355,10 @@ export default async function middleware(request: NextRequest) {
         );
       }
 
-      // 7. Lógica para Compras
-      if (pathname.includes("/compras") && !isCompras && !isSuperAdmin) {
+      // 7. Lógica para Compras. Por carpeta exacta: con `.includes("/compras")`
+      // también caía /adminleads/compras-mes (Clientes del mes) y AdminLeads
+      // terminaba en el Dashboard.
+      if (/\/compras(\/|$)/.test(pathname) && !isCompras && !isSuperAdmin) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
