@@ -106,6 +106,7 @@ export const rolePermissions: RolePermissions = {
       "gerencia_marca", // Lo que ve cada Gerente de Marca y a quién se le asigna cada marca
       "seleccion_personal", // Matriz de selección de personal (también RRHH)
       "solicitudes_personal", // Aprueba las solicitudes de personal de los gerentes
+      "asistencia", // Asistencia por biométrico (también RRHH)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -313,7 +314,7 @@ export const rolePermissions: RolePermissions = {
     sections: [
       "politicas", // Políticas y Acuerdos (lib/politicas)
       "dashboard", // KPIs globales de personal
-      "asistencia", // Control de biométricos (Valencia/Caracas)
+      "asistencia", // Asistencia por biométrico: carga del Excel, retardos y ausencias (lib/asistencia)
       "recibos_pago", // Emisión automatizada con firma digital
       "seleccion_personal", // Matriz de rastreo de selección de personal (lib/seleccion)
       "solicitudes_personal", // Solicitudes de personal aprobadas (lib/solicitudes-personal)
@@ -503,6 +504,7 @@ export const rolePermissions: RolePermissions = {
       "stoplight_reports",
       "inventory",
       "bi_dias_promedio", // Días promedio de cobro, inventario y pago
+      "bi_reportes", // Desplegable Reportes: Facturación, Productos, Clientes (lib/inteligencia-negocio/reportes.ts)
       "catalogo", // El de los vendedores, de Valencia (lib/catalogo/sede.ts)
       "agenteia",
       // Desplegable Leads
