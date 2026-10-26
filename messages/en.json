@@ -3668,7 +3668,7 @@
     "pistola_tocar": "Tap here to scan",
     "pistola_teclado": "Type a code with the keyboard",
     "pistola_activo": "Scanning serials of",
-    "pistola_ayuda": "Products without serial: scan their code and it adds 1. Products with serial: tap \"Scan serials\" on the line and scan each serial.",
+    "pistola_ayuda": "To load serials: tap \"Scan serials\" on the product and scan each serial. With no product chosen, scanning a product code adds 1.",
     "pistola_repetido": "Serial {serial} was already scanned ({producto}). Not added.",
     "pistola_conteo": "+1 {producto} · {cantidad} so far",
     "pistola_seleccionado": "{producto}: now scan its serials.",
