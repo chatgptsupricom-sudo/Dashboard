@@ -230,6 +230,11 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Hora de referencia para el tiempo que lleva abierto (se mueve cada minuto).
   const [ahora, setAhora] = useState(() => new Date());
   const [correccion, setCorreccion] = useState({ precintos: "", motivo: "" });
+  // El SuperAdmin marca en una recepcion cerrada las cajas en mal estado que
+  // Almacen no anoto (accion corregir_danos).
+  const [corrigiendoDanos, setCorrigiendoDanos] = useState(false);
+  // Y agrega un producto que no se conto (accion agregar_producto).
+  const [nuevo, setNuevo] = useState<{ codigo: string; cantidad: string; seriales: string } | null>(null);
   // Carga en Odoo: OC elegida para una recepcion que no tenia, y la lista.
   const [ocElegida, setOcElegida] = useState<number | "">("");
   // El SuperAdmin confirma que reviso en Odoo que no es la misma mercancia.
@@ -590,11 +595,13 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
       if (enviado) guardados(enviado);
       aplicar(j, conConteo);
       if (accion === "guardar_conteo") setAviso(t("avance_guardado"));
+      return true;
     } catch (e: any) {
       setError(e?.message || t("error"));
     } finally {
       setEnviando(false);
     }
+    return false;
   };
 
   /**
@@ -668,6 +675,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
   const trabajando = esAlmacen && rec.etapa !== "cerrado";
   const contando = esAlmacen && rec.etapa === "descargando";
+  const editaDanos = contando || (corrigiendoDanos && rol === "superadmin" && rec.etapa === "cerrado");
 
   // Conteo por contenedor. Sin contenedores (por factura) todo va al 0.
   const sinContenedores = contenedores.length === 0;
@@ -1550,9 +1558,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
                     {/* Estado de la caja: danada, humeda y/o abierta (pueden ir
                         juntas), con su nota y su foto. */}
-                    {(contando || conDano) && (
+                    {(editaDanos || conDano) && (
                       <div className="mt-2 space-y-2">
-                        {contando ? (
+                        {editaDanos ? (
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                             <span className="text-xs font-medium text-slate-500">{t("dano_titulo")}</span>
                             {TIPOS_DANO.map((tipo) => {
@@ -1618,7 +1626,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         )}
                         {conDano && (
                           <div className="pl-5 space-y-2">
-                            {contando ? (
+                            {editaDanos ? (
                               <input
                                 value={c.nota}
                                 onChange={(e) => set({ nota: e.target.value.slice(0, 300) })}
@@ -1641,7 +1649,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                               itemId={i.id}
                               titulo={t("foto_golpe")}
                               fotos={fotos("foto_golpe", { itemId: i.id })}
-                              editable={contando}
+                              editable={editaDanos}
                               obligatoria
                               onCambio={recargarArchivos}
                             />
@@ -1730,7 +1738,118 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     </BotonPrimario>
                   </>
                 ) : (
-                  rec.notas_cierre && <p className="text-sm text-slate-600 whitespace-pre-line">{rec.notas_cierre}</p>
+                  <>
+                    {rec.notas_cierre && <p className="text-sm text-slate-600 whitespace-pre-line">{rec.notas_cierre}</p>}
+                    {rol === "superadmin" &&
+                      (corrigiendoDanos ? (
+                        <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                          <p className="text-xs text-amber-900">{t("corregir_danos_ayuda")}</p>
+                          <div className="flex gap-2">
+                            <BotonPrimario
+                              onClick={async () => {
+                                const { items: cuerpo, enviado } = cuerpoConteo();
+                                const ok = await accionar(
+                                  "corregir_danos",
+                                  { items: cuerpo.filter((f) => "danos" in f) },
+                                  true,
+                                  enviado,
+                                );
+                                if (ok) {
+                                  setCorrigiendoDanos(false);
+                                  setAviso(t("corregir_danos_hecho"));
+                                }
+                              }}
+                              disabled={enviando}
+                              icon={Save}
+                              className="flex-1"
+                            >
+                              {t("guardar_correccion")}
+                            </BotonPrimario>
+                            <BotonSecundario
+                              onClick={() => {
+                                pendientes.current.clear();
+                                setCorrigiendoDanos(false);
+                                void cargar();
+                              }}
+                              disabled={enviando}
+                            >
+                              {t("cancelar_correccion")}
+                            </BotonSecundario>
+                          </div>
+                        </div>
+                      ) : (
+                        <BotonSecundario onClick={() => setCorrigiendoDanos(true)} icon={AlertTriangle} className="w-full">
+                          {t("corregir_danos")}
+                        </BotonSecundario>
+                      ))}
+                    {rol === "superadmin" &&
+                      (nuevo ? (
+                        <div className="space-y-2 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+                          <p className="text-xs text-violet-900">{t("agregar_producto_ayuda")}</p>
+                          <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-2">
+                            <input
+                              value={nuevo.codigo}
+                              onChange={(e) => setNuevo({ ...nuevo, codigo: e.target.value.slice(0, 100) })}
+                              placeholder={t("agregar_producto_codigo")}
+                              aria-label={t("agregar_producto_codigo")}
+                              className={inputClases}
+                            />
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              value={nuevo.cantidad}
+                              onChange={(e) => setNuevo({ ...nuevo, cantidad: e.target.value })}
+                              placeholder={t("agregar_producto_cantidad")}
+                              aria-label={t("agregar_producto_cantidad")}
+                              className={`${inputClases} text-right`}
+                            />
+                          </div>
+                          <textarea
+                            value={nuevo.seriales}
+                            onChange={(e) => setNuevo({ ...nuevo, seriales: e.target.value })}
+                            placeholder={t("agregar_producto_seriales")}
+                            aria-label={t("agregar_producto_seriales")}
+                            className={`${inputClases} h-auto min-h-[64px] py-2 font-mono text-xs`}
+                          />
+                          <div className="flex gap-2">
+                            <BotonPrimario
+                              onClick={async () => {
+                                const ok = await accionar(
+                                  "agregar_producto",
+                                  {
+                                    codigo: nuevo.codigo,
+                                    cantidad: Number(nuevo.cantidad),
+                                    seriales: nuevo.seriales.split(/[\s,;]+/).filter(Boolean),
+                                  },
+                                  true,
+                                );
+                                if (ok) {
+                                  setNuevo(null);
+                                  setAviso(t("agregar_producto_hecho"));
+                                }
+                              }}
+                              disabled={enviando || !nuevo.codigo.trim()}
+                              icon={Save}
+                              className="flex-1"
+                            >
+                              {t("agregar_producto")}
+                            </BotonPrimario>
+                            <BotonSecundario onClick={() => setNuevo(null)} disabled={enviando}>
+                              {t("cancelar_correccion")}
+                            </BotonSecundario>
+                          </div>
+                        </div>
+                      ) : (
+                        <BotonSecundario
+                          onClick={() => setNuevo({ codigo: "", cantidad: "", seriales: "" })}
+                          icon={Save}
+                          className="w-full"
+                        >
+                          {t("agregar_producto")}
+                        </BotonSecundario>
+                      ))}
+                  </>
                 )}
               </Card>
             )}

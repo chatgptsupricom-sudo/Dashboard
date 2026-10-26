@@ -459,6 +459,22 @@ export async function crearRecepcionFactura(opts: {
   return id;
 }
 
+/** Producto de Odoo por su codigo exacto (normalizado); null si no hay uno solo. */
+export async function productoPorCodigo(
+  codigo: string,
+): Promise<{ id: number; codigo: string; nombre: string; conSerial: boolean } | null> {
+  const encontrados = await odoo<any[]>(
+    "product.product",
+    "search_read",
+    [[["default_code", "ilike", codigo.trim()]]],
+    { fields: ["default_code", "display_name", "tracking"], limit: 20, context: { active_test: false } },
+  );
+  const exactos = (encontrados || []).filter((p) => normalizarCodigo(p.default_code) === normalizarCodigo(codigo));
+  if (exactos.length !== 1) return null;
+  const p = exactos[0];
+  return { id: p.id, codigo: String(p.default_code), nombre: sinCodigo(p.display_name), conSerial: p.tracking !== "none" };
+}
+
 // ---------------------------------------------------------------------------
 // Carga en Odoo al cerrar
 // ---------------------------------------------------------------------------
