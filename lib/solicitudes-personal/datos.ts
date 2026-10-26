@@ -180,7 +180,7 @@ export async function listar(u: Usuario): Promise<Solicitud[]> {
   const [where, params]: [string, string[]] = esSuper(u)
     ? ["1=1", []]
     : esRRHH(u)
-      ? ["estado = 'aprobada'", []]
+      ? ["(estado = 'aprobada' OR solicitante_email = ?)", [u.email]]
       : ["solicitante_email = ?", [u.email]];
   const [filas] = await db.execute(`SELECT ${COLS} FROM personal_solicitudes WHERE ${where} ORDER BY id DESC`, params);
   return conAvance((filas as any[]).map(aSolicitud));

@@ -13,7 +13,9 @@ import type { Tono } from "@/lib/seleccion/tipos";
 
 export const normRol = (r: unknown) => String(r ?? "").toLowerCase().trim();
 
-/** Crean solicitudes y ven solo las suyas (por correo). */
+/** Además de las suyas, ve las aprobadas de todas las sedes, como en la matriz de Selección. */
+export const ROL_RRHH = "recursos humanos";
+/** Crean solicitudes y ven las suyas (por correo); todas pasan por la aprobación del SuperAdmin. */
 export const ROLES_SOLICITAN = [
   "gerencia de ventas",
   "gerente de operaciones",
@@ -22,11 +24,10 @@ export const ROLES_SOLICITAN = [
   "administración y finanzas",
   "administracion y finanzas",
   "compras",
+  ROL_RRHH,
 ];
-/** Ve las aprobadas de todas las sedes, como en la matriz de Selección. */
-export const ROL_RRHH = "recursos humanos";
 /** El SuperAdmin entra siempre (requireRoles); decide y ve todo. */
-export const ROLES_SOLICITUDES_PERSONAL = [...ROLES_SOLICITAN, ROL_RRHH];
+export const ROLES_SOLICITUDES_PERSONAL = ROLES_SOLICITAN;
 
 export const puedeVerSolicitudesPersonal = (r: unknown) =>
   normRol(r) === "superadmin" || ROLES_SOLICITUDES_PERSONAL.includes(normRol(r));

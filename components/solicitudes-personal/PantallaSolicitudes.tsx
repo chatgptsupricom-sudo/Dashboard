@@ -43,9 +43,16 @@ function pasosSolicitudes(perfil: Perfil): PasoRecorrido[] {
     return [
       inicio,
       {
+        selector: '[data-tour="sp-nueva"]',
+        titulo: "Pedir personal para RRHH",
+        texto:
+          "RRHH también puede pedir personal (para su propia área o a nombre de otra). Como las de los gerentes, la tiene que aprobar el SuperAdmin; mientras tanto la puedes editar o retirar.",
+      },
+      {
         selector: '[data-tour="sp-filtros"]',
         titulo: "Lo que llega a RRHH",
-        texto: "Solo ves las solicitudes que el SuperAdmin ya aprobó, de todas las sedes. Filtra por urgencia, sede o área.",
+        texto:
+          "Ves las solicitudes que el SuperAdmin ya aprobó, de todas las sedes, y las que pediste tú en cualquier estado. Filtra por estado, urgencia, sede o área.",
       },
       {
         selector: '[data-tour="sp-lista"]',
@@ -171,7 +178,7 @@ export default function PantallaSolicitudes() {
   const subtitulo = esSuper
     ? "Aprueba o rechaza lo que piden los gerentes; lo aprobado pasa a RRHH. Las que creas tú nacen aprobadas"
     : esRRHH
-      ? "Solicitudes aprobadas por el SuperAdmin, para empezar la búsqueda"
+      ? "Las aprobadas por el SuperAdmin, para empezar la búsqueda, y las que pides tú"
       : "Pide personal para tu área y sigue en qué va la búsqueda";
 
   return (
@@ -207,19 +214,15 @@ export default function PantallaSolicitudes() {
       </div>
 
       <div data-tour="sp-filtros" className="flex flex-wrap items-center gap-2">
-        {!esRRHH && (
-          <>
-            <button onClick={() => setEstado("todas")} className={chip(estado === "todas")}>
-              Todas
-            </button>
-            {(Object.keys(ESTADOS) as EstadoSolicitud[]).map((e) => (
-              <button key={e} onClick={() => setEstado(e)} className={chip(estado === e)}>
-                {ESTADOS[e].etiqueta}
-                {e === "pendiente" && pendientes > 0 ? ` (${pendientes})` : ""}
-              </button>
-            ))}
-          </>
-        )}
+        <button onClick={() => setEstado("todas")} className={chip(estado === "todas")}>
+          Todas
+        </button>
+        {(Object.keys(ESTADOS) as EstadoSolicitud[]).map((e) => (
+          <button key={e} onClick={() => setEstado(e)} className={chip(estado === e)}>
+            {ESTADOS[e].etiqueta}
+            {e === "pendiente" && pendientes > 0 ? ` (${pendientes})` : ""}
+          </button>
+        ))}
         <select aria-label="Urgencia" className={selCls} value={urgencia} onChange={(e) => setUrgencia(e.target.value as Urgencia | "todas")}>
           <option value="todas">Toda urgencia</option>
           {(Object.keys(URGENCIAS) as Urgencia[]).map((u) => (
@@ -261,7 +264,7 @@ export default function PantallaSolicitudes() {
       {error && <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {!cargando && !error && lista.length === 0 && (
         <p data-tour="sp-lista" className="rounded-xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-500">
-          {solicitudes.length ? "Nada coincide con los filtros." : esRRHH ? "Todavía no hay solicitudes aprobadas." : "Todavía no hay solicitudes."}
+          {solicitudes.length ? "Nada coincide con los filtros." : "Todavía no hay solicitudes."}
         </p>
       )}
 
@@ -277,7 +280,7 @@ export default function PantallaSolicitudes() {
               <div className="min-w-0 flex-1 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <Pastilla tono={URGENCIAS[s.urgencia].tono}>Urgencia {URGENCIAS[s.urgencia].etiqueta.toLowerCase()}</Pastilla>
-                  {!esRRHH && <Pastilla tono={ESTADOS[s.estado].tono}>{ESTADOS[s.estado].etiqueta}</Pastilla>}
+                  <Pastilla tono={ESTADOS[s.estado].tono}>{ESTADOS[s.estado].etiqueta}</Pastilla>
                   <span className="text-xs text-slate-400">SP-{s.id}</span>
                 </div>
                 <p className="font-bold text-slate-900">
