@@ -61,8 +61,9 @@ export async function GET(request: NextRequest) {
     wsR.addRow([]);
     const nota = wsR.addRow([
       `Filtros: sede ${sede(filtros.sede) || "todas"}, origen ${filtros.origen || "todos"}, primera venta ${filtros.desde || "…"} a ${filtros.hasta || "…"}. ` +
-        `Las compras se buscan por RIF en las sedes de la operación del lead (Valencia y Caracas juntas, Panamá aparte): hasta el ${data.corte} en Smartbit, desde esa fecha en Odoo (facturas de cliente, sin notas de crédito). ` +
-        `La fecha de cierre del lead es la de su primera compra; las facturas de hasta ${data.ventana} días después se toman como parte de ella. ` +
+        `Las compras se buscan por RIF en las sedes de la operación del lead (Valencia y Caracas juntas, Panamá aparte): hasta el ${data.corte} en Smartbit, desde esa fecha en Odoo (facturas de cliente, montos sin IVA). Las notas de crédito y devoluciones restan del monto pero no cuentan como compra. ` +
+        `La primera compra es la factura que cargó el vendedor en el lead si está en Odoo; si no, la fecha de cierre del lead. Las facturas de hasta ${data.ventana} días después se toman como parte de ella. ` +
+        `Los leads "Ya es cliente" no entran; los de Página Web sí. ` +
         `"Compras después" son las de después de ese cierre, en cualquier sede de esa operación.`,
     ]);
     wsR.mergeCells(nota.number, 1, nota.number, 2);
@@ -93,15 +94,16 @@ export async function GET(request: NextRequest) {
         [38, 14, 11, 12, 22, 26, 13, 16, 16, 13, 18, 13, 16, ...sedes.flatMap(() => [13, 16]), 14, 14, 15, 13, 14],
       );
       for (const c of clientes) {
-        const ultima = c.despues[c.despues.length - 1];
+        const recompras = c.despues.filter((d) => !d.nc);
+        const ultima = recompras[recompras.length - 1];
         wsC.addRow([
           c.cliente, c.rif, sede(c.sede), c.origen, c.vendedor, c.campana, c.entrada, c.primeraVenta, c.montoPrimera,
           c.comprasAntes, c.sedesAntes.map(sede).join(", "), c.comprasDespues, c.montoDespues,
           ...sedes.flatMap((s) => {
             const en = c.despues.filter((d) => d.sede === s);
-            return [en.length, Math.round(en.reduce((t, d) => t + d.monto, 0) * 100) / 100];
+            return [en.filter((d) => !d.nc).length, Math.round(en.reduce((t, d) => t + d.monto, 0) * 100) / 100];
           }),
-          c.primeraRecompra ?? "", sede(c.despues[0]?.sede ?? null), c.diasHastaRecompra ?? "",
+          c.primeraRecompra ?? "", sede(recompras[0]?.sede ?? null), c.diasHastaRecompra ?? "",
           c.ultimaCompra ?? "", sede(ultima?.sede ?? null),
         ]);
       }
@@ -110,11 +112,13 @@ export async function GET(request: NextRequest) {
 
     // --- Compras posteriores ---
     const wsD = wb.addWorksheet("Compras después");
-    encabezar(wsD, ["Cliente", "RIF", "Fecha", "Sede", "Documento", "Sistema", "Monto (USD)"], [38, 14, 12, 11, 18, 11, 14]);
+    encabezar(wsD, ["Cliente", "RIF", "Fecha", "Sede", "Documento", "Tipo", "Sistema", "Monto sin IVA (USD)"], [38, 14, 12, 11, 18, 15, 11, 16]);
     for (const c of data.clientes) {
-      for (const d of c.despues) wsD.addRow([c.cliente, c.rif, d.fecha, sede(d.sede), d.documento, d.fuente, d.monto]);
+      for (const d of c.despues) {
+        wsD.addRow([c.cliente, c.rif, d.fecha, sede(d.sede), d.documento, d.nc ? "Nota de crédito" : "Factura", d.fuente, d.monto]);
+      }
     }
-    wsD.getColumn(7).numFmt = USD;
+    wsD.getColumn(8).numFmt = USD;
 
     // --- Sin RIF ---
     const wsS = wb.addWorksheet("Sin RIF");

@@ -69,8 +69,8 @@ export default function RecompraClientes({
       <div data-tour="filtros" className="flex flex-col md:flex-row gap-3 bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm md:items-center flex-wrap">
         <select className={campo} value={sede} onChange={(e) => setSede(e.target.value)} aria-label="Sede">
           <option value="">Todas las sedes</option>
-          {Object.entries(SEDES).map(([id, n]) => (
-            <option key={id} value={id}>{n}</option>
+          {(data?.sedes ?? Object.keys(SEDES).map(Number)).map((id) => (
+            <option key={id} value={id}>{SEDES[id]}</option>
           ))}
         </select>
         <select className={campo} value={origen} onChange={(e) => setOrigen(e.target.value)} aria-label="Origen del lead">
@@ -138,16 +138,19 @@ export default function RecompraClientes({
               <p>
                 Las compras se buscan <b>por RIF</b>, en las sedes de la operación del lead (Valencia y Caracas juntas;
                 Panamá aparte): hasta el {data.corte} en Smartbit y desde esa
-                fecha en Odoo (facturas de cliente; las notas de crédito no cuentan).
+                fecha en Odoo (facturas de cliente, montos sin IVA). Las notas de crédito y devoluciones restan del monto
+                pero no cuentan como compra.
               </p>
               <p>
-                El cierre del lead es la fecha de su primera compra; las facturas de hasta {data.ventana} días después se
+                La primera compra es la factura que cargó el vendedor en el lead, si está en Odoo; si no, la fecha de
+                cierre del lead. Las facturas de hasta {data.ventana} días después se
                 toman como parte de ella (la factura del día siguiente, un pedido partido). Las compras después del lead
                 se muestran por sede: un lead de Valencia puede recomprar en Caracas y al revés. Si un cliente vino por varios leads, cuenta desde el primero.
               </p>
               <p>
                 &quot;Ya eran clientes&quot; = compraron antes de que entrara el lead (Smartbit desde un año antes del
-                primer lead).
+                primer lead). Los leads cerrados como &quot;Ya es cliente&quot; no entran. Los de Página Web sí entran,
+                aunque en el Dashboard Leads no suman a Cierres.
               </p>
               {data.sinRif.length > 0 && (
                 <p className="text-amber-700">
@@ -193,16 +196,18 @@ export default function RecompraClientes({
                 <tbody>
                   {clientes.map((c) => {
                     const ver = abierto === c.rif;
-                    const primera = c.despues[0];
-                    const ultima = c.despues[c.despues.length - 1];
+                    // Las NC de después restan del monto pero no son compras.
+                    const recompras = c.despues.filter((d) => !d.nc);
+                    const primera = recompras[0];
+                    const ultima = recompras[recompras.length - 1];
                     // Compras después del lead por sede (puede recomprar en otra sede).
                     const porSede = Object.keys(SEDES)
                       .map(Number)
                       .map((s) => {
                         const en = c.despues.filter((d) => d.sede === s);
-                        return { s, n: en.length, monto: en.reduce((t, d) => t + d.monto, 0) };
+                        return { s, n: en.filter((d) => !d.nc).length, monto: en.reduce((t, d) => t + d.monto, 0) };
                       })
-                      .filter((x) => x.n > 0);
+                      .filter((x) => x.n > 0 || x.monto !== 0);
                     return (
                       <Fragment key={c.rif}>
                         <tr
@@ -278,7 +283,11 @@ export default function RecompraClientes({
                             <td colSpan={9} className="px-3 py-2">
                               <div className="flex flex-wrap gap-2">
                                 {c.despues.map((d, i) => (
-                                  <span key={i} className="text-[11px] bg-white border border-zinc-200 rounded-lg px-2 py-1 tabular-nums">
+                                  <span
+                                    key={i}
+                                    className={`text-[11px] border rounded-lg px-2 py-1 tabular-nums ${d.nc ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-white border-zinc-200"}`}
+                                  >
+                                    {d.nc && <b>NC · </b>}
                                     {d.fecha} · {SEDES[d.sede] ?? d.sede} · {d.fuente} {d.documento} · <b>{usd(d.monto)}</b>
                                   </span>
                                 ))}
