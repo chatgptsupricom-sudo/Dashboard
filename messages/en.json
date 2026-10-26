@@ -3770,6 +3770,9 @@
     "pistola_van_de": "{recibido} of {esperado}",
     "pistola_terminar": "Done",
     "pistola_completo": "{producto}: complete ({cantidad} of {esperado}). Scan the next product.",
+    "pistola_completo_sigue": "{producto}: complete ({cantidad} of {esperado}). If more arrived, keep scanning; otherwise tap Done.",
+    "pistola_sobrante": "{producto}: {cantidad} of {esperado}, {sobran} extra. Keep scanning or tap Done.",
+    "pistola_sobran": "{sobran} extra",
     "pistola_parece_producto": "This looks like the model code (UPC/EAN), the same on every box, not a serial. If it is the box code, choose \"It's its code\".",
     "escena": {
       "avance": "received",
