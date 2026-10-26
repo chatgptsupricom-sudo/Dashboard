@@ -7,6 +7,7 @@ import { jwtSecretBytes } from "@/lib/secretos";
 import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
 import { esHostNC, RUTA_INTERNA, RUTA_PUBLICA } from "@/lib/notas-credito/hostCliente";
 import { puedeEditarPoliticas, puedeVerPoliticas } from "@/lib/politicas/permisos";
+import { puedeVerSolicitudesPersonal } from "@/lib/solicitudes-personal/tipos";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -170,7 +171,9 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/politicas") ||
     // Notas de crédito: entra quien sea responsable de un paso, por correo
     // (lib/notas-credito/acceso.ts); aquí solo se exige la sesión.
-    pathname.includes("/notas-credito");
+    pathname.includes("/notas-credito") ||
+    // Solicitudes de personal: gerentes, RRHH y SuperAdmin (lib/solicitudes-personal/tipos.ts).
+    pathname.includes("/solicitudes-personal");
 
   if (isProtectedPath) {
     if (!token) {
@@ -410,6 +413,11 @@ export default async function middleware(request: NextRequest) {
           return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
         if (/\/politicas\/(nuevo|\d+\/editar)(\/|$)/.test(pathname) && !puedeEditarPoliticas(userRole))
           return NextResponse.redirect(new URL(`/${locale}/politicas`, request.url));
+      }
+
+      // 10e. Solicitudes de personal: los gerentes que piden, RRHH y SuperAdmin.
+      if (pathname.includes("/solicitudes-personal") && !puedeVerSolicitudesPersonal(userRole)) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 
       // 11. Lógica para Seguridad (Almacén / Control de acceso)

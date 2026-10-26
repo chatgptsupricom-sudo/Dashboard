@@ -35,6 +35,7 @@ import {
   Network,
   Workflow,
   UserSearch,
+  UserPlus,
   ScrollText,
   Calendar,
   Camera,
@@ -297,6 +298,8 @@ export function Sidebar({
     { id: "flujogramas", label: "Flujogramas", icon: Workflow, slug: "/flujogramas", absoluteHref: true },
     // Matriz de rastreo de selección de personal de RRHH (lib/seleccion/).
     { id: "seleccion_personal", label: "Selección de personal", icon: UserSearch, slug: "/recursos_humanos/seleccion", absoluteHref: true },
+    // Solicitudes de personal: gerente pide, SuperAdmin aprueba, RRHH busca (lib/solicitudes-personal/).
+    { id: "solicitudes_personal", label: "Solicitudes de personal", icon: UserPlus, slug: "/solicitudes-personal", absoluteHref: true },
     // Políticas, acuerdos y circulares de la empresa (lib/politicas/permisos.ts).
     { id: "politicas", label: "Políticas y Acuerdos", icon: ScrollText, slug: "/politicas", absoluteHref: true },
     {

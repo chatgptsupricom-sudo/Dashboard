@@ -105,6 +105,7 @@ export const rolePermissions: RolePermissions = {
       "flujogramas", // Flujogramas de procesos (también rol Procesos)
       "gerencia_marca", // Lo que ve cada Gerente de Marca y a quién se le asigna cada marca
       "seleccion_personal", // Matriz de selección de personal (también RRHH)
+      "solicitudes_personal", // Aprueba las solicitudes de personal de los gerentes
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -211,7 +212,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["politicas", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -230,6 +231,7 @@ export const rolePermissions: RolePermissions = {
     // Sin "dashboard": su inicio es Salud Administrativa (/administracion).
     sections: [
       "politicas", // Políticas y Acuerdos (lib/politicas)
+      "solicitudes_personal", // Solicitudes de personal (lib/solicitudes-personal)
       "salud_financiera",
       "gastos_presupuesto",
       "admin_cxp",
@@ -262,6 +264,7 @@ export const rolePermissions: RolePermissions = {
     canViewAudit: true,
     sections: [
       "politicas", // Políticas y Acuerdos (lib/politicas)
+      "solicitudes_personal", // Solicitudes de personal (lib/solicitudes-personal)
       "dashboard", // Stats y KPIs generales
       "actividad", // Activaciones
       "users", // Gestión de usuarios
@@ -313,6 +316,7 @@ export const rolePermissions: RolePermissions = {
       "asistencia", // Control de biométricos (Valencia/Caracas)
       "recibos_pago", // Emisión automatizada con firma digital
       "seleccion_personal", // Matriz de rastreo de selección de personal (lib/seleccion)
+      "solicitudes_personal", // Solicitudes de personal aprobadas (lib/solicitudes-personal)
       "solicitudes_permiso", // Gestión de ausencias y vacaciones
       "onboarding", // Digitalización de inducciones y rutograma
       "documentacion_institucional", // Manuales, cargo y código de vestimenta
@@ -328,6 +332,7 @@ export const rolePermissions: RolePermissions = {
     canViewAudit: false,
     sections: [
       "politicas", // Políticas y Acuerdos (lib/politicas)
+      "solicitudes_personal", // Solicitudes de personal (lib/solicitudes-personal)
       "dashboard",
       "sugeridos",
       "moq",
