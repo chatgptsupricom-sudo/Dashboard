@@ -32,12 +32,15 @@ export default function AdminCierresPage() {
   const [revertStatus, setRevertStatus] = useState("NUEVO");
   const [reverting, setReverting] = useState(false);
 
+  // Junto con los del panel, los leads de Excel cerrados desde su tablero en
+  // Monitoreo Leads (origen "excel"; se editan y reabren por su propia API).
   const fetchLeads = () =>
     Promise.all([
       fetch("/api/adminleads/leads").then((r) => r.json()),
       fetch("/api/vendedores/sellers").then((r) => r.json()),
-    ]).then(([l, s]) => {
-      setLeads(l);
+      fetch("/api/adminleads/leads-excel?cerrados=1").then((r) => r.json()).catch(() => []),
+    ]).then(([l, s, excel]) => {
+      setLeads([...(Array.isArray(l) ? l : []), ...(Array.isArray(excel) ? excel : [])]);
       setSellers(s);
     });
 
@@ -55,7 +58,7 @@ export default function AdminCierresPage() {
   const handleEditSave = async () => {
     if (!editingLead) return;
     setSaving(true);
-    await fetch("/api/vendedores/leads", {
+    await fetch(editingLead.origen === "excel" ? "/api/adminleads/leads-excel" : "/api/vendedores/leads", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -80,11 +83,17 @@ export default function AdminCierresPage() {
   const handleRevertConfirm = async () => {
     if (!revertLead) return;
     setReverting(true);
-    await fetch("/api/adminleads/reactivar", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: revertLead.id, status: revertStatus }),
-    });
+    await (revertLead.origen === "excel"
+      ? fetch("/api/adminleads/leads-excel", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: revertLead.id, status: revertStatus, reabrir: true }),
+        })
+      : fetch("/api/adminleads/reactivar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: revertLead.id, status: revertStatus }),
+        }));
     setReverting(false);
     setRevertLead(null);
     fetchLeads();
@@ -186,7 +195,7 @@ export default function AdminCierresPage() {
           <Link
             href={pathname.replace(/\/cierres\/?$/, "/recompra")}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-zinc-200 text-zinc-700 text-xs font-bold hover:bg-zinc-50 transition-colors"
-            title="Cuántas veces volvió a comprar cada cliente que llegó por un lead, y los leads de los Excel de antes del panel"
+            title="Cuántas veces volvió a comprar cada cliente que llegó por un lead (del panel o de los Excel de antes del panel)"
           >
             <Repeat className="w-3.5 h-3.5" /> Recompra de clientes
           </Link>
@@ -316,12 +325,17 @@ export default function AdminCierresPage() {
               ) : (
                 closedLeads.map((lead) => (
                   <tr
-                    key={lead.id}
+                    key={`${lead.origen ?? "panel"}-${lead.id}`}
                     className="hover:bg-blue-50/30 transition-colors"
                   >
                     <td className="px-6 py-4">
                       <div className="font-bold text-sm text-zinc-900">
                         {lead.name}
+                        {lead.origen === "excel" && (
+                          <span className="ml-2 px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 text-[9px] font-black uppercase align-middle">
+                            Excel
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-zinc-400 font-mono">
                         {lead.rif}

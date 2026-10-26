@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     // Sheet 1: KPIs
     const wsKpi = wb.addWorksheet("KPIs");
     wsKpi.columns = [
-      { key: "metrica", width: 38 },
+      { key: "metrica", width: 52 },
       { key: "valor", width: 20 },
     ];
     const hdr1 = wsKpi.addRow(["Métrica", "Valor"]);
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
       ["Total Leads", Number(statsRow.total_leads || 0)],
       ["Monto Total (USD)", Number(statsRow.monto_total || 0)],
       ["Tasa de Efectividad (%)", Number(statsRow.tasa_efectividad || 0).toFixed(1) + "%"],
-      ["Total Ventas", Number(statsRow.total_ventas || 0)],
+      ["Total Ventas (incluye leads de Excel cerrados en el panel)", Number(statsRow.total_ventas || 0)],
       ["Avg. Tiempo Contacto", formatMin(Number(statsRow.avg_tiempo_contacto))],
       ["Avg. Tiempo Cierre", formatMin(Number(statsRow.avg_tiempo_cierre))],
       ["Tasa de Reactivación (%)", Number(statsRow.tasa_reactivacion || 0).toFixed(1) + "%"],

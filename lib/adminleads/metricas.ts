@@ -12,11 +12,18 @@
 // (el de antes) = perdido. Los cierres de "Pagina Web" se ven pero no suman
 // al conteo de ventas ni al monto (canalSumaVentas); la Efectividad sí los cuenta.
 //
+// Los leads de los Excel de antes del panel no entran, salvo los que se
+// cierran desde su tablero en Monitoreo Leads (`cerrado_en_panel`): esos suman
+// en Cierres, Monto y "Ya es cliente" por su fecha de cierre (ver
+// lib/adminleads/leadsExcel.ts). Lo demás de los Excel está en la pestaña
+// Histórico (Excel).
+//
 // Sede = la del vendedor del lead. Venezuela (Valencia + Caracas) y Panamá no
 // se mezclan: "Todas" es Venezuela, e incluye los leads sin vendedor o con un
 // vendedor sin sede (como el listado de leads). AdminLeads de Panamá queda en
 // Panamá; el de Valencia o Caracas no puede pedir Panamá.
 
+import { asegurarTablas } from "@/lib/adminleads/recompra";
 import { canalNormalizadoSql, canalSumaVentasSql, SIN_CANAL } from "@/lib/canales";
 import { query } from "@/lib/db";
 
@@ -98,6 +105,37 @@ export async function calcularMetricas(payload: any, sp: URLSearchParams) {
      WHERE ${conFiltros(delPeriodo)}`,
     params,
   );
+
+  // 1b. Cierres de leads de Excel hechos desde su tablero: mismos filtros, con la
+  // sede del vendedor asignado o, si no tiene, la del Excel.
+  await asegurarTablas();
+  const sedeExcel = "COALESCE(sx.cids, h.company_id)";
+  const excelResult: any = await query(
+    `SELECT
+       SUM(CASE WHEN h.panel_motivo IN ('VENTA', 'GANADO') AND ${canalSumaVentasSql("h.red_social")} THEN 1 ELSE 0 END) AS ventas,
+       IFNULL(SUM(CASE WHEN h.panel_motivo IN ('VENTA', 'GANADO') AND ${canalSumaVentasSql("h.red_social")} THEN h.panel_monto ELSE 0 END), 0) AS monto,
+       SUM(CASE WHEN h.panel_motivo = 'YA_ES_CLIENTE' THEN 1 ELSE 0 END) AS ya_cliente,
+       IFNULL(SUM(CASE WHEN h.panel_motivo = 'YA_ES_CLIENTE' THEN h.panel_monto ELSE 0 END), 0) AS monto_ya_cliente
+     FROM leads_historicos h
+     LEFT JOIN sellers sx ON sx.id = h.seller_id
+     WHERE h.cerrado_en_panel = 1 AND h.panel_status = 'CERRADO'
+       ${conFechas ? `AND ${entre("h.panel_fecha_cierre")}` : ""}
+       ${sede ? `AND ${sedeExcel} = ?` : `AND ${sedeExcel} <> ${PANAMA}`}
+       ${sellerId ? "AND h.seller_id = ?" : ""}
+       ${canal ? `AND ${canalNormalizadoSql("h.red_social")} = ?` : ""}`,
+    [...(sede ? [sede] : []), ...(sellerId ? [sellerId] : []), ...(canal ? [canal] : [])],
+  );
+  const excel = excelResult.rows?.[0] || {};
+  const stats = statsResult.rows?.[0] || {};
+  const sumar = (a: any, b: any) => Number(a || 0) + Number(b || 0);
+  Object.assign(stats, {
+    total_ventas: sumar(stats.total_ventas, excel.ventas),
+    monto_total: sumar(stats.monto_total, excel.monto),
+    ventas_ya_cliente: sumar(stats.ventas_ya_cliente, excel.ya_cliente),
+    monto_ya_cliente: sumar(stats.monto_ya_cliente, excel.monto_ya_cliente),
+    ventas_excel: Number(excel.ventas || 0),
+    monto_excel: Number(excel.monto || 0),
+  });
 
   // 2. Distribución por etapas
   const stageResult: any = await query(
@@ -190,7 +228,7 @@ export async function calcularMetricas(payload: any, sp: URLSearchParams) {
     fechaFin,
     // Panamá se ofrece en el selector solo a quien no está atado a una sede (SuperAdmin y compañía).
     puedePanama: userCids == null,
-    stats: statsResult.rows?.[0] || {},
+    stats,
     canales,
     stageData: stageResult.rows || [],
     vendorData: vendorResult.rows || [],

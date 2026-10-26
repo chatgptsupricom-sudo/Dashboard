@@ -77,6 +77,26 @@ export function asegurarTablas(): Promise<void> {
     if (!hay.has("campana_editada")) {
       await query("ALTER TABLE leads_historicos ADD COLUMN campana_editada VARCHAR(160) NULL AFTER campana");
     }
+    // Lo que se trabaja en el tablero de leads de Excel de Monitoreo Leads
+    // (lib/adminleads/leadsExcel.ts). Re-importar el Excel no lo toca.
+    const delTablero: [string, string][] = [
+      ["seller_id", "INT NULL"],
+      ["panel_status", "VARCHAR(50) NULL"],
+      ["panel_motivo", "VARCHAR(40) NULL"],
+      ["panel_monto", "DECIMAL(14,2) NULL"],
+      ["panel_factura", "VARCHAR(100) NULL"],
+      ["panel_fecha_cierre", "DATETIME NULL"],
+      ["panel_motivo_perdido", "VARCHAR(120) NULL"],
+      ["panel_producto_perdido", "VARCHAR(255) NULL"],
+      ["panel_observaciones", "TEXT NULL"],
+      ["panel_obs_cierre", "TEXT NULL"],
+      ["panel_segunda_compra", "TINYINT NOT NULL DEFAULT 0"],
+      ["panel_reactivacion", "TINYINT NOT NULL DEFAULT 0"],
+      ["cerrado_en_panel", "TINYINT NOT NULL DEFAULT 0"],
+    ];
+    for (const [col, tipo] of delTablero) {
+      if (!hay.has(col)) await query(`ALTER TABLE leads_historicos ADD COLUMN ${col} ${tipo}`);
+    }
     await query(`
       CREATE TABLE IF NOT EXISTS ventas_smartbit_facturas (
         id INT AUTO_INCREMENT PRIMARY KEY,

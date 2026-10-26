@@ -776,6 +776,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { io } from "socket.io-client";
+import LeadsHistoricos from "@/components/leads/LeadsHistoricos";
+import LeadsPorRevisar from "@/components/leads/LeadsPorRevisar";
 
 type ViewMode = "tabla" | "columnas";
 
@@ -829,7 +831,59 @@ const STATUS_BADGE_DEFAULT: Record<string, string> = {
   CERRADO: "bg-emerald-50 text-emerald-600",
 };
 
+// Mismo tablero para los leads del panel y para los de los Excel de antes del
+// panel (pestaña "Leads de Excel"): cambian las APIs y que en los de Excel no
+// se crean ni se borran leads (los nuevos entran solo al tablero del panel).
+const APIS = {
+  panel: { leads: "/api/adminleads/leads", editar: "/api/vendedores/leads", reasignar: "/api/adminleads/reasignar" },
+  excel: { leads: "/api/adminleads/leads-excel", editar: "/api/adminleads/leads-excel", reasignar: "/api/adminleads/leads-excel" },
+};
+
+type Fuente = keyof typeof APIS;
+
 export default function MonitoringPage() {
+  const [fuente, setFuente] = useState<Fuente | "importar" | "revisar">("panel");
+  const [porRevisar, setPorRevisar] = useState<number | null>(null);
+  // ?tab=excel|importar|revisar abre esa pestaña (Recompra enlaza a "Por revisar").
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "excel" || t === "importar" || t === "revisar") setFuente(t);
+  }, []);
+  const pestanas: [typeof fuente, string][] = [
+    ["panel", "Leads del panel"],
+    ["excel", "Leads de Excel"],
+    ["importar", "Importar Excel"],
+    ["revisar", `Por revisar${porRevisar ? ` (${porRevisar})` : ""}`],
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 bg-zinc-100 p-1 rounded-2xl w-full md:w-fit overflow-x-auto">
+        {pestanas.map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setFuente(id)}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors ${
+              fuente === id ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-800"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {fuente === "panel" || fuente === "excel" ? (
+        <Tablero key={fuente} fuente={fuente} />
+      ) : fuente === "importar" ? (
+        <LeadsHistoricos />
+      ) : (
+        <LeadsPorRevisar onCambio={setPorRevisar} />
+      )}
+    </div>
+  );
+}
+
+function Tablero({ fuente }: { fuente: Fuente }) {
+  const api = APIS[fuente];
+  const esExcel = fuente === "excel";
   const sensors = useSensors(
     useSensor(MouseSensor),
     useSensor(TouchSensor, {
@@ -942,7 +996,7 @@ export default function MonitoringPage() {
 
   const fetchData = async () => {
     const [leadsRes, sellersRes, statusesRes] = await Promise.all([
-      fetch("/api/adminleads/leads").then((r) => r.json()),
+      fetch(api.leads).then((r) => r.json()),
       fetch("/api/vendedores/sellers").then((r) => r.json()),
       fetch("/api/adminleads/statuses").then((r) => r.json()),
     ]);
@@ -1105,7 +1159,7 @@ export default function MonitoringPage() {
   const handleReassign = async (leadId: string, newSellerId: string) => {
     setReassigningId(leadId);
     try {
-      await fetch("/api/adminleads/reasignar", {
+      await fetch(api.reasignar, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1199,7 +1253,7 @@ export default function MonitoringPage() {
       newStatus !== "CERRADO";
 
     try {
-      await fetch("/api/vendedores/leads", {
+      await fetch(api.editar, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -1240,7 +1294,7 @@ export default function MonitoringPage() {
 
   const handleSaveObservaciones = async (id: string, value: string) => {
     try {
-      await fetch("/api/vendedores/leads", {
+      await fetch(api.editar, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, observacionesVendedor: value }),
@@ -1264,7 +1318,7 @@ export default function MonitoringPage() {
 
   const handleSaveEdit = async () => {
     if (!leadToEdit) return;
-    await fetch("/api/vendedores/leads", {
+    await fetch(api.editar, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1281,6 +1335,10 @@ export default function MonitoringPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (esExcel) {
+      setAlertMessage("Los leads de Excel no se borran desde aquí.");
+      return;
+    }
     setLeadToDelete(id);
     setShowDeleteModal(true);
   };
@@ -1446,12 +1504,16 @@ export default function MonitoringPage() {
           ))}
         </select>
 
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors"
-        >
-          + Nuevo Lead
-        </button>
+        {esExcel ? (
+          <span className="text-[11px] text-zinc-400 max-w-[160px]">Los leads nuevos entran al tablero del panel.</span>
+        ) : (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors"
+          >
+            + Nuevo Lead
+          </button>
+        )}
 
         {/* Vista toggle */}
         <div className="flex gap-1 bg-zinc-100 p-1 rounded-xl">
@@ -1513,7 +1575,15 @@ export default function MonitoringPage() {
                         {lead.rif}
                       </div>
                     </td>
-                    <td className="px-6 py-4">{sellerDropdown(lead)}</td>
+                    <td className="px-6 py-4">
+                      {sellerDropdown(lead)}
+                      {esExcel && lead.vendedor_excel && (
+                        <p className="text-[10px] text-zinc-400 mt-1">Excel: {lead.vendedor_excel}</p>
+                      )}
+                      {esExcel && lead.estatus_excel && (
+                        <p className="text-[10px] text-zinc-400">Estatus en el Excel: {lead.estatus_excel}</p>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-sm">
                       <div className="text-zinc-700">
                         {lead.nombre_contacto}
@@ -1934,7 +2004,7 @@ export default function MonitoringPage() {
                 formData.productoPerdido === "OTRO"
                   ? formData.productoOtro
                   : formData.productoPerdido;
-              await fetch("/api/vendedores/leads", {
+              await fetch(api.editar, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(
@@ -2450,7 +2520,7 @@ export default function MonitoringPage() {
                     fecha: secondPurchaseForm.fecha,
                   }),
                 });
-                await fetch("/api/vendedores/leads", {
+                await fetch(api.editar, {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({

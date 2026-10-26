@@ -661,6 +661,7 @@ import {
   Users,
 } from "lucide-react";
 import CampaignMetricsTab from "@/components/leads/CampaignMetricsTab";
+import HistoricoExcelTab from "@/components/leads/HistoricoExcelTab";
 import ServiciosTab from "@/components/leads/ServiciosTab";
 import { useEffect, useState } from "react";
 import {
@@ -705,7 +706,7 @@ export default function MetricsDashboardPage() {
   const [preset, setPreset] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
-  const [activeTab, setActiveTab] = useState<"general" | "campanas" | "servicios">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "campanas" | "servicios" | "historico">("general");
   const [canal, setCanal] = useState("");
   // La lista de canales llega en la respuesta de stats y no se pierde cuando el
   // filtro deja un solo canal en los datos.
@@ -805,7 +806,7 @@ export default function MetricsDashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          {activeTab === "general" && (
+          {(activeTab === "general" || activeTab === "historico") && (
             <>
           <select
             className="px-4 py-2 rounded-xl border border-zinc-200 bg-white text-sm font-medium shadow-sm"
@@ -822,6 +823,8 @@ export default function MetricsDashboardPage() {
               </option>
             ))}
           </select>
+          {activeTab === "general" && (
+          <>
           <select
             className="px-4 py-2 rounded-xl border border-zinc-200 bg-white text-sm font-medium shadow-sm"
             value={sellerId}
@@ -847,6 +850,8 @@ export default function MetricsDashboardPage() {
             ))}
             <option value="Sin canal">Sin canal</option>
           </select>
+          </>
+          )}
             </>
           )}
           <div className="flex items-center gap-1">
@@ -914,6 +919,16 @@ export default function MetricsDashboardPage() {
           Campañas Meta
         </button>
         <button
+          onClick={() => setActiveTab("historico")}
+          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+            activeTab === "historico"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50"
+          }`}
+        >
+          Histórico (Excel)
+        </button>
+        <button
           onClick={() => setActiveTab("servicios")}
           className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
             activeTab === "servicios"
@@ -966,6 +981,11 @@ export default function MetricsDashboardPage() {
           title="Cierres (Ventas)"
           value={data.stats?.total_ventas > 0 ? data.stats.total_ventas : null}
           emptyText="Sin cierres"
+          nota={
+            Number(data.stats?.ventas_excel) > 0
+              ? `Incluye ${data.stats.ventas_excel} de leads de Excel ($${Number(data.stats.monto_excel).toLocaleString()})`
+              : undefined
+          }
           icon={<TrendingUp className="w-4 h-4" />}
         />
         <MetricCard
@@ -1298,6 +1318,8 @@ export default function MetricsDashboardPage() {
           fechaFin={fechaFin}
         />
       )}
+
+      {activeTab === "historico" && <HistoricoExcelTab sede={sede} />}
 
       {activeTab === "servicios" && <ServiciosTab />}
     </div>
