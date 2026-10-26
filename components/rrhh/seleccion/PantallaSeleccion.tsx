@@ -1,6 +1,7 @@
 "use client";
 
 import { BotonExcel } from "@/components/administracion/comunes";
+import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 import {
   CAMPOS_CANDIDATO,
   ESTATUS_FINAL,
@@ -16,7 +17,7 @@ import {
 } from "@/lib/seleccion/tipos";
 import { diasEntre } from "@/lib/seleccion/tipos";
 import type { OrigenSolicitud } from "@/lib/solicitudes-personal/tipos";
-import { ClipboardList, Loader2, UserPlus, X } from "lucide-react";
+import { CircleHelp, ClipboardList, Loader2, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -29,6 +30,71 @@ type FiltroEstado = "todas" | "activas" | "cubierta" | "cancelada";
 
 const selCls = "rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700";
 
+// Recorrido guiado: sale cada vez que se entra, hasta "No volver a mostrar".
+function pasosSeleccion(setVista: (v: Vista) => void): PasoRecorrido[] {
+  const matriz = () => setVista("matriz");
+  return [
+    {
+      titulo: "Selección de personal",
+      texto:
+        "La matriz donde RRHH sigue cada búsqueda, de la requisición al ingreso: una fila por candidato, fase por fase, como en el flujograma de captación y selección.",
+      antes: matriz,
+    },
+    {
+      selector: '[data-tour="sel-acciones"]',
+      titulo: "De dónde salen las requisiciones",
+      texto:
+        "No se crean aquí: nacen solas cuando el SuperAdmin aprueba una Solicitud de personal (botón azul). «Candidato» agrega a alguien a una requisición y Excel baja lo que estás viendo.",
+      antes: matriz,
+    },
+    {
+      selector: '[data-tour="sel-filtros"]',
+      antes: matriz,
+      titulo: "Filtrar",
+      texto: "Por sede, estado de la requisición, año y estatus del candidato; el buscador mira requisición, cargo y nombre del candidato.",
+    },
+    {
+      selector: '[data-tour="sel-requisicion"]',
+      antes: matriz,
+      titulo: "La requisición",
+      texto:
+        "Código, estado, vacantes cubiertas y días contra la meta (el punto se pone rojo al pasarla). Abajo del cargo: la solicitud de donde viene (SP-n), su urgencia y quién la pidió. Clic en el código para cambiar meta, vacantes o estado: pausarla o cancelarla pide el motivo y le avisa al gerente.",
+    },
+    {
+      selector: '[data-tour="sel-agregar"]',
+      antes: matriz,
+      titulo: "Agregar candidatos",
+      texto: "Cada requisición tiene su botón para agregar candidatos: nombre, contacto y por qué fuente llegó.",
+    },
+    {
+      selector: '[data-tour="sel-matriz"]',
+      antes: matriz,
+      titulo: "Avanzar por fases",
+      texto:
+        "Cambia cada fase en la misma fila (sondeo, entrevista RRHH, evaluaciones, entrevista técnica, referencias, terna, oferta, exámenes); se guarda sola y queda en el historial. Desde que pasa las evaluaciones el gerente ve al candidato y anota su entrevista técnica.",
+    },
+    {
+      selector: '[data-tour="sel-matriz"]',
+      antes: matriz,
+      titulo: "Cerrar",
+      texto:
+        "Contratado pide la fecha de ingreso. Cuando los contratados llegan a las vacantes la requisición queda «Cubierta» sola y al gerente le llega el aviso. Los que no pasan: descalificado o banco de elegibles.",
+    },
+    {
+      selector: '[data-tour="sel-vistas"]',
+      titulo: "Indicadores de tiempo",
+      texto:
+        "Tiempo promedio de cobertura, % dentro de la meta, el embudo por fase, qué fuente trae mejores candidatos y cuánto esperan las solicitudes por la aprobación.",
+      antes: () => setVista("indicadores"),
+    },
+    {
+      titulo: "Listo",
+      texto: "Este recorrido sale cada vez que entras, hasta que marques «No volver a mostrar». También lo abres con «¿Cómo funciona?».",
+      antes: matriz,
+    },
+  ];
+}
+
 export default function PantallaSeleccion() {
   const { locale } = useParams<{ locale: string }>();
   const [requisiciones, setRequisiciones] = useState<Requisicion[]>([]);
@@ -38,6 +104,8 @@ export default function PantallaSeleccion() {
   const [error, setError] = useState<string | null>(null);
 
   const [vista, setVista] = useState<Vista>("matriz");
+  const recorrido = useRecorrido("tour-seleccion-v1", !cargando, { cadaVez: true });
+  const pasosTour = useMemo(() => pasosSeleccion(setVista), []);
   const [sede, setSede] = useState("todas");
   const [estado, setEstado] = useState<FiltroEstado>("activas");
   const [anio, setAnio] = useState("todos");
@@ -198,11 +266,20 @@ export default function PantallaSeleccion() {
             <ClipboardList className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-900">Selección de personal</h1>
+            <h1 className="flex flex-wrap items-center gap-2 text-2xl font-black text-slate-900">
+              Selección de personal
+              <button
+                type="button"
+                onClick={recorrido.abrir}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold text-slate-500 hover:bg-blue-50 hover:text-blue-700"
+              >
+                <CircleHelp className="h-4 w-4" /> ¿Cómo funciona?
+              </button>
+            </h1>
             <p className="text-sm text-slate-500">Matriz de rastreo y seguimiento: de la requisición al ingreso</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div data-tour="sel-acciones" className="flex flex-wrap gap-2">
           <BotonExcel archivo={`seleccion-personal-${hoy}`} hojas={hojasExcel} />
           <button
             onClick={() => setFormCand({ abierto: true, cand: null, reqId: null })}
@@ -220,8 +297,8 @@ export default function PantallaSeleccion() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-xl border border-slate-200 bg-white p-1">
+      <div data-tour="sel-filtros" className="flex flex-wrap items-center gap-2">
+        <div data-tour="sel-vistas" className="flex rounded-xl border border-slate-200 bg-white p-1">
           {(
             [
               ["matriz", "Matriz"],
@@ -318,6 +395,15 @@ export default function PantallaSeleccion() {
       ) : (
         <Indicadores datos={datosIndicadores} espera={espera} />
       )}
+
+      <RecorridoGuiado
+        pasos={pasosTour}
+        abierto={recorrido.abierto}
+        onCerrar={(nuncaMas) => {
+          recorrido.cerrar(nuncaMas);
+          setVista("matriz");
+        }}
+      />
 
       <FormRequisicion
         abierto={formReq.abierto}

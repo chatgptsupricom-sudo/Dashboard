@@ -103,7 +103,7 @@ export function Matriz({
   }
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div data-tour="sel-matriz" className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full min-w-[2200px] border-collapse text-sm">
         <thead>
           <tr>
@@ -126,7 +126,7 @@ export function Matriz({
             const filas = Math.max(1, candidatos.length) + (puedeEditar ? 1 : 0);
             const celdasVacante = (
               <>
-                <td rowSpan={filas} className={`${td} border-r border-slate-200 bg-slate-50/60 align-top`}>
+                <td rowSpan={filas} data-tour="sel-requisicion" className={`${td} border-r border-slate-200 bg-slate-50/60 align-top`}>
                   <button
                     onClick={() => onEditarRequisicion(r)}
                     disabled={!puedeEditar}
@@ -172,6 +172,7 @@ export function Matriz({
                 {!candidatos.length && celdasVacante}
                 <td colSpan={COLUMNAS.length - 4} className="border-b border-slate-200 px-2 py-1">
                   <button
+                    data-tour="sel-agregar"
                     onClick={() => onNuevoCandidato(r.id)}
                     className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
                   >
