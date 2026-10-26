@@ -162,6 +162,10 @@ async function clientesOdoo(texto: string): Promise<number[]> {
   ];
 }
 
+/**
+ * Compras por producto, por cliente o por los dos (al menos uno de 3
+ * caracteres o más): las más recientes primero, Odoo y Smartbit juntos.
+ */
 export async function comprasDelProducto(
   producto: string,
   cliente: string,
@@ -169,19 +173,21 @@ export async function comprasDelProducto(
 ): Promise<{ compras: CompraProducto[]; productosOdoo: string[] }> {
   const q = sinComodines(producto);
   const c = sinComodines(cliente);
+  const conProducto = q.length >= 3;
+  if (!conProducto && c.length < 3) return { compras: [], productosOdoo: [] };
   const digitosCliente = normalizarRif(c).replace(/[^0-9]/g, "");
 
   // ── Odoo (desde abril 2026): líneas de producto de facturas publicadas ──
-  const { ids, nombres } = await idsDeProducto(q);
+  const { ids, nombres } = conProducto ? await idsDeProducto(q) : { ids: [], nombres: [] };
   let odoo: CompraProducto[] = [];
-  const clientes = ids.length && c ? await clientesOdoo(c) : [];
-  if (ids.length && (!c || clientes.length)) {
+  const clientes = c && (ids.length || !conProducto) ? await clientesOdoo(c) : [];
+  if ((conProducto ? ids.length : clientes.length) && (!c || clientes.length)) {
     const dominio: any[] = [
-      ["product_id", "in", ids],
       ["display_type", "=", "product"],
       ["parent_state", "=", "posted"],
       ["move_id.move_type", "=", "out_invoice"],
     ];
+    if (conProducto) dominio.push(["product_id", "in", ids]);
     if (sede) dominio.push(["company_id", "=", sede]);
     if (c) dominio.push(["move_id.commercial_partner_id", "in", clientes]);
     const [lineas, grupo] = await Promise.all([
@@ -209,7 +215,7 @@ export async function comprasDelProducto(
 
   // ── Smartbit (antes de abril 2026): renglones por artículo ──
   const conSerial = (await columnasSmartbit()).has("serial");
-  const articulo = filtroArticulo(q);
+  const articulo = conProducto ? filtroArticulo(q) : { sql: "1 = 1", params: [] };
   const params: any[] = [...articulo.params];
   let filtro = articulo.sql;
   if (c) {
@@ -329,41 +335,52 @@ export async function facturasSmartbit(numeroCrudo: string, sede?: number): Prom
  * un cliente de afuera y de si después volvió. Smartbit tiene seriales
  * cortos internos ("7750") que se repiten entre productos: con `producto`
  * solo cuentan los de ese artículo.
+ *
+ * `cargado` = la tabla tiene algún serial: sin eso, "no está" en realidad es
+ * "todavía no se importaron los datos" y la pantalla lo dice así.
  */
 export async function serialSmartbit(
   serial: string,
   producto = "",
   sede?: number,
-): Promise<ResultadoSerial & { garantia: ResultadoGarantia | null }> {
-  const vacio = { serial, veredicto: "no_existe" as const, productos: [], venta: null, movimientos: [], garantia: null };
+): Promise<ResultadoSerial & { garantia: ResultadoGarantia | null; cargado: boolean }> {
+  const vacio = { serial, veredicto: "no_existe" as const, productos: [], venta: null, movimientos: [], garantia: null, cargado: false };
   const cols = await columnasSmartbit();
   if (!serial || !cols.has("serial")) return vacio;
 
-  // Los seriales se guardan sin espacios a los lados y la columna no distingue
-  // mayúsculas: `=` usa el índice.
-  const params: any[] = [serial.trim()];
-  let filtro = "serial = ?";
+  let filtro = "";
+  const extra: any[] = [];
   const q = sinComodines(producto);
   if (q.length >= 3) {
     const a = filtroArticulo(q);
     filtro += ` AND ${a.sql}`;
-    params.push(...a.params);
+    extra.push(...a.params);
   }
   if (sede) {
     filtro += " AND company_id = ?";
-    params.push(sede);
+    extra.push(sede);
   }
-  const r = await filas(
-    `SELECT company_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, numero, cliente, articulo,
-            ${cols.has("marca") ? "marca" : "''"} AS marca, unidades,
-            (${SQL_SIN_INTERCOMPANIA}) AS externo
-       FROM ventas_smartbit
-      WHERE ${filtro}
-      ORDER BY fecha, id
-      LIMIT 200`,
-    params,
-  );
-  if (!r.length) return vacio;
+  const leer = (condicion: string, valor: string) =>
+    filas(
+      `SELECT company_id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, numero, cliente, articulo,
+              ${cols.has("marca") ? "marca" : "''"} AS marca, unidades,
+              (${SQL_SIN_INTERCOMPANIA}) AS externo
+         FROM ventas_smartbit
+        WHERE ${condicion}${filtro}
+        ORDER BY fecha, id
+        LIMIT 200`,
+      [valor, ...extra],
+    );
+  // Exacto primero: los seriales se guardan sin espacios a los lados y la
+  // columna no distingue mayúsculas, así que `=` usa el índice. Si no, el
+  // serial dentro de otro texto (Smartbit a veces lo guarda con prefijo).
+  const limpio = serial.trim();
+  let r = await leer("serial = ?", limpio);
+  if (!r.length && limpio.length >= 6) r = await leer("serial LIKE ?", `%${limpio.replace(/[%_]/g, "")}%`);
+  if (!r.length) {
+    const hay = await filas("SELECT 1 AS x FROM ventas_smartbit WHERE serial IS NOT NULL LIMIT 1", []);
+    return { ...vacio, cargado: hay.length > 0 };
+  }
 
   const movimientos: (MovimientoSerial & { marca: string })[] = r.map((m) => ({
     tipo: Number(m.unidades) < 0 ? "devolucion" : "salida",
@@ -391,5 +408,6 @@ export async function serialSmartbit(
     venta: venta && sinMarca(venta),
     movimientos: movimientos.map(sinMarca),
     garantia: venta && veredicto === "comprado" ? await garantiaSmartbit(venta.marca, venta.producto || "", venta.fecha) : null,
+    cargado: true,
   };
 }
