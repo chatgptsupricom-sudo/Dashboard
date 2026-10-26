@@ -64,6 +64,7 @@ export function Reporte({ sede }: { sede: number }) {
   const [vista, setVista] = useState<"empleados" | "dia">("empleados");
   const [busqueda, setBusqueda] = useState("");
   const [soloIncidencias, setSoloIncidencias] = useState(false);
+  const [departamento, setDepartamento] = useState("");
   const [abierto, setAbierto] = useState<string | null>(null);
   const [dia, setDia] = useState(hoyCaracas);
 
@@ -86,10 +87,16 @@ export function Reporte({ sede }: { sede: number }) {
     const q = busqueda.trim().toLowerCase();
     return (datos?.empleados ?? []).filter((e) => {
       if (q && !`${e.codigo} ${e.nombre}`.toLowerCase().includes(q)) return false;
+      if (departamento && e.departamento !== departamento) return false;
       if (soloIncidencias && !(e.retardos || e.ausencias || e.salidasAnticipadas || e.sinMarca)) return false;
       return true;
     });
-  }, [datos, busqueda, soloIncidencias]);
+  }, [datos, busqueda, soloIncidencias, departamento]);
+
+  const departamentos = useMemo(
+    () => [...new Set((datos?.empleados ?? []).map((e) => e.departamento).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es")),
+    [datos],
+  );
 
   const total = (f: (e: ResumenEmpleado) => number) => empleados.reduce((s, e) => s + f(e), 0);
 
@@ -108,6 +115,7 @@ export function Reporte({ sede }: { sede: number }) {
       filas: empleados.map((e) => ({
         Código: e.codigo,
         Nombre: e.nombre,
+        Departamento: e.departamento,
         "Días laborables": e.laborables,
         Asistencias: e.asistencias,
         Retardos: e.retardos,
@@ -124,6 +132,7 @@ export function Reporte({ sede }: { sede: number }) {
         e.dias.map((d) => ({
           Código: e.codigo,
           Nombre: e.nombre,
+          Departamento: e.departamento,
           Fecha: d.fecha,
           Día: nombreDia(d.fecha),
           Tipo: d.especial === "inventario" ? "Sábado de inventario" : d.laborable ? "Laborable" : "No laborable",
@@ -175,6 +184,16 @@ export function Reporte({ sede }: { sede: number }) {
           placeholder="Buscar empleado o código…"
           className={`${selCls} w-full sm:w-60`}
         />
+        {departamentos.length > 0 && (
+          <select className={selCls} value={departamento} onChange={(e) => setDepartamento(e.target.value)}>
+            <option value="">Todos los departamentos</option>
+            {departamentos.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        )}
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={soloIncidencias} onChange={(e) => setSoloIncidencias(e.target.checked)} />
           Solo con incidencias
@@ -253,6 +272,7 @@ export function Reporte({ sede }: { sede: number }) {
                             <td className={`${td} font-mono text-xs`}>{e.codigo}</td>
                             <td className={`${td} font-semibold text-slate-900`}>
                               {e.nombre || "(sin nombre)"}
+                              {e.departamento && <span className="ml-2 text-xs font-normal text-slate-400">{e.departamento}</span>}
                               {!e.activo && <span className="ml-2 text-xs font-normal text-slate-400">inactivo</span>}
                             </td>
                             <td className={`${td} text-right`}>{e.laborables}</td>
@@ -338,7 +358,10 @@ export function Reporte({ sede }: { sede: number }) {
                   {delDia.map(({ e, d }) => (
                     <tr key={e.codigo}>
                       <td className={`${td} font-mono text-xs`}>{e.codigo}</td>
-                      <td className={`${td} font-semibold text-slate-900`}>{e.nombre || "(sin nombre)"}</td>
+                      <td className={`${td} font-semibold text-slate-900`}>
+                        {e.nombre || "(sin nombre)"}
+                        {e.departamento && <span className="ml-2 text-xs font-normal text-slate-400">{e.departamento}</span>}
+                      </td>
                       <td className={td}>{d.entrada ?? "—"}</td>
                       <td className={td}>{d.salida ?? "—"}</td>
                       <td className={td}>
