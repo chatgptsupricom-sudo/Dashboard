@@ -19,6 +19,7 @@ import { esCodigoDeProducto, normalizarCodigo, productoPorPrefijo } from "@/lib/
  *       - con serial: lo deja seleccionado             -> "seleccionado"
  *  2. Si no, y hay un producto con serial seleccionado (`item_id`), es un
  *     serial de ese producto                           -> registrarSerial
+ *     (con `serialEnCualquiera`, cualquier producto seleccionado)
  *     Salvo que parezca un UPC/EAN (codigo del modelo, igual en todas las
  *     cajas): eso no se guarda como serial sin que lo confirmen
  *     (`forzar_serial`)                               -> "desconocido"
@@ -53,6 +54,12 @@ export type AdaptadorEscaneo<I extends ItemEscaneable> = {
   registrarSerial: (item: I, serial: string) => Promise<RespuestaEscaneo>;
   /** Renglon al que pertenece un serial esperado, o null. Ver el paso 0. */
   serialEsperado?: (serial: string) => Promise<I | null>;
+  /**
+   * El producto elegido a mano recibe seriales aunque no este marcado como
+   * con serial (recepcion: el packing list sin codigo no se puede cruzar con
+   * Odoo). En el egreso no: ahi lo dice el picking.
+   */
+  serialEnCualquiera?: boolean;
 };
 
 const ok = (body: Record<string, unknown>): RespuestaEscaneo => ({ status: 200, body });
@@ -132,7 +139,7 @@ export async function procesarEscaneo<I extends ItemEscaneable>(
   // 2. Serial del producto seleccionado.
   const seleccionado =
     body?.item_id !== undefined && body?.item_id !== null ? porId(body.item_id) : null;
-  if (seleccionado && llevaSerial(seleccionado)) {
+  if (seleccionado && (llevaSerial(seleccionado) || adaptador.serialEnCualquiera)) {
     if (esCodigoDeProducto(codigo) && body?.forzar_serial !== true) {
       return ok({ resultado: "desconocido", codigo, pista: "codigo_de_producto" });
     }
