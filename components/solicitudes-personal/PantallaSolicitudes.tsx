@@ -1,6 +1,7 @@
 "use client";
 
 import { Pastilla } from "@/components/rrhh/seleccion/comunes";
+import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 import { SEDES_SELECCION } from "@/lib/seleccion/tipos";
 import {
   diasDesde,
@@ -16,13 +17,86 @@ import {
   type Urgencia,
 } from "@/lib/solicitudes-personal/tipos";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { ChevronRight, Loader2, Plus, UserPlus } from "lucide-react";
+import { ChevronRight, CircleHelp, Loader2, Plus, UserPlus } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DetalleSolicitud, fechaHora, LineaAvance } from "./DetalleSolicitud";
 import { FormSolicitud } from "./FormSolicitud";
 
 const selCls = "rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700";
+
+type Perfil = "gerente" | "super" | "rrhh";
+
+// Recorrido guiado: sale cada vez que se entra, hasta "No volver a mostrar".
+// Cada rol ve los pasos de lo que le toca hacer.
+function pasosSolicitudes(perfil: Perfil): PasoRecorrido[] {
+  const inicio: PasoRecorrido = {
+    titulo: "Solicitudes de personal",
+    texto:
+      "Aquí empieza toda contratación: un gerente pide a la persona que necesita, el SuperAdmin aprueba y RRHH hace la búsqueda en Selección de personal.",
+  };
+  const fin: PasoRecorrido = {
+    titulo: "Listo",
+    texto: "Este recorrido sale cada vez que entras, hasta que marques «No volver a mostrar». También lo abres con «¿Cómo funciona?».",
+  };
+  if (perfil === "rrhh") {
+    return [
+      inicio,
+      {
+        selector: '[data-tour="sp-filtros"]',
+        titulo: "Lo que llega a RRHH",
+        texto: "Solo ves las solicitudes que el SuperAdmin ya aprobó, de todas las sedes. Filtra por urgencia, sede o área.",
+      },
+      {
+        selector: '[data-tour="sp-lista"]',
+        titulo: "Lo urgente primero",
+        texto:
+          "La lista va por urgencia y, dentro de cada una, la más vieja arriba. Cada solicitud aprobada ya tiene su requisición en Selección de personal: ahí cargas a los candidatos.",
+      },
+      {
+        selector: '[data-tour="sp-lista"]',
+        titulo: "El detalle",
+        texto:
+          "Haz clic en una para ver el perfil, quién la pidió, quién la aprobó y cuándo, y el enlace a su requisición. Lo que hagas en la matriz (pausar, cancelar, contratar) le llega al gerente.",
+      },
+      fin,
+    ];
+  }
+  const pasos: PasoRecorrido[] = [
+    inicio,
+    {
+      selector: '[data-tour="sp-nueva"]',
+      titulo: "Nueva solicitud",
+      texto:
+        perfil === "super"
+          ? "Las que creas tú nacen aprobadas: pasan directo a RRHH con su requisición en Selección."
+          : "Indica el cargo, el área, cuántas personas, si es un puesto nuevo o un reemplazo, el perfil y la urgencia. Alta = RRHH tiene 15 días para cubrirla, Media 30, Baja 60.",
+    },
+    {
+      selector: '[data-tour="sp-filtros"]',
+      titulo: perfil === "super" ? "Por aprobar" : "En qué va cada una",
+      texto:
+        perfil === "super"
+          ? "Entras en «Por aprobar»: lo que los gerentes esperan que decidas. Al aprobar nace la requisición en Selección y RRHH recibe el aviso; si rechazas, escribe el motivo: el gerente lo ve."
+          : "Por aprobar → el SuperAdmin todavía no decide. Aprobada → RRHH está buscando. Rechazada → abre la solicitud para ver el motivo. Mientras está por aprobar la puedes editar o retirar.",
+    },
+    {
+      selector: '[data-tour="sp-lista"]',
+      titulo: "El avance de la búsqueda",
+      texto:
+        "En cada aprobada ves cómo va: candidatos en proceso, el más avanzado, contratados y los días contra la meta. Si RRHH la pausa, la cancela o la cubre, te llega un correo.",
+    },
+  ];
+  if (perfil === "gerente") {
+    pasos.push({
+      selector: '[data-tour="sp-lista"]',
+      titulo: "Tu entrevista técnica",
+      texto:
+        "Abre una solicitud aprobada: cuando RRHH pasa a un candidato por las evaluaciones aparece ahí. Anota la fecha, si es apto o no y tu concepto; RRHH lo ve en su matriz.",
+    });
+  }
+  return [...pasos, fin];
+}
 const norm = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 export default function PantallaSolicitudes() {
@@ -46,6 +120,8 @@ export default function PantallaSolicitudes() {
   const [busqueda, setBusqueda] = useState("");
 
   const [form, setForm] = useState<{ abierto: boolean; sol: Solicitud | null }>({ abierto: false, sol: null });
+  const recorrido = useRecorrido("tour-solicitudes-personal-v1", !cargando && !!user, { cadaVez: true });
+  const pasosTour = useMemo(() => pasosSolicitudes(esSuper ? "super" : esRRHH ? "rrhh" : "gerente"), [esSuper, esRRHH]);
   const [detalle, setDetalle] = useState<number | null>(null);
 
   const cargar = useCallback(async () => {
@@ -93,7 +169,7 @@ export default function PantallaSolicitudes() {
     }`;
 
   const subtitulo = esSuper
-    ? "Aprueba o rechaza lo que piden los gerentes; lo aprobado pasa a RRHH"
+    ? "Aprueba o rechaza lo que piden los gerentes; lo aprobado pasa a RRHH. Las que creas tú nacen aprobadas"
     : esRRHH
       ? "Solicitudes aprobadas por el SuperAdmin, para empezar la búsqueda"
       : "Pide personal para tu área y sigue en qué va la búsqueda";
@@ -106,12 +182,22 @@ export default function PantallaSolicitudes() {
             <UserPlus className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-900">Solicitudes de personal</h1>
+            <h1 className="flex flex-wrap items-center gap-2 text-2xl font-black text-slate-900">
+              Solicitudes de personal
+              <button
+                type="button"
+                onClick={recorrido.abrir}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold text-slate-500 hover:bg-blue-50 hover:text-blue-700"
+              >
+                <CircleHelp className="h-4 w-4" /> ¿Cómo funciona?
+              </button>
+            </h1>
             <p className="text-sm text-slate-500">{subtitulo}</p>
           </div>
         </div>
         {puedeCrear && (
           <button
+            data-tour="sp-nueva"
             onClick={() => setForm({ abierto: true, sol: null })}
             className="flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
           >
@@ -120,7 +206,7 @@ export default function PantallaSolicitudes() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-tour="sp-filtros" className="flex flex-wrap items-center gap-2">
         {!esRRHH && (
           <>
             <button onClick={() => setEstado("todas")} className={chip(estado === "todas")}>
@@ -174,12 +260,12 @@ export default function PantallaSolicitudes() {
       {cargando && <Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-400" />}
       {error && <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {!cargando && !error && lista.length === 0 && (
-        <p className="rounded-xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-500">
+        <p data-tour="sp-lista" className="rounded-xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-500">
           {solicitudes.length ? "Nada coincide con los filtros." : esRRHH ? "Todavía no hay solicitudes aprobadas." : "Todavía no hay solicitudes."}
         </p>
       )}
 
-      <div className="space-y-3">
+      <div data-tour="sp-lista" className="space-y-3">
         {lista.map((s) => {
           const dias = diasDesde(s.estado === "aprobada" ? s.decidido_at : s.created_at);
           return (
@@ -217,10 +303,13 @@ export default function PantallaSolicitudes() {
         })}
       </div>
 
+      <RecorridoGuiado pasos={pasosTour} abierto={recorrido.abierto} onCerrar={recorrido.cerrar} />
+
       <FormSolicitud
         abierto={form.abierto}
         solicitud={form.sol}
         sedeFija={sedeFija}
+        esSuper={esSuper}
         onCerrar={() => setForm({ abierto: false, sol: null })}
         onGuardado={() => {
           setForm({ abierto: false, sol: null });

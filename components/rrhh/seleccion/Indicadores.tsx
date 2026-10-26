@@ -16,7 +16,7 @@ function Tarjeta({ titulo, valor, detalle }: { titulo: string; valor: string; de
 const th = "px-3 py-2 text-left text-xs font-semibold text-slate-600";
 const td = "border-t border-slate-100 px-3 py-2 text-sm tabular-nums text-slate-700";
 
-export function Indicadores({ datos }: { datos: Datos }) {
+export function Indicadores({ datos, espera }: { datos: Datos; espera?: { promedio: number | null; n: number } }) {
   const tope = Math.max(1, datos.embudo[0]?.cantidad ?? 1);
   return (
     <div className="space-y-6">
@@ -31,6 +31,13 @@ export function Indicadores({ datos }: { datos: Datos }) {
         <Tarjeta titulo="Cubiertas dentro de la meta" valor={datos.dentroDeMeta == null ? "—" : `${datos.dentroDeMeta} %`} />
         <Tarjeta titulo="Abiertas fuera de meta" valor={String(datos.vencidas)} detalle="Pasaron los días de su meta" />
         <Tarjeta titulo="Candidatos en proceso" valor={String(datos.enProceso)} detalle={`${datos.contratados} contratados · ${datos.candidatos} en total`} />
+        {espera && (
+          <Tarjeta
+            titulo="Espera de aprobación"
+            valor={espera.promedio == null ? "—" : `${espera.promedio} d`}
+            detalle={`Promedio desde que el gerente pidió hasta que se aprobó (${espera.n} solicitudes)`}
+          />
+        )}
       </div>
 
       {datos.porCerrar > 0 && (

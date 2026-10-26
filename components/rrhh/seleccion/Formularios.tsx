@@ -10,6 +10,7 @@ import {
   FUENTES,
   META_DIAS_DEFECTO,
   SEDES_SELECCION,
+  UNIDADES,
   hoyCaracas,
   opcion,
   type CampoCandidato,
@@ -19,20 +20,6 @@ import {
 import { History, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { inputCls } from "./comunes";
-
-const UNIDADES_SUGERIDAS = [
-  "Administración",
-  "Almacén",
-  "Compras",
-  "Cuentas por Cobrar",
-  "Gerencia General",
-  "Marketing",
-  "Recursos Humanos",
-  "RMA / Servicio Técnico",
-  "Seguridad",
-  "Tecnología",
-  "Ventas",
-];
 
 async function enviar(url: string, method: string, cuerpo?: object) {
   const r = await fetch(url, {
@@ -82,6 +69,7 @@ export function FormRequisicion({
     meta_dias: META_DIAS_DEFECTO,
     estado: "abierta",
     notas: "",
+    motivo_estado: "",
   });
   const [f, setF] = useState(nuevo);
   const [guardando, setGuardando] = useState(false);
@@ -90,7 +78,7 @@ export function FormRequisicion({
   useEffect(() => {
     if (!abierto) return;
     setError(null);
-    setF(requisicion ? { ...requisicion } : nuevo());
+    setF(requisicion ? { ...requisicion, motivo_estado: "" } : nuevo());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abierto, requisicion]);
 
@@ -100,8 +88,8 @@ export function FormRequisicion({
     setGuardando(true);
     setError(null);
     try {
+      // Las requisiciones nacen de las solicitudes de personal aprobadas: aquí solo se editan.
       if (requisicion) await enviar(`/api/rrhh/seleccion/requisiciones/${requisicion.id}`, "PUT", f);
-      else await enviar("/api/rrhh/seleccion/requisiciones", "POST", f);
       onGuardado();
     } catch (e: any) {
       setError(e.message);
@@ -122,7 +110,7 @@ export function FormRequisicion({
     }
   };
 
-  const listaUnidades = [...new Set([...UNIDADES_SUGERIDAS, ...unidades])].sort();
+  const listaUnidades = [...new Set([...UNIDADES, ...unidades])].sort();
 
   return (
     <Dialog open={abierto} onOpenChange={(o) => !o && onCerrar()}>
@@ -185,6 +173,13 @@ export function FormRequisicion({
                 ))}
               </select>
             </Etiqueta>
+          )}
+          {requisicion && f.estado !== requisicion.estado && (f.estado === "pausada" || f.estado === "cancelada") && (
+            <div className="sm:col-span-2">
+              <Etiqueta texto="Motivo *" ayuda="Lo ve el gerente que pidió el cargo y le llega por correo.">
+                <textarea rows={2} className={inputCls} value={f.motivo_estado} onChange={(e) => set("motivo_estado", e.target.value)} />
+              </Etiqueta>
+            </div>
           )}
           <div className="sm:col-span-2">
             <Etiqueta texto="Notas">

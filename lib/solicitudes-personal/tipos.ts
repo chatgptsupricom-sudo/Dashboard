@@ -91,6 +91,37 @@ export type Solicitud = {
 
 export type Evento = { id: number; accion: string; detalle: string; usuario: string; created_at: string | null };
 
+/** Lo que la matriz de Selección muestra de la solicitud de donde nació cada requisición. */
+export type OrigenSolicitud = {
+  id: number;
+  urgencia: Urgencia;
+  solicitante_nombre: string;
+  decidido_por_nombre: string | null;
+  fecha_deseada: string | null;
+  created_at: string | null;
+  decidido_at: string | null;
+};
+
+/** Requisición pausada o cancelada: el motivo es obligatorio porque lo ve el gerente. */
+export const ESTADOS_CON_MOTIVO = ["pausada", "cancelada"];
+
+/**
+ * Candidato tal como lo ve el gerente que pidió el cargo: sin contacto, desde
+ * que pasó las evaluaciones (le toca su entrevista técnica) en adelante.
+ */
+export type CandidatoGerente = {
+  id: number;
+  nombre: string;
+  fase: string;
+  tono: Tono;
+  terna: boolean;
+  entrevista_tecnica_fecha: string | null;
+  entrevista_tecnica: string | null;
+  entrevista_tecnica_concepto: string;
+};
+/** Lo único que el gerente cambia del candidato: su entrevista técnica. */
+export const CAMPOS_GERENTE = ["entrevista_tecnica_fecha", "entrevista_tecnica", "entrevista_tecnica_concepto"] as const;
+
 /** Para la vista de RRHH: urgencia primero, después la más vieja. */
 export function ordenRRHH(a: Solicitud, b: Solicitud): number {
   return (

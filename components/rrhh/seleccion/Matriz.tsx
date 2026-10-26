@@ -11,6 +11,7 @@ import {
   type EstadoReq,
   type Requisicion,
 } from "@/lib/seleccion/tipos";
+import { URGENCIAS, type OrigenSolicitud } from "@/lib/solicitudes-personal/tipos";
 import { AlertTriangle, Pencil, UserPlus } from "lucide-react";
 import { CampoFecha, Dias, Pastilla, TONO, fechaCorta } from "./comunes";
 
@@ -77,6 +78,7 @@ const td = "border-b border-slate-100 px-2 py-1.5 align-middle";
 
 export function Matriz({
   grupos,
+  origenes = {},
   puedeEditar,
   onCambiar,
   onEditarCandidato,
@@ -84,6 +86,8 @@ export function Matriz({
   onEditarRequisicion,
 }: {
   grupos: Grupo[];
+  /** Solicitud de personal de donde nació cada requisición (por id de requisición). */
+  origenes?: Record<number, OrigenSolicitud>;
   puedeEditar: boolean;
   onCambiar: (c: Candidato, cambios: Partial<Candidato>) => void;
   onEditarCandidato: (c: Candidato) => void;
@@ -99,7 +103,7 @@ export function Matriz({
   }
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div data-tour="sel-matriz" className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full min-w-[2200px] border-collapse text-sm">
         <thead>
           <tr>
@@ -122,7 +126,7 @@ export function Matriz({
             const filas = Math.max(1, candidatos.length) + (puedeEditar ? 1 : 0);
             const celdasVacante = (
               <>
-                <td rowSpan={filas} className={`${td} border-r border-slate-200 bg-slate-50/60 align-top`}>
+                <td rowSpan={filas} data-tour="sel-requisicion" className={`${td} border-r border-slate-200 bg-slate-50/60 align-top`}>
                   <button
                     onClick={() => onEditarRequisicion(r)}
                     disabled={!puedeEditar}
@@ -149,6 +153,16 @@ export function Matriz({
                 </td>
                 <td rowSpan={filas} className={`${td} border-r border-slate-200 bg-slate-50/60 align-top text-xs font-semibold text-slate-800`}>
                   {r.cargo}
+                  {origenes[r.id] && (
+                    <div className="mt-1 space-y-1 text-[11px] font-normal text-slate-500">
+                      <Pastilla tono={URGENCIAS[origenes[r.id].urgencia].tono}>
+                        SP-{origenes[r.id].id} · urgencia {URGENCIAS[origenes[r.id].urgencia].etiqueta.toLowerCase()}
+                      </Pastilla>
+                      <div>Pidió {origenes[r.id].solicitante_nombre}</div>
+                      {origenes[r.id].decidido_por_nombre && <div>Aprobó {origenes[r.id].decidido_por_nombre}</div>}
+                      {origenes[r.id].fecha_deseada && <div>Ingreso deseado {fechaCorta(origenes[r.id].fecha_deseada)}</div>}
+                    </div>
+                  )}
                 </td>
               </>
             );
@@ -158,6 +172,7 @@ export function Matriz({
                 {!candidatos.length && celdasVacante}
                 <td colSpan={COLUMNAS.length - 4} className="border-b border-slate-200 px-2 py-1">
                   <button
+                    data-tour="sel-agregar"
                     onClick={() => onNuevoCandidato(r.id)}
                     className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
                   >

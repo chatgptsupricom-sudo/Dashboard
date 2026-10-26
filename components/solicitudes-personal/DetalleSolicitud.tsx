@@ -3,8 +3,15 @@
 import { inputCls, Pastilla } from "@/components/rrhh/seleccion/comunes";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { SEDES_SELECCION } from "@/lib/seleccion/tipos";
-import { ESTADOS, MOTIVOS, URGENCIAS, type Evento, type Solicitud } from "@/lib/solicitudes-personal/tipos";
+import { CAMPO_POR_CLAVE, SEDES_SELECCION } from "@/lib/seleccion/tipos";
+import {
+  ESTADOS,
+  MOTIVOS,
+  URGENCIAS,
+  type CandidatoGerente,
+  type Evento,
+  type Solicitud,
+} from "@/lib/solicitudes-personal/tipos";
 import { ExternalLink, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -19,7 +26,98 @@ const ACCIONES: Record<string, string> = {
   retirada: "Retiró la solicitud",
   aprobada: "Aprobó la solicitud",
   rechazada: "Rechazó la solicitud",
+  pausada: "Pausó la búsqueda",
+  cancelada: "Canceló la búsqueda",
+  reabierta: "Reabrió la búsqueda",
+  cubierta: "Búsqueda cubierta",
 };
+
+const OPCIONES_ENTREVISTA = CAMPO_POR_CLAVE.get("entrevista_tecnica")?.opciones ?? [];
+
+/** Un candidato del proceso: quien pidió el cargo anota aquí su entrevista técnica. */
+function FilaCandidato({ c, solicitudId, editable, onGuardado }: { c: CandidatoGerente; solicitudId: number; editable: boolean; onGuardado: () => void }) {
+  const [f, setF] = useState({
+    entrevista_tecnica_fecha: c.entrevista_tecnica_fecha ?? "",
+    entrevista_tecnica: c.entrevista_tecnica ?? "",
+    entrevista_tecnica_concepto: c.entrevista_tecnica_concepto,
+  });
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cambio =
+    f.entrevista_tecnica_fecha !== (c.entrevista_tecnica_fecha ?? "") ||
+    f.entrevista_tecnica !== (c.entrevista_tecnica ?? "") ||
+    f.entrevista_tecnica_concepto !== c.entrevista_tecnica_concepto;
+
+  const guardar = async () => {
+    setGuardando(true);
+    setError(null);
+    try {
+      await enviar(`/api/solicitudes-personal/${solicitudId}/candidatos/${c.id}`, "PATCH", f);
+      onGuardado();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const resultado = OPCIONES_ENTREVISTA.find((o) => o.valor === c.entrevista_tecnica);
+  return (
+    <li className="space-y-2 rounded-xl border border-slate-200 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold text-slate-800">{c.nombre}</span>
+        <Pastilla tono={c.tono}>{c.fase}</Pastilla>
+        {c.terna && <Pastilla tono="azul">En terna</Pastilla>}
+      </div>
+      {editable ? (
+        <div className="grid gap-2 sm:grid-cols-[150px_150px_1fr]">
+          <input
+            type="date"
+            aria-label={`Fecha de la entrevista técnica de ${c.nombre}`}
+            className={inputCls}
+            value={f.entrevista_tecnica_fecha}
+            onChange={(e) => setF((x) => ({ ...x, entrevista_tecnica_fecha: e.target.value }))}
+          />
+          <select
+            aria-label={`Resultado de la entrevista técnica de ${c.nombre}`}
+            className={inputCls}
+            value={f.entrevista_tecnica}
+            onChange={(e) => setF((x) => ({ ...x, entrevista_tecnica: e.target.value }))}
+          >
+            <option value="">Sin entrevista</option>
+            {OPCIONES_ENTREVISTA.map((o) => (
+              <option key={o.valor} value={o.valor}>
+                {o.etiqueta}
+              </option>
+            ))}
+          </select>
+          <textarea
+            rows={1}
+            placeholder="Tu concepto del candidato"
+            aria-label={`Concepto de ${c.nombre}`}
+            className={inputCls}
+            value={f.entrevista_tecnica_concepto}
+            onChange={(e) => setF((x) => ({ ...x, entrevista_tecnica_concepto: e.target.value }))}
+            maxLength={2000}
+          />
+        </div>
+      ) : (
+        <p className="text-xs text-slate-600">
+          Entrevista técnica: {resultado ? resultado.etiqueta : "pendiente"}
+          {c.entrevista_tecnica_fecha && ` · ${c.entrevista_tecnica_fecha.split("-").reverse().join("/")}`}
+          {c.entrevista_tecnica_concepto && ` · ${c.entrevista_tecnica_concepto}`}
+        </p>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {editable && cambio && (
+        <Button size="sm" onClick={guardar} disabled={guardando}>
+          {guardando && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+          Guardar entrevista
+        </Button>
+      )}
+    </li>
+  );
+}
 
 function Dato({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
@@ -74,25 +172,27 @@ export function DetalleSolicitud({
 }) {
   const [s, setS] = useState<Solicitud | null>(null);
   const [eventos, setEventos] = useState<Evento[]>([]);
+  const [candidatos, setCandidatos] = useState<CandidatoGerente[]>([]);
+  const [recarga, setRecarga] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [rechazando, setRechazando] = useState(false);
   const [motivo, setMotivo] = useState("");
 
   useEffect(() => {
-    setS(null);
     setError(null);
     setRechazando(false);
     setMotivo("");
-    if (id == null) return;
+    if (id == null) return setS(null);
     fetch(`/api/solicitudes-personal/${id}`)
       .then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j?.error || "Error")))))
       .then((j) => {
         setS(j.solicitud);
         setEventos(j.historial || []);
+        setCandidatos(j.candidatos || []);
       })
       .catch((e) => setError(e.message));
-  }, [id]);
+  }, [id, recarga]);
 
   const accion = async (cuerpo: object) => {
     setOcupado(true);
@@ -167,6 +267,29 @@ export function DetalleSolicitud({
             </div>
             <Dato titulo="Perfil y funciones">{s.perfil}</Dato>
             <Dato titulo="Requisitos">{s.requisitos}</Dato>
+
+            {s.estado === "aprobada" && (
+              <div>
+                <p className="mb-1 text-xs font-semibold text-slate-500">Candidatos para la entrevista técnica</p>
+                {candidatos.length ? (
+                  <ul className="space-y-2 text-sm">
+                    {candidatos.map((c) => (
+                      <FilaCandidato
+                        key={c.id}
+                        c={c}
+                        solicitudId={s.id}
+                        editable={mia || esSuper}
+                        onGuardado={() => setRecarga((n) => n + 1)}
+                      />
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    Aparecen aquí cuando RRHH los pasa por las evaluaciones; entonces te toca la entrevista técnica.
+                  </p>
+                )}
+              </div>
+            )}
 
             {eventos.length > 0 && (
               <div>

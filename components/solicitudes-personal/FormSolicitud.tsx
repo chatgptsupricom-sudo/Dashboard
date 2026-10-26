@@ -3,23 +3,10 @@
 import { inputCls } from "@/components/rrhh/seleccion/comunes";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { SEDES_SELECCION } from "@/lib/seleccion/tipos";
+import { SEDES_SELECCION, UNIDADES } from "@/lib/seleccion/tipos";
 import { MOTIVOS, URGENCIAS, type Motivo, type Solicitud, type Urgencia } from "@/lib/solicitudes-personal/tipos";
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-
-export const AREAS_SUGERIDAS = [
-  "Administración",
-  "Almacén",
-  "Compras",
-  "Cuentas por Cobrar",
-  "Marketing",
-  "Operaciones",
-  "RMA / Servicio Técnico",
-  "Seguridad",
-  "Tecnología",
-  "Ventas",
-];
 
 export async function enviar(url: string, method: string, cuerpo?: object) {
   const r = await fetch(url, {
@@ -56,17 +43,22 @@ const vacio = (sede: number) => ({
   salario: "",
 });
 
-/** Crear (solicitud = null) o editar una pendiente propia. `sedeFija` = el cids del gerente. */
+/**
+ * Crear (solicitud = null) o editar una pendiente propia. `sedeFija` = el cids del gerente.
+ * La que crea el SuperAdmin nace aprobada: va directo a RRHH.
+ */
 export function FormSolicitud({
   abierto,
   solicitud,
   sedeFija,
+  esSuper,
   onCerrar,
   onGuardado,
 }: {
   abierto: boolean;
   solicitud: Solicitud | null;
   sedeFija: number | null;
+  esSuper: boolean;
   onCerrar: () => void;
   onGuardado: () => void;
 }) {
@@ -106,13 +98,15 @@ export function FormSolicitud({
           <Etiqueta texto="Cargo *">
             <input className={inputCls} value={f.cargo} onChange={(e) => set("cargo", e.target.value)} maxLength={160} />
           </Etiqueta>
-          <Etiqueta texto="Área o unidad">
-            <input className={inputCls} value={f.area} onChange={(e) => set("area", e.target.value)} list="sp-areas" maxLength={120} />
-            <datalist id="sp-areas">
-              {AREAS_SUGERIDAS.map((a) => (
-                <option key={a} value={a} />
+          <Etiqueta texto="Área o unidad *">
+            <select className={inputCls} value={f.area} onChange={(e) => set("area", e.target.value)}>
+              <option value="">Elige…</option>
+              {UNIDADES.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
               ))}
-            </datalist>
+            </select>
           </Etiqueta>
           <Etiqueta texto="Sede *" ayuda={sedeFija ? "La de tu usuario" : undefined}>
             <select className={inputCls} value={f.sede} disabled={!!sedeFija} onChange={(e) => set("sede", Number(e.target.value))}>
@@ -188,7 +182,7 @@ export function FormSolicitud({
           </Button>
           <Button onClick={guardar} disabled={guardando}>
             {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {solicitud ? "Guardar cambios" : "Enviar al SuperAdmin"}
+            {solicitud ? "Guardar cambios" : esSuper ? "Crear y pasar a RRHH" : "Enviar al SuperAdmin"}
           </Button>
         </DialogFooter>
       </DialogContent>
