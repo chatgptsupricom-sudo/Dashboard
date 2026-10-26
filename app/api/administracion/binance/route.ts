@@ -5,6 +5,8 @@ import {
   ArchivoIlegible,
   asignarMovimiento,
   borrarMovimientosSemana,
+  capturaYaSubida,
+  comprobantePorHuella,
   conciliacionSemana,
   eliminarComprobante,
   fechaDelNombre,
@@ -12,8 +14,10 @@ import {
   guardarComprobante,
   guardarMovimientos,
   hayIA,
+  huella,
   leerComprobante,
   leerEstadoDeCuenta,
+  movimientosBorrables,
   NOMBRE_SEDE,
   rangoSemana,
   sedeBinance,
@@ -35,22 +39,47 @@ export async function GET(request: NextRequest) {
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
   try {
-    return NextResponse.json({ success: true, semana, ...(await conciliacionSemana(semana, sede)) });
+    const [datos, borrables] = await Promise.all([conciliacionSemana(semana, sede), movimientosBorrables(semana, sede)]);
+    return NextResponse.json({ success: true, semana, ...datos, borrables });
   } catch (e: any) {
     console.error("[binance] conciliacion:", e?.message);
     return NextResponse.json({ error: "No se pudo cargar la conciliación" }, { status: 500 });
   }
 }
 
+/** Mensaje de un comprobante repetido: de otra sede no se dice quien lo subio (la tabla es de las tres). */
+function respuestaRepetido(
+  orderId: string,
+  previo: { subidoPor: string; companyId: number | null },
+  cids: number | null,
+  mismoArchivo: boolean,
+) {
+  const otraSede = previo.companyId !== null && previo.companyId !== cids;
+  const error = otraSede
+    ? `El ID de orden ${orderId} ya está cargado en ${NOMBRE_SEDE[previo.companyId!] || "otra sede"}: ` +
+      "puede que el cliente haya pasado el mismo comprobante en otra sede"
+    : mismoArchivo
+      ? `Este archivo ya estaba cargado (ID de orden ${orderId}, ${previo.subidoPor})`
+      : `El ID de orden ${orderId} ya estaba cargado (${previo.subidoPor})`;
+  return NextResponse.json({ error, repetido: true, otraSede }, { status: 409 });
+}
+
 // POST /api/administracion/binance (multipart: archivo [, tipo=estado]) — un
-// archivo por llamada: la pantalla los sube de a uno para mostrar el avance.
+// archivo por llamada: la pantalla manda varios a la vez y muestra el avance.
 // Con tipo=estado es una captura/PDF del estado de cuenta, no un comprobante.
+// Un archivo que ya se subio (misma huella SHA-256) no se vuelve a leer con la
+// IA: al subir otra vez una carpeta entera solo se paga lo nuevo.
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
   if (!hayIA()) {
     return NextResponse.json({ error: "Falta configurar OPENAI_API_KEY en el servidor" }, { status: 503 });
   }
+  const sede = sedeBinance(auth.payload);
+  if (sede === undefined) return respuestaSedeNoPermitida();
+  const cidsToken = Number(auth.payload?.cids);
+  const cids = Number.isInteger(cidsToken) ? cidsToken : null;
+  const email = String(auth.payload?.email || "");
   try {
     const form = await request.formData();
     const archivo = form.get("archivo");
@@ -64,18 +93,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Solo fotos (JPG, PNG, WEBP) o PDF" }, { status: 415 });
     }
     const datos = Buffer.from(await archivo.arrayBuffer());
+    const sha = huella(datos);
     if (form.get("tipo") === "estado") {
+      if (await capturaYaSubida(sha)) {
+        return NextResponse.json({ success: true, estado: true, yaEstaba: true, recibidos: 0, nuevos: 0, repetidos: 0 });
+      }
       const { movs, leidas, captura } = await leerEstadoDeCuenta(datos, archivo.type);
       if (!leidas) {
         return NextResponse.json({ error: "No parece un estado de cuenta de Binance Pay" }, { status: 422 });
       }
-      const r = await guardarMovimientos(
-        movs,
-        String(auth.payload?.email || ""),
-        captura && { datos: captura, nombre: archivo.name },
-      );
+      // SuperAdmin (sede null): sus pagos solo los borra el SuperAdmin.
+      const r = await guardarMovimientos(movs, { email, sede }, { datos, nombre: archivo.name, sha, captura });
       return NextResponse.json({ success: true, estado: true, leidas, recibidos: movs.length, ...r });
     }
+    const mismo = await comprobantePorHuella(sha);
+    if (mismo) return respuestaRepetido(mismo.orderId, mismo, cids, true);
     const leido = await leerComprobante(datos, archivo.type);
     // Una captura recortada puede no traer la fecha: se toma el dia del nombre
     // del archivo ("1-02-10-2026.jpg") y, si tampoco, va a la semana elegida.
@@ -92,21 +124,12 @@ export async function POST(request: NextRequest) {
       }
       fecha = { ...enSemana, soloDia: false };
     }
-    const cids = Number(auth.payload?.cids);
     const r = await guardarComprobante(
       { ...leido, ...fecha },
       { nombre: archivo.name, mime: archivo.type, datos },
-      { email: String(auth.payload?.email || ""), cids: Number.isInteger(cids) ? cids : null },
+      { email, cids },
     );
-    if ("repetido" in r) {
-      // La tabla es de las tres sedes: de otra sede no se dice quien lo subio.
-      const otraSede = r.repetido.companyId !== null && r.repetido.companyId !== (Number.isInteger(cids) ? cids : null);
-      const error = otraSede
-        ? `El ID de orden ${leido.orderId} ya está cargado en ${NOMBRE_SEDE[r.repetido.companyId!] || "otra sede"}: ` +
-          "puede que el cliente haya pasado el mismo comprobante en otra sede"
-        : `El ID de orden ${leido.orderId} ya estaba cargado (${r.repetido.subidoPor})`;
-      return NextResponse.json({ error, repetido: true, otraSede }, { status: 409 });
-    }
+    if ("repetido" in r) return respuestaRepetido(leido.orderId, r.repetido, cids, false);
     return NextResponse.json({
       success: true,
       id: r.id,
@@ -120,6 +143,11 @@ export async function POST(request: NextRequest) {
   } catch (e: any) {
     if (e instanceof ArchivoIlegible) {
       return NextResponse.json({ error: e.message }, { status: 422 });
+    }
+    // Saturada aun despues de los reintentos del SDK: 429 para que la pantalla
+    // espere y lo vuelva a mandar.
+    if (e?.status === 429 && !/quota|billing|credit/i.test(String(e?.message))) {
+      return NextResponse.json({ error: "La IA está saturada, se reintenta en unos segundos" }, { status: 429 });
     }
     // Error de la API de OpenAI o de Claude (los dos SDK traen `status`): sin
     // saldo, key mala, saturada... el mensaje del proveedor dice cual.
@@ -162,20 +190,21 @@ export async function PATCH(request: NextRequest) {
 }
 
 // DELETE /api/administracion/binance?id= — quitar un comprobante subido por error.
-// DELETE /api/administracion/binance?estado=YYYY-MM-DD — borrar el estado de cuenta de esa semana.
+// DELETE /api/administracion/binance?estado=YYYY-MM-DD — borrar el estado de
+// cuenta de esa semana: solo lo que subio esta sede y nadie mas (el SuperAdmin, todo).
 export async function DELETE(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
+  const sede = sedeBinance(auth.payload);
+  if (sede === undefined) return respuestaSedeNoPermitida();
   const semana = request.nextUrl.searchParams.get("estado");
   if (semana !== null) {
     if (!rangoSemana(semana)) return NextResponse.json({ error: "Semana inválida" }, { status: 400 });
-    await borrarMovimientosSemana(semana);
-    return NextResponse.json({ success: true });
+    const borrados = await borrarMovimientosSemana(semana, sede);
+    return NextResponse.json({ success: true, borrados });
   }
   const id = Number(request.nextUrl.searchParams.get("id"));
   if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "id inválido" }, { status: 400 });
-  const sede = sedeBinance(auth.payload);
-  if (sede === undefined) return respuestaSedeNoPermitida();
   await eliminarComprobante(id, sede);
   return NextResponse.json({ success: true });
 }

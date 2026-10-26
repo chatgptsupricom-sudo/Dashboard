@@ -8,7 +8,7 @@ import { Aviso, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
 import type { Comprobante, EstadoComprobante, OrigenPagos, PagoBinance } from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Loader2, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
@@ -17,10 +17,20 @@ type Respuesta = {
   errorBinance: string | null;
   origen: OrigenPagos;
   movimientos: number;
+  /** Pagos del estado de cuenta de la semana que esta sede puede borrar. */
+  borrables: number;
 };
 
 type Subida = { nombre: string; ok: boolean; texto: string };
 type TipoArchivo = "comprobante" | "estado";
+
+const TIPOS_ARCHIVO = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const MAX_BYTES = 8 * 1024 * 1024;
+// Cuantos archivos se leen a la vez: 180 comprobantes de a uno eran ~15 min.
+// Las capturas del estado de cuenta tardan mas y traen mas filas: menos a la vez.
+const EN_PARALELO: Record<TipoArchivo, number> = { comprobante: 4, estado: 2 };
+// Para que el navegador deje elegir una carpeta entera (no esta en los tipos de React).
+const ELEGIR_CARPETA = { webkitdirectory: "", directory: "" } as Record<string, string>;
 
 const CLASE_ESTADO: Record<EstadoComprobante, string> = {
   conciliado: "bg-emerald-100 text-emerald-800",
@@ -84,8 +94,11 @@ export default function BinancePage() {
   const [subidas, setSubidas] = useState<Subida[]>([]);
   const [lista, setLista] = useState<Lista | null>(null);
   const [verImagen, setVerImagen] = useState<Comprobante | null>(null);
+  const [ignorados, setIgnorados] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const inputEstado = useRef<HTMLInputElement>(null);
+  const carpeta = useRef<HTMLInputElement>(null);
+  const carpetaEstado = useRef<HTMLInputElement>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -104,38 +117,75 @@ export default function BinancePage() {
     cargar();
   }, [cargar]);
 
+  const subirUno = async (archivo: File, tipo: TipoArchivo): Promise<Subida> => {
+    const nombre = archivo.webkitRelativePath || archivo.name;
+    if (archivo.size > MAX_BYTES) return { nombre, ok: false, texto: "Pesa más de 8 MB" };
+    const form = new FormData();
+    form.append("archivo", archivo);
+    form.append("semana", semana);
+    if (tipo === "estado") form.append("tipo", "estado");
+    try {
+      let res = await fetch("/api/administracion/binance", { method: "POST", body: form });
+      // IA saturada (429): se espera y se reintenta, cada vez un poco mas.
+      for (const espera of [10_000, 20_000, 40_000]) {
+        if (res.status !== 429) break;
+        await new Promise((listo) => setTimeout(listo, espera));
+        res = await fetch("/api/administracion/binance", { method: "POST", body: form });
+      }
+      const json = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
+      if (json.success && json.estado) {
+        return json.yaEstaba
+          ? { nombre, ok: true, texto: "Esta captura ya estaba cargada (no se volvió a leer)" }
+          : { nombre, ok: true, texto: `${json.recibidos} pagos recibidos (${json.nuevos} nuevos, ${json.repetidos} ya estaban)` };
+      }
+      if (json.success) {
+        const fecha = json.soloDia
+          ? `${soloFecha(json.fecha)} (fecha del nombre del archivo)`
+          : json.fechaEstimada
+            ? "sin fecha, quedó en esta semana"
+            : fechaHora(json.fecha);
+        return { nombre, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fecha}` };
+      }
+      return { nombre, ok: false, texto: json.error || "Error" };
+    } catch {
+      return { nombre, ok: false, texto: "No se pudo subir (se cortó la conexión)" };
+    }
+  };
+
+  /**
+   * Sube los archivos elegidos (o los de la carpeta) varios a la vez. De una
+   * carpeta solo se suben fotos y PDF; lo demas se cuenta como ignorado.
+   */
   const subir = async (archivos: FileList | null, tipo: TipoArchivo) => {
     if (!archivos?.length) return;
-    const lista = [...archivos];
-    const resultados: Subida[] = [];
+    const todos = [...archivos];
+    const lista = todos
+      .filter((f) => TIPOS_ARCHIVO.has(f.type))
+      .sort((a, b) =>
+        (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }),
+      );
+    setIgnorados(todos.length - lista.length);
     setSubidas([]);
-    for (let i = 0; i < lista.length; i++) {
-      setSubiendo({ hecho: i, total: lista.length, tipo });
-      const form = new FormData();
-      form.append("archivo", lista[i]);
-      form.append("semana", semana);
-      if (tipo === "estado") form.append("tipo", "estado");
-      try {
-        const json = await (await fetch("/api/administracion/binance", { method: "POST", body: form })).json();
-        resultados.push(
-          json.success && json.estado
-            ? {
-                nombre: lista[i].name,
-                ok: true,
-                texto: `${json.recibidos} pagos recibidos (${json.nuevos} nuevos, ${json.repetidos} ya estaban)`,
-              }
-            : json.success
-            ? { nombre: lista[i].name, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${json.soloDia ? `${soloFecha(json.fecha)} (fecha del nombre del archivo)` : json.fechaEstimada ? "sin fecha, quedó en esta semana" : fechaHora(json.fecha)}` }
-            : { nombre: lista[i].name, ok: false, texto: json.error || "Error" },
-        );
-      } catch {
-        resultados.push({ nombre: lista[i].name, ok: false, texto: "No se pudo subir" });
-      }
-      setSubidas([...resultados]);
+    if (!lista.length) {
+      for (const el of [input, inputEstado, carpeta, carpetaEstado]) if (el.current) el.current.value = "";
+      return;
     }
+    const resultados: Subida[] = new Array(lista.length);
+    let siguiente = 0;
+    let hechos = 0;
+    setSubiendo({ hecho: 0, total: lista.length, tipo });
+    const trabajador = async () => {
+      while (siguiente < lista.length) {
+        const i = siguiente++;
+        resultados[i] = await subirUno(lista[i], tipo);
+        hechos++;
+        setSubiendo({ hecho: hechos, total: lista.length, tipo });
+        setSubidas(resultados.filter(Boolean));
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(EN_PARALELO[tipo], lista.length) }, trabajador));
     setSubiendo(null);
-    if (input.current) input.current.value = "";
-    if (inputEstado.current) inputEstado.current.value = "";
+    for (const el of [input, inputEstado, carpeta, carpetaEstado]) if (el.current) el.current.value = "";
     cargar();
   };
 
@@ -152,8 +202,14 @@ export default function BinancePage() {
   };
 
   const borrarEstado = async () => {
-    if (!confirm("¿Borrar el estado de cuenta de esta semana para volver a subirlo?")) return;
-    await fetch(`/api/administracion/binance?estado=${semana}`, { method: "DELETE" });
+    const cuantos = datos?.borrables || 0;
+    const otros = (datos?.movimientos || 0) - cuantos;
+    const aviso =
+      `¿Borrar ${cuantos} pago${cuantos === 1 ? "" : "s"} del estado de cuenta de esta semana para volver a subirlos?` +
+      (otros > 0 ? `\n\nLos otros ${otros} los subió otra sede (o también otra sede) y se quedan.` : "");
+    if (!confirm(aviso)) return;
+    const json = await (await fetch(`/api/administracion/binance?estado=${semana}`, { method: "DELETE" })).json();
+    if (!json.success) setError(json.error || "No se pudo borrar");
     cargar();
   };
 
@@ -223,14 +279,40 @@ export default function BinancePage() {
         </div>
       </div>
 
-      {subidas.length > 0 && (
+      {(subidas.length > 0 || ignorados > 0) && (
         <Card>
-          <CardContent className="p-4 space-y-1 text-sm">
-            {subidas.map((s, i) => (
-              <p key={i} className={s.ok ? "text-emerald-700" : "text-red-700"}>
-                {s.ok ? "✓" : "✗"} <span className="font-medium">{s.nombre}</span>: {s.texto}
-              </p>
-            ))}
+          <CardContent className="p-4 space-y-2 text-sm">
+            {/* Con una carpeta de cientos de archivos la lista entera no se lee: arriba el
+                resumen y los que fallaron; los que entraron, plegados. */}
+            <p className="font-medium text-gray-700">
+              {subiendo ? `Subiendo ${subiendo.hecho} de ${subiendo.total}…` : "Subida terminada"} ·{" "}
+              <span className="text-emerald-700">{subidas.filter((s) => s.ok).length} cargados</span> ·{" "}
+              <span className="text-red-700">{subidas.filter((s) => !s.ok).length} con error</span>
+              {ignorados > 0 && (
+                <span className="text-gray-500"> · {ignorados} ignorados (no son fotos ni PDF)</span>
+              )}
+            </p>
+            {subidas
+              .filter((s) => !s.ok)
+              .map((s, i) => (
+                <p key={i} className="text-red-700">
+                  ✗ <span className="font-medium">{s.nombre}</span>: {s.texto}
+                </p>
+              ))}
+            {subidas.some((s) => s.ok) && (
+              <details>
+                <summary className="cursor-pointer text-emerald-700">Ver los cargados</summary>
+                <div className="mt-1 space-y-1 max-h-64 overflow-y-auto">
+                  {subidas
+                    .filter((s) => s.ok)
+                    .map((s, i) => (
+                      <p key={i} className="text-emerald-700">
+                        ✓ <span className="font-medium">{s.nombre}</span>: {s.texto}
+                      </p>
+                    ))}
+                </div>
+              </details>
+            )}
           </CardContent>
         </Card>
       )}
@@ -254,6 +336,22 @@ export default function BinancePage() {
         type="file"
         multiple
         accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(e) => subir(e.target.files, "estado")}
+      />
+      <input
+        ref={carpeta}
+        type="file"
+        multiple
+        {...ELEGIR_CARPETA}
+        className="hidden"
+        onChange={(e) => subir(e.target.files, "comprobante")}
+      />
+      <input
+        ref={carpetaEstado}
+        type="file"
+        multiple
+        {...ELEGIR_CARPETA}
         className="hidden"
         onChange={(e) => subir(e.target.files, "estado")}
       />
@@ -390,16 +488,29 @@ export default function BinancePage() {
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
-                <Button size="sm" className="h-9" disabled={!!subiendo} onClick={() => input.current?.click()}>
-                  {subiendo?.tipo === "comprobante" ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Upload className="h-4 w-4 mr-2" />
-                  )}
-                  {subiendo?.tipo === "comprobante"
-                    ? `Leyendo ${subiendo.hecho + 1} de ${subiendo.total}`
-                    : "Subir comprobantes"}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" className="h-9" disabled={!!subiendo} onClick={() => input.current?.click()}>
+                    {subiendo?.tipo === "comprobante" ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4 mr-2" />
+                    )}
+                    {subiendo?.tipo === "comprobante"
+                      ? `Leyendo ${subiendo.hecho} de ${subiendo.total}`
+                      : "Subir comprobantes"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9"
+                    disabled={!!subiendo}
+                    onClick={() => carpeta.current?.click()}
+                    title="Elegir una carpeta y subir todas sus fotos y PDF"
+                  >
+                    <FolderUp className="h-4 w-4 mr-2" />
+                    Carpeta
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
                 <Table>
@@ -486,10 +597,24 @@ export default function BinancePage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {datos.origen === "estado" && (
-                    <Button variant="ghost" size="sm" className="h-9 text-gray-500" onClick={borrarEstado}>
+                  {/* El estado de cuenta es de las tres sedes: cada una borra solo lo que subió ella. */}
+                  {datos.borrables > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 text-gray-500"
+                      disabled={!!subiendo}
+                      onClick={borrarEstado}
+                      title={
+                        datos.borrables < datos.movimientos
+                          ? "Solo se borran los pagos que subió esta sede; los de otras sedes se quedan"
+                          : undefined
+                      }
+                    >
                       <Trash2 className="h-4 w-4 mr-1" />
-                      Borrar y volver a subir
+                      {datos.borrables < datos.movimientos
+                        ? `Borrar lo que subió esta sede (${datos.borrables})`
+                        : "Borrar y volver a subir"}
                     </Button>
                   )}
                   <Button
@@ -505,8 +630,19 @@ export default function BinancePage() {
                       <FileSpreadsheet className="h-4 w-4 mr-2" />
                     )}
                     {subiendo?.tipo === "estado"
-                      ? `Leyendo ${subiendo.hecho + 1} de ${subiendo.total}`
+                      ? `Leyendo ${subiendo.hecho} de ${subiendo.total}`
                       : "Subir estado de cuenta"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9"
+                    disabled={!!subiendo}
+                    onClick={() => carpetaEstado.current?.click()}
+                    title="Elegir una carpeta y subir todas sus capturas y PDF"
+                  >
+                    <FolderUp className="h-4 w-4 mr-2" />
+                    Carpeta
                   </Button>
                 </div>
               </CardHeader>
