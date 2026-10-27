@@ -6,7 +6,9 @@ import {
   opcionesFicha,
   proponerCruce,
   proponerFicha,
-  renglonesSinProducto,
+  completarDesdeExcel,
+  estadoCruce,
+  marcarAparte,
 } from "@/lib/recepcion/cruceIa";
 import { cargarEnOdoo } from "@/lib/recepcion/odoo";
 import {
@@ -26,7 +28,8 @@ export const maxDuration = 300;
  * Renglones de una recepcion cerrada que no se cargaron en Odoo porque no se
  * cruzaron con ningun producto (lib/recepcion/cruceIa.ts). Almacen o Compras.
  *
- * GET  /api/recepcion/[id]/cruce              renglones sin producto (sin IA)
+ * GET  /api/recepcion/[id]/cruce              renglones sin producto (sin IA) y
+ *                                             los apartados para otra factura
  * GET  /api/recepcion/[id]/cruce?opciones=1   marcas y categorias de Odoo
  * GET  /api/recepcion/[id]/cruce?buscar=texto productos del catalogo
  * POST /api/recepcion/[id]/cruce  { accion, ... }
@@ -38,6 +41,12 @@ export const maxDuration = 300;
  *                     Solo Compras (o el SuperAdmin): es un producto nuevo
  *                     para toda la empresa.
  *   cargar_faltantes  carga en Odoo lo que faltaba (lo ya cargado no se repite)
+ *   aparte            { item_id, factura } el renglon es de otra factura del
+ *                     embarque (ej. INV1062 de Caracas): se conto aca pero no
+ *                     se carga en esta sede. `factura: null` lo devuelve.
+ *   excel             { renglones: [{ codigo, producto, cantidad, factura_aparte }] }
+ *                     el Excel del packing list leido en la pantalla: completa
+ *                     los codigos que faltan y aparta lo de otras facturas
  */
 
 async function abrir(request: NextRequest, params: Promise<{ id: string }>) {
@@ -65,7 +74,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const sp = request.nextUrl.searchParams;
     if (sp.get("opciones") === "1") return NextResponse.json({ success: true, ...(await opcionesFicha()) });
     if (sp.has("buscar")) return NextResponse.json({ success: true, productos: await buscarProductos(sp.get("buscar") || "") });
-    return NextResponse.json({ success: true, renglones: await renglonesSinProducto(a.id) });
+    return NextResponse.json({ success: true, ...(await estadoCruce(a.id)) });
   } catch (e: any) {
     return fallo(e);
   }
@@ -132,6 +141,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const r = await cargarEnOdoo(id, sesion.nombre, { completarFaltantes: true });
         aviso();
         return NextResponse.json({ success: true, ...r, ...(await cargarRecepcion(id)) });
+      }
+      case "aparte": {
+        if (!Number.isInteger(itemId)) return NextResponse.json({ error: "Falta el renglon" }, { status: 400 });
+        const factura = body?.factura === null ? null : String(body?.factura ?? "");
+        await marcarAparte(id, itemId, factura);
+        aviso();
+        return NextResponse.json({ success: true, ...(await estadoCruce(id)) });
+      }
+      case "excel": {
+        const crudos = Array.isArray(body?.renglones) ? body.renglones.slice(0, 500) : [];
+        if (crudos.length === 0) return NextResponse.json({ error: "El Excel no trae renglones" }, { status: 400 });
+        const r = await completarDesdeExcel(
+          id,
+          crudos.map((x: any) => ({
+            codigo: String(x?.codigo ?? ""),
+            producto: String(x?.producto ?? ""),
+            cantidad: Number(x?.cantidad) || 0,
+            factura_aparte: x?.factura_aparte ? String(x.factura_aparte) : null,
+          })),
+        );
+        aviso();
+        return NextResponse.json({ success: true, excel: r, ...(await estadoCruce(id)) });
       }
       default:
         return NextResponse.json({ error: "Accion invalida" }, { status: 400 });

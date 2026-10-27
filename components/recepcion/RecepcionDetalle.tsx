@@ -104,6 +104,8 @@ type ResultadoOdoo = {
   recepciones?: Array<{ id: number; nombre: string; pendiente: string | null }>;
   traslados?: Array<{ id: number; nombre: string; pendiente: string | null }>;
   sin_producto?: string[];
+  /** Renglones de otra factura del embarque: no se cargan en esta sede. */
+  apartados?: string[];
   en_entrada?: string[];
   /** Validacion que se corto a medias (el siguiente intento la resuelve). */
   intento?: { picking_id: number } | null;
@@ -1782,7 +1784,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     ))}
                   </ul>
                 )}
-                {(resultadoOdoo.sin_producto || []).length > 0 &&
+                {((resultadoOdoo.sin_producto || []).length > 0 ||
+                  (resultadoOdoo.apartados || []).length > 0 ||
+                  rec.odoo_estado === "error") &&
                   rec.odoo_estado !== "cargando" &&
                   (rec.odoo_purchase_order_id ? (
                     // Cruzar con IA los renglones sin producto y cargar lo que faltaba.
@@ -1793,6 +1797,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       onCambio={(detalle) => (detalle?.recepcion ? aplicar(detalle, false) : void cargar(false))}
                     />
                   ) : (
+                    (resultadoOdoo.sin_producto || []).length > 0 && (
                     <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                       <p className="font-semibold">{t("odoo.sin_producto")}</p>
                       <ul className="list-disc list-inside">
@@ -1801,6 +1806,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                         ))}
                       </ul>
                     </div>
+                    )
                   ))}
                 {/* Productos con serial en Odoo contados sin pistolear: se
                     pistolean aca antes de cargar (lo ya cargado no se toca). */}

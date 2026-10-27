@@ -472,6 +472,11 @@ export type ResultadoOdoo = {
   cargado: Record<string, { cantidad: number; seriales: string[] }>;
   /** Renglones que no se encontraron en Odoo y no se cargaron. */
   sin_producto: string[];
+  /**
+   * Renglones de otra factura del embarque (ej. INV1062 de Caracas): se
+   * contaron aca pero se reciben en la otra sede, asi que no se cargan.
+   */
+  apartados?: string[];
   /** Productos que quedaron en Entrada (no habia traslado a donde sumarlos). */
   en_entrada: string[];
   /**
@@ -626,6 +631,20 @@ type Recibido = { productId: number; nombre: string; cantidad: number; seriales:
  */
 export async function productoPorRenglon(items: any[], productosOc: Map<string, number>): Promise<Map<number, number>> {
   const porCodigo = new Map(productosOc);
+  // Contra la OC tambien vale el codigo sin signos ni prefijo de marca: el
+  // packing list trae "P-EL10-US-GY-ID-10", "NSW2-MKWBUNDLE" o "DELL:CP3724"
+  // y Odoo "PEL10USGYID10", "NSW2MKWBUNDLE", "CP3724". Solo si es uno.
+  const suelto = (c: string) => normalizarCodigo(c).replace(/^[A-Z]+:/, "").replace(/[^A-Z0-9]/g, "");
+  const ocSuelta = new Map<string, number | null>();
+  for (const [c, pid] of productosOc) {
+    const k = suelto(c);
+    if (k) ocSuelta.set(k, ocSuelta.has(k) && ocSuelta.get(k) !== pid ? null : pid);
+  }
+  for (const i of items) {
+    const c = i.codigo ? normalizarCodigo(i.codigo) : "";
+    const pid = c && !porCodigo.has(c) ? ocSuelta.get(suelto(c)) : null;
+    if (pid) porCodigo.set(c, pid);
+  }
   const buscar = items.filter((i) => !i.odoo_product_id && i.codigo && !porCodigo.has(normalizarCodigo(i.codigo)));
   for (const i of buscar) {
     const codigo = normalizarCodigo(i.codigo);
@@ -662,11 +681,19 @@ export async function productosDeLaOc(poId: number): Promise<Map<string, number>
 }
 
 /** Lo contado en el panel, por producto de Odoo (ver `productoPorRenglon`). */
-async function recibidosPorProducto(items: any[], productosOc: Map<string, number>): Promise<{ recibidos: Recibido[]; sinProducto: string[] }> {
-  const productoDe = await productoPorRenglon(items, productosOc);
+async function recibidosPorProducto(
+  items: any[],
+  productosOc: Map<string, number>,
+): Promise<{ recibidos: Recibido[]; sinProducto: string[]; apartados: string[] }> {
+  // Lo de otra factura no se carga aca: ni se busca su producto.
+  const apartados = items
+    .filter((i) => i.factura_aparte && Number(i.cantidad_recibida || 0) > 0)
+    .map((i) => `${i.factura_aparte} · ${i.codigo || "sin codigo"} · ${i.producto} (${Number(i.cantidad_recibida)})`);
+  const propios = items.filter((i) => !i.factura_aparte);
+  const productoDe = await productoPorRenglon(propios, productosOc);
   const mapa = new Map<number, Recibido>();
   const sinProducto: string[] = [];
-  for (const i of items) {
+  for (const i of propios) {
     const cantidad = Number(i.cantidad_recibida || 0);
     if (cantidad <= 0) continue;
     const pid = productoDe.get(Number(i.id)) || 0;
@@ -679,7 +706,7 @@ async function recibidosPorProducto(items: any[], productosOc: Map<string, numbe
     r.seriales.push(...(i.seriales || []).map((s: any) => String(s.serial).trim()).filter(Boolean));
     mapa.set(pid, r);
   }
-  return { recibidos: [...mapa.values()], sinProducto };
+  return { recibidos: [...mapa.values()], sinProducto, apartados };
 }
 
 /**
@@ -1070,8 +1097,9 @@ export async function cargarEnOdoo(
     // Productos que espera la OC, por codigo (para los renglones del packing list).
     const productosOc = await productosDeLaOc(poId);
 
-    const { recibidos, sinProducto } = await recibidosPorProducto(datos.items, productosOc);
+    const { recibidos, sinProducto, apartados } = await recibidosPorProducto(datos.items, productosOc);
     resultado.sin_producto = sinProducto;
+    resultado.apartados = apartados;
     await cargarRecepciones(rec, poId, recibidos, resultado, quien);
     await cargarTraslados(rec, resultado, quien);
 

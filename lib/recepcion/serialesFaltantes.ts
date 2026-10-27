@@ -88,7 +88,8 @@ export async function renglonesSinSeriales(datos: { recepcion: any; items: any[]
   const rec = datos.recepcion;
   if (!abiertaParaSeriales(rec)) return [];
   const cargado = resultadoDe(rec.odoo_resultado).cargado;
-  const recibidos = datos.items.filter((i) => Number(i.cantidad_recibida || 0) > 0);
+  // Lo de otra factura (factura_aparte) no se carga aca: no pide seriales.
+  const recibidos = datos.items.filter((i) => Number(i.cantidad_recibida || 0) > 0 && !i.factura_aparte);
   if (recibidos.length === 0) return [];
   const producto = await productoConSerial(rec, recibidos);
   return recibidos

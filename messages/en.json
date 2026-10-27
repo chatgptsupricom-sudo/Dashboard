@@ -3673,6 +3673,8 @@
     "conversion_no_entera": "not a whole number of bundles, check the quantity",
     "reparto_linea": "By container: {lista}",
     "reparto_no_coincide": "a container number changed: the split by container won't be saved",
+    "factura_aparte_linea": "Belongs to another invoice in the shipment: it is counted but not loaded into this branch's Odoo.",
+    "factura_aparte_quitar": "It is for this branch",
     "seriales_odoo": {
       "titulo": "Serials missing to load into Odoo",
       "ayuda": "These products are tracked by serial in Odoo and were counted without scanning. Scan one serial per received unit so they can be loaded. The received quantity does not change and what is already loaded in Odoo is not touched.",
@@ -3937,7 +3939,20 @@
         "ficha_lleva_serial": "Tracked by serial number",
         "ficha_fuentes": "Sources:",
         "ficha_crear": "Create in Odoo",
-        "ficha_cancelar": "Cancel"
+        "ficha_cancelar": "Cancel",
+        "excel_subir": "Complete with the packing list Excel",
+        "excel_ayuda": "Fills in the missing codes and sets aside what the Excel marks as another invoice (INV1062 under POSITION).",
+        "excel_error": "That Excel could not be read.",
+        "excel_resumen": "From the Excel: {codigos, plural, =0 {no new codes} one {# code filled in} other {# codes filled in}} and {apartados, plural, =0 {nothing set aside} one {# line set aside} other {# lines set aside}}.",
+        "excel_sin_cruzar": "Not found in the receipt: {renglon}",
+        "excel_ya_en_odoo": "Already in Odoo, not set aside (return it in Odoo): {renglon}",
+        "aparte_boton": "Belongs to another invoice",
+        "aparte_pregunta": "Which invoice is it? It stays counted here but is not loaded into this branch's Odoo.",
+        "aparte_factura": "Invoice",
+        "aparte_confirmar": "Set aside",
+        "aparte_quitar": "It is for this branch",
+        "apartados_titulo": "{count, plural, one {# line belongs to another invoice} other {# lines belong to another invoice}}",
+        "apartados_explicacion": "They arrived in this shipment but are received at the other branch when its invoice is entered: they are not loaded here."
       }
     }
   },
