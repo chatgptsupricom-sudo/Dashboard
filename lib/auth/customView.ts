@@ -1,5 +1,6 @@
 import { jwtVerify } from "jose";
 import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
+import { esRolMarketingElectro } from "@/lib/auth/marketingElectro";
 import { NextRequest } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 
@@ -33,14 +34,16 @@ export function canViewCustomPlan(user: AuthUser | null): boolean {
     user.role === "adminleads" ||
     user.role === "gerente de operaciones" ||
     user.role === "diseñador" ||
-    esRolBI(user.role)
+    esRolBI(user.role) ||
+    esRolMarketingElectro(user.role)
   );
 }
 
 // Guardar lo que se marca o escribe dentro del plan (estado, checks): todos
-// los que lo ven menos Inteligencia de Negocio, que solo lee.
+// los que lo ven menos Inteligencia de Negocio y Marketing y Electrodomésticos,
+// que solo leen.
 export function canEditCustomPlan(user: AuthUser | null): boolean {
-  return canViewCustomPlan(user) && !esRolBI(user?.role);
+  return canViewCustomPlan(user) && !esRolBI(user?.role) && !esRolMarketingElectro(user?.role);
 }
 
 // Solo quien tiene el botón "Actualizar HTML" en la UI (superadmin o

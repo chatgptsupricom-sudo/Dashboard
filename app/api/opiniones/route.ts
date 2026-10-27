@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ROL_BI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { COMPANY_IDS_ALL, COMPANY_NAME } from "@/lib/gerente_venta/reporteVentas";
 import { listarOpiniones } from "@/lib/opiniones/consulta";
 
@@ -22,7 +23,7 @@ function isoHaceDias(dias: number): string {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["gerencia de ventas", ROL_BI]);
+  const auth = await requireRoles(request, ["gerencia de ventas", ROL_BI, ROL_MARKETING_ELECTRO]);
   if (auth.error) return auth.error;
 
   const role = ((auth.payload!.role as string) || "").toLowerCase().trim();

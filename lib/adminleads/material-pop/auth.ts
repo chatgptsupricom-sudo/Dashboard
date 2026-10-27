@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ROL_BI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
+import { esRolMarketingElectro, ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { requireRoles } from "@/lib/auth/roles";
 
 /**
@@ -13,13 +14,18 @@ import { requireRoles } from "@/lib/auth/roles";
 export async function requireAdminLeadsValencia(
   request: NextRequest,
 ): Promise<{ payload?: any; error?: NextResponse }> {
-  const auth = await requireRoles(request, ["adminleads", ROL_BI]);
+  const auth = await requireRoles(request, ["adminleads", ROL_BI, ROL_MARKETING_ELECTRO]);
   if (auth.error) return auth;
 
   const payload = auth.payload!;
   const userRole = String(payload.role || "").toLowerCase().trim();
 
   if (veTodasLasSedes(userRole)) {
+    return { payload };
+  }
+  // Marketing y Electrodomésticos lee el módulo (es de Valencia) sea cual sea
+  // su cids; requireRoles le corta lo que escribe.
+  if (esRolMarketingElectro(userRole)) {
     return { payload };
   }
 

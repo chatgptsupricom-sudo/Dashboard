@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { asignacionesDe, gerentes, guardarAsignaciones, marcasOdoo } from "@/lib/gerente-marca/asignaciones";
-import { ROL_GERENTE_MARCA } from "@/lib/gerente-marca/tipos";
+import { ROLES_CON_MARCAS } from "@/lib/gerente-marca/tipos";
 
 /**
  * Marcas de cada Gerente de Marca (lib/gerente-marca/asignaciones.ts).
@@ -11,7 +11,7 @@ import { ROL_GERENTE_MARCA } from "@/lib/gerente-marca/tipos";
  * PUT {email, asignaciones: [{marcaId, linea}]} → solo el SuperAdmin.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, [ROL_GERENTE_MARCA]);
+  const auth = await requireRoles(request, ROLES_CON_MARCAS);
   if (auth.error) return auth.error;
   const esSuper = String(auth.payload?.role || "").toLowerCase().trim() === "superadmin";
   try {

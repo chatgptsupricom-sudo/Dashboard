@@ -276,6 +276,8 @@ export function LoginForm() {
         router.push(`/${locale}/inteligencia_negocio`);
       } else if (role === "gerente de marca") {
         router.push(`/${locale}/gerente_marca`);
+      } else if (role === "marketing y electrodomesticos") {
+        router.push(`/${locale}/marketing_electrodomesticos`);
       } else {
         console.log("Redirigiendo a /dashboard por fallo de coincidencia");
         router.push(`/${locale}/dashboard`);

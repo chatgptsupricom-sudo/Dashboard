@@ -23,6 +23,7 @@ export enum UserRole {
   IT = "it",
   INTELIGENCIA_NEGOCIO = "inteligencia de negocio",
   GERENTE_MARCA = "gerente de marca",
+  MARKETING_ELECTRO = "marketing y electrodomesticos",
 }
 
 // Permisos por rol
@@ -550,6 +551,31 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "gm_banco_imagenes", "actividad"],
+  },
+  // Marketing y Electrodomésticos (lib/auth/marketingElectro.ts): inventario y
+  // ventas de sus marcas, rotación de Compras y las pantallas de Marketing. Solo lee.
+  [UserRole.MARKETING_ELECTRO]: {
+    canViewAllSections: false,
+    canManageUsers: false,
+    canEditUsers: false,
+    canDisableUsers: false,
+    canViewAudit: false,
+    sections: [
+      "gm_ventas",
+      "gm_inventario",
+      "mayor_rotacion",
+      "menor_rotacion",
+      "tendencia",
+      "catalogo",
+      "actividad",
+      "vista_custom",
+      "banco_imagenes",
+      "me_material_pop",
+      "metas_marca",
+      "stock_marca",
+      "opiniones",
+      "MapaClientes",
+    ],
   },
 };
 

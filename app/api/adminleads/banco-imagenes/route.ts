@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { filtroBancoGerente } from "@/lib/gerente-marca/banco";
 import { ROL_GERENTE_MARCA } from "@/lib/gerente-marca/tipos";
 import { NextRequest, NextResponse } from "next/server";
@@ -14,7 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 // lectura y escritura. Sin el en estas listas la pantalla no cargaba nada.
 // El Gerente de Marca solo consulta, y solo los flyers de sus marcas
 // (lib/gerente-marca/banco.ts).
-const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador", ROL_BI, ROL_GERENTE_MARCA];
+const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador", ROL_BI, ROL_GERENTE_MARCA, ROL_MARKETING_ELECTRO];
 const ROLES_ESCRITURA = ["adminleads", "gerente de operaciones", "diseñador"];
 
 // Tamano maximo por archivo.

@@ -1,4 +1,5 @@
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { leerSede } from "@/lib/compras/constants";
 import { alertasQuiebre } from "@/lib/compras/reportes";
 import { NextRequest, NextResponse } from "next/server";
@@ -11,7 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
  * Sugeridos ni con las tarjetas del resumen que llevan acá).
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["compras"]);
+  const auth = await requireRoles(request, ["compras", ROL_MARKETING_ELECTRO]);
   if (auth.error) return auth.error;
 
   const sedeId = leerSede(request.url);

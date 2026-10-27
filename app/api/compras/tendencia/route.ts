@@ -1,4 +1,5 @@
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { leerSede } from "@/lib/compras/constants";
 import {
   cachear,
@@ -200,7 +201,7 @@ async function historico(sedeId: number) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["compras"]);
+  const auth = await requireRoles(request, ["compras", ROL_MARKETING_ELECTRO]);
   if (auth.error) return auth.error;
 
   const sedeId = leerSede(request.url);

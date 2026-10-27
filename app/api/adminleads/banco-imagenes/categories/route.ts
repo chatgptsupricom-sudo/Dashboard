@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { filtroBancoGerente } from "@/lib/gerente-marca/banco";
 import { ROL_GERENTE_MARCA } from "@/lib/gerente-marca/tipos";
 import { NextRequest, NextResponse } from "next/server";
@@ -14,6 +15,7 @@ export async function GET(request: NextRequest) {
     "diseñador",
     ROL_BI,
     ROL_GERENTE_MARCA,
+    ROL_MARKETING_ELECTRO,
   ]);
   if (auth.error) return auth.error;
 

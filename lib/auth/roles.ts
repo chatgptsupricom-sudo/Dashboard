@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { respuestaSesionTerminada, sesionVigente } from "@/lib/auth/vigencia";
 import { esEscrituraBI, MENSAJE_SOLO_LECTURA_BI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { esEscrituraMarketingElectro } from "@/lib/auth/marketingElectro";
 
 /**
  * Guard genérico por rol para las rutas de API.
@@ -74,6 +75,12 @@ export async function requireRoles(
   // guard suele cubrir GET y POST), nunca escribe.
   if (!opciones.soloLee && esEscrituraBI(userRole, request.method)) {
     return { error: respuestaSoloLecturaBI() };
+  }
+  // Marketing y Electrodomésticos también entra solo a leer.
+  if (!opciones.soloLee && esEscrituraMarketingElectro(userRole, request.method)) {
+    return {
+      error: NextResponse.json({ error: "Marketing y Electrodomésticos es de solo lectura" }, { status: 403 }),
+    };
   }
 
   return sesion;
