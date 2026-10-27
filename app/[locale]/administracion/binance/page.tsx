@@ -388,18 +388,20 @@ export default function BinancePage() {
 
   /**
    * Hoja para imprimir los conciliados: cada comprobante con el cliente arriba,
-   * sus datos y la firma, 6 por hoja. Se imprime desde un iframe oculto: su
+   * sus datos y la firma, uno por hoja. Se imprime desde un iframe oculto: su
    * `load` espera a que bajen todas las imagenes.
    */
   const imprimirConciliados = () => {
     const esc = (s: string) =>
       s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
+    const semanaTexto = opciones.find((o) => o.value === semana)?.label || semana;
     const tarjetas = conciliados
       .map((c) => {
         const imagen = /\.pdf$/i.test(c.archivoNombre || "")
           ? `<div class="pdf">Comprobante en PDF<br>(ver en el panel)</div>`
           : `<img class="comprobante" src="/api/administracion/binance/imagen?id=${c.id}" alt="">`;
         return `<div class="tarjeta">
+          <div class="semana">Conciliación Binance · Semana ${esc(semanaTexto)}</div>
           <div class="cliente">${esc(c.cliente || "Sin cliente")}</div>
           ${imagen}
           <div class="datos">${esc(fechaComprobante(c))}<br>${esc(cifra(c.monto))} ${esc(c.moneda)} · ${esc(c.orderId)}</div>
@@ -407,22 +409,18 @@ export default function BinancePage() {
         </div>`;
       })
       .join("");
-    const semanaTexto = opciones.find((o) => o.value === semana)?.label || semana;
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Conciliados</title><style>
-      @page { size: letter; margin: 10mm; }
+      @page { size: letter; margin: 12mm; }
       body { font-family: Arial, sans-serif; margin: 0; color: #111; }
-      h1 { font-size: 13px; margin: 0 0 4mm; }
-      .grilla { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
-      .tarjeta { break-inside: avoid; border: 1px solid #ccc; border-radius: 2mm; padding: 2mm; text-align: center; height: 122mm; display: flex; flex-direction: column; align-items: center; }
-      .cliente { font-weight: bold; font-size: 12px; margin-bottom: 1.5mm; }
-      .comprobante { max-width: 100%; max-height: 88mm; object-fit: contain; }
-      .pdf { height: 88mm; display: flex; align-items: center; justify-content: center; color: #666; font-size: 11px; }
-      .datos { font-size: 9px; color: #444; margin-top: 1.5mm; }
-      .firma { height: 16mm; margin-top: auto; }
-    </style></head><body>
-      <h1>Comprobantes conciliados · Semana ${esc(semanaTexto)} · ${conciliados.length}</h1>
-      <div class="grilla">${tarjetas}</div>
-    </body></html>`;
+      .tarjeta { break-after: page; height: 250mm; text-align: center; display: flex; flex-direction: column; align-items: center; }
+      .tarjeta:last-child { break-after: auto; }
+      .semana { font-size: 10px; color: #666; align-self: flex-end; }
+      .cliente { font-weight: bold; font-size: 20px; margin: 2mm 0 5mm; }
+      .comprobante { max-width: 100%; max-height: 170mm; object-fit: contain; border: 1px solid #ddd; }
+      .pdf { height: 170mm; display: flex; align-items: center; justify-content: center; color: #666; font-size: 14px; }
+      .datos { font-size: 12px; color: #444; margin-top: 4mm; line-height: 1.5; }
+      .firma { height: 32mm; margin-top: auto; }
+    </style></head><body>${tarjetas}</body></html>`;
     const marco = document.createElement("iframe");
     marco.style.cssText = "position:fixed;width:0;height:0;border:0;visibility:hidden";
     marco.onload = () => {
