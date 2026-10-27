@@ -63,7 +63,11 @@ export async function POST(
       if (!cont) return NextResponse.json({ error: "Contenedor invalido" }, { status: 400 });
       etapaQueManda = cont.etapa;
     }
-    if (!regla.etapas.includes(etapaQueManda)) {
+    // El SuperAdmin corrige una recepcion cerrada: puede subir cualquier foto
+    // (llegada, precinto, cierre del contenedor o caja en mal estado).
+    const correccion =
+      tipo !== "packing_list" && datos.recepcion.etapa === "cerrado" && sesion!.rol === "superadmin";
+    if (!regla.etapas.includes(etapaQueManda) && !correccion) {
       return NextResponse.json(
         { error: "Ya no se puede subir este archivo en esta etapa" },
         { status: 409 },

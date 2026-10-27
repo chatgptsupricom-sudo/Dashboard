@@ -6,7 +6,7 @@ import {
   limpiarDanos,
   limpiarPrecintos,
 } from "@/lib/recepcion/flujo";
-import { cargarEnOdoo, ocPendiente } from "@/lib/recepcion/odoo";
+import { cargarEnOdoo, ocPendiente, productoPorCodigo } from "@/lib/recepcion/odoo";
 import { contenedorDeConteo, ponerCantidad, recalcularTotales } from "@/lib/recepcion/conteo";
 import {
   cargarRecepcion,
@@ -48,6 +48,12 @@ export const dynamic = "force-dynamic";
  *                     `saltar_frenos` solo lo usa el SuperAdmin, despues de
  *                     revisar en Odoo que lo recibido a mano no es esta
  *                     misma mercancia.
+ *  corregir_danos     { items: [{ id, danos, golpeado_nota }] } solo
+ *                     el SuperAdmin: marca las cajas en mal estado que Almacen
+ *                     no anoto antes de cerrar. No toca Odoo ni cantidades.
+ *  agregar_producto   { codigo, cantidad, seriales? } solo el SuperAdmin:
+ *                     renglon nuevo con un producto que no se conto, y se
+ *                     carga en Odoo (solo lo nuevo).
  *
  * Cada avance se escribe con `WHERE etapa = <la esperada>`: si dos personas
  * pulsan a la vez, la segunda recibe 409 en vez de repetir el paso.
@@ -136,6 +142,138 @@ export async function POST(
       await cargarEnOdoo(id, sesion!.nombre, {
         saltarFrenos: body?.saltar_frenos === true && sesion!.rol === "superadmin",
       });
+      emitirRecepcion({ accion: "editado", id, cids: Number(rec.cids), referencia: rec.referencia });
+      return NextResponse.json({ success: true, ...(await cargarRecepcion(id)) });
+    }
+
+    // SuperAdmin: corregir el estado de las cajas de una recepcion cerrada
+    // (Almacen cerro sin marcar las que llegaron en mal estado). Solo danos,
+    // su nota y su foto: no tocan Odoo (las cajas en mal estado entran igual
+    // a Existencias). Las cantidades no se corrigen: ya estan cargadas.
+    if (body?.accion === "corregir_danos") {
+      if (sesion!.rol !== "superadmin") {
+        return NextResponse.json({ error: "Solo el SuperAdmin corrige una recepcion cerrada" }, { status: 403 });
+      }
+      if (rec.etapa !== "cerrado") return conflicto();
+
+      const porId = new Map<number, any>(datos.items.map((i) => [Number(i.id), i]));
+      const cambios: Array<{ item: any; danos: ReturnType<typeof limpiarDanos>; nota: string | null }> = [];
+      for (const c of Array.isArray(body?.items) ? body.items : []) {
+        const item = porId.get(Number(c?.id));
+        if (!item) continue;
+        const danos = limpiarDanos(c.danos);
+        const nota = danos.length ? texto(c.golpeado_nota, MAX.nota) : null;
+        if (JSON.stringify(danos) === JSON.stringify(item.danos || []) && nota === (item.golpeado_nota || null)) continue;
+        cambios.push({ item, danos, nota });
+        Object.assign(item, { danos, golpeado: danos.length ? 1 : 0, golpeado_nota: nota });
+      }
+      if (!cambios.length) return NextResponse.json({ error: "No cambio nada" }, { status: 400 });
+
+      // Lo mismo que se pide al cerrar: foto, motivo y cuantas unidades (solo
+      // en lo que se corrige; `todo` es para recalcular el resultado).
+      const fotosGolpe = new Set(
+        datos.archivos.filter((a) => a.tipo === "foto_golpe" && a.item_id).map((a) => Number(a.item_id)),
+      );
+      const evaluar = (lista: any[]) => evaluarConteo(
+        lista.map((i) => ({
+          id: Number(i.id),
+          cantidad_esperada: Number(i.cantidad_esperada),
+          cantidad_recibida: i.cantidad_recibida === null ? null : Number(i.cantidad_recibida),
+          motivo_diferencia: i.motivo_diferencia,
+          golpeado: Number(i.golpeado) === 1,
+          danos: i.danos || [],
+          golpeado_nota: i.golpeado_nota,
+        })),
+        fotosGolpe,
+      );
+      const ev = evaluar(cambios.map((c) => c.item));
+      const todo = evaluar(datos.items);
+      const faltan: string[] = [];
+      if (ev.golpesSinFoto) faltan.push(`la foto de ${ev.golpesSinFoto} caja(s) en mal estado`);
+      if (ev.golpesSinMotivo) faltan.push(`el motivo de ${ev.golpesSinMotivo} caja(s) en mal estado`);
+      if (ev.danosSinCantidad) faltan.push(`cuantas unidades en ${ev.danosSinCantidad} dano(s) marcado(s)`);
+      if (ev.danosDeMas) faltan.push(`corregir ${ev.danosDeMas} dano(s) con mas unidades que las recibidas`);
+      if (faltan.length) {
+        return NextResponse.json({ error: `Falta ${faltan.join(", ")}` }, { status: 400 });
+      }
+
+      for (const { item, danos, nota } of cambios) {
+        await query(
+          "UPDATE recepcion_packing_items SET golpeado = ?, golpeado_tipos = ?, golpeado_nota = ? WHERE id = ? AND recepcion_id = ?",
+          [danos.length ? 1 : 0, danos.length ? JSON.stringify(danos) : null, nota, item.id, id],
+        );
+      }
+      // Se recalcula el resultado. La correccion no deja rastro aparte: queda
+      // como si se hubiera anotado al cerrar.
+      const novedades =
+        todo.faltantes > 0 || todo.sobrantes > 0 || todo.golpeados > 0 || Number(rec.precinto_coincide) === 0;
+      await query("UPDATE recepcion_packing SET resultado = ? WHERE id = ? AND etapa = 'cerrado'", [
+        novedades ? "con_novedades" : "conforme",
+        id,
+      ]);
+      emitirRecepcion({ accion: "editado", id, cids: Number(rec.cids), referencia: rec.referencia });
+      return NextResponse.json({ success: true, ...(await cargarRecepcion(id)) });
+    }
+
+    // SuperAdmin: agregar a una recepcion cerrada un producto que Almacen no
+    // conto. Entra como renglon nuevo (lo esperado = lo recibido) y se carga
+    // en Odoo solo eso: cargarEnOdoo carga la diferencia con lo ya cargado.
+    if (body?.accion === "agregar_producto") {
+      if (sesion!.rol !== "superadmin") {
+        return NextResponse.json({ error: "Solo el SuperAdmin agrega productos a una recepcion cerrada" }, { status: 403 });
+      }
+      if (rec.etapa !== "cerrado") return conflicto();
+      const codigo = texto(body?.codigo, 100);
+      if (!codigo) return NextResponse.json({ error: "Falta el codigo del producto" }, { status: 400 });
+      const producto = await productoPorCodigo(codigo);
+      if (!producto) {
+        return NextResponse.json({ error: `No hay un producto en Odoo con el codigo ${codigo}` }, { status: 400 });
+      }
+      const seriales = [
+        ...new Set(
+          (Array.isArray(body?.seriales) ? body.seriales : [])
+            .map((s: unknown) => String(s ?? "").trim().slice(0, 100))
+            .filter(Boolean),
+        ),
+      ] as string[];
+      const cantidad = producto.conSerial ? seriales.length : Number(body?.cantidad);
+      if (producto.conSerial && cantidad === 0) {
+        return NextResponse.json({ error: `${producto.codigo} lleva serial: escribe los seriales` }, { status: 400 });
+      }
+      if (!Number.isFinite(cantidad) || cantidad <= 0) {
+        return NextResponse.json({ error: "Cantidad invalida" }, { status: 400 });
+      }
+
+      const ins = await query(
+        `INSERT INTO recepcion_packing_items (recepcion_id, codigo, producto, cantidad_esperada, odoo_product_id)
+         VALUES (?, ?, ?, ?, ?)`,
+        [id, producto.codigo, producto.nombre.slice(0, 300), cantidad, producto.id],
+      );
+      const itemId = Number((ins.rows as any)?.insertId);
+      try {
+        for (const s of producto.conSerial ? seriales : []) {
+          await query(
+            `INSERT INTO recepcion_packing_seriales (recepcion_id, item_id, serial, escaneado_por, contenedor_id)
+             VALUES (?, ?, ?, ?, 0)`,
+            [id, itemId, s, sesion!.nombre],
+          );
+        }
+      } catch (e: any) {
+        // Serial ya pistoleado en esta recepcion: no queda el renglon a medias.
+        await query("DELETE FROM recepcion_packing_seriales WHERE item_id = ?", [itemId]);
+        await query("DELETE FROM recepcion_packing_items WHERE id = ?", [itemId]);
+        if (/Duplicate entry/i.test(e?.message || "")) {
+          return NextResponse.json({ error: "Uno de esos seriales ya esta en esta recepcion" }, { status: 409 });
+        }
+        throw e;
+      }
+      await ponerCantidad(id, itemId, 0, cantidad, sesion!.nombre);
+
+      // Ya cargada en Odoo: se vuelve a cargar para que entre lo nuevo.
+      if (rec.odoo_estado === "cargado") {
+        await query("UPDATE recepcion_packing SET odoo_estado = NULL WHERE id = ? AND odoo_estado = 'cargado'", [id]);
+      }
+      await cargarEnOdoo(id, sesion!.nombre);
       emitirRecepcion({ accion: "editado", id, cids: Number(rec.cids), referencia: rec.referencia });
       return NextResponse.json({ success: true, ...(await cargarRecepcion(id)) });
     }

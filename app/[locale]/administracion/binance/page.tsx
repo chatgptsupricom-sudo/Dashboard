@@ -5,15 +5,23 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Aviso, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
-import type { Comprobante, EstadoComprobante, OrigenPagos, PagoBinance } from "@/lib/administracion/binance";
+import type {
+  Comprobante,
+  EstadoComprobante,
+  OrigenPagos,
+  PagoBinance,
+  PagoConComprobante,
+} from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Loader2, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Link2, Loader2, Printer, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
   comprobantes: Comprobante[];
   sinComprobante: PagoBinance[];
+  /** Todos los pagos de la semana, con el comprobante que los tomo. */
+  pagos: PagoConComprobante[];
   errorBinance: string | null;
   origen: OrigenPagos;
   movimientos: number;
@@ -36,12 +44,44 @@ const CLASE_ESTADO: Record<EstadoComprobante, string> = {
   conciliado: "bg-emerald-100 text-emerald-800",
   manual: "bg-emerald-100 text-emerald-800",
   por_monto_hora: "bg-amber-100 text-amber-800",
+  nombre_distinto: "bg-amber-100 text-amber-800",
   monto_distinto: "bg-red-100 text-red-800",
   no_encontrado: "bg-red-100 text-red-800",
   sin_verificar: "bg-slate-100 text-slate-700",
 };
 
 const DIA = 86400_000;
+const POR_PAGINA = 25;
+
+/** Anterior / Pagina x de y / Siguiente; no se muestra con una sola pagina. */
+function Paginacion({ pagina, total, cambiar }: { pagina: number; total: number; cambiar: (p: number) => void }) {
+  const paginas = Math.ceil(total / POR_PAGINA);
+  if (paginas <= 1) return null;
+  return (
+    <div className="flex items-center justify-end gap-2 pt-3 text-sm text-gray-600">
+      <span>
+        {pagina * POR_PAGINA + 1}–{Math.min(total, (pagina + 1) * POR_PAGINA)} de {total}
+      </span>
+      <Button size="sm" variant="outline" className="h-8" disabled={pagina === 0} onClick={() => cambiar(pagina - 1)}>
+        Anterior
+      </Button>
+      <span>
+        Página {pagina + 1} de {paginas}
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8"
+        disabled={pagina >= paginas - 1}
+        onClick={() => cambiar(pagina + 1)}
+      >
+        Siguiente
+      </Button>
+    </div>
+  );
+}
+
+const deLaPagina = <T,>(items: T[], pagina: number) => items.slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA);
 
 /** Lunes (YYYY-MM-DD) de las ultimas `n` semanas, la actual primero. */
 function semanas(n = 12) {
@@ -65,8 +105,53 @@ const soloFecha = (iso: string) =>
 
 const cifra = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 
+/** Un comprobante por subir: un archivo elegido o uno de la carpeta de Google Drive. */
+type Elegido = { nombre: string; carpeta: string | null; archivo?: File; driveId?: string };
+
+const MIME_POR_EXTENSION: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  pdf: "application/pdf",
+};
+
+const esZip = (f: File) => /\.zip$/i.test(f.name);
+
+/** Carpeta donde esta el archivo ("Binance/02-10-2026/Cliente.jpg" -> "02-10-2026"). */
+function carpetaDe(ruta: string) {
+  const partes = ruta.split("/");
+  return partes.length > 1 ? partes[partes.length - 2] : null;
+}
+
+/**
+ * Fotos y PDF de un .zip. Google Drive descarga una carpeta como
+ * "02-10-2026-20261027T150000Z-001.zip" con la carpeta adentro; si los archivos
+ * vienen sueltos en el zip, la fecha sale del nombre del zip.
+ */
+async function abrirZip(zip: File): Promise<Elegido[]> {
+  const { default: JSZip } = await import("jszip");
+  const z = await JSZip.loadAsync(zip);
+  const salida: Elegido[] = [];
+  for (const e of Object.values(z.files)) {
+    const nombre = e.name.split("/").pop() || "";
+    const tipo = MIME_POR_EXTENSION[nombre.split(".").pop()?.toLowerCase() || ""];
+    // "._x.jpg" / "__MACOSX": basura que agrega la Mac al comprimir.
+    if (e.dir || !tipo || nombre.startsWith("._") || e.name.startsWith("__MACOSX")) continue;
+    const archivo = new File([await e.async("blob")], nombre, { type: tipo });
+    salida.push({ archivo, nombre, carpeta: carpetaDe(e.name) ?? zip.name.replace(/\.zip$/i, "") });
+  }
+  return salida;
+}
+
 const fechaComprobante = (c: Comprobante) =>
-  c.fechaEstimada && !c.binance ? (c.soloDia ? `${soloFecha(c.fecha)} (sin hora)` : "Sin fecha") : fechaHora(c.fecha);
+  c.fechaEstimada && !c.binance
+    ? c.horaTelefono
+      ? `${fechaHora(c.fecha)} (hora del comprobante)`
+      : c.soloDia
+        ? `${soloFecha(c.fecha)} (sin hora)`
+        : "Sin fecha"
+    : fechaHora(c.fecha);
 
 // Lo que muestra cada tarjeta al hacerle clic.
 type Lista = "comprobantes" | "conciliados" | "problema" | "sinComprobante";
@@ -95,10 +180,22 @@ export default function BinancePage() {
   const [lista, setLista] = useState<Lista | null>(null);
   const [verImagen, setVerImagen] = useState<Comprobante | null>(null);
   const [ignorados, setIgnorados] = useState(0);
+  const [paginaComprobantes, setPaginaComprobantes] = useState(0);
+  const [paginaPagos, setPaginaPagos] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const inputEstado = useRef<HTMLInputElement>(null);
   const carpeta = useRef<HTMLInputElement>(null);
   const carpetaEstado = useRef<HTMLInputElement>(null);
+  const [drive, setDrive] = useState<{ configurado: boolean; conectado: boolean; correo: string } | null>(null);
+  const [enlace, setEnlace] = useState("");
+  const [leyendoDrive, setLeyendoDrive] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/administracion/binance/drive?estado=1")
+      .then((r) => r.json())
+      .then((j) => setDrive(j?.configurado !== undefined ? j : null))
+      .catch(() => setDrive(null));
+  }, []);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -117,12 +214,34 @@ export default function BinancePage() {
     cargar();
   }, [cargar]);
 
-  const subirUno = async (archivo: File, tipo: TipoArchivo): Promise<Subida> => {
-    const nombre = archivo.webkitRelativePath || archivo.name;
-    if (archivo.size > MAX_BYTES) return { nombre, ok: false, texto: "Pesa más de 8 MB" };
+  // El aviso de la subida se va solo 5 s despues de terminar (no mientras el
+  // mouse esta encima, para poder leer los errores).
+  const [sobreAviso, setSobreAviso] = useState(false);
+  useEffect(() => {
+    if (subiendo || sobreAviso || (!subidas.length && !ignorados)) return;
+    const t = setTimeout(() => {
+      setSubidas([]);
+      setIgnorados(0);
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [subiendo, sobreAviso, subidas, ignorados]);
+
+  // Otra semana: de vuelta a la primera pagina.
+  useEffect(() => {
+    setPaginaComprobantes(0);
+    setPaginaPagos(0);
+  }, [semana]);
+
+  const subirUno = async (elegido: Elegido, tipo: TipoArchivo): Promise<Subida> => {
+    const { archivo, driveId, carpeta } = elegido;
+    const nombre = carpeta ? `${carpeta}/${elegido.nombre}` : elegido.nombre;
+    if (archivo && archivo.size > MAX_BYTES) return { nombre, ok: false, texto: "Pesa más de 8 MB" };
     const form = new FormData();
-    form.append("archivo", archivo);
+    if (archivo) form.append("archivo", archivo);
+    if (driveId) form.append("drive_id", driveId);
     form.append("semana", semana);
+    // La carpeta de los comprobantes se llama como el dia de los pagos ("02-10-2026").
+    if (carpeta) form.append("carpeta", carpeta);
     if (tipo === "estado") form.append("tipo", "estado");
     try {
       let res = await fetch("/api/administracion/binance", { method: "POST", body: form });
@@ -139,12 +258,18 @@ export default function BinancePage() {
           : { nombre, ok: true, texto: `${json.recibidos} pagos recibidos (${json.nuevos} nuevos, ${json.repetidos} ya estaban)` };
       }
       if (json.success) {
-        const fecha = json.soloDia
-          ? `${soloFecha(json.fecha)} (fecha del nombre del archivo)`
-          : json.fechaEstimada
-            ? "sin fecha, quedó en esta semana"
-            : fechaHora(json.fecha);
-        return { nombre, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fecha}` };
+        const fecha = json.horaTelefono
+          ? `${fechaHora(json.fecha)} (día de la carpeta, hora del comprobante)`
+          : json.soloDia
+            ? `${soloFecha(json.fecha)} (día de la carpeta, sin hora)`
+            : json.fechaEstimada
+              ? "sin fecha, quedó en esta semana"
+              : fechaHora(json.fecha);
+        return {
+          nombre,
+          ok: true,
+          texto: `${json.cliente || "sin cliente"} · ${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fecha}`,
+        };
       }
       return { nombre, ok: false, texto: json.error || "Error" };
     } catch {
@@ -154,17 +279,28 @@ export default function BinancePage() {
 
   /**
    * Sube los archivos elegidos (o los de la carpeta) varios a la vez. De una
-   * carpeta solo se suben fotos y PDF; lo demas se cuenta como ignorado.
+   * carpeta solo se suben fotos y PDF; lo demas se cuenta como ignorado. Un .zip
+   * (la carpeta de Google Drive descargada) se abre aca y se sube lo de adentro.
    */
   const subir = async (archivos: FileList | null, tipo: TipoArchivo) => {
     if (!archivos?.length) return;
     const todos = [...archivos];
-    const lista = todos
+    const zips = todos.filter(esZip);
+    const lista: Elegido[] = todos
       .filter((f) => TIPOS_ARCHIVO.has(f.type))
-      .sort((a, b) =>
-        (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }),
-      );
-    setIgnorados(todos.length - lista.length);
+      .map((f) => ({ archivo: f, nombre: f.name, carpeta: carpetaDe(f.webkitRelativePath) }));
+    try {
+      for (const z of zips) lista.push(...(await abrirZip(z)));
+    } catch {
+      setError("No se pudo abrir el .zip");
+    }
+    setIgnorados(todos.length - zips.length - todos.filter((f) => TIPOS_ARCHIVO.has(f.type)).length);
+    await subirLista(lista, tipo);
+  };
+
+  const subirLista = async (elegidos: Elegido[], tipo: TipoArchivo) => {
+    const ruta = (e: Elegido) => `${e.carpeta || ""}/${e.nombre}`;
+    const lista = [...elegidos].sort((a, b) => ruta(a).localeCompare(ruta(b), undefined, { numeric: true }));
     setSubidas([]);
     if (!lista.length) {
       for (const el of [input, inputEstado, carpeta, carpetaEstado]) if (el.current) el.current.value = "";
@@ -189,12 +325,45 @@ export default function BinancePage() {
     cargar();
   };
 
-  const asignar = async (c: Comprobante, valor: string) => {
+  /** Lee la carpeta de Google Drive pegada y sube sus comprobantes (el servidor los baja de Drive). */
+  const leerDrive = async () => {
+    setError(null);
+    setLeyendoDrive(true);
+    try {
+      const json = await (
+        await fetch("/api/administracion/binance/drive", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: enlace }),
+        })
+      ).json();
+      if (!json.success) setError(json.error || "No se pudo leer la carpeta de Drive");
+      else if (!json.archivos.length) setError(`La carpeta «${json.carpeta}» no tiene fotos ni PDF`);
+      else {
+        setIgnorados(0);
+        setLeyendoDrive(false);
+        await subirLista(
+          json.archivos.map((a: { id: string; nombre: string; carpeta: string }) => ({
+            driveId: a.id,
+            nombre: a.nombre,
+            carpeta: a.carpeta,
+          })),
+          "comprobante",
+        );
+        setEnlace("");
+      }
+    } catch {
+      setError("No se pudo leer la carpeta de Drive");
+    }
+    setLeyendoDrive(false);
+  };
+
+  const asignar = async (c: Comprobante, valor: string, aprobar = false) => {
     const json = await (
       await fetch("/api/administracion/binance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: c.id, movimiento_id: valor ? Number(valor) : null }),
+        body: JSON.stringify({ id: c.id, movimiento_id: valor ? Number(valor) : null, aprobar }),
       })
     ).json();
     if (!json.success) setError(json.error || "No se pudo guardar");
@@ -208,7 +377,9 @@ export default function BinancePage() {
       `¿Borrar ${cuantos} pago${cuantos === 1 ? "" : "s"} del estado de cuenta de esta semana para volver a subirlos?` +
       (otros > 0 ? `\n\nLos otros ${otros} los subió otra sede (o también otra sede) y se quedan.` : "");
     if (!confirm(aviso)) return;
-    const json = await (await fetch(`/api/administracion/binance?estado=${semana}`, { method: "DELETE" })).json();
+    const json = await (await fetch(`/api/administracion/binance?estado=${semana}`, { method: "DELETE" }))
+      .json()
+      .catch(() => ({ error: "No se pudo borrar" }));
     if (!json.success) setError(json.error || "No se pudo borrar");
     cargar();
   };
@@ -221,10 +392,60 @@ export default function BinancePage() {
 
   const comprobantes = datos?.comprobantes || [];
   const sinComprobante = datos?.sinComprobante || [];
+  const pagosSemana = datos?.pagos || [];
   const esConciliado = (c: Comprobante) => c.estado === "conciliado" || c.estado === "manual";
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
   const COMPROBANTES_LISTA = { comprobantes, conciliados, problema: conProblema };
+
+  /**
+   * Hoja para imprimir los conciliados: cada comprobante con el cliente arriba,
+   * sus datos y la firma, uno por hoja. Se imprime desde un iframe oculto: su
+   * `load` espera a que bajen todas las imagenes.
+   */
+  const imprimirConciliados = () => {
+    const esc = (s: string) =>
+      s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
+    const semanaTexto = opciones.find((o) => o.value === semana)?.label || semana;
+    const tarjetas = conciliados
+      .map((c) => {
+        const imagen = /\.pdf$/i.test(c.archivoNombre || "")
+          ? `<div class="pdf">Comprobante en PDF<br>(ver en el panel)</div>`
+          : `<img class="comprobante" src="/api/administracion/binance/imagen?id=${c.id}" alt="">`;
+        return `<div class="tarjeta">
+          <div class="semana">Conciliación Binance · Semana ${esc(semanaTexto)}</div>
+          <div class="cliente">${esc(c.cliente || "Sin cliente")}</div>
+          ${imagen}
+          <div class="datos">${esc(fechaComprobante(c))}<br>${esc(cifra(c.monto))} ${esc(c.moneda)} · ${esc(c.orderId)}</div>
+          <img class="firma" src="/api/administracion/binance/firma" alt="">
+          <div class="pie-firma">Firma de Administración</div>
+        </div>`;
+      })
+      .join("");
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Conciliados</title><style>
+      /* margin 0: sin margen el navegador no imprime su encabezado y pie (titulo, fecha, URL); el margen va en la tarjeta. */
+      @page { size: letter; margin: 0; }
+      body { font-family: Arial, sans-serif; margin: 0; color: #111; }
+      .tarjeta { break-after: page; box-sizing: border-box; height: 270mm; padding: 14mm 15mm 12mm; text-align: center; display: flex; flex-direction: column; align-items: center; }
+      .tarjeta:last-child { break-after: auto; }
+      .semana { font-size: 10px; color: #666; align-self: flex-end; }
+      .cliente { font-weight: bold; font-size: 20px; margin: 2mm 0 5mm; }
+      .comprobante { max-width: 100%; max-height: 170mm; object-fit: contain; border: 1px solid #ddd; }
+      .pdf { height: 170mm; display: flex; align-items: center; justify-content: center; color: #666; font-size: 14px; }
+      .datos { font-size: 12px; color: #444; margin-top: 4mm; line-height: 1.5; }
+      .firma { height: 32mm; margin-top: auto; }
+      .pie-firma { border-top: 1px solid #333; padding-top: 1.5mm; width: 70mm; font-size: 12px; }
+    </style></head><body>${tarjetas}</body></html>`;
+    const marco = document.createElement("iframe");
+    marco.style.cssText = "position:fixed;width:0;height:0;border:0;visibility:hidden";
+    marco.onload = () => {
+      marco.contentWindow?.focus();
+      marco.contentWindow?.print();
+      setTimeout(() => marco.remove(), 60_000);
+    };
+    marco.srcdoc = html;
+    document.body.appendChild(marco);
+  };
   // Pagos para amarrar a mano un comprobante: solo los de su monto y moneda, y
   // solo si ese monto se repite en el estado de cuenta (si es unico, el cruce ya
   // lo amarro). Van los libres y el que ya tiene (elegirlo confirma el que propuso el panel).
@@ -280,8 +501,13 @@ export default function BinancePage() {
       </div>
 
       {(subidas.length > 0 || ignorados > 0) && (
-        <Card>
-          <CardContent className="p-4 space-y-2 text-sm">
+        <Card
+          className="fixed bottom-4 left-4 z-50 w-[min(440px,calc(100vw-2rem))] shadow-lg"
+          role="status"
+          onMouseEnter={() => setSobreAviso(true)}
+          onMouseLeave={() => setSobreAviso(false)}
+        >
+          <CardContent className="p-4 space-y-2 text-sm max-h-[60vh] overflow-y-auto">
             {/* Con una carpeta de cientos de archivos la lista entera no se lee: arriba el
                 resumen y los que fallaron; los que entraron, plegados. */}
             <p className="font-medium text-gray-700">
@@ -327,7 +553,7 @@ export default function BinancePage() {
         ref={input}
         type="file"
         multiple
-        accept="image/jpeg,image/png,image/webp,application/pdf"
+        accept="image/jpeg,image/png,image/webp,application/pdf,.zip,application/zip"
         className="hidden"
         onChange={(e) => subir(e.target.files, "comprobante")}
       />
@@ -447,6 +673,12 @@ export default function BinancePage() {
                 ) : (
                   lista && (
                     <>
+                      {lista === "conciliados" && conciliados.length > 0 && (
+                        <Button size="sm" className="h-9 w-fit" onClick={imprimirConciliados}>
+                          <Printer className="h-4 w-4 mr-2" />
+                          Imprimir conciliados
+                        </Button>
+                      )}
                       <p className="text-xs text-gray-500">Haz clic en un comprobante para ver su imagen.</p>
                       <Table>
                         <TableHeader>
@@ -489,7 +721,13 @@ export default function BinancePage() {
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button size="sm" className="h-9" disabled={!!subiendo} onClick={() => input.current?.click()}>
+                  <Button
+                    size="sm"
+                    className="h-9"
+                    disabled={!!subiendo}
+                    onClick={() => input.current?.click()}
+                    title="Fotos, PDF o el .zip de la carpeta descargada de Google Drive"
+                  >
                     {subiendo?.tipo === "comprobante" ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
@@ -513,10 +751,43 @@ export default function BinancePage() {
                 </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
+                {drive?.configurado && (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
+                    {drive.conectado ? (
+                      <>
+                        <input
+                          value={enlace}
+                          onChange={(e) => setEnlace(e.target.value)}
+                          placeholder="Pega el enlace de la carpeta de Google Drive"
+                          aria-label="Enlace de la carpeta de Google Drive"
+                          className="border rounded-lg px-3 py-2 text-sm bg-white flex-1 min-w-0"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-9"
+                          disabled={!enlace.trim() || leyendoDrive || !!subiendo}
+                          onClick={leerDrive}
+                          title={drive.correo ? `Se lee con la cuenta ${drive.correo}` : undefined}
+                        >
+                          {leyendoDrive ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
+                          Leer carpeta de Drive
+                        </Button>
+                      </>
+                    ) : (
+                      <Button asChild size="sm" variant="outline" className="h-9">
+                        <a href="/api/administracion/binance/drive">
+                          <Link2 className="h-4 w-4 mr-2" />
+                          Conectar Google Drive
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                )}
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Fecha</TableHead>
+                      <TableHead>Cliente</TableHead>
                       <TableHead>ID de orden</TableHead>
                       <TableHead className="text-right">Comprobante</TableHead>
                       <TableHead className="text-right">Binance</TableHead>
@@ -526,10 +797,11 @@ export default function BinancePage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {comprobantes.length === 0 && <FilaVacia columnas={7} texto="No hay comprobantes en esta semana." />}
-                    {comprobantes.map((c) => (
+                    {comprobantes.length === 0 && <FilaVacia columnas={8} texto="No hay comprobantes en esta semana." />}
+                    {deLaPagina(comprobantes, paginaComprobantes).map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
+                        <TableCell>{c.cliente || "—"}</TableCell>
                         <TableCell className="font-mono text-xs">
                           <a
                             href={`/api/administracion/binance/imagen?id=${c.id}`}
@@ -556,6 +828,19 @@ export default function BinancePage() {
                           <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
                             {ETIQUETA_ESTADO[c.estado]}
                           </Badge>
+                          {c.estado === "nombre_distinto" && c.binance && /^e\d+$/.test(c.binance.id) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mt-1 h-7 text-xs block"
+                              onClick={() => {
+                                if (confirm(`¿El pago de ${c.binance!.pagador} es de ${c.cliente}? Queda conciliado.`))
+                                  asignar(c, c.binance!.id.slice(1), true);
+                              }}
+                            >
+                              Aprobar
+                            </Button>
+                          )}
                           {datos.origen === "estado" && c.estado !== "conciliado" && opcionesPago(c).length > 0 && (
                             <select
                               value={c.estado === "manual" ? String(c.movimientoId) : ""}
@@ -583,13 +868,14 @@ export default function BinancePage() {
                     ))}
                   </TableBody>
                 </Table>
+                <Paginacion pagina={paginaComprobantes} total={comprobantes.length} cambiar={setPaginaComprobantes} />
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <div>
-                  <CardTitle className="text-base">Estado de cuenta: pagos sin comprobante</CardTitle>
+                  <CardTitle className="text-base">Estado de cuenta</CardTitle>
                   <p className="text-xs text-gray-500 mt-1">
                     {datos.origen === "estado"
                       ? `Estado de cuenta cargado: ${datos.movimientos} pagos recibidos en la semana.`
@@ -654,24 +940,47 @@ export default function BinancePage() {
                       <TableHead>ID de orden</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
                       <TableHead>Pagador</TableHead>
-                      <TableHead>Tipo</TableHead>
+                      <TableHead>Comprobante</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sinComprobante.length === 0 && <FilaVacia columnas={5} texto="Todo lo recibido tiene comprobante." />}
-                    {sinComprobante.map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell className="whitespace-nowrap">{fechaHora(p.fecha)}</TableCell>
-                        <TableCell className="font-mono text-xs">{idBinance(p.id) || "—"}</TableCell>
-                        <TableCell className="text-right whitespace-nowrap">
-                          {cifra(p.monto)} {p.moneda}
-                        </TableCell>
-                        <TableCell>{p.pagador || "—"}</TableCell>
-                        <TableCell>{p.tipo}</TableCell>
-                      </TableRow>
-                    ))}
+                    {pagosSemana.length === 0 && <FilaVacia columnas={5} texto="No hay pagos recibidos en esta semana." />}
+                    {deLaPagina(pagosSemana, paginaPagos).map((p) => {
+                      const c = p.comprobante;
+                      return (
+                        <TableRow key={p.id}>
+                          <TableCell className="whitespace-nowrap">{fechaHora(p.fecha)}</TableCell>
+                          <TableCell className="font-mono text-xs">{idBinance(p.id) || "—"}</TableCell>
+                          <TableCell className="text-right whitespace-nowrap">
+                            {cifra(p.monto)} {p.moneda}
+                          </TableCell>
+                          <TableCell>{p.pagador || "—"}</TableCell>
+                          <TableCell>
+                            {!c ? (
+                              <Badge variant="outline" className="border-0 bg-slate-100 text-slate-700">
+                                Sin comprobante
+                              </Badge>
+                            ) : "otraSede" in c ? (
+                              <Badge variant="outline" className="border-0 bg-slate-100 text-slate-700">
+                                Comprobante de otra sede
+                              </Badge>
+                            ) : (
+                              <>
+                                <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
+                                  {ETIQUETA_ESTADO[c.estado]}
+                                </Badge>
+                                <span className="block text-xs text-gray-500 mt-0.5">
+                                  {c.cliente || "sin cliente"} · {c.orderId}
+                                </span>
+                              </>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
+                <Paginacion pagina={paginaPagos} total={pagosSemana.length} cambiar={setPaginaPagos} />
               </CardContent>
             </Card>
           </>

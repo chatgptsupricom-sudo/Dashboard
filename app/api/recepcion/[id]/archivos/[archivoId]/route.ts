@@ -22,7 +22,8 @@ async function buscar(request: NextRequest, params: Promise<{ id: string; archiv
   }
   const res = await query(
     `SELECT a.id, a.tipo, a.nombre, a.mime ${conData ? ", a.data" : ""},
-            r.cids, r.etapa, c.etapa AS etapa_contenedor
+            r.cids, r.etapa, c.etapa AS etapa_contenedor,
+            a.created_at > r.cerrado_at AS despues_del_cierre
        FROM recepcion_packing_archivos a
        JOIN recepcion_packing r ON r.id = a.recepcion_id
        LEFT JOIN recepcion_packing_contenedores c ON c.id = a.contenedor_id
@@ -79,7 +80,14 @@ export async function DELETE(
     // Foto de contenedor: manda la etapa de su contenedor (una foto de
     // llegada no se borra despues de registrar la llegada de ESE contenedor).
     const etapa = regla.nivel === "contenedor" ? fila.etapa_contenedor : fila.etapa;
-    if (!regla.etapas.includes(etapa)) {
+    // Una foto que el SuperAdmin subio al corregir una recepcion cerrada se
+    // puede quitar; las de antes del cierre quedan.
+    const correccion =
+      tipo !== "packing_list" &&
+      fila.etapa === "cerrado" &&
+      sesion!.rol === "superadmin" &&
+      Number(fila.despues_del_cierre) === 1;
+    if (!regla.etapas.includes(etapa) && !correccion) {
       return NextResponse.json(
         { error: "Esta etapa ya se cerro: el archivo queda como registro" },
         { status: 409 },

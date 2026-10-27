@@ -5,6 +5,7 @@ export const ETIQUETA_ESTADO: Record<EstadoComprobante, string> = {
   conciliado: "Conciliado",
   manual: "Conciliado a mano",
   por_monto_hora: "Coincide solo por monto (revisar)",
+  nombre_distinto: "Cliente distinto del pagador (por aprobar)",
   monto_distinto: "Monto distinto",
   no_encontrado: "No está en Binance",
   sin_verificar: "Sin verificar",

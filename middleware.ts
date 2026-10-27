@@ -147,6 +147,9 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/gerente_venta") ||
     pathname.includes("/gerente_operaciones") ||
     pathname.includes("/recursos_humanos") ||
+    // Cuentas por Cobrar: sin esto la pantalla abría sin sesión y sus APIs
+    // respondían "No autorizado"; además no corría el guard por rol de abajo.
+    pathname.includes("/cuentas-por-cobrar") ||
     // Inteligencia de Negocio (lib/auth/inteligenciaNegocio.ts).
     pathname.includes("/inteligencia_negocio") ||
     // Gerente de Marca (lib/gerente-marca/).

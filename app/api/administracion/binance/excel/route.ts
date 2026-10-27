@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
     const ws = wb.addWorksheet("Conciliación");
     ws.columns = [
       { header: "Fecha comprobante", key: "fecha", width: 18 },
+      { header: "Cliente", key: "cliente", width: 28 },
       { header: "ID de orden", key: "orden", width: 22 },
       { header: "Monto", key: "monto", width: 12 },
       { header: "Moneda", key: "moneda", width: 9 },
@@ -81,10 +82,13 @@ export async function GET(request: NextRequest) {
       const fila = ws.addRow({
         fecha:
           c.fechaEstimada && !c.binance
-            ? c.soloDia
-              ? `${new Date(c.fecha).toLocaleDateString("es-VE", { timeZone: "America/Caracas", dateStyle: "short" })} (sin hora)`
-              : "Sin fecha"
+            ? c.horaTelefono
+              ? `${fechaHora(c.fecha)} (hora del comprobante)`
+              : c.soloDia
+                ? `${new Date(c.fecha).toLocaleDateString("es-VE", { timeZone: "America/Caracas", dateStyle: "short" })} (sin hora)`
+                : "Sin fecha"
             : fechaHora(c.fecha),
+        cliente: c.cliente,
         orden: c.orderId,
         monto: c.monto,
         moneda: c.moneda,
@@ -96,9 +100,9 @@ export async function GET(request: NextRequest) {
       const mini = miniaturas.get(c.id);
       const recorte = recortes.get(idMovimiento(c.binance) ?? -1);
       fila.height = (Math.max(mini?.alto || 0, recorte?.alto || 0, 20) + 10) * PX_A_PUNTOS;
-      if (mini) ponerImagen(wb, ws, mini, 7, fila);
+      if (mini) ponerImagen(wb, ws, mini, 8, fila);
       else fila.getCell("imagen").value = "(PDF, ver en el panel)";
-      if (recorte) ponerImagen(wb, ws, recorte, 8, fila);
+      if (recorte) ponerImagen(wb, ws, recorte, 9, fila);
       else if (c.binance) fila.getCell("linea").value = "(sin recorte: estado de cuenta en PDF o anterior)";
     }
     ws.getColumn("monto").numFmt = "#,##0.00######";

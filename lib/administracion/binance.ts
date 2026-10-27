@@ -43,6 +43,8 @@ const DIA_MS = 86400_000;
 const MARGEN_POR_HORA_MS = 15 * 60_000;
 // El estado de cuenta y el comprobante muestran la misma hora del pago.
 const MARGEN_ESTADO_MS = 2 * 60_000;
+// La captura con el reloj del telefono se saca hasta esto despues de pagar.
+const MARGEN_TELEFONO_MS = 20 * 60_000;
 // Mediodia del lunes: donde queda un comprobante sin fecha que Binance no encontro.
 const MEDIODIA_MS = 12 * 3600_000;
 
@@ -66,8 +68,14 @@ export type EstadoComprobante =
   | "manual"
   | "monto_distinto"
   | "por_monto_hora"
+  | "nombre_distinto"
   | "no_encontrado"
   | "sin_verificar";
+
+/** Un pago de la semana y el comprobante que lo tomo (null = sin comprobante). */
+export type PagoConComprobante = PagoBinance & {
+  comprobante: { estado: EstadoComprobante; cliente: string; orderId: string } | { otraSede: true } | null;
+};
 
 /** De donde salieron los pagos de la semana. */
 export type OrigenPagos = "estado" | "api";
@@ -80,8 +88,16 @@ export type Comprobante = {
   fecha: string; // ISO UTC
   /** El comprobante no traia fecha: se guardo en la semana elegida al subirlo. */
   fechaEstimada: boolean;
-  /** Sin hora, pero con el dia: la fecha salio del nombre del archivo (1-02-10-2026.jpg). */
+  /** Sin hora del pago, pero con el dia: el de la carpeta de donde se subio (o, los de antes, el del nombre del archivo). */
   soloDia: boolean;
+  /**
+   * Con el dia de la carpeta, la hora es la del reloj del telefono (arriba a la
+   * izquierda de la captura): es cuando se saco, minutos despues del pago, y
+   * puede venir sin a. m./p. m.
+   */
+  horaTelefono: boolean;
+  /** Nombre del cliente: el nombre del archivo del comprobante. */
+  cliente: string;
   /** Movimiento del estado de cuenta que se le asigno a mano, o null. */
   movimientoId: number | null;
   archivoNombre: string;
@@ -273,6 +289,7 @@ async function ensureTabla() {
   // Huella del archivo: el mismo archivo no se vuelve a leer con la IA.
   await agregarColumna("binance_comprobantes", "archivo_sha CHAR(64) NULL");
   await agregarIndice("binance_comprobantes", "idx_sha", "archivo_sha");
+  await agregarColumna("binance_comprobantes", "cliente VARCHAR(200) NOT NULL DEFAULT ''");
   tablaLista = true;
 }
 
@@ -293,6 +310,26 @@ const diaCaracas = (iso: string) => new Date(Date.parse(iso) - OFFSET_CARACAS_MS
 
 const mismoMonto = (p: PagoBinance, c: BaseComprobante) =>
   p.moneda === c.moneda.toUpperCase() && Math.abs(p.monto - c.monto) < 1e-6;
+
+const normalNombre = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * El cliente (nombre del archivo) se parece a quien pago en Binance: sin
+ * mayusculas, acentos, espacios ni signos ("A1 SERVICES" = "A1SERVICES"), uno
+ * dentro del otro o una palabra de 4+ letras del cliente dentro del pagador.
+ * Sin alguno de los dos no hay con que objetar.
+ */
+export function nombreParecido(cliente: string, pagador: string) {
+  const a = normalNombre(cliente);
+  const b = normalNombre(pagador);
+  if (!a || !b) return true;
+  if ((a.length >= 4 && b.includes(a)) || (b.length >= 4 && a.includes(b))) return true;
+  return cliente
+    .split(/[^\p{L}\p{N}]+/u)
+    .map(normalNombre)
+    .some((p) => p.length >= 4 && b.includes(p));
+}
 
 /**
  * Cruza comprobantes con pagos. Con la API manda el ID de orden; con el estado
@@ -325,14 +362,23 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     }
     const libres = pagos.filter((p) => !usados.has(p.id) && mismoMonto(p, base));
     let pago: PagoBinance | null = null;
-    if (base.fechaEstimada) {
+    if (base.horaTelefono) {
+      // La captura se saca despues de pagar: el pago mas cercano antes de la
+      // hora del reloj. Sin a. m./p. m. ("5:57") tambien vale 12 h despues.
+      const t = Date.parse(base.fecha);
+      const horas = new Date(t - OFFSET_CARACAS_MS).getUTCHours() < 12 ? [t, t + 12 * 3600_000] : [t];
+      const antes = (p: PagoBinance) =>
+        Math.min(...horas.map((h) => h - Date.parse(p.fecha)).filter((d) => d >= -MARGEN_ESTADO_MS && d <= MARGEN_TELEFONO_MS));
+      pago = libres.filter((p) => antes(p) < Infinity).sort((a, b) => antes(a) - antes(b))[0] || null;
+    }
+    if (!pago && base.fechaEstimada) {
       // Con el dia del nombre del archivo solo cuentan los pagos de ese dia. Si
       // el monto se repite (aunque otro comprobante ya tenga uno) no se adivina:
       // se amarra a mano.
       const delDia = (p: PagoBinance) => !base.soloDia || diaCaracas(p.fecha) === diaCaracas(base.fecha);
       const iguales = pagos.filter((p) => mismoMonto(p, base) && delDia(p));
       pago = iguales.length === 1 && !usados.has(iguales[0].id) ? iguales[0] : null;
-    } else {
+    } else if (!base.fechaEstimada) {
       const t = Date.parse(base.fecha);
       const dt = (p: PagoBinance) => Math.abs(Date.parse(p.fecha) - t);
       pago = libres.filter((p) => dt(p) <= margen).sort((a, b) => dt(a) - dt(b))[0] || null;
@@ -343,8 +389,10 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     }
     usados.add(pago.id);
     // En el estado de cuenta la hora (o el monto unico, si no hay hora) es la
-    // unica prueba: si coincide, esta conciliado.
-    const estado = origen === "estado" ? "conciliado" : "por_monto_hora";
+    // unica prueba: si coincide, esta conciliado; salvo que el cliente (nombre
+    // del archivo) no se parezca a quien pago en Binance: eso lo aprueba una persona.
+    const estado =
+      origen !== "estado" ? "por_monto_hora" : nombreParecido(base.cliente, pago.pagador) ? "conciliado" : "nombre_distinto";
     salida[i] = { ...base, fecha: base.fechaEstimada ? pago.fecha : base.fecha, estado, binance: pago };
   }
   return { comprobantes: salida, usados };
@@ -358,7 +406,8 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
 function ajustarZona(bases: BaseComprobante[], pagos: PagoBinance[]) {
   const comoUtc = pagos.map((p) => ({ ...p, fecha: new Date(Date.parse(p.fecha) - OFFSET_CARACAS_MS).toISOString() }));
   const conciliados = (lista: PagoBinance[]) =>
-    cruzar(bases, lista, "estado").comprobantes.filter((c) => c.estado === "conciliado").length;
+    cruzar(bases, lista, "estado").comprobantes.filter((c) => c.estado === "conciliado" || c.estado === "nombre_distinto")
+      .length;
   return conciliados(comoUtc) > conciliados(pagos) ? comoUtc : pagos;
 }
 
@@ -380,7 +429,7 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
   const { rows } = await query(
     // DATE_FORMAT: la columna guarda UTC y asi no depende de la zona del proceso.
     `SELECT id, order_id, monto, moneda, DATE_FORMAT(fecha_pago, '%Y-%m-%dT%H:%i:%sZ') AS fecha,
-            fecha_estimada, movimiento_id, archivo_nombre, subido_por, created_at, company_id
+            fecha_estimada, movimiento_id, archivo_nombre, cliente, subido_por, created_at, company_id
        FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? ORDER BY fecha_pago`,
     [aMysql(rango.desde), aMysql(rango.hasta)],
   );
@@ -390,9 +439,12 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
     monto: Number(r.monto),
     moneda: String(r.moneda),
     fecha: r.fecha,
-    // 0 = hora del comprobante, 1 = semana elegida, 2 = dia del nombre del archivo.
+    // 0 = hora del comprobante, 1 = semana elegida, 2 = dia de la carpeta (o del
+    // nombre del archivo, los de antes), 3 = dia de la carpeta + reloj del telefono.
     fechaEstimada: Number(r.fecha_estimada) > 0,
-    soloDia: Number(r.fecha_estimada) === 2,
+    soloDia: Number(r.fecha_estimada) >= 2,
+    horaTelefono: Number(r.fecha_estimada) === 3,
+    cliente: r.cliente || "",
     movimientoId: r.movimiento_id ?? null,
     archivoNombre: r.archivo_nombre,
     subidoPor: r.subido_por,
@@ -418,6 +470,7 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
       return {
         comprobantes: bases.map((b): Comprobante => ({ ...b, estado: "sin_verificar", binance: null })).filter(deLaSede),
         sinComprobante: [] as PagoBinance[],
+        pagos: [] as PagoConComprobante[],
         errorBinance: (e?.message as string) || "No se pudo consultar Binance",
         origen,
         movimientos: 0,
@@ -436,7 +489,15 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
     ...c,
     montoRepetido: deLaSemana.filter((p) => mismoMonto(p, c)).length > 1,
   }));
-  return { comprobantes: visibles, sinComprobante, errorBinance: null, origen, movimientos: deLaSemana.length };
+  // Todos los pagos de la semana con el comprobante que los tomo. De otra sede
+  // solo se dice que lo tiene, sin el cliente.
+  const porPago = new Map(comprobantes.filter((c) => c.binance).map((c) => [c.binance!.id, c]));
+  const pagosSemana: PagoConComprobante[] = deLaSemana.map((p) => {
+    const c = porPago.get(p.id);
+    const comprobante = !c ? null : deLaSede(c) ? { estado: c.estado, cliente: c.cliente, orderId: c.orderId } : { otraSede: true as const };
+    return { ...p, comprobante };
+  });
+  return { comprobantes: visibles, sinComprobante, pagos: pagosSemana, errorBinance: null, origen, movimientos: deLaSemana.length };
 }
 
 // ---------- Estado de cuenta ----------
@@ -532,21 +593,25 @@ export async function guardarMovimientos(
     "INSERT INTO binance_estados (archivo_nombre, archivo, subido_por, archivo_sha) VALUES (?,?,?,?)",
     [archivo.nombre.slice(0, 200), archivo.captura ?? archivo.datos, usuario.email, archivo.sha],
   );
-  const estadoId: number | null = archivo.captura ? res.insertId : null;
+  // estado_id va siempre (tambien en un PDF): es de que archivo salio cada pago,
+  // para borrar por archivo. El recorte solo existe con y0/y1.
+  const estadoId: number = res.insertId;
   let nuevos = 0;
   for (const m of movs) {
-    const conLinea = estadoId !== null && m.linea;
+    const conLinea = archivo.captura !== null && m.linea;
     const { rows } = await query(
-      // y0/y1 van antes que estado_id y otras_sedes no toca company_id: MySQL
-      // asigna de izquierda a derecha. Las columnas van con la tabla delante: el
+      // estado_id e y1 van antes que y0 (leen el y0 viejo: un pago sin recorte
+      // toma el archivo y la linea del que si lo trae) y otras_sedes no toca
+      // company_id: MySQL asigna de izquierda a derecha. Las columnas van con la tabla delante: el
       // alias `nuevo` tiene las mismas y sin eso MySQL responde "Column
       // 'estado_id' in field list is ambiguous".
       `INSERT INTO binance_movimientos (fecha, contraparte, monto, moneda, subido_por, estado_id, y0, y1, company_id)
          VALUES (?,?,?,?,?,?,?,?,?) AS nuevo
        ON DUPLICATE KEY UPDATE
-         binance_movimientos.y0 = IF(binance_movimientos.estado_id IS NULL, nuevo.y0, binance_movimientos.y0),
-         binance_movimientos.y1 = IF(binance_movimientos.estado_id IS NULL, nuevo.y1, binance_movimientos.y1),
-         binance_movimientos.estado_id = COALESCE(binance_movimientos.estado_id, nuevo.estado_id),
+         binance_movimientos.estado_id = IF(binance_movimientos.y0 IS NULL AND nuevo.y0 IS NOT NULL,
+           nuevo.estado_id, COALESCE(binance_movimientos.estado_id, nuevo.estado_id)),
+         binance_movimientos.y1 = IF(binance_movimientos.y0 IS NULL, nuevo.y1, binance_movimientos.y1),
+         binance_movimientos.y0 = IF(binance_movimientos.y0 IS NULL, nuevo.y0, binance_movimientos.y0),
          binance_movimientos.otras_sedes = IF(binance_movimientos.company_id <=> nuevo.company_id,
            binance_movimientos.otras_sedes, 1)`,
       [
@@ -555,7 +620,7 @@ export async function guardarMovimientos(
         m.monto,
         m.moneda,
         usuario.email,
-        conLinea ? estadoId : null,
+        estadoId,
         conLinea ? m.linea!.y0 : null,
         conLinea ? m.linea!.y1 : null,
         usuario.sede,
@@ -575,7 +640,7 @@ export async function recortesDeMovimientos(ids: number[]) {
   const sharp = (await import("sharp")).default;
   const { rows } = await query(
     `SELECT id, estado_id, y0, y1 FROM binance_movimientos
-      WHERE estado_id IS NOT NULL AND id IN (${ids.map(() => "?").join(",")})`,
+      WHERE estado_id IS NOT NULL AND y0 IS NOT NULL AND id IN (${ids.map(() => "?").join(",")})`,
     ids,
   );
   const capturas = new Map<number, Buffer | null>();
@@ -653,26 +718,27 @@ export async function borrarMovimientosSemana(lunes: string, sede: number | null
   if (!rango) throw new Error("Semana inválida");
   await ensureTablaMovimientos();
   const filtro = [aMysql(rango.desde), aMysql(rango.hasta), sede, sede];
-  const { rows: capturas } = await query(
-    `SELECT DISTINCT estado_id FROM binance_movimientos
-      WHERE estado_id IS NOT NULL AND fecha BETWEEN ? AND ? AND ${BORRABLE_POR_SEDE}`,
-    filtro,
-  );
   const { rows } = await query(
     `DELETE FROM binance_movimientos WHERE fecha BETWEEN ? AND ? AND ${BORRABLE_POR_SEDE}`,
     filtro,
   );
-  // Las capturas de esos pagos que ya no tienen ninguno (asi se pueden volver a subir).
-  const ids = (capturas as any[]).map((c) => Number(c.estado_id));
-  if (ids.length) {
-    await query(
-      `DELETE FROM binance_estados WHERE id IN (${ids.map(() => "?").join(",")})
-         AND id NOT IN (SELECT estado_id FROM (SELECT DISTINCT estado_id FROM binance_movimientos
-                                               WHERE estado_id IS NOT NULL) t)`,
-      ids,
-    );
-  }
+  await borrarArchivosSinPagos();
   return Number((rows as any)?.affectedRows || 0);
+}
+
+/**
+ * Borra los archivos del estado de cuenta que ya no tienen ningun pago, asi se
+ * pueden volver a subir (si no, su huella dice "ya estaba cargada"). Antes un PDF
+ * o una captura sin lineas ubicadas no quedaba amarrada a sus pagos y nunca se
+ * borraba. Solo los de mas de 10 min: uno recien subido todavia esta guardando sus pagos.
+ */
+async function borrarArchivosSinPagos() {
+  await query(
+    `DELETE FROM binance_estados
+      WHERE created_at < NOW() - INTERVAL 10 MINUTE
+        AND id NOT IN (SELECT estado_id FROM (SELECT DISTINCT estado_id FROM binance_movimientos
+                                              WHERE estado_id IS NOT NULL) t)`,
+  );
 }
 
 /** La captura del estado de cuenta ya se subio (misma huella): no se vuelve a leer. */
@@ -701,9 +767,14 @@ const DE_LA_SEDE = "(? IS NULL OR company_id = ?)";
  * SuperAdmin todas (null). undefined = Administracion sin sede valida (403).
  */
 export function sedeBinance(payload: { role?: unknown; cids?: unknown } | null | undefined) {
-  if (!esRolAdministracion(payload?.role)) return null;
+  // Cuentas por Cobrar lo ve de su sede, como Administracion (solo lee).
+  const cxc = String(payload?.role ?? "").toLowerCase().trim() === ROL_CXC;
+  if (!esRolAdministracion(payload?.role) && !cxc) return null;
   return sedeDelToken(payload) ?? undefined;
 }
+
+/** Rol que solo lee la conciliacion (GET), de su sede. */
+export const ROL_CXC = "cuentas por cobrar";
 
 export const NOMBRE_SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 
@@ -720,7 +791,8 @@ export async function imagenComprobante(id: number, sede: number | null) {
  * Amarra a mano un comprobante con un movimiento del estado de cuenta (null =
  * soltarlo). Sirve cuando el comprobante no trae fecha y el monto se repite.
  */
-export async function asignarMovimiento(id: number, movimientoId: number | null, sede: number | null) {
+/** `aprobar`: confirma el pago que propuso el cruce (cliente distinto del pagador), aunque su monto no se repita. */
+export async function asignarMovimiento(id: number, movimientoId: number | null, sede: number | null, aprobar = false) {
   await ensureTabla();
   const { rows: propio } = await query(`SELECT id FROM binance_comprobantes WHERE id = ? AND ${DE_LA_SEDE}`, [
     id,
@@ -744,7 +816,7 @@ export async function asignarMovimiento(id: number, movimientoId: number | null,
         WHERE c.id = ?`,
       [movimientoId, id],
     );
-    if (Number(iguales[0]?.n || 0) < 2) {
+    if (Number(iguales[0]?.n || 0) < (aprobar ? 1 : 2)) {
       throw new ArchivoIlegible("Solo se puede amarrar a otro pago del mismo monto cuando ese monto se repite en el estado de cuenta");
     }
   }
@@ -767,12 +839,15 @@ const INSTRUCCIONES =
   "monto: el monto pagado, sin signo ni separador de miles. moneda: el codigo (USDT, USDC, BTC...). " +
   "fecha: fecha y hora del pago como 'YYYY-MM-DD HH:MM:SS'; fecha_en_utc = true si el comprobante dice UTC. " +
   "Si la captura no muestra la fecha, fecha = '' (no la inventes). " +
+  "hora_telefono: si es una captura de pantalla del telefono, la hora del reloj de la barra de estado " +
+  "(arriba a la izquierda, ej. '5:57') como 'HH:MM'; si dice a. m./p. m. pasala a 24 h; si no se ve, ''. " +
+  "Esa hora NO es la fecha del pago: no la pongas en fecha. " +
   "Si la imagen no es un comprobante de pago de Binance, es_comprobante = false y lo demas vacio o 0.";
 
 const ESQUEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["es_comprobante", "order_id", "monto", "moneda", "fecha", "fecha_en_utc"],
+  required: ["es_comprobante", "order_id", "monto", "moneda", "fecha", "fecha_en_utc", "hora_telefono"],
   properties: {
     es_comprobante: { type: "boolean" },
     order_id: { type: "string" },
@@ -780,6 +855,7 @@ const ESQUEMA = {
     moneda: { type: "string" },
     fecha: { type: "string" },
     fecha_en_utc: { type: "boolean" },
+    hora_telefono: { type: "string" },
   },
 } as const;
 
@@ -871,8 +947,8 @@ async function leerConIA(
   }
 }
 
-/** fechaMs null = la captura no trae la fecha. */
-export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number | null };
+/** fechaMs null = la captura no trae la fecha. horaTelefono = minutos del dia del reloj de la barra de estado. */
+export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number | null; horaTelefono: number | null };
 
 /**
  * Lee el comprobante. Si no salen ID de orden, monto y moneda lanza
@@ -890,10 +966,12 @@ export async function leerComprobante(datos: Buffer, mime: string): Promise<Leid
       `No se leyó un comprobante de Binance Pay (ID de orden: "${orderId || "—"}", monto: ${monto > 0 ? monto : "—"} ${moneda || ""})`,
     );
   }
-  if (!m) return { orderId, monto, moneda, fechaMs: null };
+  const h = /^(\d{1,2}):(\d{2})/.exec(String(l?.hora_telefono || ""));
+  const horaTelefono = h && +h[1] < 24 && +h[2] < 60 ? +h[1] * 60 + +h[2] : null;
+  if (!m) return { orderId, monto, moneda, fechaMs: null, horaTelefono };
   const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
   // Sin "UTC" en el comprobante se toma la hora de Caracas.
-  return { orderId, monto, moneda, fechaMs: l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS };
+  return { orderId, monto, moneda, fechaMs: l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS, horaTelefono };
 }
 
 const INSTRUCCIONES_ESTADO =
@@ -1117,17 +1195,12 @@ export async function fechaSinComprobante(orderId: string, lunes: string) {
 }
 
 /**
- * Dia del pago escrito en el nombre del archivo, para los comprobantes que no
- * traen fecha. Administracion los nombra con un numero de secuencia delante:
- * "1-02-10-2026.jpg", "2_02.10.2026.png", "3-20261002.jpeg". Solo vale si el
- * nombre empieza con ese numero: "WhatsApp Image 2026-10-22..." es cuando se
- * guardo la imagen, no cuando se pago. Dos cifras antes del año = dia-mes.
- * Devuelve el mediodia de Caracas de ese dia, o null.
+ * Dia de los pagos escrito en el nombre de la carpeta de donde se subieron los
+ * comprobantes: "02-10-2026", "02.10.2026", "2026-10-02", "20261002"... Dos
+ * cifras antes del año = dia-mes. Devuelve las 00:00 de Caracas de ese dia, o null.
  */
-export function fechaDelNombre(nombre: string): number | null {
-  const m = /^\s*\d+\s*[-_.\s]\s*(.+)$/.exec(nombre.replace(/\.[a-z0-9]{2,5}$/i, ""));
-  if (!m) return null;
-  const t = m[1];
+export function diaDeCarpeta(carpeta: string): number | null {
+  const t = carpeta.trim();
   const candidatos: [string, string, string][] = [];
   let r: RegExpExecArray | null;
   if ((r = /^(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})(?!\d)/.exec(t))) candidatos.push([r[1], r[2], r[3]]);
@@ -1143,14 +1216,33 @@ export function fechaDelNombre(nombre: string): number | null {
     const dia = Number(ds);
     const f = new Date(Date.UTC(y, mes - 1, dia));
     if (y < 2020 || y > 2100 || f.getUTCMonth() !== mes - 1 || f.getUTCDate() !== dia) continue;
-    return Date.UTC(y, mes - 1, dia) + OFFSET_CARACAS_MS + MEDIODIA_MS;
+    return Date.UTC(y, mes - 1, dia) + OFFSET_CARACAS_MS;
   }
   return null;
 }
 
+/**
+ * Fecha de un comprobante sin fecha a partir del dia de la carpeta: con la hora
+ * del reloj del telefono si se leyo (fecha_estimada 3), si no al mediodia (2).
+ */
+export function fechaConCarpeta(dia: number, horaTelefono: number | null) {
+  return horaTelefono === null
+    ? { fechaMs: dia + MEDIODIA_MS, estimada: true, soloDia: true, horaTelefono: false }
+    : { fechaMs: dia + horaTelefono * 60_000, estimada: true, soloDia: true, horaTelefono: true };
+}
+
+/** Cliente = nombre del archivo, sin extension ni el " (2)" de los repetidos. */
+export const clienteDelArchivo = (nombre: string) =>
+  nombre
+    .replace(/\.[a-z0-9]{2,5}$/i, "")
+    .replace(/\s*\(\d+\)$/, "")
+    .replace(/[_]+/g, " ")
+    .trim()
+    .slice(0, 200);
+
 /** Guarda el comprobante. Devuelve el que ya estaba si el ID de orden se repite. */
 export async function guardarComprobante(
-  leido: Leido & { fechaMs: number; estimada: boolean; soloDia?: boolean },
+  leido: Omit<Leido, "horaTelefono"> & { fechaMs: number; estimada: boolean; soloDia?: boolean; horaTelefono?: boolean },
   archivo: { nombre: string; mime: string; datos: Buffer },
   usuario: { email: string; cids: number | null },
 ): Promise<{ id: number } | { repetido: { fecha: string; subidoPor: string; companyId: number | null } }> {
@@ -1159,15 +1251,16 @@ export async function guardarComprobante(
     // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
     const [res]: any = await db.execute(
       `INSERT INTO binance_comprobantes
-         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, archivo_mime, archivo, archivo_sha, subido_por, company_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, cliente, archivo_mime, archivo, archivo_sha, subido_por, company_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         leido.orderId,
         leido.monto,
         leido.moneda,
         aMysql(leido.fechaMs),
-        leido.soloDia ? 2 : leido.estimada ? 1 : 0,
+        leido.horaTelefono ? 3 : leido.soloDia ? 2 : leido.estimada ? 1 : 0,
         archivo.nombre.slice(0, 200),
+        clienteDelArchivo(archivo.nombre),
         archivo.mime,
         archivo.datos,
         huella(archivo.datos),
