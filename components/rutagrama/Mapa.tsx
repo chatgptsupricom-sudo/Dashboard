@@ -30,25 +30,20 @@ const pin = (texto: string, color: string) =>
      <span style="width:10px;height:10px;border-radius:50%;background:${color};border:2px solid #fff;margin-top:-2px"></span>
    </div>`;
 
-export function Mapa({
-  mapa,
-  rutaVuelta,
-  modo = null,
-  onChange,
-  centro,
-  enfoque,
-  alto = 380,
-}: {
+export type PropsMapa = {
   mapa: MapaRuta;
   /** La ruta de regreso a dibujar (el mismo camino o la suya). */
   rutaVuelta?: Punto[] | null;
   modo?: ModoMapa;
   onChange?: (m: MapaRuta) => void;
   centro: Punto;
-  /** Cambia `n` para mover el mapa a ese punto (búsqueda, "mi ubicación"). */
-  enfoque?: { punto: Punto; zoom: number; n: number } | null;
+  /** Cambia `n` para mover el mapa a ese punto (búsqueda, "mi ubicación") o encuadrar `ruta`. */
+  enfoque?: Enfoque | null;
   alto?: number;
-}) {
+};
+export type Enfoque = { punto: Punto; zoom: number; n: number; ruta?: Punto[] };
+
+export function Mapa({ mapa, rutaVuelta, modo = null, onChange, centro, enfoque, alto = 380 }: PropsMapa) {
   const contenedor = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<Leaflet.Map | null>(null);
   const capaRef = useRef<Leaflet.LayerGroup | null>(null);
@@ -120,7 +115,10 @@ export function Mapa({
   useEffect(dibujar, [mapa, rutaVuelta]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (enfoque && mapaRef.current) mapaRef.current.setView(enfoque.punto, enfoque.zoom);
+    const m = mapaRef.current;
+    if (!enfoque || !m || !LRef.current) return;
+    if (enfoque.ruta && enfoque.ruta.length > 1) m.fitBounds(LRef.current.latLngBounds(enfoque.ruta), { padding: [40, 40], maxZoom: 16 });
+    else m.setView(enfoque.punto, enfoque.zoom);
   }, [enfoque?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
