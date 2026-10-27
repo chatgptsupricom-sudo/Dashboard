@@ -2,9 +2,26 @@
 
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, PackagePlus, RefreshCw, Search, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileSpreadsheet,
+  Loader2,
+  PackagePlus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Undo2,
+} from "lucide-react";
 import { BotonPrimario, BotonSecundario, inputClases, labelClases } from "@/components/seguridad/mercancia-ui";
-import type { CandidatoOdoo, FichaPropuesta, PropuestaCruce, RenglonSinProducto } from "@/lib/recepcion/cruceIa";
+import { leerExcel } from "@/lib/recepcion/leerExcel";
+import type {
+  CandidatoOdoo,
+  FichaPropuesta,
+  PropuestaCruce,
+  RenglonApartado,
+  RenglonSinProducto,
+} from "@/lib/recepcion/cruceIa";
 
 /**
  * Renglones de una recepcion cerrada que no se cargaron en Odoo porque no se
@@ -12,6 +29,10 @@ import type { CandidatoOdoo, FichaPropuesta, PropuestaCruce, RenglonSinProducto 
  * producto de cada uno (de la OC o del catalogo), una persona lo confirma y
  * despues se carga lo que faltaba. Si de verdad no existe, Compras crea la
  * ficha con lo que la IA encontro en internet. Ver lib/recepcion/cruceIa.ts.
+ *
+ * Lo que es de otra factura del embarque (INV1062 de Caracas) se aparta: se
+ * conto aca pero no se carga en esta sede. Se marca a mano o subiendo el
+ * Excel del packing list, que ademas completa los codigos que faltaban.
  */
 
 type Fila = RenglonSinProducto & Partial<Pick<PropuestaCruce, "product_id" | "confianza" | "motivo" | "candidatos">>;
@@ -44,24 +65,33 @@ export default function CruceOdoo({
   const [hallados, setHallados] = useState<Record<number, CandidatoOdoo[]>>({});
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [opciones, setOpciones] = useState<Opciones | null>(null);
+  const [apartados, setApartados] = useState<RenglonApartado[]>([]);
+  // Renglon al que se le esta escribiendo la factura para apartarlo.
+  const [apartando, setApartando] = useState<{ item_id: number; factura: string } | null>(null);
+  const [delExcel, setDelExcel] = useState<string[]>([]);
 
   const url = `/api/recepcion/${recepcionId}/cruce`;
+
+  const aplicarEstado = useCallback((j: any) => {
+    setFilas((prev) => {
+      // Lo que ya propuso la IA se conserva para los que siguen sin producto.
+      const antes = new Map((prev || []).map((f) => [f.item_id, f]));
+      return ((j.renglones || []) as RenglonSinProducto[]).map((r) => ({ ...antes.get(r.item_id), ...r }));
+    });
+    setApartados(j.apartados || []);
+  }, []);
 
   const leer = useCallback(async () => {
     try {
       const res = await fetch(url);
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || t("error"));
-      setFilas((prev) => {
-        // Lo que ya propuso la IA se conserva para los que siguen sin producto.
-        const antes = new Map((prev || []).map((f) => [f.item_id, f]));
-        return (j.renglones as RenglonSinProducto[]).map((r) => ({ ...antes.get(r.item_id), ...r }));
-      });
+      aplicarEstado(j);
     } catch (e: any) {
       setError(e?.message || t("error"));
       setFilas([]);
     }
-  }, [url, t]);
+  }, [url, t, aplicarEstado]);
 
   useEffect(() => {
     void leer();
@@ -144,6 +174,50 @@ export default function CruceOdoo({
     onCambio();
   };
 
+  const apartar = async (itemId: number, factura: string | null) => {
+    const j = await pedir({ accion: "aparte", item_id: itemId, factura }, `aparte-${itemId}`);
+    if (!j) return;
+    setApartando(null);
+    aplicarEstado(j);
+    onCambio();
+  };
+
+  const subirExcel = async (archivo: File) => {
+    setError(null);
+    setAviso(null);
+    setDelExcel([]);
+    let leidos;
+    try {
+      leidos = await leerExcel(archivo);
+    } catch {
+      leidos = [];
+    }
+    if (!leidos.length) {
+      setError(t("excel_error"));
+      return;
+    }
+    const j = await pedir(
+      {
+        accion: "excel",
+        renglones: leidos.map((l) => ({
+          codigo: l.codigo,
+          producto: l.producto,
+          cantidad: l.cantidad_esperada,
+          factura_aparte: l.factura_aparte,
+        })),
+      },
+      "excel",
+    );
+    if (!j) return;
+    aplicarEstado(j);
+    setAviso(t("excel_resumen", { codigos: j.excel.codigos, apartados: j.excel.apartados }));
+    setDelExcel([
+      ...j.excel.sin_cruzar.map((x: string) => t("excel_sin_cruzar", { renglon: x })),
+      ...j.excel.ya_en_odoo.map((x: string) => t("excel_ya_en_odoo", { renglon: x })),
+    ]);
+    onCambio();
+  };
+
   const cargarFaltantes = async () => {
     const j = await pedir({ accion: "cargar_faltantes" }, "cargar");
     if (!j) return;
@@ -162,6 +236,35 @@ export default function CruceOdoo({
 
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-3">
+      <div className="space-y-1">
+        <label
+          className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 ${
+            ocupado ? "opacity-40 pointer-events-none" : "cursor-pointer hover:bg-slate-50"
+          }`}
+        >
+          {ocupado === "excel" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+          {t("excel_subir")}
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void subirExcel(f);
+            }}
+          />
+        </label>
+        <p className="text-[11px] text-slate-500">{t("excel_ayuda")}</p>
+        {delExcel.length > 0 && (
+          <ul className="list-disc list-inside text-[11px] text-amber-800">
+            {delExcel.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {filas.length > 0 ? (
         <>
           <div className="space-y-1">
@@ -298,7 +401,42 @@ export default function CruceOdoo({
                         {ocupado === `ficha-${f.item_id}` ? t("buscando_ficha") : t("crear_ficha")}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setApartando({ item_id: f.item_id, factura: "INV" })}
+                      disabled={!!ocupado}
+                      className="inline-flex items-center gap-1 h-9 px-3 rounded-lg border border-amber-300 bg-white text-xs font-semibold text-amber-800 disabled:opacity-40"
+                    >
+                      {t("aparte_boton")}
+                    </button>
                   </div>
+
+                  {apartando?.item_id === f.item_id && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 p-2">
+                      <p className="w-full text-[11px] text-amber-900">{t("aparte_pregunta")}</p>
+                      <input
+                        value={apartando.factura}
+                        onChange={(e) => setApartando({ item_id: f.item_id, factura: e.target.value.slice(0, 50) })}
+                        aria-label={t("aparte_factura")}
+                        className="h-9 w-36 px-2 rounded-lg border border-slate-200 text-xs font-mono uppercase"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void apartar(f.item_id, apartando.factura)}
+                        disabled={!!ocupado || !apartando.factura.trim()}
+                        className="h-9 px-3 rounded-lg bg-amber-600 text-white text-xs font-semibold disabled:opacity-40"
+                      >
+                        {t("aparte_confirmar")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setApartando(null)}
+                        className="text-xs font-semibold text-slate-500 hover:underline"
+                      >
+                        {t("ficha_cancelar")}
+                      </button>
+                    </div>
+                  )}
 
                   {ficha?.item_id === f.item_id && (
                     <FormFicha
@@ -320,6 +458,36 @@ export default function CruceOdoo({
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           {t("todos_cruzados")}
         </p>
+      )}
+
+      {apartados.length > 0 && (
+        <div className="space-y-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">{t("apartados_titulo", { count: apartados.length })}</p>
+            <p className="text-[11px] text-slate-600">{t("apartados_explicacion")}</p>
+          </div>
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+            {apartados.map((a) => (
+              <li key={a.item_id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900">{a.factura}</span>
+                <span className="min-w-0 flex-1 text-slate-800">
+                  {a.codigo && <span className="font-mono text-slate-500">{a.codigo} · </span>}
+                  {a.producto}
+                  <span className="text-slate-500"> · {fmt(a.recibido)}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void apartar(a.item_id, null)}
+                  disabled={!!ocupado}
+                  className="inline-flex items-center gap-1 font-semibold text-violet-700 hover:underline disabled:opacity-40"
+                >
+                  {ocupado === `aparte-${a.item_id}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}
+                  {t("aparte_quitar")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {faltaCargar && (

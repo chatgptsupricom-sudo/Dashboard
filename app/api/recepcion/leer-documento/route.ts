@@ -58,6 +58,8 @@ const INSTRUCCIONES =
   "paquete de papel fotografico de 100 hojas contado por paquete). Copia la cantidad tal cual, sin convertirla. " +
   "No saques renglones del dock receipt ni de la confirmacion de booking si el packing list ya trae el detalle. " +
   "No incluyas totales generales, fletes, subtotales ni lineas que no sean productos. " +
+  "factura_aparte: si el renglon trae en una columna aparte (POSITION, INVOICE) un numero de factura como INV1062, " +
+  "copialo tal cual (esa mercancia es de otra sede); vacio si no trae. " +
   "proveedor: quien emite el documento. referencia: el numero de packing list, factura o BL.";
 
 const ESQUEMA = {
@@ -84,7 +86,7 @@ const ESQUEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["contenedor", "codigo", "producto", "cantidad", "unidad", "cajas"],
+        required: ["contenedor", "codigo", "producto", "cantidad", "unidad", "cajas", "factura_aparte"],
         properties: {
           contenedor: { type: "string" },
           codigo: { type: "string" },
@@ -92,6 +94,7 @@ const ESQUEMA = {
           cantidad: { type: "number" },
           unidad: { type: "string", enum: ["hojas", "resmas", "otra"] },
           cajas: { type: "number" },
+          factura_aparte: { type: "string" },
         },
       },
     },
@@ -152,6 +155,7 @@ function juntarRenglones(lista: unknown, contenedores: ContenedorLeido[]) {
     cajas_esperadas: number | null;
     reparto: Map<string, number> | null;
     conversion: Conversion | null;
+    factura_aparte: string | null;
   };
   const conocidos = new Set(contenedores.map((c) => c.numero));
   const porProducto = new Map<string, Junto>();
@@ -164,10 +168,22 @@ function juntarRenglones(lista: unknown, contenedores: ContenedorLeido[]) {
     const unidad = unidadPapel((r as any)?.unidad);
     const cantidad = unidad ? aBultos(leida, unidad) : leida;
     const contenedor = texto((r as any)?.contenedor, 50).toUpperCase().replace(/[\s-]+/g, "");
-    const llave = (codigo || producto).toUpperCase().replace(/\s+/g, " ");
+    // Lo de otra factura (INV1062) no se junta con lo de esta: no se carga aca.
+    const aparte = /^INV[\s-]*\d{3,}$/i.test(texto((r as any)?.factura_aparte, 50))
+      ? texto((r as any).factura_aparte, 50).toUpperCase().replace(/[\s-]+/g, "")
+      : null;
+    const llave = `${(codigo || producto).toUpperCase().replace(/\s+/g, " ")}|${aparte || ""}`;
     let junto = porProducto.get(llave);
     if (!junto) {
-      junto = { codigo, producto, cantidad_esperada: 0, cajas_esperadas: null, reparto: new Map(), conversion: null };
+      junto = {
+        codigo,
+        producto,
+        cantidad_esperada: 0,
+        cajas_esperadas: null,
+        reparto: new Map(),
+        conversion: null,
+        factura_aparte: aparte,
+      };
       porProducto.set(llave, junto);
     }
     if (unidad) {

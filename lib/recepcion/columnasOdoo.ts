@@ -12,6 +12,8 @@ import { query } from "@/lib/db";
  *   recepcion_packing.odoo_estado            cargando | cargado | error | sin_oc
  *   recepcion_packing.odoo_recepciones_previas  IN de la OC hechas antes de empezar
  *   recepcion_packing_items.odoo_product_id  producto de Odoo del renglon
+ *   recepcion_packing_items.factura_aparte   otra factura del embarque (ej.
+ *     INV1062, de Caracas): el renglon se cuenta pero no se carga en esta sede
  */
 
 const COLUMNAS_RECEPCION: Array<[string, string]> = [
@@ -43,7 +45,10 @@ export function asegurarColumnasOdoo(): Promise<void> {
         }
       };
       await agregar("recepcion_packing", COLUMNAS_RECEPCION);
-      await agregar("recepcion_packing_items", [["odoo_product_id", "INT DEFAULT NULL"]]);
+      await agregar("recepcion_packing_items", [
+        ["odoo_product_id", "INT DEFAULT NULL"],
+        ["factura_aparte", "VARCHAR(50) DEFAULT NULL"],
+      ]);
     })().catch((e) => {
       columnasListas = null;
       throw e;
