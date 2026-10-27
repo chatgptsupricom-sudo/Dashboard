@@ -619,10 +619,12 @@ async function frenos(rec: any, poId: number, resultado: ResultadoOdoo): Promise
 type Recibido = { productId: number; nombre: string; cantidad: number; seriales: string[] };
 
 /**
- * Lo contado en el panel, por producto de Odoo. Resuelve el producto de cada
- * renglon por `odoo_product_id` (factura) o por su codigo (packing list).
+ * Producto de Odoo de cada renglon: su `odoo_product_id` (factura, o el que
+ * se le asigno con el cruce de lib/recepcion/cruceIa.ts) o su codigo (packing
+ * list), contra los productos de la OC o, si no estan, un `default_code`
+ * identico en el catalogo. Los que no aparecen no van en el mapa.
  */
-async function recibidosPorProducto(items: any[], productosOc: Map<string, number>): Promise<{ recibidos: Recibido[]; sinProducto: string[] }> {
+export async function productoPorRenglon(items: any[], productosOc: Map<string, number>): Promise<Map<number, number>> {
   const porCodigo = new Map(productosOc);
   const buscar = items.filter((i) => !i.odoo_product_id && i.codigo && !porCodigo.has(normalizarCodigo(i.codigo)));
   for (const i of buscar) {
@@ -636,13 +638,38 @@ async function recibidosPorProducto(items: any[], productosOc: Map<string, numbe
     const exactos = (encontrados || []).filter((p) => normalizarCodigo(p.default_code) === codigo);
     if (exactos.length === 1) porCodigo.set(codigo, exactos[0].id);
   }
+  const mapa = new Map<number, number>();
+  for (const i of items) {
+    const pid = Number(i.odoo_product_id) || (i.codigo ? porCodigo.get(normalizarCodigo(i.codigo)) : 0) || 0;
+    if (pid) mapa.set(Number(i.id), pid);
+  }
+  return mapa;
+}
 
+/** Productos que espera la OC, por codigo normalizado. */
+export async function productosDeLaOc(poId: number): Promise<Map<string, number>> {
+  const moves = await odoo<any[]>(
+    "stock.move",
+    "search_read",
+    [[["purchase_line_id.order_id", "=", poId]]],
+    { fields: ["product_id"], limit: 5000 },
+  );
+  const pids = [...new Set(moves.map((m) => m2o(m.product_id)))];
+  const codigos = pids.length
+    ? await odoo<any[]>("product.product", "read", [pids, ["default_code"]], { context: { active_test: false } })
+    : [];
+  return new Map<string, number>(codigos.filter((p) => p.default_code).map((p) => [normalizarCodigo(p.default_code), p.id]));
+}
+
+/** Lo contado en el panel, por producto de Odoo (ver `productoPorRenglon`). */
+async function recibidosPorProducto(items: any[], productosOc: Map<string, number>): Promise<{ recibidos: Recibido[]; sinProducto: string[] }> {
+  const productoDe = await productoPorRenglon(items, productosOc);
   const mapa = new Map<number, Recibido>();
   const sinProducto: string[] = [];
   for (const i of items) {
     const cantidad = Number(i.cantidad_recibida || 0);
     if (cantidad <= 0) continue;
-    const pid = Number(i.odoo_product_id) || porCodigo.get(normalizarCodigo(i.codigo)) || 0;
+    const pid = productoDe.get(Number(i.id)) || 0;
     if (!pid) {
       sinProducto.push(`${i.codigo || "sin codigo"} · ${i.producto} (${cantidad})`);
       continue;
@@ -954,14 +981,21 @@ async function cargarTraslados(rec: any, resultado: ResultadoOdoo, quien: string
 export async function cargarEnOdoo(
   id: number,
   quien: string,
-  opts: { saltarFrenos?: boolean } = {},
+  opts: { saltarFrenos?: boolean; completarFaltantes?: boolean } = {},
 ): Promise<{ estado: EstadoOdoo; error?: string }> {
   await asegurarColumnasOdoo();
   const datos = await cargarRecepcion(id);
   if (!datos) return { estado: "error", error: "No encontrada" };
   const rec = datos.recepcion;
   if (rec.etapa !== "cerrado") return { estado: "error", error: "La recepcion no esta cerrada" };
-  if (rec.odoo_estado === "cargado") return { estado: "cargado" };
+  // Una recepcion cargada solo se vuelve a abrir para los renglones que se
+  // quedaron sin producto de Odoo y ya lo tienen: lo cargado no se repite
+  // (`odoo_resultado.cargado`), asi que solo entra lo que faltaba.
+  const completar =
+    rec.odoo_estado === "cargado" &&
+    !!opts.completarFaltantes &&
+    leerResultado(rec.odoo_resultado).sin_producto.length > 0;
+  if (rec.odoo_estado === "cargado" && !completar) return { estado: "cargado" };
 
   // OC: la de Odoo, o la de la orden del panel de la que salio el packing list.
   let poId = Number(rec.odoo_purchase_order_id) || 0;
@@ -984,8 +1018,9 @@ export async function cargarEnOdoo(
         SET odoo_estado = 'cargando', odoo_intento_at = NOW(), odoo_error = NULL, odoo_purchase_order_id = ?
       WHERE id = ? AND etapa = 'cerrado'
         AND (odoo_estado IS NULL OR odoo_estado IN ('error', 'sin_oc')
+             OR (odoo_estado = 'cargado' AND ? = 1)
              OR (odoo_estado = 'cargando' AND odoo_intento_at < NOW() - INTERVAL 60 MINUTE))`,
-    [poId, id],
+    [poId, id, completar ? 1 : 0],
   );
   if (Number((lock.rows as any)?.affectedRows || 0) !== 1) {
     return { estado: (rec.odoo_estado as EstadoOdoo) || "cargando" };
@@ -1033,19 +1068,7 @@ export async function cargarEnOdoo(
     }
 
     // Productos que espera la OC, por codigo (para los renglones del packing list).
-    const moves = await odoo<any[]>(
-      "stock.move",
-      "search_read",
-      [[["purchase_line_id.order_id", "=", poId]]],
-      { fields: ["product_id"], limit: 5000 },
-    );
-    const pids = [...new Set(moves.map((m) => m2o(m.product_id)))];
-    const codigos = pids.length
-      ? await odoo<any[]>("product.product", "read", [pids, ["default_code"]], { context: { active_test: false } })
-      : [];
-    const productosOc = new Map<string, number>(
-      codigos.filter((p) => p.default_code).map((p) => [normalizarCodigo(p.default_code), p.id]),
-    );
+    const productosOc = await productosDeLaOc(poId);
 
     const { recibidos, sinProducto } = await recibidosPorProducto(datos.items, productosOc);
     resultado.sin_producto = sinProducto;
