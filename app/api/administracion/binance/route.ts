@@ -21,6 +21,7 @@ import {
   leerEstadoDeCuenta,
   movimientosBorrables,
   NOMBRE_SEDE,
+  ROL_CXC,
   rangoSemana,
   sedeBinance,
 } from "@/lib/administracion/binance";
@@ -33,7 +34,7 @@ const TIPOS = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf
 // GET /api/administracion/binance?semana=YYYY-MM-DD (lunes)
 // Comprobantes de la semana cruzados con Binance Pay + pagos sin comprobante.
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_CXC]);
   if (auth.error) return auth.error;
   const semana = request.nextUrl.searchParams.get("semana") || "";
   if (!rangoSemana(semana)) {
@@ -42,6 +43,12 @@ export async function GET(request: NextRequest) {
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
   try {
+    // Cuentas por Cobrar solo ve los conciliados: ni los pendientes ni los pagos sin comprobante.
+    if (String(auth.payload?.role ?? "").toLowerCase().trim() === ROL_CXC) {
+      const { comprobantes } = await conciliacionSemana(semana, sede);
+      const conciliados = comprobantes.filter((c) => c.estado === "conciliado" || c.estado === "manual");
+      return NextResponse.json({ success: true, semana, conciliados });
+    }
     const [datos, borrables] = await Promise.all([conciliacionSemana(semana, sede), movimientosBorrables(semana, sede)]);
     return NextResponse.json({ success: true, semana, ...datos, borrables });
   } catch (e: any) {

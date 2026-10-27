@@ -334,6 +334,8 @@ export function Sidebar({
     { id: "cxc_tiempo_cobro", label: "Tiempo de Cobro", icon: Hourglass, slug: "/cuentas-por-cobrar/tiempo-cobro", absoluteHref: true },
     { id: "cxc_incobrables", label: "Incobrables", icon: Ban, slug: "/cuentas-por-cobrar/incobrables", absoluteHref: true },
     { id: "cxc_sobregiro", label: "Sobregiro", icon: Gauge, slug: "/cuentas-por-cobrar/sobregiro", absoluteHref: true },
+    // Conciliación Binance de solo lectura para el rol CxC (la de Administración es admin_binance).
+    { id: "cxc_binance", label: "Conciliación Binance", icon: Bitcoin, slug: "/cuentas-por-cobrar/binance", absoluteHref: true },
     { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
     { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
     { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
@@ -589,7 +591,9 @@ export function Sidebar({
           [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
-        !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar")
+        !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") &&
+        // El SuperAdmin ya la tiene completa en el desplegable "Administración".
+        !(isSuperAdminRole && item.id === "cxc_binance")
     )
     .map((item) => {
       if (item.id === "actividad") {

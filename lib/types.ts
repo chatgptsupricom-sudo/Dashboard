@@ -391,6 +391,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_tiempo_cobro", // Tiempo de cobro (días de emisión a pago completo)
       "cxc_incobrables", // Incobrables marcados a mano, con justificación
       "cxc_sobregiro", // Sobregiro: uso del límite de crédito de cada cliente
+      "cxc_binance", // Conciliación Binance de su sede, solo lectura (lo del Excel)
     ],
   },
   [UserRole.DISENADOR]: {

@@ -767,9 +767,14 @@ const DE_LA_SEDE = "(? IS NULL OR company_id = ?)";
  * SuperAdmin todas (null). undefined = Administracion sin sede valida (403).
  */
 export function sedeBinance(payload: { role?: unknown; cids?: unknown } | null | undefined) {
-  if (!esRolAdministracion(payload?.role)) return null;
+  // Cuentas por Cobrar lo ve de su sede, como Administracion (solo lee).
+  const cxc = String(payload?.role ?? "").toLowerCase().trim() === ROL_CXC;
+  if (!esRolAdministracion(payload?.role) && !cxc) return null;
   return sedeDelToken(payload) ?? undefined;
 }
+
+/** Rol que solo lee la conciliacion (GET), de su sede. */
+export const ROL_CXC = "cuentas por cobrar";
 
 export const NOMBRE_SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 
