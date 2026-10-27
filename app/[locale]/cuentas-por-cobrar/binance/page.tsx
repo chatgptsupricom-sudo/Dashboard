@@ -109,7 +109,8 @@ export default function BinanceCxCPage() {
 
       {error && <Aviso tono="rojo">{error}</Aviso>}
 
-      <div className="grid gap-6 lg:grid-cols-[230px_1fr] items-start">
+      {/* minmax(0,1fr): sin eso la tabla ancha estira la columna y la pagina se desborda en pantallas angostas. */}
+      <div className="grid gap-6 grid-cols-[minmax(0,1fr)] lg:grid-cols-[230px_minmax(0,1fr)] items-start">
         <Card>
           <CardContent className="p-2">
             <p className="px-3 pt-2 pb-1 text-xs font-medium text-gray-500">Semanas</p>
