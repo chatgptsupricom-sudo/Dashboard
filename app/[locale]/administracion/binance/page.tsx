@@ -14,7 +14,7 @@ import type {
 } from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Link2, Loader2, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Link2, Loader2, Printer, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
@@ -385,6 +385,54 @@ export default function BinancePage() {
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
   const COMPROBANTES_LISTA = { comprobantes, conciliados, problema: conProblema };
+
+  /**
+   * Hoja para imprimir los conciliados: cada comprobante con el cliente arriba,
+   * sus datos y la firma, 6 por hoja. Se imprime desde un iframe oculto: su
+   * `load` espera a que bajen todas las imagenes.
+   */
+  const imprimirConciliados = () => {
+    const esc = (s: string) =>
+      s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
+    const tarjetas = conciliados
+      .map((c) => {
+        const imagen = /\.pdf$/i.test(c.archivoNombre || "")
+          ? `<div class="pdf">Comprobante en PDF<br>(ver en el panel)</div>`
+          : `<img class="comprobante" src="/api/administracion/binance/imagen?id=${c.id}" alt="">`;
+        return `<div class="tarjeta">
+          <div class="cliente">${esc(c.cliente || "Sin cliente")}</div>
+          ${imagen}
+          <div class="datos">${esc(fechaComprobante(c))}<br>${esc(cifra(c.monto))} ${esc(c.moneda)} · ${esc(c.orderId)}</div>
+          <img class="firma" src="/api/administracion/binance/firma" alt="">
+        </div>`;
+      })
+      .join("");
+    const semanaTexto = opciones.find((o) => o.value === semana)?.label || semana;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Conciliados</title><style>
+      @page { size: letter; margin: 10mm; }
+      body { font-family: Arial, sans-serif; margin: 0; color: #111; }
+      h1 { font-size: 13px; margin: 0 0 4mm; }
+      .grilla { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+      .tarjeta { break-inside: avoid; border: 1px solid #ccc; border-radius: 2mm; padding: 2mm; text-align: center; height: 122mm; display: flex; flex-direction: column; align-items: center; }
+      .cliente { font-weight: bold; font-size: 12px; margin-bottom: 1.5mm; }
+      .comprobante { max-width: 100%; max-height: 88mm; object-fit: contain; }
+      .pdf { height: 88mm; display: flex; align-items: center; justify-content: center; color: #666; font-size: 11px; }
+      .datos { font-size: 9px; color: #444; margin-top: 1.5mm; }
+      .firma { height: 16mm; margin-top: auto; }
+    </style></head><body>
+      <h1>Comprobantes conciliados · Semana ${esc(semanaTexto)} · ${conciliados.length}</h1>
+      <div class="grilla">${tarjetas}</div>
+    </body></html>`;
+    const marco = document.createElement("iframe");
+    marco.style.cssText = "position:fixed;width:0;height:0;border:0;visibility:hidden";
+    marco.onload = () => {
+      marco.contentWindow?.focus();
+      marco.contentWindow?.print();
+      setTimeout(() => marco.remove(), 60_000);
+    };
+    marco.srcdoc = html;
+    document.body.appendChild(marco);
+  };
   // Pagos para amarrar a mano un comprobante: solo los de su monto y moneda, y
   // solo si ese monto se repite en el estado de cuenta (si es unico, el cruce ya
   // lo amarro). Van los libres y el que ya tiene (elegirlo confirma el que propuso el panel).
@@ -607,6 +655,12 @@ export default function BinancePage() {
                 ) : (
                   lista && (
                     <>
+                      {lista === "conciliados" && conciliados.length > 0 && (
+                        <Button size="sm" className="h-9 w-fit" onClick={imprimirConciliados}>
+                          <Printer className="h-4 w-4 mr-2" />
+                          Imprimir conciliados
+                        </Button>
+                      )}
                       <p className="text-xs text-gray-500">Haz clic en un comprobante para ver su imagen.</p>
                       <Table>
                         <TableHeader>
