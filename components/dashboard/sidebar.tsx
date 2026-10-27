@@ -37,6 +37,7 @@ import {
   UserSearch,
   UserPlus,
   Fingerprint,
+  MapPinned,
   ScrollText,
   Calendar,
   Camera,
@@ -308,6 +309,8 @@ export function Sidebar({
     { id: "solicitudes_personal", label: "Solicitudes de personal", icon: UserPlus, slug: "/solicitudes-personal", absoluteHref: true },
     // Asistencia por biométrico de RRHH: Excel del equipo, retardos y ausencias (lib/asistencia/).
     { id: "asistencia", label: "Asistencia", icon: Fingerprint, slug: "/recursos_humanos/asistencia", absoluteHref: true },
+    // Rutagrama de los nuevos ingresos: enlace para el trabajador, mapa y planilla LOPCYMAT (lib/rutagrama/).
+    { id: "rutagrama", label: "Rutagrama", icon: MapPinned, slug: "/recursos_humanos/rutagrama", absoluteHref: true },
     // Políticas, acuerdos y circulares de la empresa (lib/politicas/permisos.ts).
     { id: "politicas", label: "Políticas y Acuerdos", icon: ScrollText, slug: "/politicas", absoluteHref: true },
     {
