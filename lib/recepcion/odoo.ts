@@ -894,14 +894,13 @@ async function cargarTraslados(rec: any, resultado: ResultadoOdoo, quien: string
     { fields: ["product_id", "move_dest_ids"], limit: 5000 },
   );
   const destIds = [...new Set(hechos.flatMap((m) => m.move_dest_ids || []))];
-  const destinos = destIds.length
-    ? (
-        await odoo<any[]>("stock.move", "read", [
-          destIds,
-          ["picking_id", "product_id", "product_uom", "location_id", "location_dest_id", "move_line_ids", "state"],
-        ])
-      ).filter((m) => m.picking_id && !["done", "cancel"].includes(m.state))
+  const todosDest = destIds.length
+    ? await odoo<any[]>("stock.move", "read", [
+        destIds,
+        ["picking_id", "product_id", "product_uom", "location_id", "location_dest_id", "move_line_ids", "state"],
+      ])
     : [];
+  const destinos = todosDest.filter((m) => m.picking_id && !["done", "cancel"].includes(m.state));
   // Recepcion en un paso (lo recibido ya esta en Existencias), o el
   // traslado ya lo validaron en Odoo: no hay nada que trasladar.
   if (destinos.length === 0) return;
@@ -912,7 +911,7 @@ async function cargarTraslados(rec: any, resultado: ResultadoOdoo, quien: string
   const movesPorTrasladar = hechos
     .filter((m) => !(m.move_dest_ids || []).length || (m.move_dest_ids || []).some((d: number) => pendientesDest.has(d)))
     .map((m) => m.id);
-  const lineasIn = movesPorTrasladar.length
+  const lineasRecibidas = movesPorTrasladar.length
     ? await odoo<any[]>(
         "stock.move.line",
         "search_read",
@@ -920,6 +919,36 @@ async function cargarTraslados(rec: any, resultado: ResultadoOdoo, quien: string
         { fields: ["product_id", "lot_id", "quantity", "location_dest_id", "product_uom_id"], limit: 20000 },
       )
     : [];
+
+  // Lo que ya salio de Entrada por un traslado hecho (del panel o a mano en
+  // Odoo) no se traslada otra vez. Odoo deja el pendiente de un traslado
+  // colgando de la recepcion original aunque esa parte ya se haya movido
+  // (CENT1/INT/00254 con el UPS que ya paso en CENT1/INT/00251): sin esto se
+  // volvia a trasladar y Odoo lo frenaba por stock negativo en Entrada.
+  const entradas = new Set(lineasRecibidas.map((l) => m2o(l.location_dest_id)));
+  const destHechos = todosDest.filter((m) => m.state === "done").map((m) => m.id);
+  const salidas = destHechos.length
+    ? await odoo<any[]>(
+        "stock.move.line",
+        "search_read",
+        [[["move_id", "in", destHechos], ["state", "=", "done"]]],
+        { fields: ["product_id", "lot_id", "quantity", "location_id"], limit: 20000 },
+      )
+    : [];
+  const llave = (l: any) => `${m2o(l.product_id)}|${l.lot_id ? m2o(l.lot_id) : 0}`;
+  const yaMovido = new Map<string, number>();
+  for (const l of salidas) {
+    if (!entradas.has(m2o(l.location_id))) continue;
+    yaMovido.set(llave(l), r3((yaMovido.get(llave(l)) || 0) + Number(l.quantity || 0)));
+  }
+  const lineasIn: any[] = [];
+  for (const l of lineasRecibidas) {
+    const cantidad = Number(l.quantity || 0);
+    const ya = Math.min(yaMovido.get(llave(l)) || 0, cantidad);
+    if (ya > 0) yaMovido.set(llave(l), r3((yaMovido.get(llave(l)) || 0) - ya));
+    const queda = r3(cantidad - ya);
+    if (queda > 0) lineasIn.push({ ...l, quantity: queda });
+  }
 
   const porPicking = new Map<number, any[]>();
   for (const d of destinos) {
