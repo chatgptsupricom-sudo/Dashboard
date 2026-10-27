@@ -214,6 +214,18 @@ export default function BinancePage() {
     cargar();
   }, [cargar]);
 
+  // El aviso de la subida se va solo 5 s despues de terminar (no mientras el
+  // mouse esta encima, para poder leer los errores).
+  const [sobreAviso, setSobreAviso] = useState(false);
+  useEffect(() => {
+    if (subiendo || sobreAviso || (!subidas.length && !ignorados)) return;
+    const t = setTimeout(() => {
+      setSubidas([]);
+      setIgnorados(0);
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [subiendo, sobreAviso, subidas, ignorados]);
+
   // Otra semana: de vuelta a la primera pagina.
   useEffect(() => {
     setPaginaComprobantes(0);
@@ -489,8 +501,13 @@ export default function BinancePage() {
       </div>
 
       {(subidas.length > 0 || ignorados > 0) && (
-        <Card>
-          <CardContent className="p-4 space-y-2 text-sm">
+        <Card
+          className="fixed bottom-4 left-4 z-50 w-[min(440px,calc(100vw-2rem))] shadow-lg"
+          role="status"
+          onMouseEnter={() => setSobreAviso(true)}
+          onMouseLeave={() => setSobreAviso(false)}
+        >
+          <CardContent className="p-4 space-y-2 text-sm max-h-[60vh] overflow-y-auto">
             {/* Con una carpeta de cientos de archivos la lista entera no se lee: arriba el
                 resumen y los que fallaron; los que entraron, plegados. */}
             <p className="font-medium text-gray-700">
