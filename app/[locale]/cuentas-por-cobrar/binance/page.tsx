@@ -71,7 +71,12 @@ export default function BinanceCxCPage() {
     setError(null);
     try {
       const json = await (await fetch(`/api/administracion/binance?semana=${semana}`)).json();
-      if (json.success) setConciliados(json.conciliados || []);
+      // A CxC la API ya le manda solo `conciliados`; el SuperAdmin recibe todo y se filtra aqui.
+      if (json.success)
+        setConciliados(
+          json.conciliados ??
+            (json.comprobantes || []).filter((c: Comprobante) => c.estado === "conciliado" || c.estado === "manual"),
+        );
       else setError(json.error || "No se pudo cargar");
     } catch {
       setError("No se pudo cargar");
