@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { recontarSeriales } from "@/lib/recepcion/conteo";
 import { completarLlevaSerial } from "@/lib/recepcion/seriales";
+import { abiertaParaSeriales, renglonesSinSeriales } from "@/lib/recepcion/serialesFaltantes";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -14,7 +15,9 @@ import { NextRequest, NextResponse } from "next/server";
  * DELETE /api/recepcion/[id]/seriales/[serialId]
  *
  * Quita un serial pistoleado por error (y resta 1 a lo recibido de su
- * renglon). Solo mientras se esta contando: cerrado, no se modifica nada.
+ * renglon). Mientras se esta contando. Con la recepcion cerrada, solo en los
+ * renglones que esperan seriales para cargarse en Odoo
+ * (lib/recepcion/serialesFaltantes.ts), y sin tocar lo recibido.
  */
 export async function DELETE(
   request: NextRequest,
@@ -35,7 +38,8 @@ export async function DELETE(
     if (!datos || fueraDeAlcance(sesion!, datos.recepcion)) {
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     }
-    if (datos.recepcion.etapa !== "descargando") {
+    const cerrada = datos.recepcion.etapa === "cerrado" && abiertaParaSeriales(datos.recepcion);
+    if (datos.recepcion.etapa !== "descargando" && !cerrada) {
       return NextResponse.json({ error: "El conteo no esta abierto: ya no se puede modificar" }, { status: 409 });
     }
 
@@ -46,6 +50,28 @@ export async function DELETE(
     const itemId = (r.rows as any[])[0]?.item_id;
     if (!itemId) return NextResponse.json({ error: "Serial no encontrado" }, { status: 404 });
     const contenedorId = Number((r.rows as any[])[0]?.contenedor_id) || 0;
+
+    if (cerrada) {
+      // Lo ya cargado en Odoo no se toca: solo renglones que esperan seriales.
+      const abiertos = await renglonesSinSeriales(datos);
+      if (!abiertos.some((x) => x.item_id === Number(itemId))) {
+        return NextResponse.json(
+          { error: "Ese renglon ya se cargo en Odoo o no lleva serial: no se modifica" },
+          { status: 409 },
+        );
+      }
+      await query("DELETE FROM recepcion_packing_seriales WHERE id = ? AND recepcion_id = ?", [serialId, id]);
+      emitirRecepcion({ accion: "conteo", id, cids: Number(datos.recepcion.cids) });
+      const item = (datos.items as any[]).find((i) => Number(i.id) === Number(itemId));
+      return NextResponse.json({
+        success: true,
+        item_id: Number(itemId),
+        cantidad: Number(item?.cantidad_recibida || 0),
+        contenedor_id: contenedorId,
+        cerrada: true,
+        lleva_serial: true,
+      });
+    }
 
     await query("DELETE FROM recepcion_packing_seriales WHERE id = ? AND recepcion_id = ?", [serialId, id]);
     // Se resta en el contenedor donde se habia pistoleado.
