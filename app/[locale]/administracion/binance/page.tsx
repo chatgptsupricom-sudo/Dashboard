@@ -36,6 +36,7 @@ const CLASE_ESTADO: Record<EstadoComprobante, string> = {
   conciliado: "bg-emerald-100 text-emerald-800",
   manual: "bg-emerald-100 text-emerald-800",
   por_monto_hora: "bg-amber-100 text-amber-800",
+  nombre_distinto: "bg-amber-100 text-amber-800",
   monto_distinto: "bg-red-100 text-red-800",
   no_encontrado: "bg-red-100 text-red-800",
   sin_verificar: "bg-slate-100 text-slate-700",
@@ -298,12 +299,12 @@ export default function BinancePage() {
     setLeyendoDrive(false);
   };
 
-  const asignar = async (c: Comprobante, valor: string) => {
+  const asignar = async (c: Comprobante, valor: string, aprobar = false) => {
     const json = await (
       await fetch("/api/administracion/binance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: c.id, movimiento_id: valor ? Number(valor) : null }),
+        body: JSON.stringify({ id: c.id, movimiento_id: valor ? Number(valor) : null, aprobar }),
       })
     ).json();
     if (!json.success) setError(json.error || "No se pudo guardar");
@@ -705,6 +706,19 @@ export default function BinancePage() {
                           <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
                             {ETIQUETA_ESTADO[c.estado]}
                           </Badge>
+                          {c.estado === "nombre_distinto" && c.binance && /^e\d+$/.test(c.binance.id) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mt-1 h-7 text-xs block"
+                              onClick={() => {
+                                if (confirm(`¿El pago de ${c.binance!.pagador} es de ${c.cliente}? Queda conciliado.`))
+                                  asignar(c, c.binance!.id.slice(1), true);
+                              }}
+                            >
+                              Aprobar
+                            </Button>
+                          )}
                           {datos.origen === "estado" && c.estado !== "conciliado" && opcionesPago(c).length > 0 && (
                             <select
                               value={c.estado === "manual" ? String(c.movimientoId) : ""}

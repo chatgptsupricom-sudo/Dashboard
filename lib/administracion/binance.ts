@@ -68,6 +68,7 @@ export type EstadoComprobante =
   | "manual"
   | "monto_distinto"
   | "por_monto_hora"
+  | "nombre_distinto"
   | "no_encontrado"
   | "sin_verificar";
 
@@ -305,6 +306,26 @@ const diaCaracas = (iso: string) => new Date(Date.parse(iso) - OFFSET_CARACAS_MS
 const mismoMonto = (p: PagoBinance, c: BaseComprobante) =>
   p.moneda === c.moneda.toUpperCase() && Math.abs(p.monto - c.monto) < 1e-6;
 
+const normalNombre = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * El cliente (nombre del archivo) se parece a quien pago en Binance: sin
+ * mayusculas, acentos, espacios ni signos ("A1 SERVICES" = "A1SERVICES"), uno
+ * dentro del otro o una palabra de 4+ letras del cliente dentro del pagador.
+ * Sin alguno de los dos no hay con que objetar.
+ */
+export function nombreParecido(cliente: string, pagador: string) {
+  const a = normalNombre(cliente);
+  const b = normalNombre(pagador);
+  if (!a || !b) return true;
+  if ((a.length >= 4 && b.includes(a)) || (b.length >= 4 && a.includes(b))) return true;
+  return cliente
+    .split(/[^\p{L}\p{N}]+/u)
+    .map(normalNombre)
+    .some((p) => p.length >= 4 && b.includes(p));
+}
+
 /**
  * Cruza comprobantes con pagos. Con la API manda el ID de orden; con el estado
  * de cuenta (sin ID) manda monto + moneda + hora: el pago mas cercano dentro del
@@ -363,8 +384,10 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     }
     usados.add(pago.id);
     // En el estado de cuenta la hora (o el monto unico, si no hay hora) es la
-    // unica prueba: si coincide, esta conciliado.
-    const estado = origen === "estado" ? "conciliado" : "por_monto_hora";
+    // unica prueba: si coincide, esta conciliado; salvo que el cliente (nombre
+    // del archivo) no se parezca a quien pago en Binance: eso lo aprueba una persona.
+    const estado =
+      origen !== "estado" ? "por_monto_hora" : nombreParecido(base.cliente, pago.pagador) ? "conciliado" : "nombre_distinto";
     salida[i] = { ...base, fecha: base.fechaEstimada ? pago.fecha : base.fecha, estado, binance: pago };
   }
   return { comprobantes: salida, usados };
@@ -378,7 +401,8 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
 function ajustarZona(bases: BaseComprobante[], pagos: PagoBinance[]) {
   const comoUtc = pagos.map((p) => ({ ...p, fecha: new Date(Date.parse(p.fecha) - OFFSET_CARACAS_MS).toISOString() }));
   const conciliados = (lista: PagoBinance[]) =>
-    cruzar(bases, lista, "estado").comprobantes.filter((c) => c.estado === "conciliado").length;
+    cruzar(bases, lista, "estado").comprobantes.filter((c) => c.estado === "conciliado" || c.estado === "nombre_distinto")
+      .length;
   return conciliados(comoUtc) > conciliados(pagos) ? comoUtc : pagos;
 }
 
@@ -743,7 +767,8 @@ export async function imagenComprobante(id: number, sede: number | null) {
  * Amarra a mano un comprobante con un movimiento del estado de cuenta (null =
  * soltarlo). Sirve cuando el comprobante no trae fecha y el monto se repite.
  */
-export async function asignarMovimiento(id: number, movimientoId: number | null, sede: number | null) {
+/** `aprobar`: confirma el pago que propuso el cruce (cliente distinto del pagador), aunque su monto no se repita. */
+export async function asignarMovimiento(id: number, movimientoId: number | null, sede: number | null, aprobar = false) {
   await ensureTabla();
   const { rows: propio } = await query(`SELECT id FROM binance_comprobantes WHERE id = ? AND ${DE_LA_SEDE}`, [
     id,
@@ -767,7 +792,7 @@ export async function asignarMovimiento(id: number, movimientoId: number | null,
         WHERE c.id = ?`,
       [movimientoId, id],
     );
-    if (Number(iguales[0]?.n || 0) < 2) {
+    if (Number(iguales[0]?.n || 0) < (aprobar ? 1 : 2)) {
       throw new ArchivoIlegible("Solo se puede amarrar a otro pago del mismo monto cuando ese monto se repite en el estado de cuenta");
     }
   }

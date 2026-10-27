@@ -197,7 +197,7 @@ export async function PATCH(request: NextRequest) {
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
   try {
-    await asignarMovimiento(id, mov, sede);
+    await asignarMovimiento(id, mov, sede, b?.aprobar === true);
     return NextResponse.json({ success: true });
   } catch (e: any) {
     if (e instanceof ArchivoIlegible) return NextResponse.json({ error: e.message }, { status: 409 });
