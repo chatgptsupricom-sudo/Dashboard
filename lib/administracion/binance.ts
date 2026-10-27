@@ -72,6 +72,11 @@ export type EstadoComprobante =
   | "no_encontrado"
   | "sin_verificar";
 
+/** Un pago de la semana y el comprobante que lo tomo (null = sin comprobante). */
+export type PagoConComprobante = PagoBinance & {
+  comprobante: { estado: EstadoComprobante; cliente: string; orderId: string } | { otraSede: true } | null;
+};
+
 /** De donde salieron los pagos de la semana. */
 export type OrigenPagos = "estado" | "api";
 
@@ -465,6 +470,7 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
       return {
         comprobantes: bases.map((b): Comprobante => ({ ...b, estado: "sin_verificar", binance: null })).filter(deLaSede),
         sinComprobante: [] as PagoBinance[],
+        pagos: [] as PagoConComprobante[],
         errorBinance: (e?.message as string) || "No se pudo consultar Binance",
         origen,
         movimientos: 0,
@@ -483,7 +489,15 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
     ...c,
     montoRepetido: deLaSemana.filter((p) => mismoMonto(p, c)).length > 1,
   }));
-  return { comprobantes: visibles, sinComprobante, errorBinance: null, origen, movimientos: deLaSemana.length };
+  // Todos los pagos de la semana con el comprobante que los tomo. De otra sede
+  // solo se dice que lo tiene, sin el cliente.
+  const porPago = new Map(comprobantes.filter((c) => c.binance).map((c) => [c.binance!.id, c]));
+  const pagosSemana: PagoConComprobante[] = deLaSemana.map((p) => {
+    const c = porPago.get(p.id);
+    const comprobante = !c ? null : deLaSede(c) ? { estado: c.estado, cliente: c.cliente, orderId: c.orderId } : { otraSede: true as const };
+    return { ...p, comprobante };
+  });
+  return { comprobantes: visibles, sinComprobante, pagos: pagosSemana, errorBinance: null, origen, movimientos: deLaSemana.length };
 }
 
 // ---------- Estado de cuenta ----------
@@ -579,21 +593,25 @@ export async function guardarMovimientos(
     "INSERT INTO binance_estados (archivo_nombre, archivo, subido_por, archivo_sha) VALUES (?,?,?,?)",
     [archivo.nombre.slice(0, 200), archivo.captura ?? archivo.datos, usuario.email, archivo.sha],
   );
-  const estadoId: number | null = archivo.captura ? res.insertId : null;
+  // estado_id va siempre (tambien en un PDF): es de que archivo salio cada pago,
+  // para borrar por archivo. El recorte solo existe con y0/y1.
+  const estadoId: number = res.insertId;
   let nuevos = 0;
   for (const m of movs) {
-    const conLinea = estadoId !== null && m.linea;
+    const conLinea = archivo.captura !== null && m.linea;
     const { rows } = await query(
-      // y0/y1 van antes que estado_id y otras_sedes no toca company_id: MySQL
-      // asigna de izquierda a derecha. Las columnas van con la tabla delante: el
+      // estado_id e y1 van antes que y0 (leen el y0 viejo: un pago sin recorte
+      // toma el archivo y la linea del que si lo trae) y otras_sedes no toca
+      // company_id: MySQL asigna de izquierda a derecha. Las columnas van con la tabla delante: el
       // alias `nuevo` tiene las mismas y sin eso MySQL responde "Column
       // 'estado_id' in field list is ambiguous".
       `INSERT INTO binance_movimientos (fecha, contraparte, monto, moneda, subido_por, estado_id, y0, y1, company_id)
          VALUES (?,?,?,?,?,?,?,?,?) AS nuevo
        ON DUPLICATE KEY UPDATE
-         binance_movimientos.y0 = IF(binance_movimientos.estado_id IS NULL, nuevo.y0, binance_movimientos.y0),
-         binance_movimientos.y1 = IF(binance_movimientos.estado_id IS NULL, nuevo.y1, binance_movimientos.y1),
-         binance_movimientos.estado_id = COALESCE(binance_movimientos.estado_id, nuevo.estado_id),
+         binance_movimientos.estado_id = IF(binance_movimientos.y0 IS NULL AND nuevo.y0 IS NOT NULL,
+           nuevo.estado_id, COALESCE(binance_movimientos.estado_id, nuevo.estado_id)),
+         binance_movimientos.y1 = IF(binance_movimientos.y0 IS NULL, nuevo.y1, binance_movimientos.y1),
+         binance_movimientos.y0 = IF(binance_movimientos.y0 IS NULL, nuevo.y0, binance_movimientos.y0),
          binance_movimientos.otras_sedes = IF(binance_movimientos.company_id <=> nuevo.company_id,
            binance_movimientos.otras_sedes, 1)`,
       [
@@ -602,7 +620,7 @@ export async function guardarMovimientos(
         m.monto,
         m.moneda,
         usuario.email,
-        conLinea ? estadoId : null,
+        estadoId,
         conLinea ? m.linea!.y0 : null,
         conLinea ? m.linea!.y1 : null,
         usuario.sede,
@@ -622,7 +640,7 @@ export async function recortesDeMovimientos(ids: number[]) {
   const sharp = (await import("sharp")).default;
   const { rows } = await query(
     `SELECT id, estado_id, y0, y1 FROM binance_movimientos
-      WHERE estado_id IS NOT NULL AND id IN (${ids.map(() => "?").join(",")})`,
+      WHERE estado_id IS NOT NULL AND y0 IS NOT NULL AND id IN (${ids.map(() => "?").join(",")})`,
     ids,
   );
   const capturas = new Map<number, Buffer | null>();
@@ -700,25 +718,64 @@ export async function borrarMovimientosSemana(lunes: string, sede: number | null
   if (!rango) throw new Error("Semana inválida");
   await ensureTablaMovimientos();
   const filtro = [aMysql(rango.desde), aMysql(rango.hasta), sede, sede];
-  const { rows: capturas } = await query(
-    `SELECT DISTINCT estado_id FROM binance_movimientos
-      WHERE estado_id IS NOT NULL AND fecha BETWEEN ? AND ? AND ${BORRABLE_POR_SEDE}`,
-    filtro,
-  );
   const { rows } = await query(
     `DELETE FROM binance_movimientos WHERE fecha BETWEEN ? AND ? AND ${BORRABLE_POR_SEDE}`,
     filtro,
   );
-  // Las capturas de esos pagos que ya no tienen ninguno (asi se pueden volver a subir).
-  const ids = (capturas as any[]).map((c) => Number(c.estado_id));
-  if (ids.length) {
-    await query(
-      `DELETE FROM binance_estados WHERE id IN (${ids.map(() => "?").join(",")})
-         AND id NOT IN (SELECT estado_id FROM (SELECT DISTINCT estado_id FROM binance_movimientos
-                                               WHERE estado_id IS NOT NULL) t)`,
-      ids,
-    );
-  }
+  await borrarArchivosSinPagos();
+  return Number((rows as any)?.affectedRows || 0);
+}
+
+/**
+ * Borra los archivos del estado de cuenta que ya no tienen ningun pago, asi se
+ * pueden volver a subir (si no, su huella dice "ya estaba cargada"). Antes un PDF
+ * o una captura sin lineas ubicadas no quedaba amarrada a sus pagos y nunca se
+ * borraba. Solo los de mas de 10 min: uno recien subido todavia esta guardando sus pagos.
+ */
+async function borrarArchivosSinPagos() {
+  await query(
+    `DELETE FROM binance_estados
+      WHERE created_at < NOW() - INTERVAL 10 MINUTE
+        AND id NOT IN (SELECT estado_id FROM (SELECT DISTINCT estado_id FROM binance_movimientos
+                                              WHERE estado_id IS NOT NULL) t)`,
+  );
+}
+
+/** Archivos del estado de cuenta con pagos en la semana, y cuantos de esos pagos puede borrar esta sede. */
+export async function archivosEstadoSemana(lunes: string, sede: number | null) {
+  const rango = rangoSemana(lunes);
+  if (!rango) return [];
+  await ensureTablaMovimientos();
+  const { rows } = await query(
+    `SELECT e.id, e.archivo_nombre, e.subido_por, e.created_at, COUNT(*) AS pagos,
+            SUM(? IS NULL OR (m.company_id = ? AND m.otras_sedes = 0)) AS borrables
+       FROM binance_estados e JOIN binance_movimientos m ON m.estado_id = e.id
+      WHERE m.fecha BETWEEN ? AND ?
+      GROUP BY e.id, e.archivo_nombre, e.subido_por, e.created_at
+      ORDER BY e.created_at`,
+    [sede, sede, aMysql(rango.desde), aMysql(rango.hasta)],
+  );
+  return (rows as any[]).map((r) => ({
+    id: Number(r.id),
+    nombre: String(r.archivo_nombre),
+    subidoPor: String(r.subido_por),
+    pagos: Number(r.pagos),
+    borrables: Number(r.borrables || 0),
+  }));
+}
+
+/** Borra los pagos de un archivo del estado de cuenta que esta sede puede borrar, y el archivo si queda sin pagos. */
+export async function borrarArchivoEstado(id: number, sede: number | null) {
+  await ensureTablaMovimientos();
+  const { rows } = await query(`DELETE FROM binance_movimientos WHERE estado_id = ? AND ${BORRABLE_POR_SEDE}`, [
+    id,
+    sede,
+    sede,
+  ]);
+  await query(
+    "DELETE FROM binance_estados WHERE id = ? AND NOT EXISTS (SELECT 1 FROM binance_movimientos WHERE estado_id = ?)",
+    [id, id],
+  );
   return Number((rows as any)?.affectedRows || 0);
 }
 

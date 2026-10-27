@@ -3,7 +3,9 @@ import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
 import {
   ArchivoIlegible,
+  archivosEstadoSemana,
   asignarMovimiento,
+  borrarArchivoEstado,
   borrarMovimientosSemana,
   capturaYaSubida,
   comprobantePorHuella,
@@ -42,8 +44,12 @@ export async function GET(request: NextRequest) {
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
   try {
-    const [datos, borrables] = await Promise.all([conciliacionSemana(semana, sede), movimientosBorrables(semana, sede)]);
-    return NextResponse.json({ success: true, semana, ...datos, borrables });
+    const [datos, borrables, archivosEstado] = await Promise.all([
+      conciliacionSemana(semana, sede),
+      movimientosBorrables(semana, sede),
+      archivosEstadoSemana(semana, sede),
+    ]);
+    return NextResponse.json({ success: true, semana, ...datos, borrables, archivosEstado });
   } catch (e: any) {
     console.error("[binance] conciliacion:", e?.message);
     return NextResponse.json({ error: "No se pudo cargar la conciliación" }, { status: 500 });
@@ -214,11 +220,22 @@ export async function DELETE(request: NextRequest) {
   if (auth.error) return auth.error;
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
-  const semana = request.nextUrl.searchParams.get("estado");
-  if (semana !== null) {
-    if (!rangoSemana(semana)) return NextResponse.json({ error: "Semana inválida" }, { status: 400 });
-    const borrados = await borrarMovimientosSemana(semana, sede);
-    return NextResponse.json({ success: true, borrados });
+  const p = request.nextUrl.searchParams;
+  try {
+    // ?archivo=<id>: un archivo del estado de cuenta (lo que esta sede puede borrar de el).
+    if (p.has("archivo")) {
+      const archivo = Number(p.get("archivo"));
+      if (!Number.isInteger(archivo) || archivo <= 0) return NextResponse.json({ error: "Archivo inválido" }, { status: 400 });
+      return NextResponse.json({ success: true, borrados: await borrarArchivoEstado(archivo, sede) });
+    }
+    const semana = p.get("estado");
+    if (semana !== null) {
+      if (!rangoSemana(semana)) return NextResponse.json({ error: "Semana inválida" }, { status: 400 });
+      return NextResponse.json({ success: true, borrados: await borrarMovimientosSemana(semana, sede) });
+    }
+  } catch (e: any) {
+    console.error("[binance] borrar estado de cuenta:", e?.message);
+    return NextResponse.json({ error: "No se pudo borrar el estado de cuenta" }, { status: 500 });
   }
   const id = Number(request.nextUrl.searchParams.get("id"));
   if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "id inválido" }, { status: 400 });

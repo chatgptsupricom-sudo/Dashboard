@@ -5,7 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Aviso, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
-import type { Comprobante, EstadoComprobante, OrigenPagos, PagoBinance } from "@/lib/administracion/binance";
+import type {
+  Comprobante,
+  EstadoComprobante,
+  OrigenPagos,
+  PagoBinance,
+  PagoConComprobante,
+} from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Link2, Loader2, Trash2, Upload } from "lucide-react";
@@ -14,6 +20,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type Respuesta = {
   comprobantes: Comprobante[];
   sinComprobante: PagoBinance[];
+  /** Todos los pagos de la semana, con el comprobante que los tomo. */
+  pagos: PagoConComprobante[];
+  /** Archivos del estado de cuenta con pagos en la semana. */
+  archivosEstado: { id: number; nombre: string; subidoPor: string; pagos: number; borrables: number }[];
   errorBinance: string | null;
   origen: OrigenPagos;
   movimientos: number;
@@ -43,6 +53,37 @@ const CLASE_ESTADO: Record<EstadoComprobante, string> = {
 };
 
 const DIA = 86400_000;
+const POR_PAGINA = 25;
+
+/** Anterior / Pagina x de y / Siguiente; no se muestra con una sola pagina. */
+function Paginacion({ pagina, total, cambiar }: { pagina: number; total: number; cambiar: (p: number) => void }) {
+  const paginas = Math.ceil(total / POR_PAGINA);
+  if (paginas <= 1) return null;
+  return (
+    <div className="flex items-center justify-end gap-2 pt-3 text-sm text-gray-600">
+      <span>
+        {pagina * POR_PAGINA + 1}–{Math.min(total, (pagina + 1) * POR_PAGINA)} de {total}
+      </span>
+      <Button size="sm" variant="outline" className="h-8" disabled={pagina === 0} onClick={() => cambiar(pagina - 1)}>
+        Anterior
+      </Button>
+      <span>
+        Página {pagina + 1} de {paginas}
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8"
+        disabled={pagina >= paginas - 1}
+        onClick={() => cambiar(pagina + 1)}
+      >
+        Siguiente
+      </Button>
+    </div>
+  );
+}
+
+const deLaPagina = <T,>(items: T[], pagina: number) => items.slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA);
 
 /** Lunes (YYYY-MM-DD) de las ultimas `n` semanas, la actual primero. */
 function semanas(n = 12) {
@@ -141,6 +182,8 @@ export default function BinancePage() {
   const [lista, setLista] = useState<Lista | null>(null);
   const [verImagen, setVerImagen] = useState<Comprobante | null>(null);
   const [ignorados, setIgnorados] = useState(0);
+  const [paginaComprobantes, setPaginaComprobantes] = useState(0);
+  const [paginaPagos, setPaginaPagos] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const inputEstado = useRef<HTMLInputElement>(null);
   const carpeta = useRef<HTMLInputElement>(null);
@@ -172,6 +215,12 @@ export default function BinancePage() {
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  // Otra semana: de vuelta a la primera pagina.
+  useEffect(() => {
+    setPaginaComprobantes(0);
+    setPaginaPagos(0);
+  }, [semana]);
 
   const subirUno = async (elegido: Elegido, tipo: TipoArchivo): Promise<Subida> => {
     const { archivo, driveId, carpeta } = elegido;
@@ -318,7 +367,21 @@ export default function BinancePage() {
       `¿Borrar ${cuantos} pago${cuantos === 1 ? "" : "s"} del estado de cuenta de esta semana para volver a subirlos?` +
       (otros > 0 ? `\n\nLos otros ${otros} los subió otra sede (o también otra sede) y se quedan.` : "");
     if (!confirm(aviso)) return;
-    const json = await (await fetch(`/api/administracion/binance?estado=${semana}`, { method: "DELETE" })).json();
+    const json = await (await fetch(`/api/administracion/binance?estado=${semana}`, { method: "DELETE" }))
+      .json()
+      .catch(() => ({ error: "No se pudo borrar" }));
+    if (!json.success) setError(json.error || "No se pudo borrar");
+    cargar();
+  };
+
+  const borrarArchivo = async (a: Respuesta["archivosEstado"][number]) => {
+    const aviso =
+      `¿Borrar «${a.nombre}» y sus ${a.borrables} pago${a.borrables === 1 ? "" : "s"} del estado de cuenta?` +
+      (a.borrables < a.pagos ? `\n\nLos otros ${a.pagos - a.borrables} los subió también otra sede y se quedan.` : "");
+    if (!confirm(aviso)) return;
+    const json = await (await fetch(`/api/administracion/binance?archivo=${a.id}`, { method: "DELETE" }))
+      .json()
+      .catch(() => ({ error: "No se pudo borrar" }));
     if (!json.success) setError(json.error || "No se pudo borrar");
     cargar();
   };
@@ -331,6 +394,8 @@ export default function BinancePage() {
 
   const comprobantes = datos?.comprobantes || [];
   const sinComprobante = datos?.sinComprobante || [];
+  const pagosSemana = datos?.pagos || [];
+  const archivosEstado = datos?.archivosEstado || [];
   const esConciliado = (c: Comprobante) => c.estado === "conciliado" || c.estado === "manual";
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
@@ -676,7 +741,7 @@ export default function BinancePage() {
                   </TableHeader>
                   <TableBody>
                     {comprobantes.length === 0 && <FilaVacia columnas={8} texto="No hay comprobantes en esta semana." />}
-                    {comprobantes.map((c) => (
+                    {deLaPagina(comprobantes, paginaComprobantes).map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
                         <TableCell>{c.cliente || "—"}</TableCell>
@@ -746,13 +811,14 @@ export default function BinancePage() {
                     ))}
                   </TableBody>
                 </Table>
+                <Paginacion pagina={paginaComprobantes} total={comprobantes.length} cambiar={setPaginaComprobantes} />
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <div>
-                  <CardTitle className="text-base">Estado de cuenta: pagos sin comprobante</CardTitle>
+                  <CardTitle className="text-base">Estado de cuenta</CardTitle>
                   <p className="text-xs text-gray-500 mt-1">
                     {datos.origen === "estado"
                       ? `Estado de cuenta cargado: ${datos.movimientos} pagos recibidos en la semana.`
@@ -810,6 +876,30 @@ export default function BinancePage() {
                 </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
+                {archivosEstado.length > 0 && (
+                  <div className="mb-4 space-y-1">
+                    <p className="text-xs font-medium text-gray-500">Archivos cargados</p>
+                    {archivosEstado.map((a) => (
+                      <div key={a.id} className="flex items-center justify-between gap-2 text-sm border rounded-md px-3 py-1.5">
+                        <span className="min-w-0 truncate">
+                          {a.nombre} <span className="text-gray-500">· {a.pagos} pagos · {a.subidoPor}</span>
+                        </span>
+                        {a.borrables > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0"
+                            disabled={!!subiendo}
+                            onClick={() => borrarArchivo(a)}
+                            aria-label={`Borrar ${a.nombre}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-gray-400" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -817,24 +907,47 @@ export default function BinancePage() {
                       <TableHead>ID de orden</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
                       <TableHead>Pagador</TableHead>
-                      <TableHead>Tipo</TableHead>
+                      <TableHead>Comprobante</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sinComprobante.length === 0 && <FilaVacia columnas={5} texto="Todo lo recibido tiene comprobante." />}
-                    {sinComprobante.map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell className="whitespace-nowrap">{fechaHora(p.fecha)}</TableCell>
-                        <TableCell className="font-mono text-xs">{idBinance(p.id) || "—"}</TableCell>
-                        <TableCell className="text-right whitespace-nowrap">
-                          {cifra(p.monto)} {p.moneda}
-                        </TableCell>
-                        <TableCell>{p.pagador || "—"}</TableCell>
-                        <TableCell>{p.tipo}</TableCell>
-                      </TableRow>
-                    ))}
+                    {pagosSemana.length === 0 && <FilaVacia columnas={5} texto="No hay pagos recibidos en esta semana." />}
+                    {deLaPagina(pagosSemana, paginaPagos).map((p) => {
+                      const c = p.comprobante;
+                      return (
+                        <TableRow key={p.id}>
+                          <TableCell className="whitespace-nowrap">{fechaHora(p.fecha)}</TableCell>
+                          <TableCell className="font-mono text-xs">{idBinance(p.id) || "—"}</TableCell>
+                          <TableCell className="text-right whitespace-nowrap">
+                            {cifra(p.monto)} {p.moneda}
+                          </TableCell>
+                          <TableCell>{p.pagador || "—"}</TableCell>
+                          <TableCell>
+                            {!c ? (
+                              <Badge variant="outline" className="border-0 bg-slate-100 text-slate-700">
+                                Sin comprobante
+                              </Badge>
+                            ) : "otraSede" in c ? (
+                              <Badge variant="outline" className="border-0 bg-slate-100 text-slate-700">
+                                Comprobante de otra sede
+                              </Badge>
+                            ) : (
+                              <>
+                                <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
+                                  {ETIQUETA_ESTADO[c.estado]}
+                                </Badge>
+                                <span className="block text-xs text-gray-500 mt-0.5">
+                                  {c.cliente || "sin cliente"} · {c.orderId}
+                                </span>
+                              </>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
+                <Paginacion pagina={paginaPagos} total={pagosSemana.length} cambiar={setPaginaPagos} />
               </CardContent>
             </Card>
           </>
