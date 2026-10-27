@@ -56,6 +56,7 @@ import {
 import FotoCaptura, { type ArchivoRecepcion } from "./FotoCaptura";
 import EscenaRecepcion from "./EscenaRecepcion";
 import CruceOdoo from "./CruceOdoo";
+import SerialesOdoo from "./SerialesOdoo";
 
 /**
  * Detalle de una recepcion por packing list.
@@ -122,6 +123,8 @@ type Item = {
   id: number;
   codigo: string | null;
   producto: string;
+  /** Producto de Odoo (factura, o cruzado con lib/recepcion/cruceIa.ts). */
+  odoo_product_id?: number | null;
   cantidad_esperada: string | number;
   cajas_esperadas: number | null;
   cantidad_recibida: string | number | null;
@@ -1799,6 +1802,23 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       </ul>
                     </div>
                   ))}
+                {/* Productos con serial en Odoo contados sin pistolear: se
+                    pistolean aca antes de cargar (lo ya cargado no se toca). */}
+                {!!rec.odoo_purchase_order_id &&
+                  (rec.odoo_estado === "error" ||
+                    (rec.odoo_estado === "cargado" && (resultadoOdoo.sin_producto || []).length > 0)) && (
+                    <SerialesOdoo
+                      recepcionId={rec.id}
+                      clave={[
+                        rec.odoo_estado,
+                        rec.odoo_resultado || "",
+                        items.map((i) => `${i.id}/${i.odoo_product_id ?? ""}/${i.codigo ?? ""}`).join(","),
+                      ].join("|")}
+                      items={items}
+                      puedePistolear={esAlmacen}
+                      onCambio={() => void cargar(false)}
+                    />
+                  )}
                 {(resultadoOdoo.en_entrada || []).length > 0 && (
                   <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     {t("odoo.en_entrada", { lista: resultadoOdoo.en_entrada!.join(", ") })}
