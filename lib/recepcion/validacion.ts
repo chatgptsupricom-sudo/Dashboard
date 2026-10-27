@@ -1,3 +1,4 @@
+import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
 import { query } from "@/lib/db";
 import { SUCURSALES, limpiarPrecintos } from "@/lib/recepcion/flujo";
 
@@ -39,6 +40,8 @@ export type ItemNuevo = {
    * cantidad del renglon: si no, no se sabe y se compara solo el total.
    */
   reparto: Array<{ contenedor: string; cantidad: number }> | null;
+  /** Otra factura del embarque (otra sede): se cuenta pero no se carga en Odoo aca. */
+  factura_aparte: string | null;
 };
 
 const llaveContenedor = (v: unknown) => String(v ?? "").toUpperCase().replace(/[\s-]+/g, "");
@@ -135,6 +138,7 @@ export function validarCabeceraEItems(body: any):
       cantidad_esperada: cantidad,
       cajas_esperadas: cajas !== null && Number.isFinite(cajas) && cajas >= 0 ? Math.round(cajas) : null,
       reparto: validarReparto(it?.reparto, cantidad, contenedores),
+      factura_aparte: texto(it?.factura_aparte, 50)?.toUpperCase() ?? null,
     });
   }
 
@@ -183,16 +187,17 @@ export async function insertarContenedores(recepcionId: number, contenedores: Co
 
 /** Todos los renglones en una sentencia (un packing list puede traer cientos). */
 export async function insertarItems(recepcionId: number, items: ItemNuevo[]) {
+  await asegurarColumnasOdoo();
   const valores: any[] = [];
   const marcas = items
     .map((i) => {
-      valores.push(recepcionId, i.codigo, i.producto, i.cantidad_esperada, i.cajas_esperadas);
-      return "(?, ?, ?, ?, ?)";
+      valores.push(recepcionId, i.codigo, i.producto, i.cantidad_esperada, i.cajas_esperadas, i.factura_aparte);
+      return "(?, ?, ?, ?, ?, ?)";
     })
     .join(", ");
   await query(
     `INSERT INTO recepcion_packing_items
-       (recepcion_id, codigo, producto, cantidad_esperada, cajas_esperadas)
+       (recepcion_id, codigo, producto, cantidad_esperada, cajas_esperadas, factura_aparte)
      VALUES ${marcas}`,
     valores,
   );
