@@ -201,7 +201,8 @@ async function hijos(id: string): Promise<{ id: string; name: string; mimeType: 
     const q = encodeURIComponent(`'${id}' in parents and trashed = false`);
     const j = await driveGet(
       `/files?q=${q}&fields=nextPageToken,files(id,name,mimeType)&pageSize=1000` +
-        `&supportsAllDrives=true&includeItemsFromAllDrives=true${pagina ? `&pageToken=${pagina}` : ""}`,
+        // corpora=allDrives: sin esto no salen los archivos de una unidad compartida.
+        `&corpora=allDrives&supportsAllDrives=true&includeItemsFromAllDrives=true${pagina ? `&pageToken=${pagina}` : ""}`,
     );
     salida.push(...(j.files || []));
     pagina = j.nextPageToken || "";
