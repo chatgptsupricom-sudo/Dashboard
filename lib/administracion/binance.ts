@@ -43,6 +43,8 @@ const DIA_MS = 86400_000;
 const MARGEN_POR_HORA_MS = 15 * 60_000;
 // El estado de cuenta y el comprobante muestran la misma hora del pago.
 const MARGEN_ESTADO_MS = 2 * 60_000;
+// La captura con el reloj del telefono se saca hasta esto despues de pagar.
+const MARGEN_TELEFONO_MS = 20 * 60_000;
 // Mediodia del lunes: donde queda un comprobante sin fecha que Binance no encontro.
 const MEDIODIA_MS = 12 * 3600_000;
 
@@ -80,8 +82,16 @@ export type Comprobante = {
   fecha: string; // ISO UTC
   /** El comprobante no traia fecha: se guardo en la semana elegida al subirlo. */
   fechaEstimada: boolean;
-  /** Sin hora, pero con el dia: la fecha salio del nombre del archivo (1-02-10-2026.jpg). */
+  /** Sin hora del pago, pero con el dia: el de la carpeta de donde se subio (o, los de antes, el del nombre del archivo). */
   soloDia: boolean;
+  /**
+   * Con el dia de la carpeta, la hora es la del reloj del telefono (arriba a la
+   * izquierda de la captura): es cuando se saco, minutos despues del pago, y
+   * puede venir sin a. m./p. m.
+   */
+  horaTelefono: boolean;
+  /** Nombre del cliente: el nombre del archivo del comprobante. */
+  cliente: string;
   /** Movimiento del estado de cuenta que se le asigno a mano, o null. */
   movimientoId: number | null;
   archivoNombre: string;
@@ -273,6 +283,7 @@ async function ensureTabla() {
   // Huella del archivo: el mismo archivo no se vuelve a leer con la IA.
   await agregarColumna("binance_comprobantes", "archivo_sha CHAR(64) NULL");
   await agregarIndice("binance_comprobantes", "idx_sha", "archivo_sha");
+  await agregarColumna("binance_comprobantes", "cliente VARCHAR(200) NOT NULL DEFAULT ''");
   tablaLista = true;
 }
 
@@ -325,14 +336,23 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     }
     const libres = pagos.filter((p) => !usados.has(p.id) && mismoMonto(p, base));
     let pago: PagoBinance | null = null;
-    if (base.fechaEstimada) {
+    if (base.horaTelefono) {
+      // La captura se saca despues de pagar: el pago mas cercano antes de la
+      // hora del reloj. Sin a. m./p. m. ("5:57") tambien vale 12 h despues.
+      const t = Date.parse(base.fecha);
+      const horas = new Date(t - OFFSET_CARACAS_MS).getUTCHours() < 12 ? [t, t + 12 * 3600_000] : [t];
+      const antes = (p: PagoBinance) =>
+        Math.min(...horas.map((h) => h - Date.parse(p.fecha)).filter((d) => d >= -MARGEN_ESTADO_MS && d <= MARGEN_TELEFONO_MS));
+      pago = libres.filter((p) => antes(p) < Infinity).sort((a, b) => antes(a) - antes(b))[0] || null;
+    }
+    if (!pago && base.fechaEstimada) {
       // Con el dia del nombre del archivo solo cuentan los pagos de ese dia. Si
       // el monto se repite (aunque otro comprobante ya tenga uno) no se adivina:
       // se amarra a mano.
       const delDia = (p: PagoBinance) => !base.soloDia || diaCaracas(p.fecha) === diaCaracas(base.fecha);
       const iguales = pagos.filter((p) => mismoMonto(p, base) && delDia(p));
       pago = iguales.length === 1 && !usados.has(iguales[0].id) ? iguales[0] : null;
-    } else {
+    } else if (!base.fechaEstimada) {
       const t = Date.parse(base.fecha);
       const dt = (p: PagoBinance) => Math.abs(Date.parse(p.fecha) - t);
       pago = libres.filter((p) => dt(p) <= margen).sort((a, b) => dt(a) - dt(b))[0] || null;
@@ -380,7 +400,7 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
   const { rows } = await query(
     // DATE_FORMAT: la columna guarda UTC y asi no depende de la zona del proceso.
     `SELECT id, order_id, monto, moneda, DATE_FORMAT(fecha_pago, '%Y-%m-%dT%H:%i:%sZ') AS fecha,
-            fecha_estimada, movimiento_id, archivo_nombre, subido_por, created_at, company_id
+            fecha_estimada, movimiento_id, archivo_nombre, cliente, subido_por, created_at, company_id
        FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? ORDER BY fecha_pago`,
     [aMysql(rango.desde), aMysql(rango.hasta)],
   );
@@ -390,9 +410,12 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
     monto: Number(r.monto),
     moneda: String(r.moneda),
     fecha: r.fecha,
-    // 0 = hora del comprobante, 1 = semana elegida, 2 = dia del nombre del archivo.
+    // 0 = hora del comprobante, 1 = semana elegida, 2 = dia de la carpeta (o del
+    // nombre del archivo, los de antes), 3 = dia de la carpeta + reloj del telefono.
     fechaEstimada: Number(r.fecha_estimada) > 0,
-    soloDia: Number(r.fecha_estimada) === 2,
+    soloDia: Number(r.fecha_estimada) >= 2,
+    horaTelefono: Number(r.fecha_estimada) === 3,
+    cliente: r.cliente || "",
     movimientoId: r.movimiento_id ?? null,
     archivoNombre: r.archivo_nombre,
     subidoPor: r.subido_por,
@@ -767,12 +790,15 @@ const INSTRUCCIONES =
   "monto: el monto pagado, sin signo ni separador de miles. moneda: el codigo (USDT, USDC, BTC...). " +
   "fecha: fecha y hora del pago como 'YYYY-MM-DD HH:MM:SS'; fecha_en_utc = true si el comprobante dice UTC. " +
   "Si la captura no muestra la fecha, fecha = '' (no la inventes). " +
+  "hora_telefono: si es una captura de pantalla del telefono, la hora del reloj de la barra de estado " +
+  "(arriba a la izquierda, ej. '5:57') como 'HH:MM'; si dice a. m./p. m. pasala a 24 h; si no se ve, ''. " +
+  "Esa hora NO es la fecha del pago: no la pongas en fecha. " +
   "Si la imagen no es un comprobante de pago de Binance, es_comprobante = false y lo demas vacio o 0.";
 
 const ESQUEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["es_comprobante", "order_id", "monto", "moneda", "fecha", "fecha_en_utc"],
+  required: ["es_comprobante", "order_id", "monto", "moneda", "fecha", "fecha_en_utc", "hora_telefono"],
   properties: {
     es_comprobante: { type: "boolean" },
     order_id: { type: "string" },
@@ -780,6 +806,7 @@ const ESQUEMA = {
     moneda: { type: "string" },
     fecha: { type: "string" },
     fecha_en_utc: { type: "boolean" },
+    hora_telefono: { type: "string" },
   },
 } as const;
 
@@ -871,8 +898,8 @@ async function leerConIA(
   }
 }
 
-/** fechaMs null = la captura no trae la fecha. */
-export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number | null };
+/** fechaMs null = la captura no trae la fecha. horaTelefono = minutos del dia del reloj de la barra de estado. */
+export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number | null; horaTelefono: number | null };
 
 /**
  * Lee el comprobante. Si no salen ID de orden, monto y moneda lanza
@@ -890,10 +917,12 @@ export async function leerComprobante(datos: Buffer, mime: string): Promise<Leid
       `No se leyó un comprobante de Binance Pay (ID de orden: "${orderId || "—"}", monto: ${monto > 0 ? monto : "—"} ${moneda || ""})`,
     );
   }
-  if (!m) return { orderId, monto, moneda, fechaMs: null };
+  const h = /^(\d{1,2}):(\d{2})/.exec(String(l?.hora_telefono || ""));
+  const horaTelefono = h && +h[1] < 24 && +h[2] < 60 ? +h[1] * 60 + +h[2] : null;
+  if (!m) return { orderId, monto, moneda, fechaMs: null, horaTelefono };
   const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
   // Sin "UTC" en el comprobante se toma la hora de Caracas.
-  return { orderId, monto, moneda, fechaMs: l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS };
+  return { orderId, monto, moneda, fechaMs: l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS, horaTelefono };
 }
 
 const INSTRUCCIONES_ESTADO =
@@ -1117,17 +1146,12 @@ export async function fechaSinComprobante(orderId: string, lunes: string) {
 }
 
 /**
- * Dia del pago escrito en el nombre del archivo, para los comprobantes que no
- * traen fecha. Administracion los nombra con un numero de secuencia delante:
- * "1-02-10-2026.jpg", "2_02.10.2026.png", "3-20261002.jpeg". Solo vale si el
- * nombre empieza con ese numero: "WhatsApp Image 2026-10-22..." es cuando se
- * guardo la imagen, no cuando se pago. Dos cifras antes del año = dia-mes.
- * Devuelve el mediodia de Caracas de ese dia, o null.
+ * Dia de los pagos escrito en el nombre de la carpeta de donde se subieron los
+ * comprobantes: "02-10-2026", "02.10.2026", "2026-10-02", "20261002"... Dos
+ * cifras antes del año = dia-mes. Devuelve las 00:00 de Caracas de ese dia, o null.
  */
-export function fechaDelNombre(nombre: string): number | null {
-  const m = /^\s*\d+\s*[-_.\s]\s*(.+)$/.exec(nombre.replace(/\.[a-z0-9]{2,5}$/i, ""));
-  if (!m) return null;
-  const t = m[1];
+export function diaDeCarpeta(carpeta: string): number | null {
+  const t = carpeta.trim();
   const candidatos: [string, string, string][] = [];
   let r: RegExpExecArray | null;
   if ((r = /^(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})(?!\d)/.exec(t))) candidatos.push([r[1], r[2], r[3]]);
@@ -1143,14 +1167,33 @@ export function fechaDelNombre(nombre: string): number | null {
     const dia = Number(ds);
     const f = new Date(Date.UTC(y, mes - 1, dia));
     if (y < 2020 || y > 2100 || f.getUTCMonth() !== mes - 1 || f.getUTCDate() !== dia) continue;
-    return Date.UTC(y, mes - 1, dia) + OFFSET_CARACAS_MS + MEDIODIA_MS;
+    return Date.UTC(y, mes - 1, dia) + OFFSET_CARACAS_MS;
   }
   return null;
 }
 
+/**
+ * Fecha de un comprobante sin fecha a partir del dia de la carpeta: con la hora
+ * del reloj del telefono si se leyo (fecha_estimada 3), si no al mediodia (2).
+ */
+export function fechaConCarpeta(dia: number, horaTelefono: number | null) {
+  return horaTelefono === null
+    ? { fechaMs: dia + MEDIODIA_MS, estimada: true, soloDia: true, horaTelefono: false }
+    : { fechaMs: dia + horaTelefono * 60_000, estimada: true, soloDia: true, horaTelefono: true };
+}
+
+/** Cliente = nombre del archivo, sin extension ni el " (2)" de los repetidos. */
+export const clienteDelArchivo = (nombre: string) =>
+  nombre
+    .replace(/\.[a-z0-9]{2,5}$/i, "")
+    .replace(/\s*\(\d+\)$/, "")
+    .replace(/[_]+/g, " ")
+    .trim()
+    .slice(0, 200);
+
 /** Guarda el comprobante. Devuelve el que ya estaba si el ID de orden se repite. */
 export async function guardarComprobante(
-  leido: Leido & { fechaMs: number; estimada: boolean; soloDia?: boolean },
+  leido: Omit<Leido, "horaTelefono"> & { fechaMs: number; estimada: boolean; soloDia?: boolean; horaTelefono?: boolean },
   archivo: { nombre: string; mime: string; datos: Buffer },
   usuario: { email: string; cids: number | null },
 ): Promise<{ id: number } | { repetido: { fecha: string; subidoPor: string; companyId: number | null } }> {
@@ -1159,15 +1202,16 @@ export async function guardarComprobante(
     // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
     const [res]: any = await db.execute(
       `INSERT INTO binance_comprobantes
-         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, archivo_mime, archivo, archivo_sha, subido_por, company_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, cliente, archivo_mime, archivo, archivo_sha, subido_por, company_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         leido.orderId,
         leido.monto,
         leido.moneda,
         aMysql(leido.fechaMs),
-        leido.soloDia ? 2 : leido.estimada ? 1 : 0,
+        leido.horaTelefono ? 3 : leido.soloDia ? 2 : leido.estimada ? 1 : 0,
         archivo.nombre.slice(0, 200),
+        clienteDelArchivo(archivo.nombre),
         archivo.mime,
         archivo.datos,
         huella(archivo.datos),

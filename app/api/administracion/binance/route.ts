@@ -8,8 +8,10 @@ import {
   capturaYaSubida,
   comprobantePorHuella,
   conciliacionSemana,
+  clienteDelArchivo,
+  diaDeCarpeta,
   eliminarComprobante,
-  fechaDelNombre,
+  fechaConCarpeta,
   fechaSinComprobante,
   guardarComprobante,
   guardarMovimientos,
@@ -23,6 +25,7 @@ import {
   sedeBinance,
 } from "@/lib/administracion/binance";
 import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
+import { descargarDeDrive, ErrorDrive } from "@/lib/administracion/googleDrive";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const TIPOS = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -82,17 +85,28 @@ export async function POST(request: NextRequest) {
   const email = String(auth.payload?.email || "");
   try {
     const form = await request.formData();
-    const archivo = form.get("archivo");
-    if (!(archivo instanceof File) || archivo.size === 0) {
-      return NextResponse.json({ error: "Falta el archivo" }, { status: 400 });
+    // drive_id: el archivo esta en la carpeta de Google Drive que se pego; se baja aca.
+    const driveId = form.get("drive_id");
+    let archivo: { name: string; type: string };
+    let datos: Buffer;
+    if (typeof driveId === "string" && driveId) {
+      const d = await descargarDeDrive(driveId);
+      archivo = { name: d.nombre, type: d.mime };
+      datos = d.datos;
+    } else {
+      const subido = form.get("archivo");
+      if (!(subido instanceof File) || subido.size === 0) {
+        return NextResponse.json({ error: "Falta el archivo" }, { status: 400 });
+      }
+      if (subido.size > MAX_BYTES) {
+        return NextResponse.json({ error: "El archivo pesa más de 8 MB" }, { status: 413 });
+      }
+      if (!TIPOS.has(subido.type)) {
+        return NextResponse.json({ error: "Solo fotos (JPG, PNG, WEBP) o PDF" }, { status: 415 });
+      }
+      archivo = subido;
+      datos = Buffer.from(await subido.arrayBuffer());
     }
-    if (archivo.size > MAX_BYTES) {
-      return NextResponse.json({ error: "El archivo pesa más de 8 MB" }, { status: 413 });
-    }
-    if (!TIPOS.has(archivo.type)) {
-      return NextResponse.json({ error: "Solo fotos (JPG, PNG, WEBP) o PDF" }, { status: 415 });
-    }
-    const datos = Buffer.from(await archivo.arrayBuffer());
     const sha = huella(datos);
     if (form.get("tipo") === "estado") {
       if (await capturaYaSubida(sha)) {
@@ -109,20 +123,21 @@ export async function POST(request: NextRequest) {
     const mismo = await comprobantePorHuella(sha);
     if (mismo) return respuestaRepetido(mismo.orderId, mismo, cids, true);
     const leido = await leerComprobante(datos, archivo.type);
-    // Una captura recortada puede no traer la fecha: se toma el dia del nombre
-    // del archivo ("1-02-10-2026.jpg") y, si tampoco, va a la semana elegida.
-    let fecha: { fechaMs: number; estimada: boolean; soloDia: boolean };
-    const diaDelNombre = fechaDelNombre(archivo.name);
+    // Una captura recortada puede no traer la fecha: se toma el dia de la carpeta
+    // ("02-10-2026/Cliente.jpg") con la hora del reloj del telefono si se ve, y
+    // si tampoco hay carpeta con fecha, va a la semana elegida.
+    let fecha: { fechaMs: number; estimada: boolean; soloDia: boolean; horaTelefono: boolean };
+    const dia = diaDeCarpeta(String(form.get("carpeta") || ""));
     if (leido.fechaMs !== null) {
-      fecha = { fechaMs: leido.fechaMs, estimada: false, soloDia: false };
-    } else if (diaDelNombre !== null) {
-      fecha = { fechaMs: diaDelNombre, estimada: true, soloDia: true };
+      fecha = { fechaMs: leido.fechaMs, estimada: false, soloDia: false, horaTelefono: false };
+    } else if (dia !== null) {
+      fecha = fechaConCarpeta(dia, leido.horaTelefono);
     } else {
       const enSemana = await fechaSinComprobante(leido.orderId, String(form.get("semana") || ""));
       if (!enSemana) {
         return NextResponse.json({ error: "El comprobante no trae la fecha y falta la semana" }, { status: 400 });
       }
-      fecha = { ...enSemana, soloDia: false };
+      fecha = { ...enSemana, soloDia: false, horaTelefono: false };
     }
     const r = await guardarComprobante(
       { ...leido, ...fecha },
@@ -139,9 +154,11 @@ export async function POST(request: NextRequest) {
       fecha: new Date(fecha.fechaMs).toISOString(),
       fechaEstimada: fecha.estimada,
       soloDia: fecha.soloDia,
+      horaTelefono: fecha.horaTelefono,
+      cliente: clienteDelArchivo(archivo.name),
     });
   } catch (e: any) {
-    if (e instanceof ArchivoIlegible) {
+    if (e instanceof ArchivoIlegible || e instanceof ErrorDrive) {
       return NextResponse.json({ error: e.message }, { status: 422 });
     }
     // Saturada aun despues de los reintentos del SDK: 429 para que la pantalla

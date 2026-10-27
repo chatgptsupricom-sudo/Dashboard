@@ -8,7 +8,7 @@ import { Aviso, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
 import type { Comprobante, EstadoComprobante, OrigenPagos, PagoBinance } from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Loader2, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Link2, Loader2, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
@@ -65,8 +65,53 @@ const soloFecha = (iso: string) =>
 
 const cifra = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 
+/** Un comprobante por subir: un archivo elegido o uno de la carpeta de Google Drive. */
+type Elegido = { nombre: string; carpeta: string | null; archivo?: File; driveId?: string };
+
+const MIME_POR_EXTENSION: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  pdf: "application/pdf",
+};
+
+const esZip = (f: File) => /\.zip$/i.test(f.name);
+
+/** Carpeta donde esta el archivo ("Binance/02-10-2026/Cliente.jpg" -> "02-10-2026"). */
+function carpetaDe(ruta: string) {
+  const partes = ruta.split("/");
+  return partes.length > 1 ? partes[partes.length - 2] : null;
+}
+
+/**
+ * Fotos y PDF de un .zip. Google Drive descarga una carpeta como
+ * "02-10-2026-20261027T150000Z-001.zip" con la carpeta adentro; si los archivos
+ * vienen sueltos en el zip, la fecha sale del nombre del zip.
+ */
+async function abrirZip(zip: File): Promise<Elegido[]> {
+  const { default: JSZip } = await import("jszip");
+  const z = await JSZip.loadAsync(zip);
+  const salida: Elegido[] = [];
+  for (const e of Object.values(z.files)) {
+    const nombre = e.name.split("/").pop() || "";
+    const tipo = MIME_POR_EXTENSION[nombre.split(".").pop()?.toLowerCase() || ""];
+    // "._x.jpg" / "__MACOSX": basura que agrega la Mac al comprimir.
+    if (e.dir || !tipo || nombre.startsWith("._") || e.name.startsWith("__MACOSX")) continue;
+    const archivo = new File([await e.async("blob")], nombre, { type: tipo });
+    salida.push({ archivo, nombre, carpeta: carpetaDe(e.name) ?? zip.name.replace(/\.zip$/i, "") });
+  }
+  return salida;
+}
+
 const fechaComprobante = (c: Comprobante) =>
-  c.fechaEstimada && !c.binance ? (c.soloDia ? `${soloFecha(c.fecha)} (sin hora)` : "Sin fecha") : fechaHora(c.fecha);
+  c.fechaEstimada && !c.binance
+    ? c.horaTelefono
+      ? `${fechaHora(c.fecha)} (hora del comprobante)`
+      : c.soloDia
+        ? `${soloFecha(c.fecha)} (sin hora)`
+        : "Sin fecha"
+    : fechaHora(c.fecha);
 
 // Lo que muestra cada tarjeta al hacerle clic.
 type Lista = "comprobantes" | "conciliados" | "problema" | "sinComprobante";
@@ -99,6 +144,16 @@ export default function BinancePage() {
   const inputEstado = useRef<HTMLInputElement>(null);
   const carpeta = useRef<HTMLInputElement>(null);
   const carpetaEstado = useRef<HTMLInputElement>(null);
+  const [drive, setDrive] = useState<{ configurado: boolean; conectado: boolean; correo: string } | null>(null);
+  const [enlace, setEnlace] = useState("");
+  const [leyendoDrive, setLeyendoDrive] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/administracion/binance/drive?estado=1")
+      .then((r) => r.json())
+      .then((j) => setDrive(j?.configurado !== undefined ? j : null))
+      .catch(() => setDrive(null));
+  }, []);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -117,12 +172,16 @@ export default function BinancePage() {
     cargar();
   }, [cargar]);
 
-  const subirUno = async (archivo: File, tipo: TipoArchivo): Promise<Subida> => {
-    const nombre = archivo.webkitRelativePath || archivo.name;
-    if (archivo.size > MAX_BYTES) return { nombre, ok: false, texto: "Pesa más de 8 MB" };
+  const subirUno = async (elegido: Elegido, tipo: TipoArchivo): Promise<Subida> => {
+    const { archivo, driveId, carpeta } = elegido;
+    const nombre = carpeta ? `${carpeta}/${elegido.nombre}` : elegido.nombre;
+    if (archivo && archivo.size > MAX_BYTES) return { nombre, ok: false, texto: "Pesa más de 8 MB" };
     const form = new FormData();
-    form.append("archivo", archivo);
+    if (archivo) form.append("archivo", archivo);
+    if (driveId) form.append("drive_id", driveId);
     form.append("semana", semana);
+    // La carpeta de los comprobantes se llama como el dia de los pagos ("02-10-2026").
+    if (carpeta) form.append("carpeta", carpeta);
     if (tipo === "estado") form.append("tipo", "estado");
     try {
       let res = await fetch("/api/administracion/binance", { method: "POST", body: form });
@@ -139,12 +198,18 @@ export default function BinancePage() {
           : { nombre, ok: true, texto: `${json.recibidos} pagos recibidos (${json.nuevos} nuevos, ${json.repetidos} ya estaban)` };
       }
       if (json.success) {
-        const fecha = json.soloDia
-          ? `${soloFecha(json.fecha)} (fecha del nombre del archivo)`
-          : json.fechaEstimada
-            ? "sin fecha, quedó en esta semana"
-            : fechaHora(json.fecha);
-        return { nombre, ok: true, texto: `${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fecha}` };
+        const fecha = json.horaTelefono
+          ? `${fechaHora(json.fecha)} (día de la carpeta, hora del comprobante)`
+          : json.soloDia
+            ? `${soloFecha(json.fecha)} (día de la carpeta, sin hora)`
+            : json.fechaEstimada
+              ? "sin fecha, quedó en esta semana"
+              : fechaHora(json.fecha);
+        return {
+          nombre,
+          ok: true,
+          texto: `${json.cliente || "sin cliente"} · ${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fecha}`,
+        };
       }
       return { nombre, ok: false, texto: json.error || "Error" };
     } catch {
@@ -154,17 +219,28 @@ export default function BinancePage() {
 
   /**
    * Sube los archivos elegidos (o los de la carpeta) varios a la vez. De una
-   * carpeta solo se suben fotos y PDF; lo demas se cuenta como ignorado.
+   * carpeta solo se suben fotos y PDF; lo demas se cuenta como ignorado. Un .zip
+   * (la carpeta de Google Drive descargada) se abre aca y se sube lo de adentro.
    */
   const subir = async (archivos: FileList | null, tipo: TipoArchivo) => {
     if (!archivos?.length) return;
     const todos = [...archivos];
-    const lista = todos
+    const zips = todos.filter(esZip);
+    const lista: Elegido[] = todos
       .filter((f) => TIPOS_ARCHIVO.has(f.type))
-      .sort((a, b) =>
-        (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }),
-      );
-    setIgnorados(todos.length - lista.length);
+      .map((f) => ({ archivo: f, nombre: f.name, carpeta: carpetaDe(f.webkitRelativePath) }));
+    try {
+      for (const z of zips) lista.push(...(await abrirZip(z)));
+    } catch {
+      setError("No se pudo abrir el .zip");
+    }
+    setIgnorados(todos.length - zips.length - todos.filter((f) => TIPOS_ARCHIVO.has(f.type)).length);
+    await subirLista(lista, tipo);
+  };
+
+  const subirLista = async (elegidos: Elegido[], tipo: TipoArchivo) => {
+    const ruta = (e: Elegido) => `${e.carpeta || ""}/${e.nombre}`;
+    const lista = [...elegidos].sort((a, b) => ruta(a).localeCompare(ruta(b), undefined, { numeric: true }));
     setSubidas([]);
     if (!lista.length) {
       for (const el of [input, inputEstado, carpeta, carpetaEstado]) if (el.current) el.current.value = "";
@@ -187,6 +263,39 @@ export default function BinancePage() {
     setSubiendo(null);
     for (const el of [input, inputEstado, carpeta, carpetaEstado]) if (el.current) el.current.value = "";
     cargar();
+  };
+
+  /** Lee la carpeta de Google Drive pegada y sube sus comprobantes (el servidor los baja de Drive). */
+  const leerDrive = async () => {
+    setError(null);
+    setLeyendoDrive(true);
+    try {
+      const json = await (
+        await fetch("/api/administracion/binance/drive", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: enlace }),
+        })
+      ).json();
+      if (!json.success) setError(json.error || "No se pudo leer la carpeta de Drive");
+      else if (!json.archivos.length) setError(`La carpeta «${json.carpeta}» no tiene fotos ni PDF`);
+      else {
+        setIgnorados(0);
+        setLeyendoDrive(false);
+        await subirLista(
+          json.archivos.map((a: { id: string; nombre: string; carpeta: string }) => ({
+            driveId: a.id,
+            nombre: a.nombre,
+            carpeta: a.carpeta,
+          })),
+          "comprobante",
+        );
+        setEnlace("");
+      }
+    } catch {
+      setError("No se pudo leer la carpeta de Drive");
+    }
+    setLeyendoDrive(false);
   };
 
   const asignar = async (c: Comprobante, valor: string) => {
@@ -327,7 +436,7 @@ export default function BinancePage() {
         ref={input}
         type="file"
         multiple
-        accept="image/jpeg,image/png,image/webp,application/pdf"
+        accept="image/jpeg,image/png,image/webp,application/pdf,.zip,application/zip"
         className="hidden"
         onChange={(e) => subir(e.target.files, "comprobante")}
       />
@@ -489,7 +598,13 @@ export default function BinancePage() {
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button size="sm" className="h-9" disabled={!!subiendo} onClick={() => input.current?.click()}>
+                  <Button
+                    size="sm"
+                    className="h-9"
+                    disabled={!!subiendo}
+                    onClick={() => input.current?.click()}
+                    title="Fotos, PDF o el .zip de la carpeta descargada de Google Drive"
+                  >
                     {subiendo?.tipo === "comprobante" ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
@@ -513,10 +628,43 @@ export default function BinancePage() {
                 </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
+                {drive?.configurado && (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
+                    {drive.conectado ? (
+                      <>
+                        <input
+                          value={enlace}
+                          onChange={(e) => setEnlace(e.target.value)}
+                          placeholder="Pega el enlace de la carpeta de Google Drive"
+                          aria-label="Enlace de la carpeta de Google Drive"
+                          className="border rounded-lg px-3 py-2 text-sm bg-white flex-1 min-w-0"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-9"
+                          disabled={!enlace.trim() || leyendoDrive || !!subiendo}
+                          onClick={leerDrive}
+                          title={drive.correo ? `Se lee con la cuenta ${drive.correo}` : undefined}
+                        >
+                          {leyendoDrive ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
+                          Leer carpeta de Drive
+                        </Button>
+                      </>
+                    ) : (
+                      <Button asChild size="sm" variant="outline" className="h-9">
+                        <a href="/api/administracion/binance/drive">
+                          <Link2 className="h-4 w-4 mr-2" />
+                          Conectar Google Drive
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                )}
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Fecha</TableHead>
+                      <TableHead>Cliente</TableHead>
                       <TableHead>ID de orden</TableHead>
                       <TableHead className="text-right">Comprobante</TableHead>
                       <TableHead className="text-right">Binance</TableHead>
@@ -526,10 +674,11 @@ export default function BinancePage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {comprobantes.length === 0 && <FilaVacia columnas={7} texto="No hay comprobantes en esta semana." />}
+                    {comprobantes.length === 0 && <FilaVacia columnas={8} texto="No hay comprobantes en esta semana." />}
                     {comprobantes.map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
+                        <TableCell>{c.cliente || "—"}</TableCell>
                         <TableCell className="font-mono text-xs">
                           <a
                             href={`/api/administracion/binance/imagen?id=${c.id}`}
