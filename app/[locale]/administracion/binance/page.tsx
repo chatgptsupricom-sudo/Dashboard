@@ -406,13 +406,15 @@ export default function BinancePage() {
           ${imagen}
           <div class="datos">${esc(fechaComprobante(c))}<br>${esc(cifra(c.monto))} ${esc(c.moneda)} · ${esc(c.orderId)}</div>
           <img class="firma" src="/api/administracion/binance/firma" alt="">
+          <div class="pie-firma">Firma de Administración</div>
         </div>`;
       })
       .join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Conciliados</title><style>
-      @page { size: letter; margin: 12mm; }
+      /* margin 0: sin margen el navegador no imprime su encabezado y pie (titulo, fecha, URL); el margen va en la tarjeta. */
+      @page { size: letter; margin: 0; }
       body { font-family: Arial, sans-serif; margin: 0; color: #111; }
-      .tarjeta { break-after: page; height: 250mm; text-align: center; display: flex; flex-direction: column; align-items: center; }
+      .tarjeta { break-after: page; box-sizing: border-box; height: 270mm; padding: 14mm 15mm 12mm; text-align: center; display: flex; flex-direction: column; align-items: center; }
       .tarjeta:last-child { break-after: auto; }
       .semana { font-size: 10px; color: #666; align-self: flex-end; }
       .cliente { font-weight: bold; font-size: 20px; margin: 2mm 0 5mm; }
@@ -420,6 +422,7 @@ export default function BinancePage() {
       .pdf { height: 170mm; display: flex; align-items: center; justify-content: center; color: #666; font-size: 14px; }
       .datos { font-size: 12px; color: #444; margin-top: 4mm; line-height: 1.5; }
       .firma { height: 32mm; margin-top: auto; }
+      .pie-firma { border-top: 1px solid #333; padding-top: 1.5mm; width: 70mm; font-size: 12px; }
     </style></head><body>${tarjetas}</body></html>`;
     const marco = document.createElement("iframe");
     marco.style.cssText = "position:fixed;width:0;height:0;border:0;visibility:hidden";
