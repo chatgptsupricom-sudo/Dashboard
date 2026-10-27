@@ -103,6 +103,7 @@ export const rolePermissions: RolePermissions = {
       "flujogramas", // Flujogramas de procesos (también rol Procesos)
       "seleccion_personal", // Matriz de selección de personal (también RRHH)
       "asistencia", // Asistencia por biométrico (también RRHH)
+      "rutagrama", // Rutagrama de los nuevos ingresos (también RRHH)
     ],
   },
   [UserRole.MARKETING_MANAGEMENT]: {
@@ -309,6 +310,7 @@ export const rolePermissions: RolePermissions = {
       "asistencia", // Asistencia por biométrico: carga del Excel, retardos y ausencias (lib/asistencia)
       "recibos_pago", // Emisión automatizada con firma digital
       "seleccion_personal", // Matriz de rastreo de selección de personal (lib/seleccion)
+      "rutagrama", // Rutagrama de los nuevos ingresos: enlace, mapa y planilla LOPCYMAT (lib/rutagrama)
       "solicitudes_permiso", // Gestión de ausencias y vacaciones
       "onboarding", // Digitalización de inducciones y rutograma
       "documentacion_institucional", // Manuales, cargo y código de vestimenta
