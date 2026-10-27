@@ -76,6 +76,15 @@ export type RenglonSinProducto = {
   seriales: number;
 };
 
+/** Renglon de otra factura del embarque: se conto aca pero no se carga en esta sede. */
+export type RenglonApartado = {
+  item_id: number;
+  producto: string;
+  codigo: string | null;
+  recibido: number;
+  factura: string;
+};
+
 export type PropuestaCruce = RenglonSinProducto & {
   /** El que eligio la IA (null = ninguno se parece). */
   product_id: number | null;
@@ -105,8 +114,10 @@ async function contexto(recepcionId: number) {
   if (rec.etapa !== "cerrado") throw new ErrorCruce("Se cruza con Odoo despues de cerrar la recepcion", 409);
   const poId = Number(rec.odoo_purchase_order_id) || 0;
   if (!poId) throw new ErrorCruce("La recepcion no tiene OC de Odoo: elige la OC primero", 409);
-  const productoDe = await productoPorRenglon(datos.items, await productosDeLaOc(poId));
-  const sin: RenglonSinProducto[] = (datos.items as any[])
+  // Lo de otra factura (factura_aparte) no se cruza: no se carga en esta sede.
+  const propios = (datos.items as any[]).filter((i) => !i.factura_aparte);
+  const productoDe = await productoPorRenglon(propios, await productosDeLaOc(poId));
+  const sin: RenglonSinProducto[] = propios
     .filter((i) => !productoDe.has(Number(i.id)))
     .map((i) => ({
       item_id: Number(i.id),
@@ -116,12 +127,122 @@ async function contexto(recepcionId: number) {
       recibido: Number(i.cantidad_recibida) || 0,
       seriales: (i.seriales || []).length,
     }));
-  return { datos, rec, poId, sin };
+  const apartados: RenglonApartado[] = (datos.items as any[])
+    .filter((i) => i.factura_aparte)
+    .map((i) => ({
+      item_id: Number(i.id),
+      producto: String(i.producto || ""),
+      codigo: i.codigo ? String(i.codigo) : null,
+      recibido: Number(i.cantidad_recibida) || 0,
+      factura: String(i.factura_aparte),
+    }));
+  return { datos, rec, poId, sin, apartados };
 }
 
-/** Renglones de la recepcion que todavia no tienen producto de Odoo. */
-export async function renglonesSinProducto(recepcionId: number): Promise<RenglonSinProducto[]> {
-  return (await contexto(recepcionId)).sin;
+/** Renglones sin producto de Odoo y los apartados para otra factura. */
+export async function estadoCruce(
+  recepcionId: number,
+): Promise<{ renglones: RenglonSinProducto[]; apartados: RenglonApartado[] }> {
+  const { sin, apartados } = await contexto(recepcionId);
+  return { renglones: sin, apartados };
+}
+
+/** Lo que ya entro en Odoo por esta recepcion, por producto (`odoo_resultado.cargado`). */
+function cargadoEnOdoo(rec: any): Record<string, unknown> {
+  try {
+    const v = rec?.odoo_resultado ? JSON.parse(rec.odoo_resultado) : null;
+    return v?.cargado && typeof v.cargado === "object" ? v.cargado : {};
+  } catch {
+    return {};
+  }
+}
+
+/** "INV1062", "inv 1062", "INV-1062" -> "INV1062"; otro texto tal cual (hasta 50). */
+const limpiarFactura = (v: unknown) => {
+  const s = limpiar(v, 50);
+  return /^INV[\s-]*\d+$/i.test(s) ? s.toUpperCase().replace(/[\s-]+/g, "") : s;
+};
+
+/**
+ * Aparta un renglon para otra factura (no se carga en esta sede) o lo
+ * devuelve a esta (`factura` null). No se aparta lo que ya entro en Odoo:
+ * eso hay que devolverlo en Odoo.
+ */
+export async function marcarAparte(recepcionId: number, itemId: number, factura: string | null): Promise<void> {
+  const { datos, rec, poId } = await contexto(recepcionId);
+  const item = (datos.items as any[]).find((i) => Number(i.id) === itemId);
+  if (!item) throw new ErrorCruce("Ese renglon no es de esta recepcion", 404);
+  const valor = factura === null ? null : limpiarFactura(factura);
+  if (factura !== null && !valor) throw new ErrorCruce("Escribe la factura a la que pertenece (ej. INV1062)");
+  if (valor) {
+    const pid = (await productoPorRenglon([item], await productosDeLaOc(poId))).get(itemId);
+    if (pid && cargadoEnOdoo(rec)[String(pid)]) {
+      throw new ErrorCruce("Ese producto ya entro en Odoo con esta recepcion: hay que devolverlo en Odoo, no se puede apartar aca", 409);
+    }
+  }
+  await query("UPDATE recepcion_packing_items SET factura_aparte = ? WHERE id = ? AND recepcion_id = ?", [
+    valor,
+    itemId,
+    recepcionId,
+  ]);
+}
+
+export type RenglonExcel = { codigo: string; producto: string; cantidad: number; factura_aparte: string | null };
+
+/**
+ * Completa una recepcion ya cerrada con el Excel del packing list: a cada
+ * renglon le pone el codigo del Excel (si no tenia) y lo aparta si el Excel
+ * dice que es de otra factura (columna POSITION con INVxxxx). Cada renglon
+ * del Excel se busca por la descripcion (como se guardo) y, si hay varios
+ * iguales, por la cantidad. Lo que no se encuentra se devuelve para revisarlo.
+ */
+export async function completarDesdeExcel(
+  recepcionId: number,
+  renglones: RenglonExcel[],
+): Promise<{ codigos: number; apartados: number; sin_cruzar: string[]; ya_en_odoo: string[] }> {
+  const { datos, rec, poId } = await contexto(recepcionId);
+  const items = datos.items as any[];
+  const usados = new Set<number>();
+  const resultado = { codigos: 0, apartados: 0, sin_cruzar: [] as string[], ya_en_odoo: [] as string[] };
+  const cargado = cargadoEnOdoo(rec);
+  const productosDeOc = await productosDeLaOc(poId);
+
+  for (const r of renglones) {
+    const desc = normalizar(r.producto);
+    if (!desc) continue;
+    const iguales = items.filter((i) => !usados.has(Number(i.id)) && normalizar(i.producto) === desc);
+    const parecidos = iguales.length
+      ? iguales
+      : items.filter((i) => {
+          const d = normalizar(i.producto);
+          return !usados.has(Number(i.id)) && d.length >= 6 && (d.includes(desc) || desc.includes(d));
+        });
+    const item =
+      parecidos.find((i) => Number(i.cantidad_esperada) === Number(r.cantidad)) ||
+      (parecidos.length === 1 ? parecidos[0] : null);
+    if (!item) {
+      resultado.sin_cruzar.push(`${r.codigo || "sin codigo"} · ${r.producto} (${r.cantidad})`);
+      continue;
+    }
+    usados.add(Number(item.id));
+    const codigo = limpiar(r.codigo, 100);
+    if (codigo && !String(item.codigo || "").trim()) {
+      await query("UPDATE recepcion_packing_items SET codigo = ? WHERE id = ?", [codigo, item.id]);
+      item.codigo = codigo;
+      resultado.codigos++;
+    }
+    const factura = r.factura_aparte ? limpiarFactura(r.factura_aparte) : "";
+    if (factura && item.factura_aparte !== factura) {
+      const pid = (await productoPorRenglon([item], productosDeOc)).get(Number(item.id));
+      if (pid && cargado[String(pid)]) {
+        resultado.ya_en_odoo.push(`${factura} · ${item.codigo || "sin codigo"} · ${item.producto}`);
+        continue;
+      }
+      await query("UPDATE recepcion_packing_items SET factura_aparte = ? WHERE id = ?", [factura, item.id]);
+      resultado.apartados++;
+    }
+  }
+  return resultado;
 }
 
 /** Los productos de la OC con lo pedido y lo recibido (una linea puede repetir producto). */

@@ -37,6 +37,8 @@ type Renglon = {
   cajas_esperadas: string;
   // Lo lee la IA del PDF; se pierde si se cambia la cantidad a mano (ya no suma).
   reparto?: Reparto | null;
+  // Otra factura del embarque (INV1062 en POSITION): de otra sede, no se carga aca.
+  factura_aparte?: string | null;
   // Papel que el packing list traia en hojas o resmas y se paso a bultos.
   // Solo se muestra: se pierde, igual, si se cambia la cantidad a mano.
   conversion?: Conversion | null;
@@ -124,6 +126,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
               cantidad_esperada: String(Number(i.cantidad_esperada)),
               cajas_esperadas: i.cajas_esperadas === null ? "" : String(i.cajas_esperadas),
               reparto: reparto.length ? reparto : null,
+              factura_aparte: i.factura_aparte || null,
             };
           }),
         );
@@ -181,6 +184,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           cantidad_esperada: String(l.cantidad_esperada),
           cajas_esperadas: l.cajas_esperadas === null ? "" : String(l.cajas_esperadas),
           conversion: l.conversion,
+          factura_aparte: l.factura_aparte,
         })),
       );
       setAviso(t("excel_leido", { count: leidos.length }));
@@ -245,6 +249,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           cajas_esperadas: l.cajas_esperadas === null ? "" : String(l.cajas_esperadas),
           reparto: Array.isArray(l.reparto) && l.reparto.length ? l.reparto : null,
           conversion: l.conversion || null,
+          factura_aparte: l.factura_aparte || null,
         })),
       );
       setAviso(t("documento_leido", { count: d.renglones.length, contenedores: leidos.length }));
@@ -345,6 +350,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
             cantidad_esperada: Number(r.cantidad_esperada),
             cajas_esperadas: r.cajas_esperadas === "" ? null : Number(r.cajas_esperadas),
             reparto: r.reparto || null,
+            factura_aparte: r.factura_aparte || null,
           })),
         }),
       });
@@ -610,6 +616,19 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
+                {r.factura_aparte && (
+                  <p className="col-span-full -mt-1 flex flex-wrap items-center gap-2 text-[11px] text-amber-800">
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold">{r.factura_aparte}</span>
+                    {t("factura_aparte_linea")}
+                    <button
+                      type="button"
+                      onClick={() => setRenglones((p) => p.map((x, n) => (n === i ? { ...x, factura_aparte: null } : x)))}
+                      className="font-semibold text-violet-700 hover:underline"
+                    >
+                      {t("factura_aparte_quitar")}
+                    </button>
+                  </p>
+                )}
                 {r.conversion && (
                   <p className="col-span-full -mt-1 text-[11px] text-slate-500">
                     {t(r.conversion.unidad === "hojas" ? "conversion_hojas" : "conversion_resmas", {

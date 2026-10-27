@@ -18,16 +18,28 @@ export type RenglonLeido = {
   cajas_esperadas: number | null;
   /** El papel en hojas o resmas se pasa a bultos: lo que decia el Excel. */
   conversion: Conversion | null;
+  /**
+   * Otra factura que viaja en el mismo embarque ("INV1062" en la columna
+   * POSITION): esa mercancia es de otra sede y no se recibe en esta.
+   */
+  factura_aparte: string | null;
 };
 
 const PATRONES = {
-  codigo: /\b(c[oó]d(igo)?|sku|item\s*(no|#|code)|part\s*(no|#|number)|model(o)?|ref(erencia)?|art(\.|[ií]culo)?\s*(no|#)?)\b/i,
+  codigo: /\b(c[oó]d(igo|e)?|sku|item\s*(no|#|code)|part\s*(no|#|number)|model(o)?|ref(erencia)?|art(\.|[ií]culo)?\s*(no|#)?)\b/i,
   producto: /(descrip|product|nombre|art[ií]culo|goods|commodity|item(?!\s*(no|#|code)))/i,
   cantidad: /(cant|qty|q'?ty|quantity|pcs|pieces|piezas|unid|units|\bhojas?\b|\bsheets?\b|\bresmas?\b|\breams?\b)/i,
   cajas: /(caja|ctn|carton|bulto|pkgs?|packages|boxes)/i,
 };
 
 const normal = (v: unknown) => String(v ?? "").trim();
+
+/** Numero de factura en una celda: "INV1062", "INV 1062", "INV-01064". */
+const FACTURA = /^INV[\s-]*\d{3,}$/i;
+const factura = (v: unknown) => {
+  const s = normal(v);
+  return FACTURA.test(s) ? s.toUpperCase().replace(/[\s-]+/g, "") : null;
+};
 
 function numero(v: unknown): number | null {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -63,27 +75,49 @@ export async function leerExcel(archivo: File): Promise<RenglonLeido[]> {
       const enc = (filas[h] || []).map(normal);
       const col = (re: RegExp, excluir: number[] = []) =>
         enc.findIndex((c, i) => c && re.test(c) && !excluir.includes(i));
-      const cCantidad = col(PATRONES.cantidad);
+      let cCantidad = col(PATRONES.cantidad);
       const cCodigo = col(PATRONES.codigo);
       const cProducto = col(PATRONES.producto, [cCodigo, cCantidad]);
-      if (cProducto === -1 || cCantidad === -1) continue;
+      if (cProducto === -1) continue;
+      // Cantidad sin titulo (los de Supricom LLC: "| Code | Description"): la
+      // columna sin encabezado que trae numeros en casi todas las filas de abajo.
+      if (cCantidad === -1 && cCodigo !== -1) {
+        const muestra = filas.slice(h + 1, h + 15).filter((f) => normal(f[cProducto]));
+        const ancho = Math.max(enc.length, ...muestra.map((f) => f.length));
+        for (let c = 0; c < ancho && cCantidad === -1; c++) {
+          if (c === cCodigo || c === cProducto || enc[c]) continue;
+          const numeros = muestra.filter((f) => numero(f[c]) !== null).length;
+          if (muestra.length >= 2 && numeros >= muestra.length * 0.8) cCantidad = c;
+        }
+      }
+      if (cCantidad === -1) continue;
       const cCajas = col(PATRONES.cajas, [cCodigo, cProducto, cCantidad]);
       const unidad = unidadDeEncabezado(enc[cCantidad]);
 
       const renglones: RenglonLeido[] = [];
       for (const fila of filas.slice(h + 1)) {
+        // El pie con el contenedor y el precinto ya no es mercancia (su
+        // numero se leia como cantidad). "CPONTAINER" tambien sale asi.
+        if (fila.some((v) => /c\w{0,3}ntainer\s*(number|no\b|#)|seal\s*(number|no\b|#)/i.test(normal(v)))) break;
         const producto = normal(fila[cProducto]);
         const cantidad = numero(fila[cCantidad]);
         if (!producto && cantidad === null) continue;
         // Filas de total/subtotal al pie: no son mercancia.
         if (/^(sub)?total|^grand\s*total/i.test(producto)) continue;
         if (!producto || cantidad === null || cantidad < 0) continue;
+        // Factura aparte: una celda con solo "INVxxxx" fuera de las columnas
+        // del renglon (en los de Supricom va en POSITION).
+        const aparte =
+          fila
+            .map((v, i) => (i === cCodigo || i === cProducto || i === cCantidad ? null : factura(v)))
+            .find(Boolean) ?? null;
         renglones.push({
           codigo: cCodigo >= 0 ? normal(fila[cCodigo]) : "",
           producto: producto.slice(0, 300),
           cantidad_esperada: unidad ? aBultos(cantidad, unidad) : cantidad,
           cajas_esperadas: cCajas >= 0 ? numero(fila[cCajas]) : null,
           conversion: unidad ? { unidad, cantidad } : null,
+          factura_aparte: aparte,
         });
       }
       if (renglones.length) return renglones;

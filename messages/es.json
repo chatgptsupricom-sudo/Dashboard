@@ -3662,6 +3662,8 @@
     "conversion_no_entera": "no da bultos enteros, revisa la cantidad",
     "reparto_linea": "Por contenedor: {lista}",
     "reparto_no_coincide": "algún contenedor cambió de número: no se guardará cuánto trae cada uno",
+    "factura_aparte_linea": "Es de otra factura del embarque: se cuenta, pero no se carga en el Odoo de esta sede.",
+    "factura_aparte_quitar": "Sí es de esta sede",
     "seriales_odoo": {
       "titulo": "Seriales que faltan para cargar en Odoo",
       "ayuda": "Estos productos llevan serial en Odoo y se contaron sin pistolear. Pistolea un serial por unidad recibida para poder cargarlos. La cantidad recibida no cambia y lo que ya se cargó en Odoo no se toca.",
@@ -3926,7 +3928,20 @@
         "ficha_lleva_serial": "Lleva número de serie",
         "ficha_fuentes": "De dónde salió:",
         "ficha_crear": "Crear en Odoo",
-        "ficha_cancelar": "Cancelar"
+        "ficha_cancelar": "Cancelar",
+        "excel_subir": "Completar con el Excel del packing list",
+        "excel_ayuda": "Pone los códigos que faltaban y aparta lo que el Excel marca como otra factura (INV1062 en POSITION).",
+        "excel_error": "No se pudo leer ese Excel.",
+        "excel_resumen": "Del Excel: {codigos, plural, =0 {ningún código nuevo} one {# código completado} other {# códigos completados}} y {apartados, plural, =0 {nada apartado} one {# renglón apartado} other {# renglones apartados}}.",
+        "excel_sin_cruzar": "No se encontró en la recepción: {renglon}",
+        "excel_ya_en_odoo": "Ya entró en Odoo, no se apartó (hay que devolverlo en Odoo): {renglon}",
+        "aparte_boton": "Es de otra factura",
+        "aparte_pregunta": "¿De qué factura es? Se queda contado aquí, pero no se carga en el Odoo de esta sede.",
+        "aparte_factura": "Factura",
+        "aparte_confirmar": "Apartar",
+        "aparte_quitar": "Sí es de esta sede",
+        "apartados_titulo": "{count, plural, one {# renglón es de otra factura} other {# renglones son de otra factura}}",
+        "apartados_explicacion": "Llegaron en este embarque pero se reciben en la otra sede cuando ingrese su factura: no se cargan aquí."
       }
     }
   },
