@@ -22,8 +22,6 @@ type Respuesta = {
   sinComprobante: PagoBinance[];
   /** Todos los pagos de la semana, con el comprobante que los tomo. */
   pagos: PagoConComprobante[];
-  /** Archivos del estado de cuenta con pagos en la semana. */
-  archivosEstado: { id: number; nombre: string; subidoPor: string; pagos: number; borrables: number }[];
   errorBinance: string | null;
   origen: OrigenPagos;
   movimientos: number;
@@ -374,18 +372,6 @@ export default function BinancePage() {
     cargar();
   };
 
-  const borrarArchivo = async (a: Respuesta["archivosEstado"][number]) => {
-    const aviso =
-      `¿Borrar «${a.nombre}» y sus ${a.borrables} pago${a.borrables === 1 ? "" : "s"} del estado de cuenta?` +
-      (a.borrables < a.pagos ? `\n\nLos otros ${a.pagos - a.borrables} los subió también otra sede y se quedan.` : "");
-    if (!confirm(aviso)) return;
-    const json = await (await fetch(`/api/administracion/binance?archivo=${a.id}`, { method: "DELETE" }))
-      .json()
-      .catch(() => ({ error: "No se pudo borrar" }));
-    if (!json.success) setError(json.error || "No se pudo borrar");
-    cargar();
-  };
-
   const eliminar = async (c: Comprobante) => {
     if (!confirm(`¿Quitar el comprobante ${c.orderId}?`)) return;
     await fetch(`/api/administracion/binance?id=${c.id}`, { method: "DELETE" });
@@ -395,7 +381,6 @@ export default function BinancePage() {
   const comprobantes = datos?.comprobantes || [];
   const sinComprobante = datos?.sinComprobante || [];
   const pagosSemana = datos?.pagos || [];
-  const archivosEstado = datos?.archivosEstado || [];
   const esConciliado = (c: Comprobante) => c.estado === "conciliado" || c.estado === "manual";
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
@@ -876,30 +861,6 @@ export default function BinancePage() {
                 </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                {archivosEstado.length > 0 && (
-                  <div className="mb-4 space-y-1">
-                    <p className="text-xs font-medium text-gray-500">Archivos cargados</p>
-                    {archivosEstado.map((a) => (
-                      <div key={a.id} className="flex items-center justify-between gap-2 text-sm border rounded-md px-3 py-1.5">
-                        <span className="min-w-0 truncate">
-                          {a.nombre} <span className="text-gray-500">· {a.pagos} pagos · {a.subidoPor}</span>
-                        </span>
-                        {a.borrables > 0 && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 shrink-0"
-                            disabled={!!subiendo}
-                            onClick={() => borrarArchivo(a)}
-                            aria-label={`Borrar ${a.nombre}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-gray-400" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
                 <Table>
                   <TableHeader>
                     <TableRow>

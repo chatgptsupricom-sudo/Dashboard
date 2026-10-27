@@ -741,44 +741,6 @@ async function borrarArchivosSinPagos() {
   );
 }
 
-/** Archivos del estado de cuenta con pagos en la semana, y cuantos de esos pagos puede borrar esta sede. */
-export async function archivosEstadoSemana(lunes: string, sede: number | null) {
-  const rango = rangoSemana(lunes);
-  if (!rango) return [];
-  await ensureTablaMovimientos();
-  const { rows } = await query(
-    `SELECT e.id, e.archivo_nombre, e.subido_por, e.created_at, COUNT(*) AS pagos,
-            SUM(? IS NULL OR (m.company_id = ? AND m.otras_sedes = 0)) AS borrables
-       FROM binance_estados e JOIN binance_movimientos m ON m.estado_id = e.id
-      WHERE m.fecha BETWEEN ? AND ?
-      GROUP BY e.id, e.archivo_nombre, e.subido_por, e.created_at
-      ORDER BY e.created_at`,
-    [sede, sede, aMysql(rango.desde), aMysql(rango.hasta)],
-  );
-  return (rows as any[]).map((r) => ({
-    id: Number(r.id),
-    nombre: String(r.archivo_nombre),
-    subidoPor: String(r.subido_por),
-    pagos: Number(r.pagos),
-    borrables: Number(r.borrables || 0),
-  }));
-}
-
-/** Borra los pagos de un archivo del estado de cuenta que esta sede puede borrar, y el archivo si queda sin pagos. */
-export async function borrarArchivoEstado(id: number, sede: number | null) {
-  await ensureTablaMovimientos();
-  const { rows } = await query(`DELETE FROM binance_movimientos WHERE estado_id = ? AND ${BORRABLE_POR_SEDE}`, [
-    id,
-    sede,
-    sede,
-  ]);
-  await query(
-    "DELETE FROM binance_estados WHERE id = ? AND NOT EXISTS (SELECT 1 FROM binance_movimientos WHERE estado_id = ?)",
-    [id, id],
-  );
-  return Number((rows as any)?.affectedRows || 0);
-}
-
 /** La captura del estado de cuenta ya se subio (misma huella): no se vuelve a leer. */
 export async function capturaYaSubida(sha: string) {
   await ensureTablaMovimientos();
