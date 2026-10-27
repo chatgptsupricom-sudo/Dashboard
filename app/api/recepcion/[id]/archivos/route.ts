@@ -63,9 +63,10 @@ export async function POST(
       if (!cont) return NextResponse.json({ error: "Contenedor invalido" }, { status: 400 });
       etapaQueManda = cont.etapa;
     }
-    // El SuperAdmin corrige las cajas en mal estado de una recepcion cerrada
-    // (accion corregir_danos): puede subir su foto.
-    const correccion = tipo === "foto_golpe" && etapaQueManda === "cerrado" && sesion!.rol === "superadmin";
+    // El SuperAdmin corrige una recepcion cerrada: puede subir cualquier foto
+    // (llegada, precinto, cierre del contenedor o caja en mal estado).
+    const correccion =
+      tipo !== "packing_list" && datos.recepcion.etapa === "cerrado" && sesion!.rol === "superadmin";
     if (!regla.etapas.includes(etapaQueManda) && !correccion) {
       return NextResponse.json(
         { error: "Ya no se puede subir este archivo en esta etapa" },

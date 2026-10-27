@@ -675,7 +675,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
   const trabajando = esAlmacen && rec.etapa !== "cerrado";
   const contando = esAlmacen && rec.etapa === "descargando";
-  const editaDanos = contando || (corrigiendoDanos && rol === "superadmin" && rec.etapa === "cerrado");
+  // SuperAdmin corrigiendo una recepcion cerrada: danos y todas las fotos.
+  const corrigeCerrada = corrigiendoDanos && rol === "superadmin" && rec.etapa === "cerrado";
+  const editaDanos = contando || corrigeCerrada;
 
   // Conteo por contenedor. Sin contenedores (por factura) todo va al 0.
   const sinContenedores = contenedores.length === 0;
@@ -1023,7 +1025,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           contenedorId={c.id}
                           titulo={t("foto_llegada")}
                           fotos={fotosLlegada}
-                          editable={enLlegada}
+                          editable={enLlegada || corrigeCerrada}
                           obligatoria
                           onCambio={recargarArchivos}
                         />
@@ -1033,7 +1035,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           contenedorId={c.id}
                           titulo={t("foto_precinto")}
                           fotos={fotosPrecinto}
-                          editable={enLlegada}
+                          editable={enLlegada || corrigeCerrada}
                           obligatoria
                           onCambio={recargarArchivos}
                         />
@@ -1144,7 +1146,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           contenedorId={c.id}
                           titulo={t("foto_cierre")}
                           fotos={fotosCierre}
-                          editable={descargandolo}
+                          editable={descargandolo || corrigeCerrada}
                           obligatoria
                           onCambio={recargarArchivos}
                         />
@@ -1748,12 +1750,11 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                             <BotonPrimario
                               onClick={async () => {
                                 const { items: cuerpo, enviado } = cuerpoConteo();
-                                const ok = await accionar(
-                                  "corregir_danos",
-                                  { items: cuerpo.filter((f) => "danos" in f) },
-                                  true,
-                                  enviado,
-                                );
+                                const danos = cuerpo.filter((f) => "danos" in f);
+                                // Solo fotos (ya guardadas al subirlas): no hay nada que mandar.
+                                const ok =
+                                  danos.length === 0 ||
+                                  (await accionar("corregir_danos", { items: danos }, true, enviado));
                                 if (ok) {
                                   setCorrigiendoDanos(false);
                                   setAviso(t("corregir_danos_hecho"));

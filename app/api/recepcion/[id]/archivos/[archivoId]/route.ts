@@ -80,10 +80,13 @@ export async function DELETE(
     // Foto de contenedor: manda la etapa de su contenedor (una foto de
     // llegada no se borra despues de registrar la llegada de ESE contenedor).
     const etapa = regla.nivel === "contenedor" ? fila.etapa_contenedor : fila.etapa;
-    // Una foto de caja en mal estado que el SuperAdmin subio al corregir una
-    // recepcion cerrada se puede quitar; las de antes del cierre quedan.
+    // Una foto que el SuperAdmin subio al corregir una recepcion cerrada se
+    // puede quitar; las de antes del cierre quedan.
     const correccion =
-      tipo === "foto_golpe" && etapa === "cerrado" && sesion!.rol === "superadmin" && Number(fila.despues_del_cierre) === 1;
+      tipo !== "packing_list" &&
+      fila.etapa === "cerrado" &&
+      sesion!.rol === "superadmin" &&
+      Number(fila.despues_del_cierre) === 1;
     if (!regla.etapas.includes(etapa) && !correccion) {
       return NextResponse.json(
         { error: "Esta etapa ya se cerro: el archivo queda como registro" },
