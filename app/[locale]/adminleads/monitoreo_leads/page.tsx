@@ -2004,7 +2004,7 @@ function Tablero({ fuente }: { fuente: Fuente }) {
                 formData.productoPerdido === "OTRO"
                   ? formData.productoOtro
                   : formData.productoPerdido;
-              await fetch(api.editar, {
+              const res = await fetch(api.editar, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(
@@ -2031,6 +2031,8 @@ function Tablero({ fuente }: { fuente: Fuente }) {
                   ),
                 ),
               });
+              const { aviso } = await res.json().catch(() => ({}));
+              if (aviso) alert(aviso);
               setShowClosureModal(false);
               fetchData();
             }}
@@ -2500,7 +2502,7 @@ function Tablero({ fuente }: { fuente: Fuente }) {
               e.preventDefault();
               setUpdatingLeadIds((prev) => [...prev, leadForSecondPurchase.id]);
               try {
-                await fetch("/api/vendedores/leads", {
+                const postRes = await fetch("/api/vendedores/leads", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -2520,6 +2522,8 @@ function Tablero({ fuente }: { fuente: Fuente }) {
                     fecha: secondPurchaseForm.fecha,
                   }),
                 });
+                const { aviso } = await postRes.json().catch(() => ({}));
+                if (aviso) alert(aviso);
                 await fetch(api.editar, {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
