@@ -134,6 +134,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // La sede del caso es la del usuario (su cids): el formulario de /rma/nuevo
+    // no la manda y la columna no acepta null. Solo el SuperAdmin, que no tiene
+    // sede, la puede indicar en el body.
+    const rol = String(auth.payload?.role || "").toLowerCase().trim();
+    const cidsUsuario = Number(auth.payload?.cids);
+    const sedeCaso =
+      rol !== "superadmin" && Number.isFinite(cidsUsuario) && cidsUsuario > 0
+        ? cidsUsuario
+        : Number(company_id) || null;
+    if (!sedeCaso) {
+      return NextResponse.json(
+        { error: "No se pudo determinar la sede del caso: el usuario no tiene sede asignada" },
+        { status: 400 }
+      );
+    }
+
     // Generate sequential case number
     const lastCase = await query(
       `SELECT case_number FROM rma_cases ORDER BY id DESC LIMIT 1`
@@ -172,7 +188,7 @@ export async function POST(request: NextRequest) {
         reported_fault,
         estado,
         notes || null,
-        company_id || null,
+        sedeCaso,
         created_by,
         ...valoresOrigen,
       ]
