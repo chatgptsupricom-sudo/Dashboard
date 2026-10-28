@@ -154,7 +154,8 @@ export function RecorridoGuiado({
   }
 
   return (
-    <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-labelledby="recorrido-titulo">
+    {/* Encima del menú lateral (z-[100]): si no, la tarjeta de un paso pegado a la izquierda quedaba tapada. */}
+    <div className="fixed inset-0 z-[110]" role="dialog" aria-modal="true" aria-labelledby="recorrido-titulo">
       {caja ? (
         <div
           className="absolute rounded-xl ring-2 ring-white/80 transition-all duration-300 pointer-events-none"
