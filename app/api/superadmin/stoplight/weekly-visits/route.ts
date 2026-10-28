@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { ROLES_BI } from "@/lib/auth/inteligenciaNegocio";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { writeFile, unlink, mkdir } from "fs/promises";
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
     // de este archivo ya tenian su lista de roles, a este GET se le habia
     // quedado afuera (cualquier autenticado veia visitas de cualquier sucursal).
     const userRoleGet = ((payload.role as string) || "").toLowerCase().trim();
-    const rolesConLectura = ["superadmin", "gerencia de ventas", "compras", "cuentas por cobrar", "gerente de operaciones", ROL_BI];
+    const rolesConLectura = ["superadmin", "gerencia de ventas", "compras", "cuentas por cobrar", "gerente de operaciones", ...ROLES_BI];
     if (!rolesConLectura.includes(userRoleGet)) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }

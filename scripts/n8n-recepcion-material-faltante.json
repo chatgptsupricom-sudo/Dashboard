@@ -1,0 +1,67 @@
+{
+  "name": "Recepción - Material faltante",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "recepcion-material",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a1f0c1d2-0001-4c3a-9a10-recepcion0001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "recepcion-material"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT DISTINCT uc.email FROM users_config uc JOIN roles r ON r.id = uc.role_id WHERE LOWER(TRIM(r.name)) = 'adminleads' AND uc.email IS NOT NULL AND (uc.cids IS NULL OR uc.cids <> 7)",
+        "options": {}
+      },
+      "id": "a1f0c1d2-0002-4c3a-9a10-recepcion0002",
+      "name": "AdminLeads Venezuela",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 0],
+      "alwaysOutputData": true,
+      "credentials": {
+        "mySql": { "id": "REEMPLAZAR", "name": "MySQL panel" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $('Webhook').first().json.body || {};\nif (b.evento !== 'recepcion_material_faltante' || !Array.isArray(b.items) || b.items.length === 0) return [];\nconst correos = [...new Set($input.all().map((i) => String(i.json.email || '').trim().toLowerCase()).filter(Boolean))];\nif (correos.length === 0) return [];\n\nconst esc = (s) => String(s ?? '').replace(/[&<>\"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\nconst marca = (v) => (v ? '<b style=\"color:#b91c1c\">Falta</b>' : '<span style=\"color:#15803d\">OK</span>');\nconst r = b.recepcion || {};\nconst filas = b.items.map((it) => `<tr>\n  <td style=\"padding:6px;border:1px solid #ddd\">${esc(it.codigo || 'sin código')}</td>\n  <td style=\"padding:6px;border:1px solid #ddd\">${esc(it.producto)}${it.marca ? `<br><small>${esc(it.marca)}</small>` : ''}</td>\n  <td style=\"padding:6px;border:1px solid #ddd;text-align:right\">${esc(it.cantidad)}</td>\n  <td style=\"padding:6px;border:1px solid #ddd;text-align:center\">${it.nuevo ? (it.en_odoo ? 'Sí (primera llegada)' : 'Sí (no está en Odoo)') : 'No'}</td>\n  <td style=\"padding:6px;border:1px solid #ddd;text-align:center\">${marca(it.sin_imagen)}</td>\n  <td style=\"padding:6px;border:1px solid #ddd;text-align:center\">${marca(it.sin_flyer)}</td>\n</tr>`).join('');\n\nconst html = `<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#111\">\n<p>Compras cargó un packing list de <b>${esc(r.sede)}</b>. Estos productos vienen en camino y les falta material:</p>\n<p>Proveedor: <b>${esc(r.proveedor)}</b><br>Referencia: <b>${esc(r.referencia)}</b><br>Llegada estimada: <b>${esc(r.fecha_estimada ? String(r.fecha_estimada).slice(0, 10) : 'sin fecha')}</b><br>Cargado por: ${esc(r.cargado_por)}</p>\n<p>${b.resumen.nuevos} nuevos · ${b.resumen.sin_imagen} sin imagen en Odoo · ${b.resumen.sin_flyer} sin flyer en el banco (de ${esc(r.total_productos)} productos del packing list)</p>\n<table style=\"border-collapse:collapse\"><tr style=\"background:#f3f4f6\">\n<th style=\"padding:6px;border:1px solid #ddd\">Código</th><th style=\"padding:6px;border:1px solid #ddd\">Producto</th><th style=\"padding:6px;border:1px solid #ddd\">Cantidad</th><th style=\"padding:6px;border:1px solid #ddd\">Nuevo</th><th style=\"padding:6px;border:1px solid #ddd\">Imagen Odoo</th><th style=\"padding:6px;border:1px solid #ddd\">Flyer</th></tr>${filas}</table>\n<p><a href=\"${esc(b.link)}\">Abrir el Banco de Flyers</a></p>\n</div>`;\n\nreturn [{ json: { to: correos.join(','), subject: `Productos por llegar sin imagen o flyer - ${r.referencia} (${r.sede})`, html } }];"
+      },
+      "id": "a1f0c1d2-0003-4c3a-9a10-recepcion0003",
+      "name": "Armar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": { "appendAttribution": false }
+      },
+      "id": "a1f0c1d2-0004-4c3a-9a10-recepcion0004",
+      "name": "Enviar",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [720, 0],
+      "credentials": {
+        "gmailOAuth2": { "id": "REEMPLAZAR", "name": "Cuenta del panel" }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "AdminLeads Venezuela", "type": "main", "index": 0 }]] },
+    "AdminLeads Venezuela": { "main": [[{ "node": "Armar correo", "type": "main", "index": 0 }]] },
+    "Armar correo": { "main": [[{ "node": "Enviar", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

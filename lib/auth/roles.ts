@@ -2,8 +2,8 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { respuestaSesionTerminada, sesionVigente } from "@/lib/auth/vigencia";
-import { esEscrituraBI, MENSAJE_SOLO_LECTURA_BI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
-import { esEscrituraMarketingElectro } from "@/lib/auth/marketingElectro";
+import { esEscrituraBI, esRolBI, MENSAJE_SOLO_LECTURA_BI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { esEscrituraMarketingElectro, esRolMarketingElectro } from "@/lib/auth/marketingElectro";
 
 /**
  * Guard genérico por rol para las rutas de API.
@@ -66,7 +66,9 @@ export async function requireRoles(
 
   const userRole = ((sesion.payload!.role as string) || "").toLowerCase().trim();
   const permitidos = roles.map((r) => r.toLowerCase().trim());
-  if (userRole !== "superadmin" && !permitidos.includes(userRole)) {
+  // Marketing y Electrodomésticos entra donde entra BI (ROLES_BI).
+  const comoBI = esRolBI(userRole) && permitidos.includes(ROL_BI);
+  if (userRole !== "superadmin" && !permitidos.includes(userRole) && !comoBI) {
     return {
       error: NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 }),
     };
@@ -116,7 +118,9 @@ export async function requireSession(
   if (sesion.error) return sesion;
   // Inteligencia de Negocio es de solo lectura también en las rutas abiertas
   // a cualquier sesión (actividades, leads del vendedor...).
-  if (!opciones.escrituraPropia && esEscrituraBI(sesion.payload?.role, request.method)) {
+  // Marketing y Electrodomésticos sí escribe aquí (sus Actividades).
+  const rol = sesion.payload?.role;
+  if (!opciones.escrituraPropia && esEscrituraBI(rol, request.method) && !esRolMarketingElectro(rol)) {
     return { error: respuestaSoloLecturaBI() };
   }
   return sesion;
