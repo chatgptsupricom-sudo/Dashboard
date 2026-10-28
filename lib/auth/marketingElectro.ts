@@ -4,6 +4,7 @@
  * Gerente de la línea de electrodomésticos que además apoya a Marketing en el
  * desarrollo de marcas. Ve, sin cambiar nada:
  *
+ * - El Dashboard del SuperAdmin (su pantalla de inicio, las tres sedes).
  * - Inventario y Ventas por marca de las marcas que el SuperAdmin le asigna
  *   por correo (las mismas pantallas y asignaciones del Gerente de Marca,
  *   lib/gerente-marca/).

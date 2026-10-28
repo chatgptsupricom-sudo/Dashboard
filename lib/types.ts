@@ -561,6 +561,7 @@ export const rolePermissions: RolePermissions = {
     canDisableUsers: false,
     canViewAudit: false,
     sections: [
+      "dashboard",
       "gm_ventas",
       "gm_inventario",
       "mayor_rotacion",

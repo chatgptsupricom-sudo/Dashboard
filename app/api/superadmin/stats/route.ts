@@ -232,13 +232,14 @@ import {
 } from "@/lib/smartbit";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { NextRequest, NextResponse } from "next/server";
 
 // Fuerza a que la ruta sea dinámica y no se guarde en caché
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin", ROL_BI]);
+  const auth = await requireRoles(request, ["superadmin", ROL_BI, ROL_MARKETING_ELECTRO]);
   if (auth.error) return auth.error;
   return conSinIntercompaniaBI(auth.payload?.role, () => estadisticas(request));
 }
