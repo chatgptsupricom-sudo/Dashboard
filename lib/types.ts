@@ -552,8 +552,9 @@ export const rolePermissions: RolePermissions = {
     canViewAudit: false,
     sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "gm_banco_imagenes", "actividad"],
   },
-  // Marketing y Electrodomésticos (lib/auth/marketingElectro.ts): inventario y
-  // ventas de sus marcas, rotación de Compras y las pantallas de Marketing. Solo lee.
+  // Marketing y Electrodomésticos (lib/auth/marketingElectro.ts): lo mismo que
+  // Inteligencia de Negocio menos Leads, más ventas e inventario por marca (todas
+  // las marcas) y rotación de Compras. Solo lee.
   [UserRole.MARKETING_ELECTRO]: {
     canViewAllSections: false,
     canManageUsers: false,
@@ -562,20 +563,41 @@ export const rolePermissions: RolePermissions = {
     canViewAudit: false,
     sections: [
       "dashboard",
-      "gm_ventas",
+      "actividad",
+      "stoplight_reports",
+      "inventory",
       "gm_inventario",
+      "gm_ventas",
+      "bi_dias_promedio",
+      "bi_reportes",
+      "catalogo",
+      "agenteia",
+      // Compras
       "mayor_rotacion",
       "menor_rotacion",
       "tendencia",
-      "catalogo",
-      "actividad",
-      "vista_custom",
-      "banco_imagenes",
-      "me_material_pop",
+      // Desplegable Ventas
+      "reporte_diario",
+      "reporte_ventas",
+      "cuota",
       "metas_marca",
       "stock_marca",
+      "reportes_comerciales",
+      "seller_map",
+      "spiff",
+      // Desplegable Marketing
+      "vista_custom",
+      "frecuencia_cpm",
+      "banco_imagenes",
+      "catalogo_disenos",
+      "material_pop",
+      "sorteo_caracas",
       "opiniones",
-      "MapaClientes",
+      // Cuentas por Cobrar
+      "cxc_contado_credito",
+      "cxc_incobrables",
+      "cxc_tiempo_cobro",
+      "cxc_sobregiro",
     ],
   },
 };

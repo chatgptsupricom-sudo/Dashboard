@@ -14,22 +14,27 @@
  *   que no pasan por `requireRoles` y lo dejan entrar lo frenan con
  *   `esEscrituraBI`.
  *
+ * Marketing y Electrodomésticos (lib/auth/marketingElectro.ts) también hace
+ * análisis: cuenta como BI en todo esto (`ROLES_BI`), menos en Leads, que no
+ * tiene en el menú, y en sus Actividades, que sí escribe (requireSession).
+ *
  * Sin dependencias de servidor: lo importan también el sidebar y las
  * pantallas.
  */
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
+
 export const ROL_BI = "inteligencia de negocio";
-export const ROLES_BI = [ROL_BI];
+export const ROLES_BI = [ROL_BI, ROL_MARKETING_ELECTRO];
 
 const normalizar = (rol: unknown) => String(rol ?? "").toLowerCase().trim();
 
 export function esRolBI(rol: unknown): boolean {
-  return normalizar(rol) === ROL_BI;
+  return ROLES_BI.includes(normalizar(rol));
 }
 
 /** SuperAdmin y BI eligen sede; los demás roles quedan en la de su token. */
 export function veTodasLasSedes(rol: unknown): boolean {
-  const r = normalizar(rol);
-  return r === "superadmin" || r === ROL_BI;
+  return normalizar(rol) === "superadmin" || esRolBI(rol);
 }
 
 const METODOS_LECTURA = new Set(["GET", "HEAD"]);

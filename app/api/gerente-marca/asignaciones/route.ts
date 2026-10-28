@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
-import { asignacionesDe, gerentes, guardarAsignaciones, marcasOdoo } from "@/lib/gerente-marca/asignaciones";
+import { gerentes, guardarAsignaciones, marcasDeLaSesion, marcasOdoo } from "@/lib/gerente-marca/asignaciones";
 import { ROLES_CON_MARCAS } from "@/lib/gerente-marca/tipos";
 
 /**
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const esSuper = String(auth.payload?.role || "").toLowerCase().trim() === "superadmin";
   try {
     if (!esSuper) {
-      return NextResponse.json({ success: true, asignaciones: await asignacionesDe(String(auth.payload?.email || "")) });
+      return NextResponse.json({ success: true, asignaciones: await marcasDeLaSesion(auth.payload) });
     }
     const conMarcas = request.nextUrl.searchParams.get("marcas") === "1";
     const [lista, marcas] = await Promise.all([gerentes(), conMarcas ? marcasOdoo() : Promise.resolve(undefined)]);

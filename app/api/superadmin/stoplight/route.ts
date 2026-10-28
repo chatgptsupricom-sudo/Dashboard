@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { esRolAdministracion, respuestaSedeNoPermitida, sedeDelToken } from "@/lib/auth/sedeRol";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
     // Administracion ve el Stoplight de CxC (su seccion de Cuentas por Cobrar).
     const isAdministracion = esRolAdministracion(userRole);
     // Inteligencia de Negocio lee el de cualquier sede (no está en `empresaFija`).
-    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && !isCxC && !isGerenteOps && !isAdministracion && userRole !== ROL_BI) {
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && !isCxC && !isGerenteOps && !isAdministracion && !esRolBI(userRole)) {
       return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
     }
     if (isAdministracion && sedeDelToken(payload as { cids?: unknown }) === null) return respuestaSedeNoPermitida();

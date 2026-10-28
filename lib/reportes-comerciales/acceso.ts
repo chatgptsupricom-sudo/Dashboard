@@ -20,9 +20,9 @@
  */
 
 import { COMPANY_IDS_REPORTE } from "@/lib/reportes-comerciales/sedes";
-import { ROL_BI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
+import { ROLES_BI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 
-const ROLES_CON_ACCESO = ["superadmin", "gerencia de ventas", ROL_BI];
+const ROLES_CON_ACCESO = ["superadmin", "gerencia de ventas", ...ROLES_BI];
 
 export function correosAutorizados(): string[] {
   const crudo =

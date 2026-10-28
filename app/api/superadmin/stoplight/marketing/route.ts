@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
@@ -180,7 +180,7 @@ export async function GET(request: NextRequest) {
 
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = ((payload.role as string) || "").toLowerCase().trim();
-    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && userRole !== "gerente de operaciones" && userRole !== ROL_BI) return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    if (userRole !== "superadmin" && userRole !== "gerencia de ventas" && userRole !== "compras" && userRole !== "gerente de operaciones" && !esRolBI(userRole)) return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
 
     const accessToken = await getValidAccessToken();
     if (!accessToken) {

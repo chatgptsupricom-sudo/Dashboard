@@ -18,9 +18,9 @@ import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 export const ROL_GERENTE_MARCA = "gerente de marca";
 
 /**
- * Roles que llevan marcas asignadas: el Gerente de Marca y Marketing y
- * Electrodomésticos (lib/auth/marketingElectro.ts), que usa las mismas
- * pantallas de Inventario y Ventas y la misma Configuración.
+ * Roles de las pantallas de Inventario y Ventas por marca: el Gerente de Marca
+ * (sus marcas asignadas) y Marketing y Electrodomésticos
+ * (lib/auth/marketingElectro.ts), que ve todas (`marcasDeLaSesion`).
  */
 export const ROLES_CON_MARCAS = [ROL_GERENTE_MARCA, ROL_MARKETING_ELECTRO];
 

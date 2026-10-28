@@ -390,9 +390,10 @@ export default async function middleware(request: NextRequest) {
       // 9. Lógica para Cuentas por Cobrar
       // Administracion tambien tiene todas las secciones de CxC (sus APIs la
       // dejan en la sede de su cids, lib/auth/sedeRol.ts).
-      // Inteligencia de Negocio solo tiene cuatro de sus secciones.
+      // Inteligencia de Negocio (y Marketing y Electrodomésticos, que tiene sus
+      // vistas) solo tiene cuatro de sus secciones.
       const esCxCDeBI = /\/cuentas-por-cobrar\/(contado-credito|incobrables|tiempo-cobro|sobregiro)(\/|$)/.test(pathname);
-      if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin && !isGerenciaOperaciones && !isAdministracion && !(isBI && esCxCDeBI)) {
+      if (pathname.includes("/cuentas-por-cobrar") && !isCxC && !isSuperAdmin && !isGerenciaOperaciones && !isAdministracion && !((isBI || isMarketingElectro) && esCxCDeBI)) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
