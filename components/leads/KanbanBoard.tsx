@@ -655,7 +655,7 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
             onSubmit={async (e) => {
               e.preventDefault();
               if (formData.motivo === "GANADO") confetti();
-              await fetch("/api/vendedores/leads", {
+              const res = await fetch("/api/vendedores/leads", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -675,6 +675,8 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
                     : {}),
                 }),
               });
+              const { aviso } = await res.json().catch(() => ({}));
+              if (aviso) alert(aviso);
               setShowClosureModal(false);
               fetchLeads();
             }}
@@ -921,6 +923,7 @@ export const BoardTab: React.FC<{ userRole?: "ADMIN" | "VENDEDOR" }> = ({
                 });
                 const postData = await postRes.json();
                 console.log("POST segunda compra:", postRes.status, postData);
+                if (postData?.aviso) alert(postData.aviso);
 
                 await fetch("/api/vendedores/leads", {
                   method: "PATCH",

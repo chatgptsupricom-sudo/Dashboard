@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { requireSession } from "@/lib/auth/roles";
+import { corregirLead, datosDeFactura } from "@/lib/adminleads/facturaLead";
 
 declare global {
   var io: any;
@@ -192,11 +193,20 @@ export async function PATCH(request: NextRequest) {
       await query(`UPDATE leads SET ${fields.join(", ")} WHERE id = ?`, params);
     }
 
+    // Con la factura del cierre, RIF, empresa y estado del lead salen de Odoo.
+    let aviso: string | undefined;
+    if (typeof factura === "string" && factura.trim()) {
+      const { rows } = await query("SELECT seller_id FROM leads WHERE id = ?", [id]);
+      const r = await datosDeFactura(factura, rows[0]?.seller_id ?? null);
+      if ("datos" in r) await corregirLead(id, r.datos);
+      else aviso = r.aviso;
+    }
+
     if (global.io) {
       global.io.emit("leads-updated", { action: "PATCH", id });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, aviso });
   } catch (error: any) {
     console.error("Error en PATCH:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -296,7 +306,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Comportamiento original: segunda compra / cierre
-      await query(
+      const { rows: insertado }: any = await query(
         `INSERT INTO leads
           (nombre_contacto, name, telefono, rif, ubicacion_estado, ubicacion_detalle,
            canal_origen, campana, seller_id, status, motivo_cierre, monto_cerrado_usd, num_factura, fecha_venta, fecha_ingreso, has_segunda_compra)
@@ -318,6 +328,11 @@ export async function POST(request: NextRequest) {
           fecha ?? null,
         ],
       );
+      if (typeof factura === "string" && factura.trim()) {
+        const r = await datosDeFactura(factura, seller_id ?? null);
+        if ("datos" in r) await corregirLead(insertado.insertId, r.datos);
+        else return NextResponse.json({ success: true, aviso: r.aviso });
+      }
     }
 
     return NextResponse.json({ success: true });
