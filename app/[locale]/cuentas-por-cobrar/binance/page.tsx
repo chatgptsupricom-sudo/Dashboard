@@ -63,6 +63,8 @@ export default function BinanceCxCPage() {
   const [semana, setSemana] = useState(opciones[0].value);
   const [buscar, setBuscar] = useState("");
   const [conciliados, setConciliados] = useState<Comprobante[] | null>(null);
+  // Conciliados de la semana que ya estan como pago en Odoo (no se muestran).
+  const [registrados, setRegistrados] = useState(0);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,14 +72,16 @@ export default function BinanceCxCPage() {
     setCargando(true);
     setError(null);
     try {
-      const json = await (await fetch(`/api/administracion/binance?semana=${semana}`)).json();
-      // A CxC la API ya le manda solo `conciliados`; el SuperAdmin recibe todo y se filtra aqui.
-      if (json.success)
-        setConciliados(
-          json.conciliados ??
-            (json.comprobantes || []).filter((c: Comprobante) => c.estado === "conciliado" || c.estado === "manual"),
-        );
-      else setError(json.error || "No se pudo cargar");
+      // vista=cxc: solo los conciliados que todavia no estan registrados en Odoo
+      // (el ID de orden en el Memo del pago). Igual para el SuperAdmin.
+      const json = await (await fetch(`/api/administracion/binance?semana=${semana}&vista=cxc`)).json();
+      if (json.success) {
+        setConciliados(json.conciliados || []);
+        setRegistrados(json.registrados || 0);
+      } else {
+        setConciliados([]);
+        setError(json.error || "No se pudo cargar");
+      }
     } catch {
       setError("No se pudo cargar");
     }
@@ -104,7 +108,7 @@ export default function BinanceCxCPage() {
           <Bitcoin className="h-7 w-7 text-amber-500" />
           Conciliación Binance
         </h1>
-        <p className="text-gray-500 text-sm">Pagos por Binance que Administración ya concilió, por semana.</p>
+        <p className="text-gray-500 text-sm">Pagos por Binance que Administración ya concilió y todavía no están registrados en Odoo, por semana.</p>
       </div>
 
       {error && <Aviso tono="rojo">{error}</Aviso>}
@@ -135,8 +139,9 @@ export default function BinanceCxCPage() {
         <div className="space-y-3 min-w-0">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-sm text-gray-600">
-              Semana <span className="font-medium">{etiquetaSemana}</span> · {lista.length} conciliados ·{" "}
+              Semana <span className="font-medium">{etiquetaSemana}</span> · {lista.length} por registrar ·{" "}
               {porMoneda(lista)}
+              {registrados > 0 && <span className="text-gray-400"> · {registrados} ya registrados en Odoo</span>}
             </p>
             <div className="relative w-full sm:w-72">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -172,7 +177,7 @@ export default function BinanceCxCPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtrados.length === 0 && <FilaVacia columnas={9} texto="No hay conciliados en esta semana." />}
+                    {filtrados.length === 0 && <FilaVacia columnas={9} texto={registrados > 0 ? "Todos los conciliados de esta semana ya están registrados en Odoo." : "No hay conciliados en esta semana."} />}
                     {filtrados.map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">{fechaHora(c.binance?.fecha || c.fecha)}</TableCell>
