@@ -59,6 +59,11 @@ export async function requireRoles(
   opciones: {
     /** El handler no escribe aunque sea POST (ej. armar un .zip): BI puede llamarlo. */
     soloLee?: boolean;
+    /**
+     * Lo que se escribe es de Inteligencia de Negocio (ej. la Clasificación de
+     * productos y clientes, lib/inteligencia-negocio/clasificacion): BI sí escribe.
+     */
+    escribeBI?: boolean;
   } = {},
 ): Promise<{ payload?: any; error?: NextResponse }> {
   const sesion = await verificarSesion(request);
@@ -75,7 +80,7 @@ export async function requireRoles(
   }
   // Inteligencia de Negocio entra a leer: aunque la ruta lo liste (el mismo
   // guard suele cubrir GET y POST), nunca escribe.
-  if (!opciones.soloLee && esEscrituraBI(userRole, request.method)) {
+  if (!opciones.soloLee && !opciones.escribeBI && esEscrituraBI(userRole, request.method)) {
     return { error: respuestaSoloLecturaBI() };
   }
   // Marketing y Electrodomésticos también entra solo a leer.

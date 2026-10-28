@@ -28,6 +28,7 @@ import {
   Wallet,
   AlertTriangle,
   Award,
+  Shapes,
   BarChart3,
   Bell,
   BookOpen,
@@ -139,6 +140,7 @@ export function Sidebar({
 
   // Estados para los menús desplegables
   const [isReportsOpen, setIsReportsOpen] = useState(false);
+  const [isClasificacionOpen, setIsClasificacionOpen] = useState(false);
   const [isLeadsOpen, setIsLeadsOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isComprasOpen, setIsComprasOpen] = useState(false);
@@ -1587,6 +1589,59 @@ export function Sidebar({
                                 window.matchMedia("(max-width: 767px)").matches
                               )
                                 onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de CLASIFICACIÓN de Inteligencia de Negocio (lib/inteligencia-negocio/clasificacion) */}
+            {isBIRole && allowedSections.includes("bi_clasificacion") && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsClasificacionOpen(!isClasificacionOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Shapes size={20} className="text-slate-400" />
+                    <span className="text-sm">Clasificación</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isClasificacionOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isClasificacionOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: "Productos", href: `${basePath}/clasificacion/productos` },
+                        { label: "Clientes", href: `${basePath}/clasificacion/clientes` },
+                        { label: "Por marca", href: `${basePath}/clasificacion/marcas` },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
                             }}
                           >
                             <div

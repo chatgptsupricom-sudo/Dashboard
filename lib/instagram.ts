@@ -203,6 +203,50 @@ export async function fetchIgProfile(igUserId: string): Promise<IgProfile | null
   }
 }
 
+export interface PerfilPublicoIg {
+  usuario: string;
+  nombre: string;
+  biografia: string;
+  web: string;
+  seguidores: number;
+  publicaciones: number;
+  /** Textos de las últimas publicaciones, la más reciente primero. */
+  textos: string[];
+}
+
+/**
+ * Perfil público de otra cuenta de Instagram (Business o Creator) con
+ * `business_discovery`, consultado desde una cuenta nuestra (`igUserId`).
+ * Solo necesita `instagram_basic`. Una cuenta personal o que no existe
+ * responde error: devuelve { perfil: null, motivo }.
+ */
+export async function perfilPublicoInstagram(
+  igUserId: string,
+  usuario: string,
+): Promise<{ perfil: PerfilPublicoIg | null; motivo: string }> {
+  try {
+    const data = await graphGet(igUserId, {
+      fields: `business_discovery.username(${usuario}){username,name,biography,website,followers_count,media_count,media.limit(12){caption}}`,
+    });
+    const b = data.business_discovery || {};
+    return {
+      perfil: {
+        usuario: b.username || usuario,
+        nombre: b.name || "",
+        biografia: b.biography || "",
+        web: b.website || "",
+        seguidores: parseInt(b.followers_count) || 0,
+        publicaciones: parseInt(b.media_count) || 0,
+        textos: (b.media?.data || []).map((m: any) => String(m.caption || "").trim()).filter(Boolean),
+      },
+      motivo: "",
+    };
+  } catch (err: any) {
+    // 110 / 100: la cuenta no existe, es personal o no es visible.
+    return { perfil: null, motivo: err?.message || "No se pudo leer el perfil de Instagram" };
+  }
+}
+
 const EMPTY_METRICS: IgAccountMetrics = {
   views: 0,
   reach: 0,

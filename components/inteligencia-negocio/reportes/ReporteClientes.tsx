@@ -4,7 +4,7 @@ import { Aviso, EstadoCarga, Tarjeta, money, useDatosAdmin } from "@/components/
 import { Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Columna } from "./comunes";
-import { EncabezadoReporte, TablaReporte, mesesDisponibles } from "./comunes";
+import { EncabezadoReporte, SelectorMeses, TablaReporte, mesesDisponibles } from "./comunes";
 
 type Fila = {
   id: number;
@@ -38,37 +38,6 @@ const COLUMNAS: Columna<Fila>[] = [
   { clave: "zona", titulo: "Zona" },
   { clave: "vendedor", titulo: "Vendedor", ancho: "min-w-[160px]" },
 ];
-
-/** Uno o más meses; "Acumulado" los marca todos. */
-function SelectorMeses({ meses, setMeses }: { meses: string[]; setMeses: (v: string[]) => void }) {
-  const opciones = mesesDisponibles();
-  const todos = meses.length === opciones.length;
-  const alternar = (m: string) => {
-    if (meses.includes(m)) {
-      if (meses.length > 1) setMeses(meses.filter((x) => x !== m));
-    } else setMeses([...meses, m].sort());
-  };
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <button
-        onClick={() => setMeses(todos ? [opciones[0].value] : opciones.map((o) => o.value).sort())}
-        className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${todos ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-      >
-        Acumulado
-      </button>
-      {[...opciones].reverse().map((o) => (
-        <button
-          key={o.value}
-          onClick={() => alternar(o.value)}
-          aria-pressed={meses.includes(o.value)}
-          className={`px-3 py-1.5 rounded-full text-xs border capitalize transition-colors ${meses.includes(o.value) ? "bg-blue-50 text-blue-700 border-blue-300 font-medium" : "bg-white text-slate-500 hover:bg-slate-50"}`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /** Reporte III: lo comprado por cada cliente en uno o más meses (lib/inteligencia-negocio/reportes.ts). */
 export function ReporteClientes() {
