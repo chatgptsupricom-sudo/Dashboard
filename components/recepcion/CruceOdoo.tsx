@@ -186,7 +186,7 @@ export default function CruceOdoo({
     setError(null);
     setAviso(null);
     setDelExcel([]);
-    let leidos;
+    let leidos: Awaited<ReturnType<typeof leerExcel>>;
     try {
       leidos = await leerExcel(archivo);
     } catch {

@@ -9,7 +9,7 @@ import { query } from "@/lib/db";
  *   recepcion_packing.origen                 packing_list | factura
  *   recepcion_packing.factura_odoo_id        factura de la otra sede (origen factura)
  *   recepcion_packing.odoo_purchase_order_id OC de Odoo donde se carga lo contado
- *   recepcion_packing.odoo_estado            cargando | cargado | error | sin_oc
+ *   recepcion_packing.odoo_estado            cargando | cargado | acumulado | error | sin_oc
  *   recepcion_packing.odoo_recepciones_previas  IN de la OC hechas antes de empezar
  *   recepcion_packing_items.odoo_product_id  producto de Odoo del renglon
  *   recepcion_packing_items.factura_aparte   otra factura del embarque (ej.

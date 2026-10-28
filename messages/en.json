@@ -3882,12 +3882,14 @@
       "estado": {
         "cargando": "Loading into Odoo…",
         "cargado": "Loaded into Odoo (PO {oc})",
+        "acumulado": "Counted in the receipt of PO {oc}, not validated yet",
         "error": "Could not load into Odoo",
         "sin_oc": "No Odoo PO: not loaded"
       },
       "estado_corto": {
         "cargando": "Loading into Odoo",
         "cargado": "In Odoo",
+        "acumulado": "Not validated in Odoo",
         "error": "Odoo error",
         "sin_oc": "No PO"
       },
@@ -3898,6 +3900,13 @@
       "en_entrada": "Left in Input (no transfer to Stock): {lista}",
       "misma_oc": "PO {oc}",
       "elegir_oc": "Pick the Odoo PO",
+      "acumulado_detalle": "Written in {picking}, not validated: the PO is received in a single receipt so customs costs are applied at once. It validates itself when everything the PO orders has arrived.",
+      "acumulado_faltan": "The PO is still waiting for:",
+      "acumulado_mas": "and {count} more",
+      "acumulado_abiertas": "Other packing lists of this PO not closed yet: {lista}.",
+      "acumulado_validar_ayuda": "If nothing else is coming for this PO, validate it now. Whatever is missing stays pending in Odoo.",
+      "acumulado_validar": "Validate the PO receipt: everything arrived",
+      "acumulado_confirmar": "The receipt of this PO will be validated in Odoo with what was counted in all its packing lists. Whatever is missing will stay pending. Has everything arrived?",
       "reintentar": "Load into Odoo",
       "bloqueo": {
         "recibido_en_odoo": "In Odoo, the PO received goods that the panel did not load ({detalle}). If it is these same goods, they are already loaded and must not be loaded again.",
