@@ -8,6 +8,8 @@ import { emitirRecepcion, puedeComo, requireRecepcion } from "@/lib/recepcion/se
 import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
 import { guardarReparto } from "@/lib/recepcion/conteo";
 import { ErrorRecepcion, guardarOcElegida, packingListRepetido, validarOcElegida } from "@/lib/recepcion/odoo";
+import { avisarMaterialFaltante } from "@/lib/recepcion/avisoMaterial";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -147,6 +149,8 @@ export async function POST(request: NextRequest) {
       referencia: cab.referencia,
       proveedor: cab.proveedor,
     });
+    // Productos sin imagen en Odoo o sin flyer: correo a los adminLeads.
+    avisarMaterialFaltante(id, getPublicOrigin(request));
 
     return NextResponse.json({ success: true, id }, { status: 201 });
   } catch (e: any) {
