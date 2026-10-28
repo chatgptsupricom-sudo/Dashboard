@@ -150,6 +150,7 @@ export function Sidebar({
   const [isAdministracionOpen, setIsAdministracionOpen] = useState(false);
   const [isITOpen, setIsITOpen] = useState(false);
   const [isRRHHOpen, setIsRRHHOpen] = useState(false);
+  const [isBIOpen, setIsBIOpen] = useState(false);
   const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
   const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
   const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
@@ -1998,6 +1999,82 @@ export function Sidebar({
                           </Link>
                         );
                       })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de INTELIGENCIA DE NEGOCIO (solo superadmin): las pantallas propias
+                del rol BI (Días promedio, Reportes y Clasificación), que viven en /inteligencia_negocio. */}
+            {userRole === "superAdmin" && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsBIOpen(!isBIOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <PieChart size={20} className="text-slate-400" />
+                    <span className="text-sm">Inteligencia de Negocio</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isBIOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isBIOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { grupo: "", items: [{ label: "Días promedio", slug: "dias-promedio" }] },
+                        {
+                          grupo: "Reportes",
+                          items: [
+                            { label: "Facturación", slug: "reportes/facturacion" },
+                            { label: "Productos", slug: "reportes/productos" },
+                            { label: "Clientes", slug: "reportes/clientes" },
+                          ],
+                        },
+                        {
+                          grupo: "Clasificación",
+                          items: [
+                            { label: "Productos", slug: "clasificacion/productos" },
+                            { label: "Clientes", slug: "clasificacion/clientes" },
+                            { label: "Por marca", slug: "clasificacion/marcas" },
+                          ],
+                        },
+                      ].map(({ grupo, items }) => (
+                        <div key={grupo || "general"} className="space-y-1">
+                          {grupo && (
+                            <p className="px-4 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{grupo}</p>
+                          )}
+                          {items.map((subItem) => {
+                            const href = `/${locale}/inteligencia_negocio/${subItem.slug}`;
+                            const isSubActive = pathname === href;
+                            return (
+                              <Link
+                                key={subItem.slug}
+                                href={href}
+                                onClick={() => {
+                                  if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                                }}
+                              >
+                                <div
+                                  className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                                >
+                                  {subItem.label}
+                                </div>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      ))}
                     </motion.div>
                   )}
                 </AnimatePresence>
