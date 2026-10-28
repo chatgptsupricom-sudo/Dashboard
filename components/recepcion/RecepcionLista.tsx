@@ -51,7 +51,7 @@ type Fila = {
   /** packing_list (Compras) o factura (mercancia de otra sede). */
   origen?: "packing_list" | "factura";
   /** Como quedo la carga en Odoo al cerrar. */
-  odoo_estado?: "cargando" | "cargado" | "error" | "sin_oc" | null;
+  odoo_estado?: "cargando" | "cargado" | "acumulado" | "error" | "sin_oc" | null;
 };
 
 type Filtro = Etapa | "todos";

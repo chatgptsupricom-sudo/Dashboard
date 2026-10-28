@@ -42,7 +42,7 @@ export const dynamic = "force-dynamic";
  *                     queda cerrada igual y con el error a la vista.
  *
  * Despues de cerrar (Almacen o Compras):
- *  cargar_odoo        { purchase_order_id?, saltar_frenos? } reintenta la
+ *  cargar_odoo        { purchase_order_id?, saltar_frenos?, validar_oc? } reintenta la
  *                     carga en Odoo; con la OC, para una recepcion que no
  *                     tenia (o tenia otra y no se llego a cargar nada).
  *                     `saltar_frenos` solo lo usa el SuperAdmin, despues de
@@ -110,7 +110,7 @@ export async function POST(
             return {};
           }
         })();
-        if ((anterior.recepciones?.length || 0) > 0 || anterior.intento) {
+        if ((anterior.recepciones?.length || 0) > 0 || anterior.intento || (anterior.acumulado?.lineas?.length || 0) > 0) {
           return NextResponse.json(
             { error: "Ya se cargo una parte en la OC anterior: no se puede cambiar" },
             { status: 409 },
@@ -135,6 +135,9 @@ export async function POST(
       }
       await cargarEnOdoo(id, sesion!.nombre, {
         saltarFrenos: body?.saltar_frenos === true && sesion!.rol === "superadmin",
+        // Una recepcion por OC: "ya llego todo", se valida aunque falte algo
+        // (lo que falte queda pendiente en Odoo).
+        validarOc: body?.validar_oc === true,
       });
       emitirRecepcion({ accion: "editado", id, cids: Number(rec.cids), referencia: rec.referencia });
       return NextResponse.json({ success: true, ...(await cargarRecepcion(id)) });
