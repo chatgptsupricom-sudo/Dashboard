@@ -1,6 +1,7 @@
 import { db, query } from "@/lib/db";
 import { callOdooRPCEstricto } from "@/lib/odoo";
-import { ROLES_CON_MARCAS, type Asignacion, type Linea } from "@/lib/gerente-marca/tipos";
+import { esRolMarketingElectro } from "@/lib/auth/marketingElectro";
+import { ROL_GERENTE_MARCA, type Asignacion, type Linea } from "@/lib/gerente-marca/tipos";
 
 /**
  * Qué marcas lleva cada Gerente de Marca. Una fila por correo y marca
@@ -45,6 +46,17 @@ export async function asignacionesDe(email: string): Promise<Asignacion[]> {
 }
 
 /**
+ * Las marcas que ve una sesión: Marketing y Electrodomésticos analiza todas
+ * (todas las de Odoo, enteras); el Gerente de Marca, las que tiene asignadas.
+ */
+export async function marcasDeLaSesion(payload: any): Promise<Asignacion[]> {
+  if (esRolMarketingElectro(payload?.role)) {
+    return (await marcasOdoo()).map((m) => ({ marcaId: m.id, marca: m.nombre, linea: "todo" as const }));
+  }
+  return asignacionesDe(String(payload?.email || ""));
+}
+
+/**
  * Las marcas de todos los gerentes juntas (lo que ve el SuperAdmin sin elegir
  * gerente). Si una marca la lleva entera alguien y otro solo su cómputo,
  * queda entera.
@@ -66,16 +78,19 @@ export interface GerenteConMarcas {
   asignaciones: Asignacion[];
 }
 
-/** Usuarios con un rol de `ROLES_CON_MARCAS` (de `users_config`), cada uno con sus marcas. */
+/**
+ * Gerentes de Marca (de `users_config`), cada uno con sus marcas. Marketing y
+ * Electrodomésticos no sale: ve todas (`marcasDeLaSesion`).
+ */
 export async function gerentes(): Promise<GerenteConMarcas[]> {
   await ensureTabla();
   const [usuarios] = await db.execute(
     `SELECT LOWER(TRIM(uc.email)) AS email, uc.name
        FROM users_config uc
        JOIN roles r ON r.id = uc.role_id
-      WHERE LOWER(TRIM(r.name)) IN (?, ?)
+      WHERE LOWER(TRIM(r.name)) = ?
       ORDER BY uc.name`,
-    ROLES_CON_MARCAS,
+    [ROL_GERENTE_MARCA],
   );
   const [filas] = await db.execute("SELECT email, marca_id, marca, linea FROM gerente_marca_asignaciones ORDER BY marca");
   const porEmail = new Map<string, Asignacion[]>();

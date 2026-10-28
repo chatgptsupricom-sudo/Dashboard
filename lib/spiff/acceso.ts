@@ -1,7 +1,7 @@
-import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { ROLES_BI } from "@/lib/auth/inteligenciaNegocio";
 
 /** Roles que ven el Spiff de cualquier sede (con `?company_id=`). */
-const ROLES_ELIGEN_SEDE = ["superadmin", "gerencia de ventas", "gerente de operaciones", ROL_BI];
+const ROLES_ELIGEN_SEDE = ["superadmin", "gerencia de ventas", "gerente de operaciones", ...ROLES_BI];
 
 /**
  * Roles que abren las facturas de cualquier vendedor desde el ranking del

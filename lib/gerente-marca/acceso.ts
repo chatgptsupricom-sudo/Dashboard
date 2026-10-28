@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
-import { asignacionesDe, todasLasAsignaciones } from "@/lib/gerente-marca/asignaciones";
+import { asignacionesDe, marcasDeLaSesion, todasLasAsignaciones } from "@/lib/gerente-marca/asignaciones";
 import { ROLES_CON_MARCAS, SEDES_GERENTE, type Asignacion } from "@/lib/gerente-marca/tipos";
 
 /**
  * Guard de las APIs del Gerente de Marca. El gerente ve solo sus marcas (las
- * de su correo, del token: no puede pedir las de otro). El SuperAdmin ve las
+ * de su correo, del token: no puede pedir las de otro); Marketing y
+ * Electrodomésticos, todas. El SuperAdmin ve las
  * de un gerente con `?gerente=correo` o, sin él, las de todos juntos.
  *
  * `?sede=9|10` deja una sola sede; sin ella, las dos (Valencia y Caracas).
@@ -26,6 +27,6 @@ export async function alcanceGerente(
   const gerente = sp.get("gerente");
   const asignaciones = esSuper
     ? gerente ? await asignacionesDe(gerente) : await todasLasAsignaciones()
-    : await asignacionesDe(String(payload?.email || ""));
+    : await marcasDeLaSesion(payload);
   return { asignaciones, sedes, payload };
 }

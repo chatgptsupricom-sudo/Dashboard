@@ -2,15 +2,15 @@
  * Rol Marketing y Electrodomésticos (`/marketing_electrodomesticos`).
  *
  * Gerente de la línea de electrodomésticos que además apoya a Marketing en el
- * desarrollo de marcas. Ve, sin cambiar nada:
+ * desarrollo de marcas y hace análisis. Ve, sin cambiar nada:
  *
- * - El Dashboard del SuperAdmin (su pantalla de inicio, las tres sedes).
- * - Inventario y Ventas por marca de las marcas que el SuperAdmin le asigna
- *   por correo (las mismas pantallas y asignaciones del Gerente de Marca,
- *   lib/gerente-marca/).
+ * - Lo mismo que Inteligencia de Negocio menos Leads: cuenta como BI
+ *   (`ROLES_BI` de lib/auth/inteligenciaNegocio.ts), así que entra a toda API
+ *   que liste `ROL_BI`, elige sede y no ve intercompañía. Sus páginas son
+ *   re-exports de las de /inteligencia_negocio.
+ * - Inventario y Ventas por marca con **todas** las marcas
+ *   (`marcasDeLaSesion` de lib/gerente-marca/asignaciones.ts).
  * - Mayor y menor rotación y Tendencia de ventas de Compras (/compras/...).
- * - Catálogo, Plan de Contenido, Banco de Flyers, Material POP, Metas y Stock
- *   por marca, Opiniones y Mapa de clientes.
  * - Actividades (las suyas; ahí sí escribe, va por requireSession).
  *
  * Solo lectura: `requireRoles` le responde 403 a todo lo que no sea GET/HEAD.

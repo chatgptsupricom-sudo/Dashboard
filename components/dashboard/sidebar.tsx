@@ -3,6 +3,7 @@
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { rolePermissions, UserRole } from "@/lib/types";
 import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
+import { esRolMarketingElectro } from "@/lib/auth/marketingElectro";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   DndContext,
@@ -441,12 +442,10 @@ export function Sidebar({
     { id: "admin_contabilidad", label: "Contabilidad y cierre", icon: BookOpenCheck, slug: "/administracion/contabilidad", absoluteHref: true },
     // Gerente de Marca (lib/gerente-marca/): sus marcas, en Valencia y Caracas.
     { id: "gm_dashboard", label: t("dashboard"), icon: LayoutDashboard, slug: "" },
-    { id: "gm_inventario", label: t("inventario"), icon: Package, slug: "/inventario" },
+    { id: "gm_inventario", label: "Inventario por marca", icon: Package, slug: "/inventario" },
     { id: "gm_antiguedad", label: "Antigüedad de inventario", icon: Timer, slug: "/antiguedad" },
     { id: "gm_ventas", label: "Ventas por marca", icon: TrendingUp, slug: "/ventas" },
     { id: "gm_banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
-    // Marketing y Electrodomésticos: Material POP de Valencia, solo lectura.
-    { id: "me_material_pop", label: t("material_pop"), icon: Package, slug: "/material-pop" },
     // SuperAdmin: lo que ve cada Gerente de Marca y a quién se le asigna cada marca.
     { id: "gerencia_marca", label: "Gerencia de Marca", icon: Award, slug: "/gerente_marca", absoluteHref: true },
   ];
@@ -1747,7 +1746,8 @@ export function Sidebar({
                         { label: "KPI de Diseños", href: `${basePath}/disenos` },
                         // Material POP vive en /adminleads (no hay copia bajo
                         // /superadmin): el enlace va a esa ruta.
-                        { label: t("material_pop"), href: `/${locale}/adminleads/material-pop` },
+                        // Marketing y Electrodomésticos no entra a /adminleads: tiene su copia.
+                        { label: t("material_pop"), href: esRolMarketingElectro(userRole) ? `${basePath}/material-pop` : `/${locale}/adminleads/material-pop` },
                         ...(allowedSections.includes("sorteo_caracas")
                           ? [{ label: t("sorteo_caracas"), href: `${basePath}/sorteo` }]
                           : []),
