@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
-import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
+import { conSinIntercompaniaBI } from "@/lib/intercompania";
 import { diasPromedio } from "@/lib/inteligencia-negocio/diasPromedio";
 
 export const dynamic = "force-dynamic";
@@ -35,5 +35,6 @@ async function leerGET(request: NextRequest) {
   }
 }
 
-// Inteligencia de Negocio: sin intercompañía (lib/intercompania.ts).
-export const GET = conSinIntercompaniaParaBI(leerGET);
+// Sin intercompañía para quien la abra (BI o el SuperAdmin desde su desplegable
+// "Inteligencia de Negocio"): la pantalla lo dice en el título (lib/intercompania.ts).
+export const GET = (request: NextRequest) => conSinIntercompaniaBI(ROL_BI, () => leerGET(request));
