@@ -430,6 +430,8 @@ export function Sidebar({
     { id: "llegadas_disenador", label: t("llegadas"), icon: PackageCheck, slug: "/disenador/llegadas", absoluteHref: true, cidsOnly: 9 },
     { id: "catalogo_disenos", label: "KPI de Diseños", icon: Palette, slug: "/disenos" },
     { id: "editor_ia_disenador", label: "Editor con IA", icon: Sparkles, slug: "/editor-ia" },
+    // Cantidad de clientes por estado, en 3D; el país sale del cids (API).
+    { id: "mapa_clientes_disenador", label: "Mapa de clientes", icon: MapPinned, slug: "/mapa-clientes" },
     // absoluteHref: estas dos apuntan siempre a /administracion, sin depender del
     // basePath del rol. Asi tambien funcionan para superadmin, cuyo basePath es
     // /superadmin y generaria enlaces rotos con slugs relativos.
