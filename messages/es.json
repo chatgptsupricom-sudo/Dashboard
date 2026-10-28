@@ -3871,12 +3871,14 @@
       "estado": {
         "cargando": "Cargando en Odoo…",
         "cargado": "Cargado en Odoo (OC {oc})",
+        "acumulado": "Contado en la recepción de la OC {oc}, falta validar",
         "error": "No se pudo cargar en Odoo",
         "sin_oc": "Sin OC de Odoo: no se cargó"
       },
       "estado_corto": {
         "cargando": "Cargando en Odoo",
         "cargado": "En Odoo",
+        "acumulado": "Sin validar en Odoo",
         "error": "Error en Odoo",
         "sin_oc": "Sin OC"
       },
@@ -3887,6 +3889,13 @@
       "en_entrada": "Quedaron en Entrada (no había traslado a Existencias): {lista}",
       "misma_oc": "OC {oc}",
       "elegir_oc": "Elige la OC de Odoo",
+      "acumulado_detalle": "Está escrito en {picking}, sin validar: la OC se recibe en una sola recepción, así los costos de aduana se aplican de una vez. Se valida sola cuando llegue todo lo que pide la OC.",
+      "acumulado_faltan": "La OC todavía espera:",
+      "acumulado_mas": "y {count} más",
+      "acumulado_abiertas": "Otros packing list de esta OC que todavía no se cierran: {lista}.",
+      "acumulado_validar_ayuda": "Si ya no va a llegar nada más de esta OC, valídala ahora. Lo que falte queda pendiente en Odoo.",
+      "acumulado_validar": "Validar la recepción de la OC: ya llegó todo",
+      "acumulado_confirmar": "Se va a validar en Odoo la recepción de esta OC con lo que se contó en todos sus packing list. Lo que falte quedará pendiente. ¿Ya llegó todo?",
       "reintentar": "Cargar en Odoo",
       "bloqueo": {
         "recibido_en_odoo": "En Odoo, la OC recibió mercancía que no cargó el panel ({detalle}). Si es esta misma mercancía, ya está cargada y no se debe cargar otra vez.",

@@ -432,7 +432,8 @@ export type Origen = (typeof ORIGENES)[number];
  *  - error: no se pudo; se reintenta desde el detalle.
  *  - sin_oc: no tiene OC de Odoo: no hay donde cargarla.
  */
-export type EstadoOdoo = "cargando" | "cargado" | "error" | "sin_oc";
+/** `acumulado`: lo contado ya esta escrito en la recepcion de la OC, sin validar (una recepcion por OC). */
+export type EstadoOdoo = "cargando" | "cargado" | "acumulado" | "error" | "sin_oc";
 
 export const SUCURSALES: Array<{ cids: number; nombre: string }> = [
   { cids: 9, nombre: "Valencia" },
