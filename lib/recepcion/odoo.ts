@@ -487,6 +487,21 @@ export type ResultadoOdoo = {
   intento?: { tipo: "in" | "int"; picking_id: number; asignado: Record<string, { cantidad: number; seriales: string[] }> } | null;
   /** Por que se freno la carga (para que el SuperAdmin decida). */
   bloqueo?: { tipo: "recibido_en_odoo" | "packing_list_repetido"; detalle: string[] } | null;
+  /**
+   * Una recepcion por OC: lo de este packing list escrito en la recepcion
+   * pendiente de la OC, sin validar (ver `acumularEnRecepcion`).
+   */
+  acumulado?: {
+    picking_ids: number[];
+    pickings: string[];
+    /** Lineas (stock.move.line) que escribio este packing list. */
+    lineas: number[];
+    asignado: Record<string, { cantidad: number; seriales: string[] }>;
+    /** Lo que la OC todavia espera, contando los otros packing list. */
+    faltan: string[];
+    /** Otros packing list de la misma OC que todavia no se cerraron. */
+    otras_abiertas: string[];
+  } | null;
 };
 
 const resultadoVacio = (): ResultadoOdoo => ({
@@ -585,7 +600,7 @@ async function frenos(rec: any, poId: number, resultado: ResultadoOdoo): Promise
     const otro = await query(
       `SELECT id FROM recepcion_packing
         WHERE cids = ? AND origen = 'packing_list' AND UPPER(TRIM(referencia)) = ? AND id <> ?
-          AND (odoo_estado IN ('cargado', 'cargando') OR odoo_resultado LIKE '%"recepciones":[{%')
+          AND (odoo_estado IN ('cargado', 'cargando', 'acumulado') OR odoo_resultado LIKE '%"recepciones":[{%')
         LIMIT 1`,
       [rec.cids, normalizarReferencia(rec.referencia), rec.id],
     );
@@ -1029,6 +1044,296 @@ async function cargarTraslados(rec: any, resultado: ResultadoOdoo, quien: string
   }
 }
 
+// ---------------------------------------------------------------------------
+// Una recepcion por OC
+// ---------------------------------------------------------------------------
+
+/**
+ * Los costos de aduana (costos en destino) se aplican por recepcion de Odoo:
+ * si cada contenedor valida la suya, una OC que llega en varios packing list
+ * termina en varias recepciones (P-00116: IN/00309, IN/00327 e IN/00328) y
+ * hay que repartir el costo entre todas. Por eso, en las OC que todavia no
+ * tienen ninguna recepcion hecha en Odoo, lo contado en cada packing list se
+ * ESCRIBE en la recepcion pendiente de la OC sin validarla (`odoo_estado =
+ * 'acumulado'`) y la recepcion se valida una sola vez: cuando lo escrito
+ * cubre todo lo pedido, o cuando alguien marca que ya llego todo
+ * (`validarOc`). Las OC que ya tienen recepciones hechas siguen como antes.
+ *
+ * Cada recepcion del panel guarda sus lineas (`odoo_resultado.acumulado`): un
+ * reintento reescribe solo las suyas y respeta las de los otros packing list
+ * de la misma OC. Las de la misma OC se escriben de a una (`conCandadoOc`).
+ */
+
+const candadosOc = new Map<number, Promise<unknown>>();
+
+/** Corre `fn` sin que otra carga de la misma OC escriba a la vez en su recepcion. */
+async function conCandadoOc<T>(poId: number, fn: () => Promise<T>): Promise<T> {
+  const previo = candadosOc.get(poId) || Promise.resolve();
+  const actual = previo.catch(() => undefined).then(fn);
+  candadosOc.set(poId, actual);
+  try {
+    return await actual;
+  } finally {
+    if (candadosOc.get(poId) === actual) candadosOc.delete(poId);
+  }
+}
+
+/** Esta recepcion va en una sola recepcion de Odoo por OC (ver arriba). */
+async function unaPorOc(rec: any, poId: number, resultado: ResultadoOdoo): Promise<boolean> {
+  if (resultado.acumulado) return true;
+  if (rec.origen === "factura" || resultado.recepciones.length > 0) return false;
+  return (await recepcionesHechas(poId)).length === 0;
+}
+
+/** Las otras recepciones del panel con lineas escritas en la recepcion de esta OC. */
+async function otrasAcumuladas(poId: number, recId: number): Promise<Array<{ id: number; resultado: ResultadoOdoo }>> {
+  const r = await query(
+    "SELECT id, odoo_resultado FROM recepcion_packing WHERE odoo_purchase_order_id = ? AND id <> ? AND odoo_estado = 'acumulado'",
+    [poId, recId],
+  );
+  return (r.rows as any[])
+    .map((o) => ({ id: Number(o.id), resultado: leerResultado(o.odoo_resultado) }))
+    .filter((o) => o.resultado.acumulado);
+}
+
+/**
+ * Escribe lo contado en la recepcion pendiente de la OC, sin validar.
+ * Devuelve si con esto (y lo de los otros packing list) ya esta todo lo pedido.
+ */
+async function acumularEnRecepcion(rec: any, poId: number, recibidos: Recibido[], resultado: ResultadoOdoo): Promise<boolean> {
+  const pickings = await odoo<any[]>(
+    "stock.picking",
+    "search_read",
+    [[["purchase_id", "=", poId], ["picking_type_code", "=", "incoming"], ["state", "not in", ["done", "cancel"]]]],
+    { fields: ["name", "location_id", "location_dest_id"], order: "id asc", limit: 50 },
+  );
+  if (!pickings?.length) throw new Error(`La OC ${rec.odoo_oc_nombre || poId} no tiene recepciones pendientes en Odoo`);
+  const moves = await odoo<any[]>(
+    "stock.move",
+    "search_read",
+    [[["picking_id", "in", pickings.map((p) => p.id)], ["state", "not in", ["done", "cancel"]]]],
+    { fields: ["picking_id", "product_id", "product_uom_qty", "product_uom", "location_id", "location_dest_id", "move_line_ids"], order: "id asc", limit: 5000 },
+  );
+  const orden = new Map(pickings.map((p, n) => [p.id, n]));
+  moves.sort((a, b) => orden.get(m2o(a.picking_id))! - orden.get(m2o(b.picking_id))! || a.id - b.id);
+
+  // Lo que ya escribieron los otros packing list de esta OC: no se toca.
+  const otras = await otrasAcumuladas(poId, Number(rec.id));
+  const idsOtras = [...new Set(otras.flatMap((o) => o.resultado.acumulado!.lineas))];
+  const lineasOtras = idsOtras.length
+    ? await odoo<any[]>("stock.move.line", "search_read", [[["id", "in", idsOtras]]], { fields: ["move_id", "quantity"], limit: 20000 })
+    : [];
+  const deOtras = new Set(lineasOtras.map((l) => Number(l.id)));
+  const otrasPorMove = new Map<number, number>();
+  for (const l of lineasOtras) otrasPorMove.set(m2o(l.move_id), r3((otrasPorMove.get(m2o(l.move_id)) || 0) + Number(l.quantity || 0)));
+
+  const pids = [...new Set([...recibidos.map((r) => r.productId), ...moves.map((m) => m2o(m.product_id))])];
+  const productos = await odoo<any[]>("product.product", "read", [pids, ["tracking", "uom_id", "display_name"]], {
+    context: { active_test: false },
+  });
+  const prod = new Map(productos.map((p) => [p.id, p]));
+
+  type Asignacion = { cantidad: number; seriales: string[] };
+  const porMove = new Map<number, Asignacion>();
+  const nuevos: Array<{ productId: number; cantidad: number; seriales: string[] }> = [];
+  const asignado: Record<string, Asignacion> = {};
+  const errores: string[] = [];
+  for (const r of recibidos) {
+    const conSerial = (prod.get(r.productId)?.tracking || "none") !== "none";
+    if (conSerial && r.seriales.length !== r.cantidad) {
+      errores.push(`${r.nombre}: en Odoo lleva serial y se contaron ${r.cantidad} con ${r.seriales.length} serial(es) pistoleado(s)`);
+      continue;
+    }
+    const seriales = conSerial ? r.seriales : [];
+    if (r.cantidad <= 0) continue;
+    asignado[String(r.productId)] = { cantidad: r.cantidad, seriales };
+    const suyos = moves.filter((m) => m2o(m.product_id) === r.productId);
+    if (suyos.length === 0) {
+      nuevos.push({ productId: r.productId, cantidad: r.cantidad, seriales });
+      continue;
+    }
+    let resto = r.cantidad;
+    let n = 0;
+    suyos.forEach((m, idx) => {
+      // Lo que cabe en la linea de la OC despues de lo de los otros packing
+      // list; lo que sobra va a la ultima (se carga todo lo que llego).
+      const libre = Math.max(0, r3((Number(m.product_uom_qty) || 0) - (otrasPorMove.get(m.id) || 0)));
+      const toma = idx === suyos.length - 1 ? resto : Math.min(resto, libre);
+      if (toma <= 0) return;
+      porMove.set(m.id, { cantidad: r3(toma), seriales: conSerial ? seriales.slice(n, n + toma) : [] });
+      n += toma;
+      resto = r3(resto - toma);
+    });
+  }
+  if (errores.length) throw new Error(errores.join(" · "));
+
+  // Fuera las lineas que puso Odoo al reservar y las que este packing list
+  // escribio antes (se vuelven a escribir con lo de ahora).
+  const sobran = moves.flatMap((m) => (m.move_line_ids || []).filter((l: number) => !deOtras.has(Number(l))));
+  if (sobran.length) await odoo("stock.move.line", "unlink", [sobran]);
+
+  const linea = (m: { id: number; picking: number; productId: number; uom: number; origen: number; destino: number }, extra: Record<string, unknown>) => ({
+    move_id: m.id,
+    picking_id: m.picking,
+    product_id: m.productId,
+    product_uom_id: m.uom,
+    location_id: m.origen,
+    location_dest_id: m.destino,
+    picked: true,
+    ...extra,
+  });
+  const lineas: any[] = [];
+  const conLineas = new Set<number>(otrasPorMove.keys());
+  for (const m of moves) {
+    const a = porMove.get(m.id);
+    if (!a) continue;
+    const base = {
+      id: m.id,
+      picking: m2o(m.picking_id),
+      productId: m2o(m.product_id),
+      uom: m2o(m.product_uom),
+      origen: m2o(m.location_id),
+      destino: m2o(m.location_dest_id),
+    };
+    if (a.seriales.length) a.seriales.forEach((s) => lineas.push(linea(base, { lot_name: s, quantity: 1 })));
+    else lineas.push(linea(base, { quantity: a.cantidad }));
+    conLineas.add(m.id);
+  }
+  // Productos que no estan en la OC: una linea nueva en la primera recepcion.
+  const p0 = pickings[0];
+  for (const nv of nuevos) {
+    const pr = prod.get(nv.productId);
+    const moveId = await odoo<number>("stock.move", "create", [
+      {
+        name: sinCodigo(pr?.display_name || "Producto"),
+        product_id: nv.productId,
+        product_uom_qty: nv.cantidad,
+        product_uom: m2o(pr?.uom_id),
+        location_id: m2o(p0.location_id),
+        location_dest_id: m2o(p0.location_dest_id),
+        picking_id: p0.id,
+        company_id: Number(rec.cids),
+      },
+    ]);
+    const base = {
+      id: moveId,
+      picking: p0.id,
+      productId: nv.productId,
+      uom: m2o(pr?.uom_id),
+      origen: m2o(p0.location_id),
+      destino: m2o(p0.location_dest_id),
+    };
+    if (nv.seriales.length) nv.seriales.forEach((s) => lineas.push(linea(base, { lot_name: s, quantity: 1 })));
+    else lineas.push(linea(base, { quantity: nv.cantidad }));
+    conLineas.add(moveId);
+  }
+  const creadas = lineas.length ? await odoo<number[] | number>("stock.move.line", "create", [lineas]) : [];
+  const ids = (Array.isArray(creadas) ? creadas : [creadas]).map(Number).filter(Boolean);
+
+  const marcados = [...conLineas];
+  const sinMarcar = moves.map((m) => m.id).filter((x) => !conLineas.has(x));
+  if (marcados.length) await odoo("stock.move", "write", [marcados, { picked: true }]);
+  if (sinMarcar.length) await odoo("stock.move", "write", [sinMarcar, { picked: false }]);
+
+  // Lo que todavia no llego de la OC (contando los otros packing list).
+  const nuestroPorMove = new Map<number, number>();
+  for (const [mid, a] of porMove) nuestroPorMove.set(mid, a.cantidad);
+  const faltan: string[] = [];
+  for (const m of moves) {
+    const tiene = r3((otrasPorMove.get(m.id) || 0) + (nuestroPorMove.get(m.id) || 0));
+    const pide = Number(m.product_uom_qty) || 0;
+    if (tiene < pide) {
+      const nombre = Array.isArray(m.product_id) ? String(m.product_id[1]) : String(m.product_id);
+      faltan.push(`${nombre} (${r3(pide - tiene)} de ${pide})`);
+    }
+  }
+  const abiertas = await query(
+    "SELECT referencia FROM recepcion_packing WHERE odoo_purchase_order_id = ? AND id <> ? AND etapa <> 'cerrado'",
+    [poId, rec.id],
+  ).catch(() => ({ rows: [] }));
+
+  resultado.acumulado = {
+    picking_ids: pickings.map((p) => Number(p.id)),
+    pickings: pickings.map((p) => String(p.name)),
+    lineas: ids,
+    asignado,
+    faltan,
+    otras_abiertas: (abiertas.rows as any[]).map((a) => String(a.referencia || "")).filter(Boolean),
+  };
+  return faltan.length === 0;
+}
+
+/**
+ * La recepcion de la OC donde se fue escribiendo ya esta hecha (la valido el
+ * panel desde otro packing list, o alguien en Odoo): esta recepcion queda
+ * cargada con lo suyo.
+ */
+async function acumuladoHecho(resultado: ResultadoOdoo): Promise<boolean> {
+  const ac = resultado.acumulado;
+  if (!ac?.picking_ids.length) return false;
+  const pk = await odoo<any[]>("stock.picking", "read", [ac.picking_ids, ["name", "state"]]);
+  const hechos = (pk || []).filter((p) => p.state === "done");
+  if (hechos.length === 0) return false;
+  for (const p of hechos) {
+    if (!resultado.recepciones.some((r) => r.id === Number(p.id))) {
+      const [pend] = await odoo<any[]>("stock.picking", "search_read", [[["backorder_id", "=", p.id]]], { fields: ["name"], limit: 1 });
+      resultado.recepciones.push({ id: Number(p.id), nombre: String(p.name), pendiente: pend?.name ?? null });
+    }
+  }
+  for (const [k, a] of Object.entries(ac.asignado)) {
+    const ya = resultado.cargado[k] || { cantidad: 0, seriales: [] };
+    resultado.cargado[k] = { cantidad: r3(ya.cantidad + a.cantidad), seriales: [...ya.seriales, ...a.seriales] };
+  }
+  resultado.acumulado = null;
+  return true;
+}
+
+/** Valida la recepcion de la OC con lo de todos los packing list escritos. */
+async function validarAcumulado(rec: any, poId: number, resultado: ResultadoOdoo, quien: string): Promise<void> {
+  const ac = resultado.acumulado!;
+  const otras = await otrasAcumuladas(poId, Number(rec.id));
+  const referencias = [rec.referencia, ...otras.map((o) => `#${o.id}`)].filter(Boolean).join(", ");
+  // Solo entra lo que escribio el panel: si en Odoo volvieron a reservar
+  // ("Comprobar disponibilidad"), esas lineas automaticas se recibirian de mas.
+  const delPanel = new Set([...ac.lineas, ...otras.flatMap((o) => o.resultado.acumulado!.lineas)].map(Number));
+  const moves = await odoo<any[]>(
+    "stock.move",
+    "search_read",
+    [[["picking_id", "in", ac.picking_ids], ["state", "not in", ["done", "cancel"]]]],
+    { fields: ["move_line_ids"], limit: 5000 },
+  );
+  const ajenas = moves.flatMap((m) => (m.move_line_ids || []).map(Number).filter((l: number) => !delPanel.has(l)));
+  if (ajenas.length) await odoo("stock.move.line", "unlink", [ajenas]);
+  const conPanel = moves.filter((m) => (m.move_line_ids || []).some((l: number) => delPanel.has(Number(l)))).map((m) => m.id);
+  const sinPanel = moves.map((m) => m.id).filter((x) => !conPanel.includes(x));
+  if (conPanel.length) await odoo("stock.move", "write", [conPanel, { picked: true }]);
+  if (sinPanel.length) await odoo("stock.move", "write", [sinPanel, { picked: false }]);
+
+  for (const pickingId of ac.picking_ids) {
+    const [p] = await odoo<any[]>("stock.picking", "read", [[pickingId], ["state", "move_ids"]]);
+    if (!p || ["done", "cancel"].includes(p.state)) continue;
+    const conAlgo = await odoo<number>("stock.move.line", "search_count", [[["picking_id", "=", pickingId]]]);
+    if (!conAlgo) continue;
+    resultado.intento = { tipo: "in", picking_id: pickingId, asignado: ac.asignado };
+    await guardarResultado(Number(rec.id), resultado);
+    const v = await validar(pickingId);
+    confirmarIntento(resultado, { id: pickingId, nombre: v.nombre, pendiente: v.pendiente });
+    await guardarResultado(Number(rec.id), resultado);
+    await notaChatter(pickingId, `Recibido desde el panel en una sola recepcion de la OC (recepciones ${referencias}). Valido: ${quien}.`);
+  }
+  resultado.acumulado = null;
+  // Las otras recepciones del panel de esta OC quedan cargadas con lo suyo.
+  for (const o of otras) {
+    if (await acumuladoHecho(o.resultado)) {
+      await query(
+        `UPDATE recepcion_packing SET odoo_estado = 'cargado', odoo_cargado_at = NOW(), odoo_error = NULL, odoo_resultado = ?
+          WHERE id = ? AND odoo_estado = 'acumulado'`,
+        [JSON.stringify(o.resultado), o.id],
+      );
+    }
+  }
+}
+
 /**
  * Carga en Odoo lo contado en una recepcion cerrada: recepcion de la OC y
  * traslado a Existencias. No lanza: lo que pase queda en la recepcion
@@ -1037,7 +1342,7 @@ async function cargarTraslados(rec: any, resultado: ResultadoOdoo, quien: string
 export async function cargarEnOdoo(
   id: number,
   quien: string,
-  opts: { saltarFrenos?: boolean; completarFaltantes?: boolean } = {},
+  opts: { saltarFrenos?: boolean; completarFaltantes?: boolean; validarOc?: boolean } = {},
 ): Promise<{ estado: EstadoOdoo; error?: string }> {
   await asegurarColumnasOdoo();
   const datos = await cargarRecepcion(id);
@@ -1073,7 +1378,7 @@ export async function cargarEnOdoo(
     `UPDATE recepcion_packing
         SET odoo_estado = 'cargando', odoo_intento_at = NOW(), odoo_error = NULL, odoo_purchase_order_id = ?
       WHERE id = ? AND etapa = 'cerrado'
-        AND (odoo_estado IS NULL OR odoo_estado IN ('error', 'sin_oc')
+        AND (odoo_estado IS NULL OR odoo_estado IN ('error', 'sin_oc', 'acumulado')
              OR (odoo_estado = 'cargado' AND ? = 1)
              OR (odoo_estado = 'cargando' AND odoo_intento_at < NOW() - INTERVAL 60 MINUTE))`,
     [poId, id, completar ? 1 : 0],
@@ -1086,6 +1391,17 @@ export async function cargarEnOdoo(
   try {
     // Primero, si un intento anterior se corto a mitad de una validacion.
     await resolverIntento(id, resultado);
+    // Una recepcion por OC: si la recepcion donde se fue escribiendo ya se
+    // valido (desde otro packing list o en Odoo), esta queda cargada.
+    if (await acumuladoHecho(resultado)) {
+      await cargarTraslados(rec, resultado, quien);
+      await query(
+        `UPDATE recepcion_packing SET odoo_estado = 'cargado', odoo_cargado_at = NOW(), odoo_error = NULL, odoo_resultado = ?
+          WHERE id = ?`,
+        [JSON.stringify(resultado), id],
+      );
+      return { estado: "cargado" };
+    }
 
     const freno = await frenos(rec, poId, resultado);
     if (freno && !opts.saltarFrenos) {
@@ -1129,6 +1445,31 @@ export async function cargarEnOdoo(
     const { recibidos, sinProducto, apartados } = await recibidosPorProducto(datos.items, productosOc);
     resultado.sin_producto = sinProducto;
     resultado.apartados = apartados;
+
+    if (await unaPorOc(rec, poId, resultado)) {
+      const cerrar = await conCandadoOc(poId, async () => {
+        const completa = await acumularEnRecepcion(rec, poId, recibidos, resultado);
+        if (!completa && !opts.validarOc) return false;
+        await validarAcumulado(rec, poId, resultado, quien);
+        return true;
+      });
+      if (!cerrar) {
+        await query(
+          `UPDATE recepcion_packing SET odoo_estado = 'acumulado', odoo_error = NULL, odoo_resultado = ? WHERE id = ?`,
+          [JSON.stringify(resultado), id],
+        );
+        return { estado: "acumulado" };
+      }
+      await cargarTraslados(rec, resultado, quien);
+      await query(
+        `UPDATE recepcion_packing
+            SET odoo_estado = 'cargado', odoo_cargado_at = NOW(), odoo_error = NULL, odoo_resultado = ?
+          WHERE id = ?`,
+        [JSON.stringify(resultado), id],
+      );
+      return { estado: "cargado" };
+    }
+
     await cargarRecepciones(rec, poId, recibidos, resultado, quien);
     await cargarTraslados(rec, resultado, quien);
 

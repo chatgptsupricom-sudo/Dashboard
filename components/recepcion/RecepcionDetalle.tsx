@@ -94,7 +94,7 @@ type Recepcion = {
   /** Carga en Odoo al cerrar (lib/recepcion/odoo.ts). */
   odoo_purchase_order_id?: number | null;
   odoo_oc_nombre?: string | null;
-  odoo_estado?: "cargando" | "cargado" | "error" | "sin_oc" | null;
+  odoo_estado?: "cargando" | "cargado" | "acumulado" | "error" | "sin_oc" | null;
   odoo_error?: string | null;
   odoo_resultado?: string | null;
   odoo_cargado_at?: string | null;
@@ -109,6 +109,8 @@ type ResultadoOdoo = {
   en_entrada?: string[];
   /** Validacion que se corto a medias (el siguiente intento la resuelve). */
   intento?: { picking_id: number } | null;
+  /** Una recepcion por OC: escrito en la recepcion de la OC, sin validar. */
+  acumulado?: { pickings: string[]; faltan: string[]; otras_abiertas: string[] } | null;
   /** Por que se freno la carga: lo puede saltar solo el SuperAdmin, tras revisar en Odoo. */
   bloqueo?: { tipo: "recibido_en_odoo" | "packing_list_repetido"; detalle: string[] } | null;
 };
@@ -1750,6 +1752,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                   ) : rec.odoo_estado === "cargando" ? (
                     <Loader2 className="w-5 h-5 text-slate-400 animate-spin shrink-0" />
+                  ) : rec.odoo_estado === "acumulado" ? (
+                    <Clock className="w-5 h-5 text-amber-600 shrink-0" />
                   ) : (
                     <AlertTriangle
                       className={`w-5 h-5 shrink-0 ${rec.odoo_estado === "error" ? "text-red-600" : "text-amber-600"}`}
@@ -1761,6 +1765,11 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     </p>
                     {rec.odoo_estado === "cargado" && rec.odoo_cargado_at && (
                       <p className="text-xs text-slate-500">{hora(rec.odoo_cargado_at)}</p>
+                    )}
+                    {rec.odoo_estado === "acumulado" && resultadoOdoo.acumulado && (
+                      <p className="text-xs text-slate-600">
+                        {t("odoo.acumulado_detalle", { picking: resultadoOdoo.acumulado.pickings.join(", ") })}
+                      </p>
                     )}
                     {rec.odoo_estado === "error" && rec.odoo_error && (
                       <p className="mt-1 text-xs text-red-700 whitespace-pre-line break-words">{rec.odoo_error}</p>
@@ -1792,7 +1801,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     // Cruzar con IA los renglones sin producto y cargar lo que faltaba.
                     <CruceOdoo
                       recepcionId={rec.id}
-                      faltaCargar={rec.odoo_estado === "cargado"}
+                      faltaCargar={rec.odoo_estado === "cargado" || rec.odoo_estado === "acumulado"}
                       puedeCrearFicha={esCompras}
                       onCambio={(detalle) => (detalle?.recepcion ? aplicar(detalle, false) : void cargar(false))}
                     />
@@ -1829,6 +1838,39 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                   <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     {t("odoo.en_entrada", { lista: resultadoOdoo.en_entrada!.join(", ") })}
                   </p>
+                )}
+
+                {/* Una recepcion por OC: se valida una sola vez, cuando llega todo. */}
+                {rec.odoo_estado === "acumulado" && resultadoOdoo.acumulado && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-2">
+                    {resultadoOdoo.acumulado.faltan.length > 0 && (
+                      <div>
+                        <p className="font-semibold">{t("odoo.acumulado_faltan")}</p>
+                        <ul className="list-disc list-inside">
+                          {resultadoOdoo.acumulado.faltan.slice(0, 30).map((x) => (
+                            <li key={x}>{x}</li>
+                          ))}
+                          {resultadoOdoo.acumulado.faltan.length > 30 && (
+                            <li>{t("odoo.acumulado_mas", { count: resultadoOdoo.acumulado.faltan.length - 30 })}</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                    {resultadoOdoo.acumulado.otras_abiertas.length > 0 && (
+                      <p>{t("odoo.acumulado_abiertas", { lista: resultadoOdoo.acumulado.otras_abiertas.join(", ") })}</p>
+                    )}
+                    <p>{t("odoo.acumulado_validar_ayuda")}</p>
+                    <BotonSecundario
+                      onClick={() => {
+                        if (window.confirm(t("odoo.acumulado_confirmar"))) void accionar("cargar_odoo", { validar_oc: true }, false);
+                      }}
+                      disabled={enviando}
+                      icon={enviando ? Loader2 : CheckCircle2}
+                      className="w-full"
+                    >
+                      {t("odoo.acumulado_validar")}
+                    </BotonSecundario>
+                  </div>
                 )}
 
                 {(rec.odoo_estado === "error" || rec.odoo_estado === "sin_oc") && (
