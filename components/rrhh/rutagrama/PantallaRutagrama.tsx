@@ -16,15 +16,12 @@ import {
   type Rutagrama,
 } from "@/lib/rutagrama/tipos";
 import { Check, Copy, Loader2, MapPinned, MessageCircle, Plus, Printer, RotateCcw, Search, Trash2 } from "lucide-react";
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { Pastilla } from "../seleccion/comunes";
-import { CENTRO_SEDE } from "@/components/rutagrama/Mapa";
-
-const Mapa = dynamic(() => import("@/components/rutagrama/Mapa").then((m) => m.Mapa), {
-  ssr: false,
-  loading: () => <div className="h-[320px] animate-pulse rounded-xl bg-slate-100" />,
-});
+import { BuscadorGoogle } from "@/components/rutagrama/BuscadorGoogle";
+import { CENTRO_SEDE, type Enfoque } from "@/components/rutagrama/Mapa";
+import { MapaRuta as Mapa } from "@/components/rutagrama/MapaRuta";
+import { hayGoogle, siGoogleFalla } from "@/lib/rutagrama/google";
 
 /**
  * Rutagrama de los nuevos ingresos (lib/rutagrama/): RRHH crea el enlace de
@@ -512,6 +509,9 @@ function SitiosSedes({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => 
   const [direccion, setDireccion] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [enfoque, setEnfoque] = useState<Enfoque | null>(null);
+  const [conGoogle, setConGoogle] = useState(hayGoogle);
+  useEffect(() => siGoogleFalla(() => setConGoogle(false)), []);
 
   useEffect(() => {
     if (!abierto) return;
@@ -567,7 +567,19 @@ function SitiosSedes({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => 
               );
             })}
           </div>
-          <Mapa key={sede} mapa={mapa} modo="trabajo" onChange={setMapa} centro={mapa.trabajo ?? CENTRO_SEDE[sede]} alto={320} />
+          {conGoogle && (
+            <BuscadorGoogle
+              key={`buscar-${sede}`}
+              cerca={CENTRO_SEDE[sede]}
+              onFalla={() => setConGoogle(false)}
+              onElegir={(p, dir) => {
+                setMapa({ ...mapaVacio(), trabajo: p });
+                if (dir) setDireccion(dir.slice(0, 300));
+                setEnfoque({ punto: p, zoom: 17, n: Date.now() });
+              }}
+            />
+          )}
+          <Mapa key={sede} mapa={mapa} modo="trabajo" onChange={setMapa} centro={mapa.trabajo ?? CENTRO_SEDE[sede]} enfoque={enfoque} alto={320} />
           <input className={inputCls} value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Dirección corta (la ve el trabajador), ej.: Zona Industrial Norte" />
           {aviso && <p className="text-sm text-slate-600">{aviso}</p>}
           <div className="flex justify-end">

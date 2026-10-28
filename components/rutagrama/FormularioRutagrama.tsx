@@ -36,15 +36,12 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
-import dynamic from "next/dynamic";
+import { NOMBRE_MODO, calcularRutas, hayGoogle, modoDeTramos, siGoogleFalla, tramoIntermedio, type RutaGoogle } from "@/lib/rutagrama/google";
 import { useEffect, useMemo, useState } from "react";
-import { CENTRO_SEDE, COLOR_IDA, COLOR_VUELTA, type ModoMapa } from "./Mapa";
+import { BuscadorGoogle } from "./BuscadorGoogle";
 import { Firma } from "./Firma";
-
-const Mapa = dynamic(() => import("./Mapa").then((m) => m.Mapa), {
-  ssr: false,
-  loading: () => <div className="h-[380px] animate-pulse rounded-xl bg-black/5" />,
-});
+import { CENTRO_SEDE, COLOR_IDA, COLOR_VUELTA, type Enfoque, type ModoMapa } from "./Mapa";
+import { MapaRuta } from "./MapaRuta";
 
 /**
  * Página pública del rutagrama (/mi-ruta/<token>, lib/rutagrama/): el nuevo
@@ -388,7 +385,7 @@ export function FormularioRutagrama({ token }: { token: string }) {
                   <Resumen etiqueta="Ida" valor={d.ida.map(describirTramo).join(" · ")} />
                   <Resumen etiqueta="Regreso" valor={d.vuelta_igual ? "Por el mismo camino, al revés" : d.vuelta.map(describirTramo).join(" · ")} />
                   <Resumen etiqueta="Tiempo" valor={`${d.tiempo_min} minutos`} />
-                  <Resumen etiqueta="Mapa" valor={`Ruta de ida con ${d.mapa.ida.length} punto${d.mapa.ida.length === 1 ? "" : "s"} marcado${d.mapa.ida.length === 1 ? "" : "s"}`} />
+                  <Resumen etiqueta="Mapa" valor={d.mapa.ida.length ? "Casa, trabajo y ruta de ida marcados" : "Casa y trabajo marcados (sin ruta trazada)"} />
                 </dl>
                 <label className={`pt-choice mt-6 items-start ${declaro ? "pt-choice--on" : ""}`}>
                   <input type="checkbox" checked={declaro} onChange={(e) => setDeclaro(e.target.checked)} className="mt-1" />
@@ -608,6 +605,8 @@ function BotonIcono({ titulo, onClick, disabled, children }: { titulo: string; o
 
 type Resultado = { nombre: string; punto: Punto };
 
+const clave = (...ps: (Punto | null)[]) => ps.map((p) => (p ? p.join(",") : "-")).join("|");
+
 function PasoMapa({
   d,
   setMapa,
@@ -621,20 +620,78 @@ function PasoMapa({
   trabajoFijo: boolean;
   direccionTrabajo: string;
 }) {
-  const [modo, setModo] = useState<ModoMapa>(d.mapa.casa ? "ida" : "casa");
-  const [enfoque, setEnfoque] = useState<{ punto: Punto; zoom: number; n: number } | null>(null);
+  // Con Google la ruta sale sola (lib/rutagrama/google.ts); si Google falla se sigue a mano.
+  const [conGoogle, setConGoogle] = useState(hayGoogle);
+  const [manual, setManual] = useState(!hayGoogle);
+  const [modo, setModo] = useState<ModoMapa>(d.mapa.casa ? (hayGoogle ? null : "ida") : "casa");
+  const [enfoque, setEnfoque] = useState<Enfoque | null>(null);
   const [q, setQ] = useState("");
   const [buscando, setBuscando] = useState(false);
   const [resultados, setResultados] = useState<Resultado[] | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [rutas, setRutas] = useState<RutaGoogle[] | null>(null);
+  const [elegida, setElegida] = useState(0);
+  const [calculando, setCalculando] = useState(false);
+  // Para qué casa/trabajo/modo está calculada la ruta guardada: si ya venía (borrador) no se recalcula.
+  const [calculadaPara, setCalculadaPara] = useState<string | null>(d.mapa.ida.length ? "previa" : null);
   const vuelta = useMemo(() => rutaVuelta(d), [d]);
+  const modoGoogle = modoDeTramos(d.ida);
 
-  // Al poner la casa (o el trabajo) se pasa sola a la ruta de ida.
+  const fallaGoogle = () => {
+    setConGoogle(false);
+    setManual(true);
+    setModo(d.mapa.casa ? "ida" : "casa");
+  };
+
+  useEffect(() => siGoogleFalla(fallaGoogle), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Al poner la casa (o el trabajo) se pasa sola a lo siguiente: a mano, la ruta de ida; con Google, nada (la traza Google).
   const cambiarMapa = (m: DatosRutagrama["mapa"]) => {
-    if (modo === "casa" && m.casa && !d.mapa.casa) setModo(m.trabajo ? "ida" : "trabajo");
-    if (modo === "trabajo" && m.trabajo && !d.mapa.trabajo) setModo("ida");
+    const siguiente: ModoMapa = manual ? "ida" : null;
+    if (modo === "casa" && m.casa && m.casa !== d.mapa.casa) setModo(m.trabajo ? siguiente : "trabajo");
+    if (modo === "trabajo" && m.trabajo && m.trabajo !== d.mapa.trabajo) setModo(siguiente);
     setMapa(m);
   };
+
+  const usarRuta = (lista: RutaGoogle[], i: number, vueltaRuta?: RutaGoogle) => {
+    setElegida(i);
+    const r = lista[i];
+    setMapa({ ...d.mapa, ida: tramoIntermedio(r.puntos), vuelta: vueltaRuta ? tramoIntermedio(vueltaRuta.puntos) : d.mapa.vuelta });
+    setEnfoque({ punto: r.puntos[0], zoom: 14, n: Date.now(), ruta: r.puntos });
+  };
+
+  const calcular = async () => {
+    const { casa, trabajo } = d.mapa;
+    if (!casa || !trabajo) return;
+    setCalculando(true);
+    setAviso(null);
+    try {
+      const ida = await calcularRutas(casa, trabajo, modoGoogle);
+      if (!ida.length) {
+        setRutas([]);
+        setManual(true);
+        setModo("ida");
+        setAviso("Google no encontró una ruta entre esos dos puntos. Trázala tocando el mapa a lo largo de las calles.");
+        return;
+      }
+      const regreso = d.vuelta_igual ? undefined : (await calcularRutas(trabajo, casa, modoGoogle))[0];
+      setRutas(ida);
+      setCalculadaPara(clave(casa, trabajo) + modoGoogle);
+      usarRuta(ida, 0, regreso);
+    } catch {
+      fallaGoogle();
+    } finally {
+      setCalculando(false);
+    }
+  };
+
+  // Ruta automática: cada vez que cambia la casa o el trabajo (y no se está dibujando a mano).
+  useEffect(() => {
+    if (!conGoogle || manual || !d.mapa.casa || !d.mapa.trabajo) return;
+    if (calculadaPara === "previa") return setCalculadaPara(clave(d.mapa.casa, d.mapa.trabajo) + modoGoogle);
+    if (calculadaPara === clave(d.mapa.casa, d.mapa.trabajo) + modoGoogle) return;
+    calcular();
+  }, [d.mapa.casa, d.mapa.trabajo, conGoogle, manual]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const buscar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -653,49 +710,80 @@ function PasoMapa({
     }
   };
 
+  const ponerCasa = (punto: Punto, zoom: number) => {
+    cambiarMapa({ ...d.mapa, casa: punto });
+    setModo(d.mapa.trabajo ? (manual ? "ida" : null) : "trabajo");
+    setEnfoque({ punto, zoom, n: Date.now() });
+  };
+
   const miUbicacion = () => {
-    if (!navigator.geolocation) return setAviso("Tu teléfono no comparte la ubicación. Busca tu zona o mueve el mapa.");
+    if (!navigator.geolocation) return setAviso("Tu teléfono no comparte la ubicación. Busca tu dirección o mueve el mapa.");
     setAviso(null);
     navigator.geolocation.getCurrentPosition(
-      (p) => {
-        const punto: Punto = [Math.round(p.coords.latitude * 1e6) / 1e6, Math.round(p.coords.longitude * 1e6) / 1e6];
-        cambiarMapa({ ...d.mapa, casa: punto });
-        setEnfoque({ punto, zoom: 17, n: Date.now() });
-      },
+      (p) => ponerCasa([Math.round(p.coords.latitude * 1e6) / 1e6, Math.round(p.coords.longitude * 1e6) / 1e6], 17),
       () => setAviso("No pudimos leer tu ubicación. Revisa el permiso del navegador o márcala a mano."),
       { enableHighAccuracy: true, timeout: 15000 },
     );
+  };
+
+  const dibujarAMano = () => {
+    setManual(true);
+    setRutas(null);
+    setMapa({ ...d.mapa, ida: [], vuelta: [] });
+    setModo("ida");
+  };
+  const volverAGoogle = () => {
+    setManual(false);
+    setCalculadaPara(null);
+    setModo(null);
   };
 
   const rutaActiva = modo === "vuelta" ? "vuelta" : "ida";
   const modos: { id: ModoMapa; texto: string; listo: boolean }[] = [
     { id: "casa", texto: "Tu casa", listo: Boolean(d.mapa.casa) },
     ...(trabajoFijo ? [] : [{ id: "trabajo" as ModoMapa, texto: "El trabajo", listo: Boolean(d.mapa.trabajo) }]),
-    { id: "ida", texto: "Ruta de ida", listo: d.mapa.ida.length > 0 },
-    ...(d.vuelta_igual ? [] : [{ id: "vuelta" as ModoMapa, texto: "Ruta de regreso", listo: d.mapa.vuelta.length > 0 }]),
+    ...(manual
+      ? [
+          { id: "ida" as ModoMapa, texto: "Ruta de ida", listo: d.mapa.ida.length > 0 },
+          ...(d.vuelta_igual ? [] : [{ id: "vuelta" as ModoMapa, texto: "Ruta de regreso", listo: d.mapa.vuelta.length > 0 }]),
+        ]
+      : []),
   ];
 
   const instruccion =
     modo === "casa"
-      ? "Toca el mapa donde está tu casa."
+      ? conGoogle
+        ? "Busca tu dirección arriba, o toca el mapa donde está tu casa."
+        : "Toca el mapa donde está tu casa."
       : modo === "trabajo"
         ? "Toca el mapa donde está tu sitio de trabajo."
-        : `Toca el mapa siguiendo las calles por donde ${modo === "vuelta" ? "regresas" : "vas"}, desde ${modo === "vuelta" ? "el trabajo" : "tu casa"} hasta ${modo === "vuelta" ? "tu casa" : "el trabajo"}: cada toque es un punto del camino.`;
+        : modo
+          ? `Toca el mapa siguiendo las calles por donde ${modo === "vuelta" ? "regresas" : "vas"}, desde ${modo === "vuelta" ? "el trabajo" : "tu casa"} hasta ${modo === "vuelta" ? "tu casa" : "el trabajo"}: cada toque es un punto del camino.`
+          : null;
+  const ruta = rutas?.[elegida];
 
   return (
     <section className="mt-2">
-      <h1 className="pt-h1">Dibuja tu ruta en el mapa</h1>
+      <h1 className="pt-h1">{conGoogle && !manual ? "Tu ruta en el mapa" : "Dibuja tu ruta en el mapa"}</h1>
       <p className="pt-sub">
-        Es el croquis de la planilla. Marca tu casa y después toca el mapa a lo largo del camino que haces.
+        {conGoogle && !manual
+          ? "Es el croquis de la planilla. Busca la dirección de tu casa y Google traza el camino hasta el trabajo; si no es el que haces, elige otra opción o corrígelo a mano."
+          : "Es el croquis de la planilla. Marca tu casa y después toca el mapa a lo largo del camino que haces."}
         {trabajoFijo && direccionTrabajo && ` El trabajo ya está marcado (${direccionTrabajo}).`}
       </p>
 
-      <form onSubmit={buscar} className="mt-6 flex gap-2">
-        <input className="pt-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Busca tu urbanización o calle" aria-label="Buscar dirección" />
-        <button type="submit" className="pt-choice shrink-0 justify-center" aria-label="Buscar" disabled={buscando}>
-          {buscando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-        </button>
-      </form>
+      {conGoogle ? (
+        <div className="mt-6">
+          <BuscadorGoogle cerca={centro} onElegir={(p) => ponerCasa(p, 16)} onFalla={fallaGoogle} />
+        </div>
+      ) : (
+        <form onSubmit={buscar} className="mt-6 flex gap-2">
+          <input className="pt-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Busca tu urbanización o calle" aria-label="Buscar dirección" />
+          <button type="submit" className="pt-choice shrink-0 justify-center" aria-label="Buscar" disabled={buscando}>
+            {buscando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          </button>
+        </form>
+      )}
       {resultados && (
         <ul className="pt-panel mt-2 space-y-1 text-sm">
           {!resultados.length && <li>No encontramos esa dirección. Prueba con el nombre de la urbanización o mueve el mapa.</li>}
@@ -727,7 +815,7 @@ function PasoMapa({
             type="button"
             role="radio"
             aria-checked={modo === m.id}
-            onClick={() => setModo(m.id)}
+            onClick={() => setModo(modo === m.id && !manual ? null : m.id)}
             className={`pt-choice text-sm ${modo === m.id ? "pt-choice--on" : ""}`}
           >
             {m.id === "casa" ? <Home className="h-4 w-4" aria-hidden /> : <Route className="h-4 w-4" aria-hidden />}
@@ -736,10 +824,49 @@ function PasoMapa({
           </button>
         ))}
       </div>
-      <p className="mt-3 text-sm font-semibold">{instruccion}</p>
+      {instruccion && <p className="mt-3 text-sm font-semibold">{instruccion}</p>}
+
+      {conGoogle && !manual && (calculando || rutas) && (
+        <div className="pt-panel mt-3 space-y-2 text-sm">
+          {calculando ? (
+            <p className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Calculando tu ruta…
+            </p>
+          ) : ruta ? (
+            <>
+              <p>
+                Ruta {NOMBRE_MODO[ruta.modo]}: <b>{ruta.minutos} min</b> · {ruta.km} km
+                {ruta.modo !== modoGoogle && (
+                  <span className="text-[color:var(--portal-muted)]"> (Google no tiene datos {NOMBRE_MODO[modoGoogle]} en tu zona; es el camino por calle)</span>
+                )}
+              </p>
+              {d.tiempo_min != null && Math.abs(d.tiempo_min - ruta.minutos) >= 15 && (
+                <p className="text-[color:var(--portal-muted)]">
+                  Tú pusiste {d.tiempo_min} min: está bien si es lo que tardas de verdad (esperas, paradas, caminatas).
+                </p>
+              )}
+              {rutas!.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  {rutas!.map((r, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      aria-pressed={i === elegida}
+                      onClick={() => usarRuta(rutas!, i)}
+                      className={`pt-choice !w-auto text-sm ${i === elegida ? "pt-choice--on" : ""}`}
+                    >
+                      Opción {i + 1}: {r.minutos} min · {r.km} km
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+      )}
 
       <div className="mt-3">
-        <Mapa mapa={d.mapa} rutaVuelta={vuelta} modo={modo} onChange={cambiarMapa} centro={centro} enfoque={enfoque} alto={420} />
+        <MapaRuta mapa={d.mapa} rutaVuelta={vuelta} modo={modo} onChange={cambiarMapa} centro={centro} enfoque={enfoque} alto={420} />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-[color:var(--portal-muted)]">
         <span className="flex items-center gap-1.5">
@@ -750,7 +877,22 @@ function PasoMapa({
           {d.vuelta_igual && " (el mismo camino)"}
         </span>
       </div>
-      {(modo === "ida" || modo === "vuelta") && (
+      {conGoogle && (
+        <div className="mt-3">
+          {manual ? (
+            <button type="button" className="pt-back" onClick={volverAGoogle} disabled={!d.mapa.casa || !d.mapa.trabajo}>
+              <Route className="h-4 w-4" aria-hidden />
+              Que Google trace la ruta
+            </button>
+          ) : (
+            <button type="button" className="pt-back" onClick={dibujarAMano}>
+              <Undo2 className="h-4 w-4" aria-hidden />
+              No es mi camino: dibujarlo a mano
+            </button>
+          )}
+        </div>
+      )}
+      {manual && (modo === "ida" || modo === "vuelta") && (
         <div className="mt-3 flex flex-wrap gap-4">
           <button
             type="button"
