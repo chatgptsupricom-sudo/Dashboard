@@ -30,6 +30,21 @@ function semanas(n = 12) {
 
 const fechaHora = (iso: string) =>
   new Date(iso).toLocaleString("es-VE", { timeZone: "America/Caracas", dateStyle: "short", timeStyle: "short" });
+// Dia (YYYY-MM-DD) en hora de Caracas: el de la fecha del pago en Binance, o la del comprobante.
+const diaCaracas = (iso: string) => new Date(Date.parse(iso) - 4 * 3600_000).toISOString().slice(0, 10);
+const diaDe = (c: Comprobante) => diaCaracas(c.binance?.fecha || c.fecha);
+const NOMBRE_DIA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
+/** Los 7 dias (lunes a domingo) de la semana que empieza en `lunes`. */
+function diasDeSemana(lunes: string) {
+  const base = Date.parse(`${lunes}T00:00:00Z`);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(base + i * DIA);
+    const valor = d.toISOString().slice(0, 10);
+    return { valor, label: `${NOMBRE_DIA[i]} ${valor.slice(8, 10)}/${valor.slice(5, 7)}` };
+  });
+}
+
 const cifra = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 
 // Id del movimiento del estado de cuenta ("e12" -> 12); los de la API no tienen recorte.
@@ -62,6 +77,7 @@ export default function BinanceCxCPage() {
   const opciones = useMemo(() => semanas(), []);
   const [semana, setSemana] = useState(opciones[0].value);
   const [buscar, setBuscar] = useState("");
+  const [dia, setDia] = useState<string | null>(null);
   const [conciliados, setConciliados] = useState<Comprobante[] | null>(null);
   // Conciliados de la semana que ya estan como pago en Odoo (no se muestran).
   const [registrados, setRegistrados] = useState(0);
@@ -92,7 +108,14 @@ export default function BinanceCxCPage() {
     cargar();
   }, [cargar]);
 
-  const lista = conciliados || [];
+  // Otra semana: se vuelve a "Todos los días".
+  useEffect(() => {
+    setDia(null);
+  }, [semana]);
+
+  const semanaCompleta = conciliados || [];
+  const dias = diasDeSemana(semana);
+  const lista = dia ? semanaCompleta.filter((c) => diaDe(c) === dia) : semanaCompleta;
   const texto = buscar.trim().toLowerCase();
   const filtrados = texto
     ? lista.filter((c) =>
@@ -137,9 +160,29 @@ export default function BinanceCxCPage() {
         </Card>
 
         <div className="space-y-3 min-w-0">
+          <div className="flex gap-1 overflow-x-auto" role="group" aria-label="Filtrar por día">
+            {[{ valor: null as string | null, label: "Todos" }, ...dias].map((d) => {
+              const n = d.valor ? semanaCompleta.filter((c) => diaDe(c) === d.valor).length : semanaCompleta.length;
+              const activo = dia === d.valor;
+              return (
+                <button
+                  key={d.label}
+                  onClick={() => setDia(d.valor)}
+                  aria-pressed={activo}
+                  className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-sm ${
+                    activo ? "border-blue-600 bg-blue-50 text-blue-700 font-medium" : "bg-white text-gray-700 hover:bg-gray-50"
+                  } ${n === 0 && !activo ? "opacity-50" : ""}`}
+                >
+                  {d.label} <span className="text-xs text-gray-400">({n})</span>
+                </button>
+              );
+            })}
+          </div>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-sm text-gray-600">
-              Semana <span className="font-medium">{etiquetaSemana}</span> · {lista.length} por registrar ·{" "}
+              {dia ? "Día" : "Semana"}{" "}
+              <span className="font-medium">{dia ? dias.find((d) => d.valor === dia)?.label : etiquetaSemana}</span> ·{" "}
+              {lista.length} por registrar ·{" "}
               {porMoneda(lista)}
               {registrados > 0 && <span className="text-gray-400"> · {registrados} ya registrados en Odoo</span>}
             </p>
@@ -177,7 +220,7 @@ export default function BinanceCxCPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtrados.length === 0 && <FilaVacia columnas={9} texto={registrados > 0 ? "Todos los conciliados de esta semana ya están registrados en Odoo." : "No hay conciliados en esta semana."} />}
+                    {filtrados.length === 0 && <FilaVacia columnas={9} texto={dia ? "No hay conciliados por registrar ese día." : registrados > 0 ? "Todos los conciliados de esta semana ya están registrados en Odoo." : "No hay conciliados en esta semana."} />}
                     {filtrados.map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">{fechaHora(c.binance?.fecha || c.fecha)}</TableCell>
