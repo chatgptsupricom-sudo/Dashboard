@@ -769,12 +769,13 @@
 // }
 import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { NextRequest, NextResponse } from "next/server";
 import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
 
 async function leerGET(request: NextRequest) {
-  const auth = await requireRoles(request, ["superadmin", ROL_BI]);
+  const auth = await requireRoles(request, ["superadmin", ROL_BI, ROL_MARKETING_ELECTRO]);
   if (auth.error) return auth.error;
 
   try {

@@ -1,6 +1,6 @@
 import { db, query } from "@/lib/db";
 import { callOdooRPCEstricto } from "@/lib/odoo";
-import { ROL_GERENTE_MARCA, type Asignacion, type Linea } from "@/lib/gerente-marca/tipos";
+import { ROLES_CON_MARCAS, type Asignacion, type Linea } from "@/lib/gerente-marca/tipos";
 
 /**
  * Qué marcas lleva cada Gerente de Marca. Una fila por correo y marca
@@ -66,16 +66,16 @@ export interface GerenteConMarcas {
   asignaciones: Asignacion[];
 }
 
-/** Usuarios con el rol (de `users_config`), cada uno con sus marcas. */
+/** Usuarios con un rol de `ROLES_CON_MARCAS` (de `users_config`), cada uno con sus marcas. */
 export async function gerentes(): Promise<GerenteConMarcas[]> {
   await ensureTabla();
   const [usuarios] = await db.execute(
     `SELECT LOWER(TRIM(uc.email)) AS email, uc.name
        FROM users_config uc
        JOIN roles r ON r.id = uc.role_id
-      WHERE LOWER(TRIM(r.name)) = ?
+      WHERE LOWER(TRIM(r.name)) IN (?, ?)
       ORDER BY uc.name`,
-    [ROL_GERENTE_MARCA],
+    ROLES_CON_MARCAS,
   );
   const [filas] = await db.execute("SELECT email, marca_id, marca, linea FROM gerente_marca_asignaciones ORDER BY marca");
   const porEmail = new Map<string, Asignacion[]>();

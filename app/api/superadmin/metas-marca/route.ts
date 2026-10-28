@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { OdooUnreachableError, callOdooRPC } from "@/lib/odoo";
 import { calcularMetasMarca } from "@/lib/metas-marca/calculo";
 import { claveMarca, esMarcaGenerica, SIN_MARCA } from "@/lib/metas-marca/marcas";
@@ -22,7 +23,7 @@ export const maxDuration = 60;
  * para la meta en unidades. Si el inventario falla, la página sigue sin él.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, [ROL_BI]);
+  const auth = await requireRoles(request, [ROL_BI, ROL_MARKETING_ELECTRO]);
   if (auth.error) return auth.error;
 
   const sp = request.nextUrl.searchParams;

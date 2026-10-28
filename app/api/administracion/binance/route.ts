@@ -21,6 +21,7 @@ import {
   leerEstadoDeCuenta,
   movimientosBorrables,
   NOMBRE_SEDE,
+  ordenesRegistradasEnOdoo,
   ROL_CXC,
   rangoSemana,
   sedeBinance,
@@ -43,11 +44,26 @@ export async function GET(request: NextRequest) {
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
   try {
-    // Cuentas por Cobrar solo ve los conciliados: ni los pendientes ni los pagos sin comprobante.
-    if (String(auth.payload?.role ?? "").toLowerCase().trim() === ROL_CXC) {
+    // Cuentas por Cobrar solo ve los conciliados que todavia no registro en Odoo
+    // (ni pendientes ni pagos sin comprobante). ?vista=cxc: la misma vista para
+    // el SuperAdmin y Administracion.
+    const esCxC = String(auth.payload?.role ?? "").toLowerCase().trim() === ROL_CXC;
+    if (esCxC || request.nextUrl.searchParams.get("vista") === "cxc") {
       const { comprobantes } = await conciliacionSemana(semana, sede);
       const conciliados = comprobantes.filter((c) => c.estado === "conciliado" || c.estado === "manual");
-      return NextResponse.json({ success: true, semana, conciliados });
+      let registradas: Set<string>;
+      try {
+        registradas = await ordenesRegistradasEnOdoo(conciliados.map((c) => c.orderId));
+      } catch (e: any) {
+        console.error("[binance] pagos en Odoo:", e?.message);
+        return NextResponse.json({ error: "No se pudo consultar en Odoo qué pagos ya están registrados" }, { status: 502 });
+      }
+      return NextResponse.json({
+        success: true,
+        semana,
+        conciliados: conciliados.filter((c) => !registradas.has(c.orderId)),
+        registrados: conciliados.filter((c) => registradas.has(c.orderId)).length,
+      });
     }
     const [datos, borrables] = await Promise.all([conciliacionSemana(semana, sede), movimientosBorrables(semana, sede)]);
     return NextResponse.json({ success: true, semana, ...datos, borrables });

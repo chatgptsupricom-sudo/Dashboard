@@ -154,6 +154,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/inteligencia_negocio") ||
     // Gerente de Marca (lib/gerente-marca/).
     pathname.includes("/gerente_marca") ||
+    // Marketing y Electrodomésticos (lib/auth/marketingElectro.ts).
+    pathname.includes("/marketing_electrodomesticos") ||
     pathname.includes("/compras") ||
     pathname.includes("/rma") ||
     pathname.includes("/disenador") ||
@@ -226,6 +228,8 @@ export default async function middleware(request: NextRequest) {
       const isBI = userRole === "inteligencia de negocio";
       // Gerente de Marca: solo sus marcas (lib/gerente-marca/).
       const isGerenteMarca = userRole === "gerente de marca";
+      // Marketing y Electrodomésticos: solo lee (lib/auth/marketingElectro.ts).
+      const isMarketingElectro = userRole === "marketing y electrodomesticos";
 
       // 1. Lógica para Vendedores
       if (pathname.includes("/vendedores") && !isVendedor && !isSuperAdmin) {
@@ -298,6 +302,10 @@ export default async function middleware(request: NextRequest) {
       if (pathname.includes("/gerente_marca") && !isGerenteMarca && !isSuperAdmin) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
+      // 4d. Marketing y Electrodomésticos.
+      if (pathname.includes("/marketing_electrodomesticos") && !isMarketingElectro && !isSuperAdmin) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
       if (pathname.includes("/gerente_marca/configuracion") && !isSuperAdmin) {
         return NextResponse.redirect(new URL(`/${locale}/gerente_marca`, request.url));
       }
@@ -364,7 +372,9 @@ export default async function middleware(request: NextRequest) {
       // 7. Lógica para Compras. Por carpeta exacta: con `.includes("/compras")`
       // también caía /adminleads/compras-mes (Clientes del mes) y AdminLeads
       // terminaba en el Dashboard.
-      if (/\/compras(\/|$)/.test(pathname) && !isCompras && !isSuperAdmin) {
+      // Marketing y Electrodomésticos entra solo a rotación y tendencia.
+      const esComprasDeMarketing = isMarketingElectro && /\/compras\/(mayor_rotacion|menor_rotacion|tendencia)(\/|$)/.test(pathname);
+      if (/\/compras(\/|$)/.test(pathname) && !isCompras && !isSuperAdmin && !esComprasDeMarketing) {
         return NextResponse.redirect(
           new URL(`/${locale}/dashboard`, request.url),
         );
@@ -496,6 +506,9 @@ export default async function middleware(request: NextRequest) {
       // El Gerente de Marca tiene su Dashboard en /gerente_marca.
       if (esDashboardComun && isGerenteMarca) {
         return NextResponse.redirect(new URL(`/${locale}/gerente_marca`, request.url));
+      }
+      if (esDashboardComun && isMarketingElectro) {
+        return NextResponse.redirect(new URL(`/${locale}/marketing_electrodomesticos`, request.url));
       }
       if (esDashboardComun && isDisenador) {
         return NextResponse.redirect(

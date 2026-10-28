@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { OdooUnreachableError } from "@/lib/odoo";
 import { auditarSede } from "@/lib/stock-marca/auditoria";
 import { periodoDe } from "@/lib/stock-marca/periodo";
@@ -14,7 +15,7 @@ export const maxDuration = 120;
  * GET ?company_id=9|10|7|todas&modo=mes|30|90&mes=YYYY-MM&ic=1 (ic solo con una sede, como la pantalla)
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, [ROL_BI]);
+  const auth = await requireRoles(request, [ROL_BI, ROL_MARKETING_ELECTRO]);
   if (auth.error) return auth.error;
 
   const sp = request.nextUrl.searchParams;

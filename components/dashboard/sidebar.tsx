@@ -445,6 +445,8 @@ export function Sidebar({
     { id: "gm_antiguedad", label: "Antigüedad de inventario", icon: Timer, slug: "/antiguedad" },
     { id: "gm_ventas", label: "Ventas por marca", icon: TrendingUp, slug: "/ventas" },
     { id: "gm_banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
+    // Marketing y Electrodomésticos: Material POP de Valencia, solo lectura.
+    { id: "me_material_pop", label: t("material_pop"), icon: Package, slug: "/material-pop" },
     // SuperAdmin: lo que ve cada Gerente de Marca y a quién se le asigna cada marca.
     { id: "gerencia_marca", label: "Gerencia de Marca", icon: Award, slug: "/gerente_marca", absoluteHref: true },
   ];
@@ -483,6 +485,8 @@ export function Sidebar({
         return `/${locale}/inteligencia_negocio`;
       case "gerente de marca":
         return `/${locale}/gerente_marca`;
+      case "marketing y electrodomesticos":
+        return `/${locale}/marketing_electrodomesticos`;
       case "it":
         return `/${locale}/notas-credito`;
       case "diseñador":

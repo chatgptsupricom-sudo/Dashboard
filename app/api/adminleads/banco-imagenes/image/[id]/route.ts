@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { filtroBancoGerente } from "@/lib/gerente-marca/banco";
 import { ROL_GERENTE_MARCA } from "@/lib/gerente-marca/tipos";
 import { NextRequest } from "next/server";
@@ -10,7 +11,7 @@ import path from "path";
 
 // Los mismos lectores que la galería (route.ts): sin BI aquí, su Banco de
 // Flyers listaba los flyers pero las imágenes daban 403.
-const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador", ROL_BI, ROL_GERENTE_MARCA];
+const ROLES_LECTURA = ["adminleads", "gerente de operaciones", "vendedor", "seller", "diseñador", ROL_BI, ROL_GERENTE_MARCA, ROL_MARKETING_ELECTRO];
 
 // SVG queda fuera a propósito: a diferencia de JPEG/PNG/WebP/GIF, un SVG
 // puede llevar <script> embebido que el navegador ejecuta si alguien abre

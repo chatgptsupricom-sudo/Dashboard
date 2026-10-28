@@ -1,3 +1,5 @@
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
+
 /**
  * Gerente de Marca: cada persona con este rol ve solo las marcas que el
  * SuperAdmin le asigna (tabla `gerente_marca_asignaciones`, por correo), en
@@ -14,6 +16,13 @@
  */
 
 export const ROL_GERENTE_MARCA = "gerente de marca";
+
+/**
+ * Roles que llevan marcas asignadas: el Gerente de Marca y Marketing y
+ * Electrodomésticos (lib/auth/marketingElectro.ts), que usa las mismas
+ * pantallas de Inventario y Ventas y la misma Configuración.
+ */
+export const ROLES_CON_MARCAS = [ROL_GERENTE_MARCA, ROL_MARKETING_ELECTRO];
 
 export function esRolGerenteMarca(rol: unknown): boolean {
   return String(rol ?? "").toLowerCase().trim() === ROL_GERENTE_MARCA;

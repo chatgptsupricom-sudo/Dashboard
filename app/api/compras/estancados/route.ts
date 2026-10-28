@@ -1,4 +1,5 @@
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { leerSede } from "@/lib/compras/constants";
 import { menorRotacion } from "@/lib/compras/reportes";
 import { NextRequest, NextResponse } from "next/server";
@@ -9,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
  * la última venta del producto en la sede (lib/compras/reportes.ts).
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ["compras"]);
+  const auth = await requireRoles(request, ["compras", ROL_MARKETING_ELECTRO]);
   if (auth.error) return auth.error;
 
   const sedeId = leerSede(request.url);

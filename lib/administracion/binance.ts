@@ -6,6 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { db, query } from "@/lib/db";
 import { esRolAdministracion, sedeDelToken } from "@/lib/auth/sedeRol";
+import { callOdooRPCEstricto } from "@/lib/odoo";
 
 /**
  * Conciliacion de pagos de Binance Pay (rol Administracion). La cuenta de
@@ -771,6 +772,38 @@ export function sedeBinance(payload: { role?: unknown; cids?: unknown } | null |
   const cxc = String(payload?.role ?? "").toLowerCase().trim() === ROL_CXC;
   if (!esRolAdministracion(payload?.role) && !cxc) return null;
   return sedeDelToken(payload) ?? undefined;
+}
+
+// Sedes donde se registran los pagos de Binance (diario "Criptos"): Valencia, Caracas, Panama.
+const SEDES_ODOO = [9, 10, 7];
+const soloDigitos = (s: string) => s.replace(/\D/g, "");
+
+/**
+ * Cuando Cuentas por Cobrar registra el pago en Odoo pone el ID de orden en el
+ * Memo (`account.payment.ref`). Devuelve cuales de estos IDs ya estan en un pago
+ * no anulado de cualquier sede. Se busca por los ultimos 15 digitos y se acepta
+ * si el memo contiene el ID o si el ID termina en el memo: a veces se pierde el
+ * primer digito al copiarlo ("62126455275798528"). Un error de Odoo se lanza:
+ * mejor no mostrar nada que mostrar como pendiente lo ya registrado.
+ */
+export async function ordenesRegistradasEnOdoo(orderIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(orderIds.filter((id) => /^\d{15,40}$/.test(id)))];
+  const registradas = new Set<string>();
+  for (let i = 0; i < ids.length; i += 80) {
+    const tanda = ids.slice(i, i + 80);
+    const terminos = tanda.map((id) => ["ref", "ilike", id.slice(-15)]);
+    const pagos = await callOdooRPCEstricto<{ ref: string | false }[]>(
+      "account.payment",
+      "search_read",
+      [[["state", "!=", "cancel"], ...Array(terminos.length - 1).fill("|"), ...terminos]],
+      { fields: ["ref"], context: { allowed_company_ids: SEDES_ODOO } },
+    );
+    const memos = (pagos || []).map((p) => soloDigitos(String(p.ref || ""))).filter((m) => m.length >= 15);
+    for (const id of tanda) {
+      if (memos.some((m) => m.includes(id) || id.endsWith(m))) registradas.add(id);
+    }
+  }
+  return registradas;
 }
 
 /** Rol que solo lee la conciliacion (GET), de su sede. */
