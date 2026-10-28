@@ -337,6 +337,12 @@ export default async function middleware(request: NextRequest) {
         }
       }
 
+      // 5b-ter. Mapa de clientes del Diseñador: el AdminLeads de Valencia entra
+      // a /disenador, pero esta pantalla es solo del Diseñador (y superAdmin).
+      if (pathname.includes("/disenador/mapa-clientes") && !isDisenador && !isSuperAdmin) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
       // 5c. Lógica para Material POP (acceso: adminleads de Valencia cids=9, superAdmin)
       if (pathname.includes("/adminleads/material-pop")) {
         const userCids = Number(payload.cids);

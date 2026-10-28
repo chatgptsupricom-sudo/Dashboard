@@ -414,6 +414,7 @@ export const rolePermissions: RolePermissions = {
       "vista_custom",
       "frecuencia_cpm",
       "banco_imagenes_seller", // Banco de Flyers (vista/descarga)
+      "mapa_clientes_disenador", // Mapa de clientes en 3D: solo cantidades, país de su sede
     ],
   },
     // Rol Seguridad: el equipo de almacen/control de acceso de OSC.
