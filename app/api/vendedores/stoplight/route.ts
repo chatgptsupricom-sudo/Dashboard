@@ -10,6 +10,7 @@ import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@
 import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 import { sinIntercompania } from "@/lib/intercompania";
 import { sinRetirados } from "@/lib/vendedores/retirados";
+import { metaClientesNuevosDe } from "@/lib/vendedores/metaClientesNuevos";
 import type { ValorReal } from "@/lib/stoplight/types";
 import { metaVisitasEsMensual, metaVisitasMes, metaVisitasSemana } from "@/lib/stoplight/visitas";
 
@@ -167,6 +168,10 @@ export async function GET(request: NextRequest) {
       const p = pesoDeFila(r.peso);
       if (p !== null) pesosMap[r.kpi_key] = p;
     });
+    // Su meta de clientes nuevos, si tiene una propia (lib/vendedores/metaClientesNuevos.ts).
+    if (metasMap["clientes_nuevos"] != null) {
+      metasMap["clientes_nuevos"] = metaClientesNuevosDe(seller, metasMap["clientes_nuevos"]);
+    }
 
     // === CUMPLIMIENTO CUOTA ===
     const metaCuotaVenta = metasMap["cumplimiento_cuota_ventas"] || 0;
