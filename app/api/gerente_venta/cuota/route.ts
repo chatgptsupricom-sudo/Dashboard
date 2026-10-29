@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { requireRoles } from "@/lib/auth/roles";
 import { cuotasVigentes, leerRangoCuota } from "@/lib/cuota/rango";
+import { esVendedorRetirado } from "@/lib/vendedores/retirados";
 
 export async function GET(req: NextRequest) {
   // Asistente de Ventas y Gerente de Operaciones pueden consultar las
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
       sellerCidsFilter,
     );
     const sellers = (resultSellers || []).filter(
-      (s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO",
+      (s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO" && !esVendedorRetirado(s),
     );
 
     const rango = leerRangoCuota(req.nextUrl.searchParams);

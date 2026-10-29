@@ -5,6 +5,7 @@ import { fechaLocal } from "@/lib/stoplight/margen";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
 import { sinIntercompania } from "@/lib/intercompania";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 
 function normalize(str: string): string {
   return str
@@ -91,7 +92,7 @@ export async function GET(request: NextRequest) {
        WHERE s.cids = ?`,
       [companyId]
     );
-    const sellers = cuotaResult.rows as any[];
+    const sellers = sinRetirados(cuotaResult.rows as any[]);
     console.log(`[Activacion] company=${companyId} sellers found:`, sellers.length, sellers.map(s => s.name));
 
     // 2. Fetch all clients assigned to sellers (res.partner with user_id)

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
 import { obtenerLineasMargen, margenPct } from "@/lib/stoplight/margen";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 
 function normalize(str: string): string {
   return str
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     const [lineas, sellersResult, metaResult] = await Promise.all([
       obtenerLineasMargen(companyId, fechaInicio, fechaFin),
-      query("SELECT name FROM sellers WHERE cids = ?", [companyId]),
+      query("SELECT name, user_id FROM sellers WHERE cids = ?", [companyId]),
       query(
         "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
         ["margen_bruto", companyId, mes],
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
     const nuevo = (): Acum => ({ ingreso: 0, costo: 0, semanas: semanas.map(() => ({ ingreso: 0, costo: 0 })) });
     const nombrePorNorm = new Map<string, string>();
     const porVendedor = new Map<string, Acum>();
-    (sellersResult.rows as any[]).forEach((s) => {
+    sinRetirados(sellersResult.rows as any[]).forEach((s) => {
       nombrePorNorm.set(normalize(s.name), s.name);
       porVendedor.set(s.name, nuevo());
     });

@@ -6,6 +6,7 @@ import { contarDiasUtiles } from "@/lib/feriados";
 import { requireRoles } from "@/lib/auth/roles";
 import { cuotasVigentes, leerRangoCuota } from "@/lib/cuota/rango";
 import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
+import { esVendedorRetirado } from "@/lib/vendedores/retirados";
 
 const COMPANY_MAP: Record<number, string> = {
   7: "Panamá",
@@ -72,6 +73,7 @@ async function leerGET(request: NextRequest) {
 
     for (const seller of sellers) {
       if (seller.name?.toUpperCase().trim() === "MARIA AUXILIADORA TOVAR CARO") continue;
+      if (esVendedorRetirado(seller)) continue;
       const cid = seller.cids || 0;
       if (!grouped[cid]) {
         grouped[cid] = {
