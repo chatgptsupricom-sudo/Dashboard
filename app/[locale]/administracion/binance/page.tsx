@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Aviso, FilaVacia, Tarjeta } from "@/components/administracion/comunes";
+import { Aviso, deLaPagina, FilaVacia, Paginacion, semanas, Tarjeta } from "@/components/administracion/comunes";
 import type {
   Comprobante,
   EstadoComprobante,
@@ -49,52 +49,6 @@ const CLASE_ESTADO: Record<EstadoComprobante, string> = {
   no_encontrado: "bg-red-100 text-red-800",
   sin_verificar: "bg-slate-100 text-slate-700",
 };
-
-const DIA = 86400_000;
-const POR_PAGINA = 25;
-
-/** Anterior / Pagina x de y / Siguiente; no se muestra con una sola pagina. */
-function Paginacion({ pagina, total, cambiar }: { pagina: number; total: number; cambiar: (p: number) => void }) {
-  const paginas = Math.ceil(total / POR_PAGINA);
-  if (paginas <= 1) return null;
-  return (
-    <div className="flex items-center justify-end gap-2 pt-3 text-sm text-gray-600">
-      <span>
-        {pagina * POR_PAGINA + 1}–{Math.min(total, (pagina + 1) * POR_PAGINA)} de {total}
-      </span>
-      <Button size="sm" variant="outline" className="h-8" disabled={pagina === 0} onClick={() => cambiar(pagina - 1)}>
-        Anterior
-      </Button>
-      <span>
-        Página {pagina + 1} de {paginas}
-      </span>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-8"
-        disabled={pagina >= paginas - 1}
-        onClick={() => cambiar(pagina + 1)}
-      >
-        Siguiente
-      </Button>
-    </div>
-  );
-}
-
-const deLaPagina = <T,>(items: T[], pagina: number) => items.slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA);
-
-/** Lunes (YYYY-MM-DD) de las ultimas `n` semanas, la actual primero. */
-function semanas(n = 12) {
-  const hoy = new Date();
-  const lunes = new Date(Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()));
-  lunes.setUTCDate(lunes.getUTCDate() - ((lunes.getUTCDay() + 6) % 7));
-  const f = (d: Date) => d.toISOString().slice(0, 10);
-  const corto = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  return Array.from({ length: n }, (_, i) => {
-    const d = new Date(lunes.getTime() - i * 7 * DIA);
-    return { value: f(d), label: `${corto(d)} al ${corto(new Date(d.getTime() + 6 * DIA))}/${d.getUTCFullYear()}` };
-  });
-}
 
 // Hora de Caracas, como se concilia la semana.
 const fechaHora = (iso: string) =>
