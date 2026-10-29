@@ -15,6 +15,7 @@ import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 import type { ValorReal } from "@/lib/stoplight/types";
 import { metaVisitasMes, metaVisitasSemana } from "@/lib/stoplight/visitas";
 import { sinIntercompania } from "@/lib/intercompania";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -127,7 +128,8 @@ export async function GET(request: NextRequest) {
          WHERE s.cids = ?`,
         [companyId]
       );
-      sellers = cuotaResult.rows as any[];
+      // Sin los que dejaron de vender (lib/vendedores/retirados.ts).
+      sellers = sinRetirados(cuotaResult.rows as any[]);
       totalCuotaMensual = sellers.reduce((sum, s) => sum + Number(s.cuota || 0), 0);
     } catch (e: any) {
       console.error("Error cuota:", e.message);

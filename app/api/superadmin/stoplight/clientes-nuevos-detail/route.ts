@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
 import { sinIntercompania } from "@/lib/intercompania";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 
 function normalize(str: string): string {
   return str
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
        WHERE s.cids = ?`,
       [companyId]
     );
-    const sellers = cuotaResult.rows as any[];
+    const sellers = sinRetirados(cuotaResult.rows as any[]);
 
     // 2. Load goal per seller from kpi_targets
     const metaResult = await query(

@@ -9,6 +9,7 @@ import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { leerMetasMarca, calcularCoberturaMarcas, type CoberturaMarcas } from "@/lib/stoplight/metasMarca";
 import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 import { sinIntercompania } from "@/lib/intercompania";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 import type { ValorReal } from "@/lib/stoplight/types";
 import { metaVisitasEsMensual, metaVisitasMes, metaVisitasSemana } from "@/lib/stoplight/visitas";
 
@@ -297,8 +298,8 @@ export async function GET(request: NextRequest) {
     // Antes era semanal y se usaba tal cual (lib/stoplight/visitas).
     let metaVisitasVendedor = metasMap["visitas_semanales"] || 0;
     if (metaVisitasVendedor > 0 && metaVisitasEsMensual(mes)) {
-      const vendedoresSede = await query(`SELECT COUNT(*) AS n FROM sellers WHERE cids = ?`, [companyId]);
-      const n = Number((vendedoresSede.rows as any[])[0]?.n) || 1;
+      const vendedoresSede = await query(`SELECT name, user_id FROM sellers WHERE cids = ?`, [companyId]);
+      const n = sinRetirados(vendedoresSede.rows as any[]).length || 1;
       metaVisitasVendedor = metaVisitasVendedor / n;
     }
     const semanaVisitas = semanas.map((sem, i) => {
@@ -535,13 +536,14 @@ export async function GET(request: NextRequest) {
       const metasMarca = await leerMetasMarca(companyId, mes);
       if (metasMarca.length > 0) {
         const cuotaSede = await query(
-          `SELECT COALESCE(SUM(c.cuota), 0) AS total FROM sellers s
+          `SELECT s.name, s.user_id, c.cuota FROM sellers s
            INNER JOIN (SELECT seller_id, cuota FROM cuota WHERE id IN (SELECT MAX(id) FROM cuota GROUP BY seller_id)) c
              ON s.id = c.seller_id
            WHERE s.cids = ?`,
           [companyId],
         );
-        const totalCuota = Number((cuotaSede.rows as any[])[0]?.total) || 0;
+        // Misma cuota de la sede que el Stoplight de la sede: sin retirados.
+        const totalCuota = sinRetirados(cuotaSede.rows as any[]).reduce((t, f: any) => t + (Number(f.cuota) || 0), 0);
         const factor = totalCuota > 0 ? cuotaNum / totalCuota : 0;
         if (factor > 0) {
           const lineas = (await obtenerLineasMargen(companyId, fechaInicio, fechaFin)).filter((l) => l.vendedorId === uid);

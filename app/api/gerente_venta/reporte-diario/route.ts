@@ -4,6 +4,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
+import { esVendedorRetirado, VENDEDORES_RETIRADOS } from "@/lib/vendedores/retirados";
 
 const COMPANY_IDS_ALL = [9, 10, 7];
 const COMPANY_NAME_MAP: Record<number, string> = {
@@ -15,10 +16,15 @@ const COMPANY_NAME_MAP: Record<number, string> = {
 // Usuarios de Odoo que no son vendedores del equipo (no están en `sellers`)
 // pero cuya facturación sí pertenece a la sede. Su monto suma en las tarjetas
 // de VENTA / PEDIDOS / VENTA + PEDIDOS, pero NO aparecen como fila en la tabla
-// de vendedores ni compiten por cuota.
+// de vendedores ni compiten por cuota. Los vendedores retirados
+// (lib/vendedores/retirados.ts) van igual: lo que facturaron sigue siendo de
+// la sede.
 const EXTRA_USER_IDS_BY_COMPANY: Record<number, number[]> = {
   10: [392], // ANTONELLA ZAMPETTI
 };
+for (const r of VENDEDORES_RETIRADOS) {
+  (EXTRA_USER_IDS_BY_COMPANY[r.sede] ||= []).push(r.userId);
+}
 
 // Filas de `sellers` que no cuentan como vendedor del equipo (se comparan
 // contra el nombre ya normalizado, por coincidencia parcial). Mismo criterio
@@ -113,7 +119,7 @@ async function leerGET(req: NextRequest) {
     );
     const sellers = (resultSellers || []).filter((s: any) => {
       const key = normalize(s.name);
-      return !SELLER_EXCLUDE.some((rule) => key.includes(rule));
+      return !SELLER_EXCLUDE.some((rule) => key.includes(rule)) && !esVendedorRetirado(s);
     });
 
     if (sellers.length === 0) {
