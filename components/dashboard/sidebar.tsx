@@ -303,6 +303,8 @@ export function Sidebar({
     { id: "inventory", label: t("inventario"), icon: Package, slug: "/inventory" },
     // Inteligencia de Negocio: días promedio de cobro, inventario y pago.
     { id: "bi_dias_promedio", label: "Días promedio", icon: Timer, slug: "/dias-promedio" },
+    // Productos en camino y si ya se vendieron en la sede (lib/inteligencia-negocio/porLlegar.ts).
+    { id: "bi_por_llegar", label: "Por llegar", icon: Truck, slug: "/por-llegar" },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
     // Organigrama con las actividades de cada cargo (SuperAdmin, Procesos y RRHH).
@@ -2040,7 +2042,13 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
-                        { grupo: "", items: [{ label: "Días promedio", slug: "dias-promedio" }] },
+                        {
+                          grupo: "",
+                          items: [
+                            { label: "Días promedio", slug: "dias-promedio" },
+                            { label: "Por llegar", slug: "por-llegar" },
+                          ],
+                        },
                         {
                           grupo: "Reportes",
                           items: [
