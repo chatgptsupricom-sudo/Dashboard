@@ -68,6 +68,7 @@ import {
   Package,
   Palette,
   PieChart,
+  Store,
   Search,
   Settings2,
   Shield,
@@ -365,6 +366,8 @@ export function Sidebar({
     { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
     { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },
     { id: "pareto_80_20", label: t("pareto_80_20"), icon: PieChart, slug: "/pareto-80-20" },
+    // La misma clasificación de clientes de Inteligencia de Negocio, con el prompt de Compras.
+    { id: "clasificacion_clientes_compras", label: "Clasificación de clientes", icon: Store, slug: "/clasificacion-clientes" },
     { id: "moq", label: t("moq"), icon: Settings2, slug: "/moq" },
     { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },

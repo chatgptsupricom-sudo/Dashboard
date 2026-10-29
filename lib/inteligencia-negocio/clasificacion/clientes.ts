@@ -8,6 +8,8 @@ import {
 import { pedirJSON } from "@/lib/inteligencia-negocio/clasificacion/ia";
 import {
   ACTIVIDADES,
+  CONFIANZA_CLIENTE,
+  CRITERIOS_ACTIVIDAD,
   nivelDeConfianza,
   type ClienteClasificado,
   type ParticipacionCompra,
@@ -18,10 +20,12 @@ import { filterByCids, getAdAccounts } from "@/lib/meta";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 
 /**
- * Clasificación de clientes por actividad comercial: de qué vive cada
- * cliente, según lo que le compra a Supricom (la mezcla por categoría y
- * nombre corto de la Clasificación de productos) y lo que vende en su
- * Instagram (que anota BI: Odoo no guarda las redes de los clientes).
+ * Clasificación de clientes por actividad comercial (la usan Inteligencia de
+ * Negocio y Compras): de qué vive cada cliente, con el prompt de Compras
+ * (oct-2026): nombre y dirección de Odoo, lo que le compra a Supricom (la
+ * mezcla por categoría y nombre corto de la Clasificación de productos) y lo
+ * que vende en su Instagram (se anota en la pantalla: Odoo no guarda las
+ * redes de los clientes).
  * La venta es la de los Reportes (`dominioVentas`: sin IVA, NC restan, sin
  * servicios ni intercompañía).
  */
@@ -97,7 +101,7 @@ export async function leerContactos(ids: number[]): Promise<Map<number, any>> {
   const mapa = new Map<number, any>();
   for (let i = 0; i < ids.length; i += 500) {
     const r = await callOdooRPCEstricto<any[]>("res.partner", "search_read", [[["id", "in", ids.slice(i, i + 500)]]], {
-      fields: ["id", "name", "vat", "state_id", "city"],
+      fields: ["id", "name", "vat", "email", "street", "street2", "city", "state_id"],
       context: { active_test: false },
     });
     for (const p of r || []) mapa.set(p.id, p);
@@ -106,6 +110,13 @@ export async function leerContactos(ids: number[]): Promise<Map<number, any>> {
 }
 
 const zonaDe = (p: any) => nombreDe(p?.state_id).replace(/\s*\([A-Z]{2}\)$/, "") || "Sin zona";
+
+/** Dirección de Odoo en una línea (calle, ciudad, estado). */
+const direccionDe = (p: any) =>
+  [p?.street, p?.street2, p?.city, nombreDe(p?.state_id).replace(/\s*\([A-Z]{2}\)$/, "")]
+    .map((x) => String(x || "").trim())
+    .filter(Boolean)
+    .join(", ");
 
 export async function listarClientes(companyIds: number[], meses: string[]): Promise<ClienteClasificado[]> {
   const ordenados = [...new Set(meses)].sort();
@@ -148,15 +159,28 @@ export async function listarClientes(companyIds: number[], meses: string[]): Pro
 // IA
 // ---------------------------------------------------------------------------
 
-const SISTEMA = `Clasificas a los clientes de Supricom, un mayorista de tecnología de Venezuela, por su actividad comercial: de qué vive el cliente.
-Por cada cliente recibes su razón social, su zona, lo que le compró a Supricom en los últimos 6 meses (monto en USD y participación por categoría y por tipo de producto) y, si lo tiene, su Instagram (biografía, web y textos de sus últimas publicaciones).
-Devuelves:
-- actividad: exactamente una de: ${ACTIVIDADES.map((a) => `"${a}"`).join(", ")}.
-  El volumen pesa más que el nombre: quien compra decenas de miles de USD del mismo tipo de producto los revende (un "cyber café" que compra $400.000 en impresoras es un comercio de tecnología, no un centro de copiado); por encima de ~$200.000 en 6 meses suele ser distribuidor mayorista.
-  Un cliente que compra para revender va en el tipo de comercio que es; "Empresa usuaria final" es quien compra para usarlo (pocas unidades variadas, razón social que no es de comercio de tecnología). Si el Instagram muestra que revende por redes, eso pesa más que la razón social.
-- detalle: una frase con el porqué (qué compra y qué vende).
+/** El prompt de Compras ("PROMT.docx", oct-2026), con los datos que de verdad recibe la IA. */
+const SISTEMA = `Actúas como un analista de datos especializado en clasificación comercial. Tu objetivo es clasificar a los clientes de Supricom (mayorista de tecnología de Venezuela) en la categoría de actividad comercial adecuada, asignando además un nivel de confianza según las reglas definidas a continuación.
+
+1. Categorías de actividad comercial y criterios de asignación. Asigna únicamente una de estas:
+${ACTIVIDADES.map((a) => `- ${a}: ${CRITERIOS_ACTIVIDAD[a]}`).join("\n")}
+
+2. Reglas para evaluar la confianza:
+- Alta: el nombre comercial o lo encontrado en internet (su Instagram, si viene) lo indica claramente.
+- Media: el nombre o la dirección del cliente lo sugieren.
+- Baja: el nombre es genérico o impreciso; la decisión se tomó basándose únicamente en lo que compra (familias de producto) y en la dirección.
+
+3. Datos que recibes por cliente:
+- razon_social, tipo_de_rif (la letra del RIF: J empresa, G gobierno, V/E persona natural; "" si no tiene RIF), direccion y zona, tal cual están en Odoo.
+- correo_supricom: true si su correo en Odoo es @supricom.com.ve.
+- Lo que compró a Supricom en los últimos 6 meses: compras_6_meses_usd y la participación por categoría y por tipo de producto (facturas de Odoo desde abr-2026, sin IVA, neto de notas de crédito). El volumen también es un indicio: quien compra decenas de miles de USD del mismo tipo de producto lo revende.
+- instagram: su perfil (biografía, web y últimas publicaciones), si se anotó. Es lo único "de internet" que tienes: no puedes buscar en la web. Los comercios pequeños suelen no tener presencia en línea; en ese caso apóyate en la dirección y en lo que compra.
+
+Devuelves por cliente:
+- actividad: exactamente una de las categorías de arriba.
+- detalle: la justificación o criterio aplicado, en una frase.
 - vende_en_redes: qué vende en su Instagram (productos, marcas, tipo de cliente al que le vende) en una o dos frases; "" si no hay datos de Instagram.
-- confianza: 1 si las compras y el Instagram coinciden claramente; entre 0.75 y 0.9 si solo las compras lo dejan claro; 0.65 o menos si hay pocos datos o se contradicen.
+- confianza: Alta, Media o Baja.
 Devuelve exactamente un elemento por cliente recibido, con su mismo id.`;
 
 const ESQUEMA = {
@@ -175,7 +199,7 @@ const ESQUEMA = {
           actividad: { type: "string", enum: [...ACTIVIDADES] },
           detalle: { type: "string" },
           vende_en_redes: { type: "string" },
-          confianza: { type: "number" },
+          confianza: { type: "string", enum: Object.keys(CONFIANZA_CLIENTE) },
         },
       },
     },
@@ -185,6 +209,9 @@ const ESQUEMA = {
 export interface PendienteCliente {
   id: number;
   cliente: string;
+  rif: string;
+  correo: string;
+  direccion: string;
   zona: string;
   instagram: string;
 }
@@ -194,7 +221,10 @@ export function entradaCliente(c: PendienteCliente, m: ReturnType<typeof mezcla>
   return {
     id: c.id,
     razon_social: c.cliente,
+    tipo_de_rif: (c.rif.trim().match(/^[A-Za-z]/)?.[0] ?? "").toUpperCase(),
+    direccion: c.direccion,
     zona: c.zona,
+    correo_supricom: /@supricom\.com\.ve\s*$/i.test(c.correo),
     compras_6_meses_usd: Math.round(m.total),
     por_categoria: m.categorias.map((x) => `${x.nombre} ${x.pct}%`),
     por_tipo_de_producto: m.subcategorias.map((x) => `${x.nombre} ${x.pct}%`),
@@ -222,7 +252,7 @@ export async function pedirClasificacionClientes(entrada: ReturnType<typeof entr
       actividad: String(x.actividad),
       detalle: String(x.detalle || ""),
       vende_en_redes: String(x.vende_en_redes || ""),
-      confianza: Number(x.confianza),
+      confianza: CONFIANZA_CLIENTE[x.confianza as keyof typeof CONFIANZA_CLIENTE] ?? CONFIANZA_CLIENTE.Baja,
     }));
 }
 
@@ -259,6 +289,9 @@ export async function clasificarClientes(ids: number[]): Promise<number | null> 
   const pendientes: PendienteCliente[] = elegidos.map((id) => ({
     id,
     cliente: String(contactos.get(id)?.name || `Contacto ${id}`),
+    rif: String(contactos.get(id)?.vat || ""),
+    correo: String(contactos.get(id)?.email || ""),
+    direccion: direccionDe(contactos.get(id)),
     zona: zonaDe(contactos.get(id)),
     instagram: clasifClientes.get(id)?.instagram ?? "",
   }));

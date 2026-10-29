@@ -349,6 +349,7 @@ export const rolePermissions: RolePermissions = {
       "tendencia",
       "stoplight_reports",
       "pareto_80_20",
+      "clasificacion_clientes_compras", // Clasificación de clientes por actividad comercial (lib/inteligencia-negocio/clasificacion)
       "ordenes_compra", // Órdenes de compra: crear/editar/enviar a aprobación
       "recepcion_packing", // Packing lists: Compras los carga, Almacén los recibe
     ],
