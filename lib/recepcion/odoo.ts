@@ -165,13 +165,15 @@ const normalizarReferencia = (v: unknown) => String(v ?? "").trim().toUpperCase(
 
 /**
  * Otro packing list de la sede con la misma referencia: cargarlo dos veces
- * cargaria la misma mercancia dos veces en Odoo.
+ * cargaria la misma mercancia dos veces en Odoo. Uno descartado no cuenta (no
+ * cargo nada en Odoo); si se vuelve a cargar, ya no se puede restaurar.
  */
 export async function packingListRepetido(cids: number, referencia: string, excluirId?: number): Promise<number | null> {
   await asegurarColumnasOdoo();
   const r = await query(
     `SELECT id FROM recepcion_packing
       WHERE cids = ? AND origen = 'packing_list' AND UPPER(TRIM(referencia)) = ? AND id <> ?
+        AND descartado_at IS NULL
       ORDER BY id LIMIT 1`,
     [cids, normalizarReferencia(referencia), excluirId ?? 0],
   );
@@ -1264,7 +1266,7 @@ async function acumularEnRecepcion(rec: any, poId: number, recibidos: Recibido[]
     }
   }
   const abiertas = await query(
-    "SELECT referencia FROM recepcion_packing WHERE odoo_purchase_order_id = ? AND id <> ? AND etapa <> 'cerrado'",
+    "SELECT referencia FROM recepcion_packing WHERE odoo_purchase_order_id = ? AND id <> ? AND etapa <> 'cerrado' AND descartado_at IS NULL",
     [poId, rec.id],
   ).catch(() => ({ rows: [] }));
 

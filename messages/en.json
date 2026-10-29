@@ -3571,11 +3571,29 @@
     "editar": "Edit packing list",
     "vacio": "No packing lists yet.",
     "vacio_filtro": "Nothing here.",
+    "descartar": {
+      "seleccionar": "Select",
+      "cancelar": "Cancel",
+      "ayuda": "Pick the packing lists that were received outside the panel to remove them from To arrive and Unloading",
+      "n_elegidos": "{count, plural, =1 {# selected} other {# selected}}",
+      "todos": "Select all",
+      "ninguno": "Clear all",
+      "motivo_ph": "Reason (optional): e.g. received directly in Odoo",
+      "quitar": "Remove from list",
+      "restaurar": "Restore",
+      "confirmar": "Remove {count, plural, =1 {this packing list} other {these # packing lists}} from the list? Purchasing and Warehouse will no longer see them. You can restore them from Discarded.",
+      "hechos": "{count, plural, =0 {None removed} =1 {# packing list removed} other {# packing lists removed}}",
+      "restaurados": "{count, plural, =0 {None restored} =1 {# packing list restored} other {# packing lists restored}}",
+      "error": "Could not complete",
+      "etiqueta": "Discarded",
+      "por": "Discarded by {nombre} on {fecha}"
+    },
     "filtro": {
       "por_llegar": "Expected",
       "descargando": "Unloading",
       "cerrado": "Closed",
-      "todos": "All"
+      "todos": "All",
+      "descartados": "Discarded"
     },
     "etapa": {
       "por_llegar": "Expected",

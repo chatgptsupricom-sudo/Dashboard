@@ -11,6 +11,8 @@ import { query } from "@/lib/db";
  *   recepcion_packing.odoo_purchase_order_id OC de Odoo donde se carga lo contado
  *   recepcion_packing.odoo_estado            cargando | cargado | acumulado | error | sin_oc
  *   recepcion_packing.odoo_recepciones_previas  IN de la OC hechas antes de empezar
+ *   recepcion_packing.descartado_at/_por/_motivo  el SuperAdmin lo saco de la
+ *     lista (se recibio por fuera del panel): Compras y Almacen ya no lo ven
  *   recepcion_packing_items.odoo_product_id  producto de Odoo del renglon
  *   recepcion_packing_items.factura_aparte   otra factura del embarque (ej.
  *     INV1062, de Caracas): el renglon se cuenta pero no se carga en esta sede
@@ -30,6 +32,12 @@ const COLUMNAS_RECEPCION: Array<[string, string]> = [
   // lo que aparezca despues y no lo haya hecho el panel puede ser esta misma
   // mercancia recibida a mano, y no se carga dos veces.
   ["odoo_recepciones_previas", "TEXT DEFAULT NULL"],
+  // Packing list que se cargo o se empezo en el panel pero se recibio por
+  // fuera (directo en Odoo): el SuperAdmin lo descarta y deja de salir en
+  // Por llegar / Descargando. Se puede restaurar.
+  ["descartado_at", "TIMESTAMP NULL DEFAULT NULL"],
+  ["descartado_por", "VARCHAR(200) DEFAULT NULL"],
+  ["descartado_motivo", "VARCHAR(500) DEFAULT NULL"],
 ];
 
 let columnasListas: Promise<void> | null = null;

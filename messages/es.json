@@ -3560,11 +3560,29 @@
     "editar": "Editar packing list",
     "vacio": "Todavía no hay packing lists.",
     "vacio_filtro": "Nada por aquí.",
+    "descartar": {
+      "seleccionar": "Seleccionar",
+      "cancelar": "Cancelar",
+      "ayuda": "Elige los packing lists que se recibieron por fuera del panel para sacarlos de Por llegar y Descargando",
+      "n_elegidos": "{count, plural, =1 {# elegido} other {# elegidos}}",
+      "todos": "Elegir todos",
+      "ninguno": "Quitar todos",
+      "motivo_ph": "Motivo (opcional): ej. se recibió directo en Odoo",
+      "quitar": "Quitar de la lista",
+      "restaurar": "Restaurar",
+      "confirmar": "¿Quitar {count, plural, =1 {este packing list} other {estos # packing lists}} de la lista? Compras y Almacén dejan de verlos. Puedes restaurarlos desde Descartados.",
+      "hechos": "{count, plural, =0 {No se quitó ninguno} =1 {Se quitó # packing list} other {Se quitaron # packing lists}}",
+      "restaurados": "{count, plural, =0 {No se restauró ninguno} =1 {Se restauró # packing list} other {Se restauraron # packing lists}}",
+      "error": "No se pudo completar",
+      "etiqueta": "Descartado",
+      "por": "Descartado por {nombre} el {fecha}"
+    },
     "filtro": {
       "por_llegar": "Por llegar",
       "descargando": "Descargando",
       "cerrado": "Cerrados",
-      "todos": "Todos"
+      "todos": "Todos",
+      "descartados": "Descartados"
     },
     "etapa": {
       "por_llegar": "Por llegar",

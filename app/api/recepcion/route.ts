@@ -42,9 +42,12 @@ export async function GET(request: NextRequest) {
     } catch {
       conOdoo = false;
     }
+    // Los descartados (recibidos por fuera del panel) solo los ve el
+    // SuperAdmin, en su pestana, para poder restaurarlos.
+    if (conOdoo && sesion!.rol !== "superadmin") where.push("r.descartado_at IS NULL");
     const res = await query(
       `SELECT r.id, r.cids, r.proveedor, r.referencia, r.contenedor, r.oc_referencia,
-              ${conOdoo ? "r.origen, r.odoo_estado, r.odoo_oc_nombre," : ""}
+              ${conOdoo ? "r.origen, r.odoo_estado, r.odoo_oc_nombre, r.descartado_at, r.descartado_por, r.descartado_motivo," : ""}
               r.fecha_estimada, r.etapa, r.resultado, r.precinto_coincide,
               r.creado_por, r.created_at, r.llegada_at, r.cerrado_at,
               (SELECT COUNT(*) FROM recepcion_packing_items i WHERE i.recepcion_id = r.id) AS total_items,
