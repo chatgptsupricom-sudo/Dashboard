@@ -60,25 +60,37 @@ export interface ProductoClasificado {
 }
 
 /**
- * Actividad comercial de un cliente: de qué vive, según lo que le compra a
- * Supricom y lo que vende en sus redes.
+ * Actividad comercial de un cliente con su criterio, tal cual el prompt de
+ * Compras ("PROMT.docx", oct-2026). Lo usan la IA y la pantalla.
  */
-export const ACTIVIDADES = [
-  "Tienda de tecnología / computación",
-  "Distribuidor mayorista de tecnología",
-  "Revendedor por redes sociales / marketplace",
-  "Tienda gamer",
-  "Papelería / librería / suministros de oficina",
-  "Centro de copiado / impresión / sublimación",
-  "Energía y respaldo (UPS, estaciones, solar)",
-  "Integrador / servicios de IT",
-  "Seguridad electrónica / cámaras",
-  "Electrodomésticos / hogar",
-  "Empresa usuaria final (consumo propio)",
-  "Institución / gobierno / educación",
-  "Otro",
-] as const;
-export type Actividad = (typeof ACTIVIDADES)[number];
+export const CRITERIOS_ACTIVIDAD = {
+  Distribuidor: "Revende al mayor o le suple a empresas y al gobierno, sin tienda al público.",
+  "Tienda de computación y tecnología": "Venta al detal de equipos, laptops, impresoras, UPS y accesorios (incluye gamer y cyber).",
+  "Celulares y electrónica de consumo": "Tiendas de celulares, accesorios móviles y electrónica.",
+  "Energía y respaldo":
+    "Venta e instalación de sistemas de alimentación ininterrumpida (UPS), inversores, baterías, reguladores de voltaje, plantas eléctricas y soluciones de protección eléctrica.",
+  "Consumibles, impresión y copiado": "Tintas, tóner, recarga de cartuchos, centros de copiado, imprentas y publicidad.",
+  Corporativo: "Empresa de otro rubro que compra para su propio uso.",
+  "Papelería y librería": "Papelerías, librerías y tiendas de suministros de oficina al detal.",
+  "Integrador / servicios de IT": "Soluciones, redes, seguridad electrónica, soporte y proyectos para empresas.",
+  "Seguridad electrónica / cámaras":
+    "Venta, instalación y mantenimiento de sistemas de videovigilancia (CCTV), cámaras IP, controles de acceso, alarmas, cercos eléctricos y automatización.",
+  "Hogar, electrodomésticos y multitienda": "Electrodomésticos, variedades, bazares y multitiendas.",
+  "Persona natural sin RIF": "Empleados de Supricom (correo @supricom.com.ve en Odoo); no son clientes de la calle.",
+  "Registro interno (no es cliente)": "Fichas de Odoo que no son un cliente real (ej. donativos).",
+  "Personal de Supricom (compra interna)": "Fila sin RIF que no se encontró en Odoo como cliente.",
+  "Telecomunicaciones / ISP": "Proveedores de internet, cable y telecomunicaciones.",
+  "Ferretería y materiales de construcción":
+    "Venta al detal o al mayor de herramientas, materiales eléctricos, plomería, pintura, cerrajería y artículos de ferretería en general.",
+} as const;
+export type Actividad = keyof typeof CRITERIOS_ACTIVIDAD;
+export const ACTIVIDADES = Object.keys(CRITERIOS_ACTIVIDAD) as Actividad[];
+
+/**
+ * Confianza de la clasificación de un cliente según el prompt de Compras.
+ * Se guarda como número para que `nivelDeConfianza` dé Alto / Medio / Bajo.
+ */
+export const CONFIANZA_CLIENTE = { Alta: 1, Media: 0.8, Baja: 0.5 } as const;
 
 export interface ParticipacionCompra {
   nombre: string;
