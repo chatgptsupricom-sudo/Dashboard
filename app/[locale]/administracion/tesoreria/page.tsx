@@ -84,8 +84,8 @@ export default function TesoreriaPage() {
                   filas: datos.flujo.semanas.map((s) => ({
                     Desde: s.desde,
                     Hasta: s.hasta,
-                    Entradas: s.entradas,
-                    Salidas: s.salidas,
+                    "Por cobrar que vence": s.entradas,
+                    "Por pagar que vence": s.salidas,
                     "Saldo final": s.saldoFinal,
                   })),
                 },
@@ -165,9 +165,10 @@ export default function TesoreriaPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Flujo proyectado (4 semanas)</CardTitle>
               <p className="text-sm text-gray-500">
-                Disponible de hoy + facturas de clientes que vencen − facturas de proveedores que vencen. Sin
-                intercompañía. No incluye lo ya vencido: por cobrar {money(datos.flujo.porCobrarVencido)} y por pagar{" "}
-                {money(datos.flujo.porPagarVencido)}.
+                Proyección, no lo registrado: disponible de hoy + facturas de clientes que vencen − facturas de
+                proveedores que vencen. Sin intercompañía. Lo ya vencido por pagar ({money(datos.flujo.porPagarVencido)})
+                va en la primera semana; lo vencido por cobrar ({money(datos.flujo.porCobrarVencido)}) no se cuenta,
+                porque no es seguro que entre.
               </p>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
@@ -175,8 +176,8 @@ export default function TesoreriaPage() {
                 <TableHeader className="bg-slate-50">
                   <TableRow>
                     <TableHead className="px-2 sm:px-4">Semana</TableHead>
-                    <TableHead className="text-right">Entradas</TableHead>
-                    <TableHead className="text-right">Salidas</TableHead>
+                    <TableHead className="text-right">Por cobrar que vence</TableHead>
+                    <TableHead className="text-right">Por pagar que vence</TableHead>
                     <TableHead className="text-right pr-4">Saldo al final</TableHead>
                   </TableRow>
                 </TableHeader>

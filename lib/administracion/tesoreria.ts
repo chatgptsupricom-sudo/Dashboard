@@ -427,6 +427,9 @@ export async function fetchTesoreriaAdmin(
 
   // Flujo proyectado 4 semanas: caja disponible + lo que vence por cobrar −
   // lo que vence por pagar. Sin intercompania (se compensa dentro del grupo).
+  // Lo ya vencido por pagar se cuenta en la primera semana (hay que pagarlo
+  // ya; en Valencia casi ninguna factura de proveedor tiene plazo y vencen el
+  // dia de la factura); lo vencido por cobrar no, porque no es seguro que entre.
   const externos = (r: any) => !RE_INTERCOMPANIA.test(nombreM2o(r.partner_id));
   const cobros = cxcAbierta.filter(externos).map((r: any) => ({
     vence: r.invoice_date_due || "",
@@ -441,7 +444,9 @@ export async function fetchTesoreriaAdmin(
     const d = sumarDias(hoy, i * 7);
     const h = sumarDias(hoy, i * 7 + 6);
     const entradas = redondear(cobros.filter((c) => c.vence >= d && c.vence <= h).reduce((s, c) => s + c.monto, 0));
-    const salidas = redondear(pagos.filter((p) => p.vence >= d && p.vence <= h).reduce((s, p) => s + p.monto, 0));
+    const salidas = redondear(
+      pagos.filter((p) => (i === 0 || p.vence >= d) && p.vence <= h).reduce((s, p) => s + p.monto, 0),
+    );
     saldoCorriendo = redondear(saldoCorriendo + entradas - salidas);
     return { desde: d, hasta: h, entradas, salidas, saldoFinal: saldoCorriendo };
   });
