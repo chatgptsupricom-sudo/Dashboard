@@ -457,7 +457,7 @@ export default function ConciliacionBancariaPage() {
             opciones={[
               { value: "movimientos", label: "Movimientos del banco", contador: movimientos.length },
               { value: "comprobantes", label: "Comprobantes", contador: comprobantes.length },
-              { value: "odoo", label: "Cobros de Odoo sin movimiento", contador: sinMovimiento.length },
+              { value: "odoo", label: "En Odoo y no en el banco", contador: sinMovimiento.length },
             ]}
           />
 
@@ -666,8 +666,9 @@ export default function ConciliacionBancariaPage() {
             <Card>
               <CardContent className="p-4 space-y-3">
                 <p className="text-sm text-gray-600">
-                  Cobros registrados en este diario que no aparecen en el estado de cuenta (solo de días que el estado
-                  cubre). Pueden estar en otro banco, con otro monto o no haber entrado.
+                  Estos cobros <strong>sí están registrados en Odoo</strong> en este diario, pero el estado de cuenta no
+                  trae ninguna entrada con ese monto en esos días (solo se revisan los días que el estado cubre). Puede
+                  que se registraran en el banco equivocado, con otro monto, o que el dinero no haya entrado.
                 </p>
                 <div className="overflow-x-auto">
                   <Table>
