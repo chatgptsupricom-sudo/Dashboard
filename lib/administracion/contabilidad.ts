@@ -10,6 +10,8 @@ import {
 import { empresaDeCompanyId } from "@/lib/administracion/empresas";
 import { mesAnterior, rangoDelMes } from "@/lib/administracion/gastos";
 import { CORTE_ODOO } from "@/lib/smartbit";
+import { periodoDeLibro } from "@/lib/administracion/fiscal";
+import { cuentasPendientesDeBancos } from "@/lib/administracion/tesoreria";
 
 /**
  * Contabilidad y cierre del rol Administracion.
@@ -331,6 +333,8 @@ export async function fetchContabilidad(
 async function fetchCierre(companyIds: number[], hoy: string, desde: string, hasta: string): Promise<CheckCierre[]> {
   const ve = companyIds.filter((id) => id === 9 || id === 10);
   const mesCerrado = hasta < hoy;
+  // Un borrador sin fecha de factura (invoice_date vacio) se ubica por `date`.
+  const hastaElCierre = ["|", ["invoice_date", "<=", hasta], "&", ["invoice_date", "=", false], ["date", "<=", hasta]];
 
   const [
     borradoresMes,
@@ -351,8 +355,8 @@ async function fetchCierre(companyIds: number[], hoy: string, desde: string, has
       ["move_type"],
       companyIds,
     ),
-    contar("account.move", [["company_id", "in", companyIds], ["state", "=", "draft"], ["move_type", "in", ["out_invoice", "out_refund"]], ["invoice_date", "<=", hasta]], companyIds),
-    contar("account.move", [["company_id", "in", companyIds], ["state", "=", "draft"], ["move_type", "in", ["in_invoice", "in_refund"]], ["invoice_date", "<=", hasta]], companyIds),
+    contar("account.move", [["company_id", "in", companyIds], ["state", "=", "draft"], ["move_type", "in", ["out_invoice", "out_refund"]], ...hastaElCierre], companyIds),
+    contar("account.move", [["company_id", "in", companyIds], ["state", "=", "draft"], ["move_type", "in", ["in_invoice", "in_refund"]], ...hastaElCierre], companyIds),
     contar(
       "account.bank.statement.line",
       [["company_id", "in", companyIds], ["state", "=", "posted"], ["is_reconciled", "=", false], ["date", "<=", hasta]],
@@ -361,7 +365,17 @@ async function fetchCierre(companyIds: number[], hoy: string, desde: string, has
     ve.length ? contar("account.wh.iva", [["company_id", "in", ve], ["state", "=", "draft"], ["date", "<=", hasta]], ve) : Promise.resolve(0),
     ve.length ? contar("account.wh.islr.doc", [["company_id", "in", ve], ["state", "=", "draft"], ["date_ret", "<=", hasta]], ve) : Promise.resolve(0),
     ve.length
-      ? leerTodo("account.fiscal.book", [["company_id", "in", ve], ["period_start", "<=", hasta], ["period_end", ">=", desde]], ["type", "company_id", "state"], ve)
+      ? leerTodo(
+          "account.fiscal.book",
+          [["company_id", "in", ve], ["state", "!=", "cancel"], "|", ["period_start", "=", false], "&", ["period_start", "<=", hasta], ["period_end", ">=", desde]],
+          ["type", "company_id", "state", "period_start", "period_end", "time_period", "create_date"],
+          ve,
+        ).then((r) =>
+          r.filter((l: any) => {
+            const p = periodoDeLibro(l);
+            return p && p.desde <= hasta && p.hasta >= desde;
+          }),
+        )
       : Promise.resolve([] as any[]),
     ve.length
       ? leerTodo(
@@ -371,18 +385,29 @@ async function fetchCierre(companyIds: number[], hoy: string, desde: string, has
           ve,
         )
       : Promise.resolve([] as any[]),
-    // Cuentas puente: transitorias y depositos por identificar deben quedar en cero.
-    leerTodo(
-      "account.account",
-      [
-        ["company_id", "in", companyIds],
-        "|",
-        ["name", "ilike", "transitori"],
-        ["name", "ilike", "identificar"],
-      ],
-      ["code", "name", "company_id"],
-      companyIds,
-    ),
+    // Cuentas puente: los "Recibos/Pagos Pendientes" de cada banco (cobros y
+    // pagos registrados sin conciliar), sus transitorias de extracto y los
+    // depositos por identificar deben quedar en cero. Se toman de los diarios,
+    // no por nombre: por nombre entraba una cuenta de gastos ("Transitoria
+    // Diferencial Cambiario") y quedaba fuera "Venezuela Transitora".
+    Promise.all([
+      leerTodo(
+        "account.journal",
+        [["type", "in", ["bank", "cash"]], ["company_id", "in", companyIds]],
+        ["default_account_id", "suspense_account_id"],
+        companyIds,
+      ).then((diarios) => cuentasPendientesDeBancos(diarios, companyIds)),
+      leerTodo(
+        "account.account",
+        [["company_id", "in", companyIds], ["name", "ilike", "identificar"], ["account_type", "not in", TIPOS_RESULTADO]],
+        ["id"],
+        companyIds,
+      ),
+    ]).then(([{ cuentaDePendiente, transitorias }, porIdentificar]) => [
+      ...Array.from(cuentaDePendiente.keys()),
+      ...transitorias,
+      ...porIdentificar.map((a: any) => a.id as number),
+    ]),
     leerTodo("res.company", [["id", "in", companyIds]], ["name", "period_lock_date", "fiscalyear_lock_date"], companyIds),
   ]);
 
@@ -390,7 +415,7 @@ async function fetchCierre(companyIds: number[], hoy: string, desde: string, has
   if (puentes.length) {
     saldosPuente = await agrupar(
       "account.move.line",
-      [["account_id", "in", puentes.map((p: any) => p.id)], ["parent_state", "=", "posted"], ["date", "<=", hasta]],
+      [["account_id", "in", puentes], ["parent_state", "=", "posted"], ["date", "<=", hasta]],
       ["balance:sum"],
       ["account_id"],
       companyIds,
@@ -449,14 +474,14 @@ async function fetchCierre(companyIds: number[], hoy: string, desde: string, has
     },
     {
       id: "cuentas_puente",
-      titulo: "Cuentas transitorias de banco en cero",
+      titulo: "Cobros y pagos conciliados con el banco",
       estado: puentesConSaldo.length === 0 ? "ok" : "pendiente",
       cantidad: puentesConSaldo.length,
       // Cada banco tiene su "Transitoria": ahi quedan los cobros y pagos
       // registrados en Odoo que todavia no se casaron con el extracto.
       detalle:
         puentesConSaldo.length === 0
-          ? "Las transitorias de banco y los depósitos por identificar no tienen saldo: todo lo registrado está conciliado."
+          ? "Recibos/pagos pendientes, transitorias y depósitos por identificar en cero: todo lo registrado está conciliado."
           : `Cobros/pagos registrados que no se han conciliado con el banco. ${puentesConSaldo
               .slice(0, 5)
               .map((g: any) => `${nombreM2o(g.account_id)}: $${redondear(Number(g.balance) || 0).toLocaleString("en-US")}`)
@@ -479,19 +504,29 @@ async function fetchCierre(companyIds: number[], hoy: string, desde: string, has
       enlace: "/administracion/fiscal",
     });
     const faltan: string[] = [];
+    const abiertos: string[] = [];
     ve.forEach((cid) => {
       ["purchase", "sale"].forEach((tipo) => {
-        if (!(libros as any[]).some((l) => idM2o(l.company_id) === cid && l.type === tipo)) {
-          faltan.push(`${tipo === "purchase" ? "compras" : "ventas"} ${empresaDeCompanyId(cid)}`);
-        }
+        const nombre = `${tipo === "purchase" ? "compras" : "ventas"} ${empresaDeCompanyId(cid)}`;
+        const delTipo = (libros as any[]).filter((l) => idM2o(l.company_id) === cid && l.type === tipo);
+        if (delTipo.length === 0) faltan.push(nombre);
+        else if (delTipo.some((l) => l.state !== "done")) abiertos.push(nombre);
       });
     });
     checks.push({
       id: "libros",
-      titulo: "Libros de compra y venta creados",
-      estado: faltan.length === 0 ? "ok" : "pendiente",
-      cantidad: faltan.length,
-      detalle: faltan.length === 0 ? "Los libros del mes existen en Odoo." : `Falta el libro de ${faltan.join(", ")}.`,
+      titulo: "Libros de compra y venta cerrados",
+      estado: faltan.length + abiertos.length === 0 ? "ok" : "pendiente",
+      cantidad: faltan.length + abiertos.length,
+      detalle:
+        faltan.length + abiertos.length === 0
+          ? "Los libros del mes existen y están cerrados en Odoo."
+          : [
+              faltan.length ? `Falta el libro de ${faltan.join(", ")}.` : "",
+              abiertos.length ? `Sin cerrar: ${abiertos.join(", ")}.` : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
       enlace: "/administracion/fiscal",
     });
     checks.push({
@@ -507,7 +542,9 @@ async function fetchCierre(companyIds: number[], hoy: string, desde: string, has
     });
   }
 
-  const sinBloquear = (companias as any[]).filter((c) => !c.period_lock_date || c.period_lock_date < hasta);
+  // Vale la mayor de las dos fechas de bloqueo.
+  const bloqueo = (c: any) => [c.period_lock_date, c.fiscalyear_lock_date].filter(Boolean).sort().pop() || "";
+  const sinBloquear = (companias as any[]).filter((c) => bloqueo(c) < hasta);
   checks.push({
     id: "bloqueo",
     titulo: "Período bloqueado en Odoo",

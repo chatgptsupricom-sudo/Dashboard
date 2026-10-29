@@ -189,7 +189,12 @@ export default function CuentasPorPagarPage() {
             <Tarjeta
               titulo="Saldo por pagar"
               valor={money(datos.resumen.saldo, 2)}
-              detalle={`${datos.resumen.documentos} documentos · ${datos.resumen.proveedores} proveedores`}
+              detalle={
+                `${datos.resumen.documentos} documentos · ${datos.resumen.proveedores} proveedores` +
+                (datos.resumen.pagosSinAplicar > 0.01
+                  ? ` · menos ${money(datos.resumen.pagosSinAplicar, 2)} pagados sin aplicar = ${money(datos.resumen.saldoNeto, 2)} neto`
+                  : "")
+              }
               tono="azul"
             />
             <Tarjeta
@@ -211,6 +216,14 @@ export default function CuentasPorPagarPage() {
               tono="verde"
             />
           </div>
+
+          {datos.resumen.pagosSinAplicar > 0.01 && (
+            <Aviso>
+              Hay <b>{money(datos.resumen.pagosSinAplicar, 2)}</b> en pagos o anticipos a proveedores que en Odoo no se
+              aplicaron a ninguna factura: la deuda neta es {money(datos.resumen.saldoNeto, 2)}. La antigüedad y el
+              calendario siguen mostrando las facturas completas hasta que se concilien.
+            </Aviso>
+          )}
 
           {datos.resumen.sinCondicionPago.documentos > 0 && (
             <Aviso>

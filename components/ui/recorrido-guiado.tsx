@@ -153,8 +153,8 @@ export function RecorridoGuiado({
     else estilo = { left, bottom: 16 };
   }
 
+  // Encima del menú lateral (z-[100]): si no, la tarjeta de un paso pegado a la izquierda quedaba tapada.
   return (
-    {/* Encima del menú lateral (z-[100]): si no, la tarjeta de un paso pegado a la izquierda quedaba tapada. */}
     <div className="fixed inset-0 z-[110]" role="dialog" aria-modal="true" aria-labelledby="recorrido-titulo">
       {caja ? (
         <div

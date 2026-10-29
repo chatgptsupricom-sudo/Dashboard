@@ -13,15 +13,22 @@ import { empresaDeCompanyId } from "@/lib/administracion/empresas";
 /**
  * Tesoreria y Bancos del rol Administracion.
  *
- * El saldo de cada banco/caja es el saldo contable de la cuenta por defecto de
- * su diario (`account.move.line`, asientos publicados), en USD. Varios diarios
- * apuntan a la misma cuenta (en Panama "Banco General", "Tarjeta de Debito
- * BANCO GENERAL"...), asi que se agrupa por cuenta, no por diario.
+ * El saldo de cada banco/caja es su saldo en libros: la cuenta por defecto de
+ * su diario mas sus cuentas de "Recibos/Pagos Pendientes" (R/P, la
+ * `payment_account_id` de los metodos de pago). Un cobro o pago registrado va a
+ * R/P y solo pasa a la cuenta del banco al conciliarlo con el extracto; como en
+ * Valencia y Caracas casi no se cargan extractos, la cuenta del banco sola deja
+ * fuera casi todo lo cobrado y pagado desde abril (oct-2026: -$7,8 M en
+ * Valencia). Asientos publicados, en USD; lo que esta en bolivares en un banco
+ * en bolivares se pasa a USD con la tasa BCV de hoy, no con la de cada asiento.
+ * Varios diarios apuntan a la misma cuenta (en Panama "Banco General", "Tarjeta
+ * de Debito BANCO GENERAL"...), asi que se agrupa por cuenta, no por diario.
  *
  * No todo diario de tipo banco es dinero: hay retenciones (IVA/ITBMS/IGTF que
  * retuvieron los clientes), cuentas puente (transitorias, "Depositos X
- * Identificar", "DESCUENTO" en Panama). Esas se muestran aparte y no suman al
- * disponible.
+ * Identificar"). Esas se muestran aparte y no suman al disponible. Los diarios
+ * que apuntan a una cuenta de resultados ("DESCUENTO" en Panama) o a un pasivo
+ * de retenciones (IGTF/ITBMS por pagar) no son tesoreria y no se muestran.
  *
  * La conciliacion se lee de las lineas de extracto (`account.bank.statement.line`):
  * cuantas faltan por conciliar y cuando se cargo el ultimo extracto. En oct-2026
@@ -44,10 +51,15 @@ export interface CuentaTesoreria {
   sede: string;
   clase: ClaseCuenta;
   moneda: string;
-  /** Saldo en USD (moneda de la empresa). */
+  /** Saldo en libros en USD: `saldoBanco` + `pendiente`. */
   saldo: number;
-  /** Saldo en la moneda del diario (Bs), si no es USD. */
+  /** Saldo de la cuenta del banco (lo ya conciliado con extractos). */
+  saldoBanco: number;
+  /** Cobros (+) y pagos (-) registrados que todavia no se conciliaron (R/P). */
+  pendiente: number;
+  /** Saldo en libros en la moneda del diario (Bs), si no es USD. */
   saldoMonedaDiario: number | null;
+  /** Cobros y pagos del mes (sin transferencias entre cuentas propias). */
   entradasMes: number;
   salidasMes: number;
   extracto: {
@@ -74,6 +86,7 @@ export interface DatosTesoreriaAdmin {
     disponibleCajas: number;
     retenciones: number;
     puente: number;
+    pendiente: number;
     entradasMes: number;
     salidasMes: number;
     lineasSinConciliar: number;
@@ -81,6 +94,8 @@ export interface DatosTesoreriaAdmin {
   };
   cuentas: CuentaTesoreria[];
   tasas: { moneda: string; fecha: string; bsPorUnidad: number; anterior: { fecha: string; bsPorUnidad: number } | null }[];
+  /** Asientos en bolivares registrados a tasa 1 (Bs cargados como USD) en bancos y cajas. */
+  bolivaresComoDolares: { asiento: string; fecha: string; cuenta: string; monto: number }[];
   flujo: {
     saldoInicial: number;
     porCobrarVencido: number;
@@ -91,6 +106,49 @@ export interface DatosTesoreriaAdmin {
 
 /** Un extracto con mas de estos dias se considera atrasado. */
 export const DIAS_EXTRACTO_ATRASADO = 7;
+
+const ES_BOLIVAR = /^VE[FS]$/;
+
+/**
+ * Cuentas por donde pasan los cobros y pagos de los bancos antes de casarse con
+ * el extracto: las de "Recibos/Pagos Pendientes" de los metodos de pago (por
+ * cuenta del banco) y las transitorias del extracto (`suspense_account_id`).
+ * `diarios` = account.journal con default_account_id y suspense_account_id.
+ */
+export async function cuentasPendientesDeBancos(
+  diarios: any[],
+  companyIds: number[],
+): Promise<{ cuentaDePendiente: Map<number, number>; transitorias: number[] }> {
+  const cuentaDeDiario = new Map<number, number>();
+  diarios.forEach((j: any) => {
+    const id = idM2o(j.default_account_id);
+    if (id) cuentaDeDiario.set(j.id, id);
+  });
+  const propias = new Set(cuentaDeDiario.values());
+  const metodos = cuentaDeDiario.size
+    ? await leerTodo(
+        "account.payment.method.line",
+        [["journal_id", "in", Array.from(cuentaDeDiario.keys())], ["payment_account_id", "!=", false]],
+        ["journal_id", "payment_account_id"],
+        companyIds,
+      )
+    : [];
+  const cuentaDePendiente = new Map<number, number>();
+  metodos.forEach((m: any) => {
+    const pendiente = idM2o(m.payment_account_id);
+    const cuenta = cuentaDeDiario.get(idM2o(m.journal_id) || 0);
+    // En las cajas el metodo de pago apunta a la misma cuenta de la caja.
+    if (pendiente && cuenta && !propias.has(pendiente)) cuentaDePendiente.set(pendiente, cuenta);
+  });
+  const transitorias = Array.from(
+    new Set(
+      diarios
+        .map((j: any) => idM2o(j.suspense_account_id))
+        .filter((id): id is number => !!id && !propias.has(id)),
+    ),
+  );
+  return { cuentaDePendiente, transitorias };
+}
 
 export async function fetchTesoreriaAdmin(
   companyIds: number[],
@@ -104,7 +162,7 @@ export async function fetchTesoreriaAdmin(
       ["type", "in", ["bank", "cash"]],
       ["company_id", "in", companyIds],
     ],
-    ["name", "type", "currency_id", "default_account_id", "company_id"],
+    ["name", "type", "currency_id", "default_account_id", "suspense_account_id", "company_id"],
     companyIds,
   );
 
@@ -130,6 +188,8 @@ export async function fetchTesoreriaAdmin(
         clase: "disponible",
         moneda,
         saldo: 0,
+        saldoBanco: 0,
+        pendiente: 0,
         saldoMonedaDiario: null,
         entradasMes: 0,
         salidasMes: 0,
@@ -142,6 +202,8 @@ export async function fetchTesoreriaAdmin(
     }
     c.diarios.push(nombreDiario);
     if (moneda !== "USD") c.moneda = moneda;
+    // Una cuenta que comparte una caja con un diario de banco ("Cheque") es caja.
+    if (j.type === "cash") c.tipo = "cash";
   });
 
   porCuenta.forEach((c) => {
@@ -153,35 +215,57 @@ export async function fetchTesoreriaAdmin(
     delete (c as any)._nombreCuenta;
   });
 
-  const cuentaIds = Array.from(porCuenta.keys());
-  const journalIds = Array.from(cuentaDeDiario.keys());
+  const [{ cuentaDePendiente }, tiposCuenta] = await Promise.all([
+    cuentasPendientesDeBancos(diarios, companyIds),
+    porCuenta.size
+      ? leerTodo("account.account", [["id", "in", Array.from(porCuenta.keys())]], ["account_type"], companyIds)
+      : Promise.resolve([] as any[]),
+  ]);
+  tiposCuenta.forEach((a: any) => {
+    const c = porCuenta.get(a.id);
+    const tipo = String(a.account_type || "");
+    // Ingresos/gastos nunca; pasivos solo como cuenta puente (transitorias por pagar).
+    if (c && (!/^(asset|liability)/.test(tipo) || (tipo.startsWith("liability") && c.clase !== "puente"))) {
+      porCuenta.delete(a.id);
+    }
+  });
+  Array.from(cuentaDePendiente.entries()).forEach(([p, c]) => {
+    if (!porCuenta.has(c)) cuentaDePendiente.delete(p);
+  });
 
-  const [saldos, movimientosMes, extractos, sinConciliar, tasasRaw, cxcAbierta, cxpAbierta] = await Promise.all([
-    cuentaIds.length
+  const cuentaIds = Array.from(porCuenta.keys());
+  const conPendientes = [...cuentaIds, ...Array.from(cuentaDePendiente.keys())];
+  const journalIds = Array.from(cuentaDeDiario.keys()).filter((j) => porCuenta.has(cuentaDeDiario.get(j) || 0));
+
+  const [saldos, movimientosMes, extractos, sinConciliar, tasasRaw, cxcAbierta, cxpAbierta, aTasaUno] = await Promise.all([
+    conPendientes.length
       ? agrupar(
           "account.move.line",
           [
-            ["account_id", "in", cuentaIds],
+            ["account_id", "in", conPendientes],
             ["parent_state", "=", "posted"],
             ["company_id", "in", companyIds],
           ],
           ["balance:sum", "amount_currency:sum"],
-          ["account_id"],
+          ["account_id", "currency_id"],
           companyIds,
         )
       : Promise.resolve([]),
-    cuentaIds.length
-      ? agrupar(
-          "account.move.line",
+    // Cobros y pagos del mes. No se suman los movimientos de la cuenta: una
+    // transferencia entre bancos propios o la conciliacion (R/P -> banco)
+    // contarian como entrada y salida.
+    journalIds.length
+      ? leerTodo(
+          "account.payment",
           [
-            ["account_id", "in", cuentaIds],
-            ["parent_state", "=", "posted"],
-            ["company_id", "in", companyIds],
+            ["journal_id", "in", journalIds],
+            ["state", "=", "posted"],
+            ["is_internal_transfer", "=", false],
             ["date", ">=", desde],
             ["date", "<=", hasta],
           ],
-          ["debit:sum", "credit:sum"],
-          ["account_id"],
+          // journal_id/date vienen del asiento (_inherits): se leen, no se agrupan.
+          ["journal_id", "payment_type", "amount_company_currency_signed"],
           companyIds,
         )
       : Promise.resolve([]),
@@ -248,19 +332,55 @@ export async function fetchTesoreriaAdmin(
       ["partner_id", "invoice_date_due", "amount_residual_signed"],
       companyIds,
     ),
+    // Bolivares registrados a tasa 1 (balance = amount_currency): Bs cargados
+    // como USD. Se piden solo los de 1.000 o mas y se comparan aqui.
+    conPendientes.length
+      ? leerTodo(
+          "account.move.line",
+          [
+            ["account_id", "in", conPendientes],
+            ["parent_state", "=", "posted"],
+            "|",
+            ["balance", ">=", 1000],
+            ["balance", "<=", -1000],
+          ],
+          ["move_name", "date", "account_id", "currency_id", "balance", "amount_currency"],
+          companyIds,
+        ).then((r) =>
+          r.filter(
+            (l: any) =>
+              ES_BOLIVAR.test(nombreM2o(l.currency_id)) &&
+              Math.abs((Number(l.balance) || 0) - (Number(l.amount_currency) || 0)) < 0.01,
+          ),
+        )
+      : Promise.resolve([] as any[]),
   ]);
 
+  // Bs por USD de hoy, para pasar a USD lo que esta en bolivares.
+  const tasaHoy = Number(tasasRaw.find((r: any) => nombreM2o(r.currency_id) === "USD")?.inverse_rate) || 0;
+
   saldos.forEach((g: any) => {
-    const c = porCuenta.get(idM2o(g.account_id) || 0);
+    const cuentaId = idM2o(g.account_id) || 0;
+    const c = porCuenta.get(cuentaId) || porCuenta.get(cuentaDePendiente.get(cuentaId) || 0);
     if (!c) return;
-    c.saldo = redondear(Number(g.balance) || 0);
-    if (c.moneda !== "USD") c.saldoMonedaDiario = redondear(Number(g.amount_currency) || 0);
+    const enBs = c.moneda !== "USD" && ES_BOLIVAR.test(nombreM2o(g.currency_id));
+    const valor = enBs && tasaHoy > 0 ? (Number(g.amount_currency) || 0) / tasaHoy : Number(g.balance) || 0;
+    if (porCuenta.has(cuentaId)) c.saldoBanco += valor;
+    else c.pendiente += valor;
+    if (enBs) c.saldoMonedaDiario = (c.saldoMonedaDiario || 0) + (Number(g.amount_currency) || 0);
+  });
+  porCuenta.forEach((c) => {
+    c.saldoBanco = redondear(c.saldoBanco);
+    c.pendiente = redondear(c.pendiente);
+    c.saldo = redondear(c.saldoBanco + c.pendiente);
+    if (c.saldoMonedaDiario !== null) c.saldoMonedaDiario = redondear(c.saldoMonedaDiario);
   });
   movimientosMes.forEach((g: any) => {
-    const c = porCuenta.get(idM2o(g.account_id) || 0);
+    const c = porCuenta.get(cuentaDeDiario.get(idM2o(g.journal_id) || 0) || 0);
     if (!c) return;
-    c.entradasMes = redondear(Number(g.debit) || 0);
-    c.salidasMes = redondear(Number(g.credit) || 0);
+    const monto = Math.abs(Number(g.amount_company_currency_signed) || 0);
+    if (g.payment_type === "inbound") c.entradasMes = redondear(c.entradasMes + monto);
+    else c.salidasMes = redondear(c.salidasMes + monto);
   });
   extractos.forEach((g: any) => {
     const c = porCuenta.get(cuentaDeDiario.get(idM2o(g.journal_id) || 0) || 0);
@@ -285,7 +405,10 @@ export async function fetchTesoreriaAdmin(
 
   const cuentas = Array.from(porCuenta.values())
     // Cuentas sin un solo movimiento (diarios creados y nunca usados) no aportan.
-    .filter((c) => Math.abs(c.saldo) > 0.005 || c.entradasMes || c.salidasMes || c.extracto.ultimo)
+    .filter(
+      (c) =>
+        Math.abs(c.saldo) > 0.005 || Math.abs(c.saldoBanco) > 0.005 || c.entradasMes || c.salidasMes || c.extracto.ultimo,
+    )
     .sort((a, b) => (a.clase === b.clase ? b.saldo - a.saldo : a.clase.localeCompare(b.clase)));
 
   const disponibles = cuentas.filter((c) => c.clase === "disponible");
@@ -330,6 +453,7 @@ export async function fetchTesoreriaAdmin(
       disponibleCajas: suma(disponibles.filter((c) => c.tipo === "cash"), "saldo"),
       retenciones: suma(cuentas.filter((c) => c.clase === "retencion"), "saldo"),
       puente: suma(cuentas.filter((c) => c.clase === "puente"), "saldo"),
+      pendiente: redondear(disponibles.reduce((s, c) => s + c.pendiente, 0)),
       entradasMes: suma(disponibles, "entradasMes"),
       salidasMes: suma(disponibles, "salidasMes"),
       lineasSinConciliar: cuentas.reduce((s, c) => s + c.extracto.sinConciliar, 0),
@@ -339,6 +463,12 @@ export async function fetchTesoreriaAdmin(
     },
     cuentas,
     tasas,
+    bolivaresComoDolares: aTasaUno.map((l: any) => ({
+      asiento: String(l.move_name || ""),
+      fecha: String(l.date || "").slice(0, 10),
+      cuenta: nombreM2o(l.account_id),
+      monto: redondear(Number(l.balance) || 0),
+    })),
     flujo: {
       saldoInicial: disponible,
       porCobrarVencido: redondear(cobros.filter((c) => c.vence && c.vence < hoy).reduce((s, c) => s + c.monto, 0)),
