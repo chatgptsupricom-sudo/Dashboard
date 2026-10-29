@@ -5,6 +5,7 @@ import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
 import { sinIntercompania } from "@/lib/intercompania";
 import { sinRetirados } from "@/lib/vendedores/retirados";
+import { metaClientesNuevosDe } from "@/lib/vendedores/metaClientesNuevos";
 
 function normalize(str: string): string {
   return str
@@ -88,6 +89,8 @@ export async function GET(request: NextRequest) {
       cuotaMensual: number;
       totalFacturado: number;
       nuevosMes: number;
+      /** Meta del mes de este vendedor (la general salvo que tenga una propia). */
+      meta: number;
       semanas: { nuevos: number; meta: number; porcentaje: number }[];
     }> = {};
 
@@ -100,6 +103,7 @@ export async function GET(request: NextRequest) {
         cuotaMensual: Number(s.cuota || 0),
         totalFacturado: 0,
         nuevosMes: 0,
+        meta: metaClientesNuevosDe(s, metaPerSeller),
         semanas: semanas.map(() => ({ nuevos: 0, meta: 0, porcentaje: 0 })),
       };
     });
@@ -193,12 +197,13 @@ export async function GET(request: NextRequest) {
     }
 
     // 7. Calculate weekly meta per seller and percentage
-    if (metaPerSeller > 0) {
+    {
       const totalDiasUtilesMes = semanas.reduce((sum, s) => sum + s.diasUtiles, 0);
       Object.values(sellerMap).forEach((seller) => {
+        if (!(seller.meta > 0)) return;
         semanas.forEach((semana, i) => {
           seller.semanas[i].meta = Math.round(
-            (metaPerSeller * semana.diasUtiles / totalDiasUtilesMes) * 100
+            (seller.meta * semana.diasUtiles / totalDiasUtilesMes) * 100
           ) / 100;
           seller.semanas[i].porcentaje =
             seller.semanas[i].meta > 0
