@@ -920,7 +920,7 @@ const MUY_LARGO = "El archivo tiene demasiadas filas para leerlo de una vez: sú
  * Pide a la IA que lea los archivos y devuelva JSON con `esquema`. Usa OpenAI
  * si hay OPENAI_API_KEY y si no Claude. null = la respuesta no era JSON.
  */
-async function leerConIA(
+export async function leerConIA(
   sistema: string,
   esquema: object,
   archivos: Archivo[],
@@ -1040,7 +1040,7 @@ type EstadoPreparado = {
   franjas: Region[];
 };
 
-async function bloquesEstado(datos: Buffer, mime: string): Promise<EstadoPreparado> {
+export async function bloquesEstado(datos: Buffer, mime: string): Promise<EstadoPreparado> {
   if (mime === "application/pdf") return { bloques: [bloqueArchivo(datos, mime)], img: null, franjas: [] };
   const sharp = (await import("sharp")).default;
   const meta = await sharp(datos).metadata();
@@ -1129,7 +1129,7 @@ export function ubicarFilas(
 // chico que la IA se come digitos repetidos (oct-2026: 777 leido como 77).
 const ANCHO_MIN_COMPROBANTE = 1200;
 
-async function ampliar(datos: Buffer, mime: string): Promise<Archivo> {
+export async function ampliar(datos: Buffer, mime: string): Promise<Archivo> {
   if (mime === "application/pdf") return bloqueArchivo(datos, mime);
   const sharp = (await import("sharp")).default;
   const { width = 0 } = await sharp(datos).metadata();

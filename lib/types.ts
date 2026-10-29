@@ -61,6 +61,7 @@ export const rolePermissions: RolePermissions = {
       "admin_cxp", // Administración: cuentas por pagar
       "admin_tesoreria", // Administración: tesorería y bancos
       "admin_binance", // Administración: conciliación de pagos de Binance
+      "admin_bancos", // Administración: conciliación bancaria (estado de cuenta, cobros de Odoo y comprobantes)
       "admin_fiscal", // Administración: fiscal (SENIAT / DGI)
       "admin_contabilidad", // Administración: contabilidad y cierre
       "users", // Gestión de usuarios
@@ -240,6 +241,7 @@ export const rolePermissions: RolePermissions = {
       "admin_cxp",
       "admin_tesoreria",
       "admin_binance",
+      "admin_bancos",
       "admin_fiscal",
       "admin_contabilidad",
       // Todas las secciones de Cuentas por Cobrar (desplegable en el menu).
