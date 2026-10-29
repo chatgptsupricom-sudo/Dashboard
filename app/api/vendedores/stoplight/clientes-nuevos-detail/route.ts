@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { sinIntercompania } from "@/lib/intercompania";
+import { metaClientesNuevosDe } from "@/lib/vendedores/metaClientesNuevos";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -46,7 +47,11 @@ export async function GET(request: NextRequest) {
       "SELECT meta_mensual FROM kpi_targets WHERE kpi_key = ? AND company_id = ? AND mes = ?",
       ["clientes_nuevos", companyId, mes]
     );
-    const metaPerSeller = (metaResult.rows as any[]).length > 0 ? Number((metaResult.rows as any[])[0].meta_mensual) : 0;
+    // La suya si tiene una propia (lib/vendedores/metaClientesNuevos.ts).
+    const metaPerSeller = metaClientesNuevosDe(
+      sellers[0],
+      (metaResult.rows as any[]).length > 0 ? Number((metaResult.rows as any[])[0].meta_mensual) : 0,
+    );
 
     const invoices = await callOdooRPC<any[]>(
       "account.move", "search_read",

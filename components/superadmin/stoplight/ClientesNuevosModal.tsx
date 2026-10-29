@@ -108,18 +108,22 @@ export default function ClientesNuevosModal({ resumen, isOpen, onClose, apiPrefi
     setInvoiceLoading(false);
   };
 
+  // Meta del vendedor: la suya si tiene una propia (lib/vendedores/metaClientesNuevos.ts).
+  const metaDe = (seller: any): number => Number(seller?.meta ?? data?.metaPerSeller ?? 0) || 0;
+
   // % de la meta de clientes nuevos (el mismo que muestra la tabla); null sin meta.
   const pctNuevos = (seller: any): number | null => {
-    const meta = data?.metaPerSeller || 0;
+    const meta = metaDe(seller);
     return meta > 0 ? Math.round((seller.nuevosMes / meta) * 100) : null;
   };
 
   // Primero el que está más lejos de la meta; sin meta, al final.
   const sellersOrdenados: any[] = useMemo(() => {
     if (!data?.sellers) return [];
-    const meta = data.metaPerSeller || 0;
-    if (!(meta > 0)) return data.sellers;
-    return [...data.sellers].sort((a: any, b: any) => (a.nuevosMes || 0) - (b.nuevosMes || 0));
+    if (!(data.metaPerSeller > 0)) return data.sellers;
+    // Los que tienen meta 0 (no se les mide) van al final.
+    return [...data.sellers].sort((a: any, b: any) =>
+      Number(!(metaDe(a) > 0)) - Number(!(metaDe(b) > 0)) || (a.nuevosMes || 0) - (b.nuevosMes || 0));
   }, [data]);
 
   if (!isOpen) return null;
@@ -277,7 +281,7 @@ export default function ClientesNuevosModal({ resumen, isOpen, onClose, apiPrefi
                       </thead>
                       <tbody>
                         {sellersOrdenados.map((seller: any) => {
-                          const meta = data.metaPerSeller || 0;
+                          const meta = metaDe(seller);
                           const pct = pctNuevos(seller) ?? 0;
                           const cumple = pct >= 100;
                           return (
