@@ -1,11 +1,13 @@
 "use client";
 
-import { Aviso, EncabezadoAdmin, EstadoCarga, Tarjeta, fechaCorta, money, useDatosAdmin } from "@/components/administracion/comunes";
+import { Aviso, EncabezadoAdmin, EstadoCarga, Pestanas, Tarjeta, fechaCorta, money, useDatosAdmin } from "@/components/administracion/comunes";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import type { FilaPorLlegar, OrigenLlegada, VentaProducto } from "@/lib/inteligencia-negocio/porLlegar";
-import { Loader2, Receipt, Truck } from "lucide-react";
+import { Loader2, Receipt, Search, Sparkles, Truck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CalendarioLlegadas } from "./CalendarioLlegadas";
 import type { Columna } from "./reportes/comunes";
 import { NOMBRE_SEDE_ID, TablaReporte } from "./reportes/comunes";
 
@@ -14,6 +16,8 @@ type Datos = { success: true; data: { empresa: string; filas: FilaPorLlegar[]; a
 const NOMBRE_SEDE: Record<number, string> = { ...NOMBRE_SEDE_ID, 7: "Panamá" };
 
 type Fila = FilaPorLlegar & {
+  /** Única por renglón: sede + producto (o código, si no está en Odoo). */
+  clave: string;
   ventas: "Sí" | "No";
   documentos: string;
   proveedor: string;
@@ -30,6 +34,7 @@ function aFila(f: FilaPorLlegar): Fila {
   const tipos = new Set(f.origenes.map((o) => o.tipo));
   return {
     ...f,
+    clave: `${f.sede}|${f.productId ?? f.codigo ?? f.producto}`,
     ventas: f.vendido ? "Sí" : "No",
     documentos: f.origenes.map(textoOrigen).join(" · "),
     proveedor: [...new Set(f.origenes.map((o) => o.proveedor).filter(Boolean))].join(" · "),
@@ -48,7 +53,17 @@ export function PorLlegar() {
   const { datos, cargando, error } = useDatosAdmin<Datos>("/api/inteligencia-negocio/por-llegar", empresa, "");
   const filas = useMemo(() => (datos?.data.filas ?? []).map(aFila), [datos]);
   const [detalle, setDetalle] = useState<Fila | null>(null);
+  const [vista, setVista] = useState<"calendario" | "lista">("calendario");
+  const [busqueda, setBusqueda] = useState("");
+  const [soloNuevos, setSoloNuevos] = useState(false);
   const hoy = new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10);
+
+  const filasCalendario = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    return filas.filter(
+      (f) => (!soloNuevos || !f.vendido) && (!q || `${f.codigo} ${f.producto} ${f.documentos} ${f.proveedor}`.toLowerCase().includes(q)),
+    );
+  }, [filas, busqueda, soloNuevos]);
 
   const resumen = useMemo(
     () => ({
@@ -148,19 +163,60 @@ export function PorLlegar() {
             />
           </div>
 
-          <TablaReporte
-            filas={filas}
-            columnas={columnas}
-            buscarEn={(f) => `${f.codigo} ${f.producto} ${f.documentos} ${f.proveedor}`}
-            filtros={[
-              { clave: "ventas", titulo: "¿Se ha vendido?" },
-              { clave: "origen", titulo: "Origen" },
-              { clave: "marca", titulo: "Marca" },
-              { clave: "categoria", titulo: "Categoría" },
-              ...(empresa === "" ? [{ clave: "sedeNombre" as const, titulo: "Sede" }] : []),
+          <Pestanas
+            opciones={[
+              { value: "calendario", label: "Calendario" },
+              { value: "lista", label: "Lista", contador: filas.length },
             ]}
-            archivo={`por-llegar-${empresa || "todas"}`}
+            valor={vista}
+            onChange={setVista}
           />
+
+          {vista === "calendario" ? (
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar producto, código, orden o proveedor…" className="pl-9 h-9" />
+                </div>
+                <button
+                  onClick={() => setSoloNuevos(!soloNuevos)}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 h-9 text-sm transition-colors ${
+                    soloNuevos ? "bg-violet-600 text-white border-violet-600" : "bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <Sparkles className="h-4 w-4" /> Solo nunca vendidos
+                </button>
+              </div>
+              <CalendarioLlegadas
+                // Otra sede = otro calendario (vuelve al mes de la próxima llegada).
+                key={empresa}
+                filas={filasCalendario}
+                hoy={hoy}
+                accion={(f) =>
+                  f.vendido && f.productId ? (
+                    <Button variant="outline" size="sm" className="h-7 w-full text-xs" onClick={() => setDetalle(f)}>
+                      <Receipt className="mr-1.5 h-3.5 w-3.5" /> Ver ventas
+                    </Button>
+                  ) : null
+                }
+              />
+            </div>
+          ) : (
+            <TablaReporte
+              filas={filas}
+              columnas={columnas}
+              buscarEn={(f) => `${f.codigo} ${f.producto} ${f.documentos} ${f.proveedor}`}
+              filtros={[
+                { clave: "ventas", titulo: "¿Se ha vendido?" },
+                { clave: "origen", titulo: "Origen" },
+                { clave: "marca", titulo: "Marca" },
+                { clave: "categoria", titulo: "Categoría" },
+                ...(empresa === "" ? [{ clave: "sedeNombre" as const, titulo: "Sede" }] : []),
+              ]}
+              archivo={`por-llegar-${empresa || "todas"}`}
+            />
+          )}
 
           <Aviso tono="azul">
             Por llegar: lo pendiente de recibir de las órdenes de compra de Odoo en el almacén principal de cada sede y, en
