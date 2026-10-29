@@ -11,6 +11,7 @@ import {
 } from "@/lib/smartbit";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
+import { esVendedorRetirado } from "@/lib/vendedores/retirados";
 
 export const dynamic = "force-dynamic";
 
@@ -259,7 +260,10 @@ export async function GET(request: NextRequest) {
 
     const currentMonthTotal = sellersDataFiltered.reduce((acc, s) => acc + (s.total || 0), 0);
 
+    // Los retirados (lib/vendedores/retirados.ts) siguen en el total del mes,
+    // pero no salen en el ranking de vendedores.
     const sellersData = sellersDataFiltered
+      .filter((s) => !esVendedorRetirado([s.id, s.name]))
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
       .map((s) => ({ name: s.name, total: s.total }));

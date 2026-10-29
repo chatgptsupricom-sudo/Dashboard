@@ -308,6 +308,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
+import { esVendedorRetirado } from "@/lib/vendedores/retirados";
 
 // Los cierres de "Pagina Web" no suman a lo cerrado ni a lo vendido.
 const SUMA = canalSumaVentasSql("canal_origen");
@@ -434,7 +435,7 @@ export async function GET(request: Request) {
 
     const excludedSellers = ["asis", "yusne"];
     const rankVentas = Object.entries(stats)
-      .filter(([name]) => !excludedSellers.some((ex) => name.toLowerCase().includes(ex)))
+      .filter(([name, s]) => !excludedSellers.some((ex) => name.toLowerCase().includes(ex)) && !esVendedorRetirado([s.id, name]))
       .sort((a, b) => b[1].total - a[1].total);
 
     // 5. Top Productos
