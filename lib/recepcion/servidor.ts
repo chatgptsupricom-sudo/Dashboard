@@ -132,6 +132,8 @@ export async function cargarRecepcion(id: number) {
 
 /** 404 (y no 403) si es de otra sucursal: adivinar un id no debe confirmar que existe. */
 export function fueraDeAlcance(sesion: Sesion, recepcion: any): boolean {
+  // Uno descartado solo lo ve el SuperAdmin (para restaurarlo).
+  if (recepcion.descartado_at && sesion.rol !== "superadmin") return true;
   return sesion.cids !== null && Number(recepcion.cids) !== sesion.cids;
 }
 

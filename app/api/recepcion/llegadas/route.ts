@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
               i.codigo, i.producto, i.odoo_product_id, i.cantidad_esperada, i.cantidad_recibida
          FROM recepcion_packing r
          JOIN recepcion_packing_items i ON i.recepcion_id = r.id
-        WHERE r.cids = ?
+        WHERE r.cids = ? AND r.descartado_at IS NULL
           AND (r.etapa <> 'cerrado'
                OR COALESCE(r.llegada_at, r.cerrado_at) >= DATE_SUB(NOW(), INTERVAL ? DAY))`,
       [CIDS_VALENCIA, DIAS_HISTORIA],
