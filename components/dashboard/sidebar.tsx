@@ -151,6 +151,7 @@ export function Sidebar({
   const [isITOpen, setIsITOpen] = useState(false);
   const [isRRHHOpen, setIsRRHHOpen] = useState(false);
   const [isBIOpen, setIsBIOpen] = useState(false);
+  const [isGMOpen, setIsGMOpen] = useState(false);
   const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
   const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
   const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
@@ -552,6 +553,8 @@ export function Sidebar({
   const itSuperAdminIds = ["notas_credito"];
   // En el SuperAdmin van dentro del desplegable "Recursos Humanos".
   const rrhhSuperAdminIds = ["seleccion_personal", "solicitudes_personal", "asistencia", "organigrama", "flujogramas"];
+  // En el SuperAdmin, las pantallas del Gerente de Marca van en su desplegable.
+  const gerenteMarcaSuperAdminIds = ["gerencia_marca"];
   const administracionDropdownIds = [
     "salud_financiera",
     "gastos_presupuesto",
@@ -599,7 +602,7 @@ export function Sidebar({
         (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
         (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
         !(isSuperAdminRole &&
-          [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+          [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...gerenteMarcaSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") &&
@@ -2077,6 +2080,63 @@ export function Sidebar({
                           })}
                         </div>
                       ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de GERENTE DE MARCA (solo superadmin): las pantallas del rol, que
+                viven en /gerente_marca (sin ?gerente= se ven las marcas de todos juntas), y la asignación. */}
+            {userRole === "superAdmin" && allowedSections.includes("gerencia_marca") && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsGMOpen(!isGMOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Award size={20} className="text-slate-400" />
+                    <span className="text-sm">Gerente de Marca</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isGMOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isGMOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: "Dashboard", href: `/${locale}/gerente_marca` },
+                        { label: "Inventario por marca", href: `/${locale}/gerente_marca/inventario` },
+                        { label: "Antigüedad de inventario", href: `/${locale}/gerente_marca/antiguedad` },
+                        { label: "Ventas por marca", href: `/${locale}/gerente_marca/ventas` },
+                        { label: "Banco de Flyers", href: `/${locale}/gerente_marca/banco-imagenes` },
+                        { label: "Configuración de marcas", href: `/${locale}/gerente_marca/configuracion` },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
                     </motion.div>
                   )}
                 </AnimatePresence>
