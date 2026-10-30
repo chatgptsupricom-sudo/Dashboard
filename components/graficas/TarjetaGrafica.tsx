@@ -1,9 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { BarChart3, ChevronRight, Download, Maximize2, Table2 } from "lucide-react";
+import { BarChart3, ChevronRight, Download, Loader2, Maximize2, Table2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { SEP, type Grafica as TGrafica } from "@/lib/graficas/tipos";
+import { SEP, type Grafica as TGrafica, type NodoDetalle } from "@/lib/graficas/tipos";
 import { Grafica, TablaGrafica } from "./Grafica";
 
 function Boton({ titulo, onClick, children, activo }: { titulo: string; onClick: () => void; children: React.ReactNode; activo?: boolean }) {
@@ -20,21 +20,46 @@ function Boton({ titulo, onClick, children, activo }: { titulo: string; onClick:
   );
 }
 
-/** Tarjeta de una gráfica: cambiar de medida (monto / unidades), ver como tabla, ampliar y bajar en PNG. */
-export function TarjetaGrafica({ grafica: original, contexto }: { grafica: TGrafica; contexto: string }) {
+export type PedirDetalle = (graficaId: string, alterna: boolean, ruta: string[]) => Promise<NodoDetalle>;
+
+/**
+ * Tarjeta de una gráfica: cambiar de medida (monto / unidades), ver como
+ * tabla, ampliar, bajar en PNG y abrir el detalle de una barra (lo pide al
+ * servidor con `pedirDetalle`, nivel por nivel).
+ */
+export function TarjetaGrafica({ grafica: original, contexto, pedirDetalle }: { grafica: TGrafica; contexto: string; pedirDetalle?: PedirDetalle }) {
   const [alterna, setAlterna] = useState(false);
   const grafica: TGrafica = alterna && original.alterna
-    ? { ...original, datos: original.alterna.datos, formato: original.alterna.formato, detalle: original.alterna.detalle }
+    ? { ...original, datos: original.alterna.datos, formato: original.alterna.formato, conDetalle: original.alterna.conDetalle }
     : original;
   // Camino de clics: [barra] → lo que la compone; [barra, fila] → lo que compone esa fila, y así.
   const [ruta, setRuta] = useState<string[]>([]);
-  const llave = (r: string[]) => r.join(SEP);
-  const tieneDetalle = (r: string[]) => !!grafica.detalle?.[llave(r)];
-  const nivel = ruta.length ? grafica.detalle?.[llave(ruta)] : undefined;
-  const bajar = (etiqueta: string) => {
-    const r = [...ruta, etiqueta];
-    if (tieneDetalle(r)) setRuta(r);
+  const [nodos, setNodos] = useState<Record<string, NodoDetalle>>({});
+  const [cargando, setCargando] = useState<string | null>(null);
+  const [errorDetalle, setErrorDetalle] = useState<string | null>(null);
+  const llave = (r: string[]) => `${alterna ? "u" : "m"}${SEP}${r.join(SEP)}`;
+  const nivel = ruta.length ? nodos[llave(ruta)] : undefined;
+  const conDetalle = new Set(grafica.conDetalle ?? []);
+  const tieneDetalle = (r: string[]) =>
+    r.length === 1 ? conDetalle.has(r[0]) : !!nodos[llave(r.slice(0, -1))]?.conDetalle.includes(r[r.length - 1]);
+  const abrir = async (r: string[]) => {
+    if (!pedirDetalle || !tieneDetalle(r)) return;
+    setErrorDetalle(null);
+    if (!nodos[llave(r)]) {
+      setCargando(r[r.length - 1]);
+      try {
+        const n = await pedirDetalle(grafica.id, alterna, r);
+        setNodos((prev) => ({ ...prev, [llave(r)]: n }));
+      } catch (e: any) {
+        setErrorDetalle(e?.message || "No se pudo abrir el detalle.");
+        return;
+      } finally {
+        setCargando(null);
+      }
+    }
+    setRuta(r);
   };
+  const bajar = (etiqueta: string) => abrir([...ruta, etiqueta]);
   const graficaNivel: TGrafica | null = nivel
     ? {
         id: `${grafica.id}-detalle`,
@@ -45,7 +70,7 @@ export function TarjetaGrafica({ grafica: original, contexto }: { grafica: TGraf
         series: [{ clave: "valor", etiqueta: grafica.series.length === 1 ? grafica.series[0].etiqueta : "Total", color: grafica.series[0].color }],
       }
     : null;
-  const filaClicable = (etiqueta: string) => tieneDetalle([...ruta, etiqueta]);
+  const filaClicable = (etiqueta: string) => !!nivel?.conDetalle.includes(etiqueta);
   const [tabla, setTabla] = useState(false);
   const [ampliada, setAmpliada] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -69,9 +94,12 @@ export function TarjetaGrafica({ grafica: original, contexto }: { grafica: TGraf
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-slate-900 leading-tight">{grafica.titulo}</h3>
           {grafica.descripcion && <p className="text-xs text-slate-500 mt-0.5">{grafica.descripcion}</p>}
-          {grafica.detalle && (
-            <p className="text-[11px] text-blue-600 mt-0.5">Clic en una barra para ver su detalle.</p>
+          {pedirDetalle && conDetalle.size > 0 && (
+            <p className="text-[11px] text-blue-600 mt-0.5 flex items-center gap-1" data-no-exportar="1">
+              {cargando ? <><Loader2 className="h-3 w-3 animate-spin" /> Abriendo {cargando}…</> : "Clic en una barra para ver su detalle."}
+            </p>
           )}
+          {errorDetalle && <p className="text-[11px] text-red-600 mt-0.5">{errorDetalle}</p>}
         </div>
         {original.alterna && (
           <div className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs" role="radiogroup" aria-label="Medida">
@@ -102,9 +130,9 @@ export function TarjetaGrafica({ grafica: original, contexto }: { grafica: TGraf
         </div>
       </div>
       {tabla ? (
-        <TablaGrafica grafica={grafica} onFila={grafica.detalle ? bajar : undefined} clicable={(e) => tieneDetalle([e])} />
+        <TablaGrafica grafica={grafica} onFila={pedirDetalle ? (e) => abrir([e]) : undefined} clicable={(e) => conDetalle.has(e)} />
       ) : (
-        <Grafica grafica={grafica} onBarra={grafica.detalle ? bajar : undefined} />
+        <Grafica grafica={grafica} onBarra={pedirDetalle && conDetalle.size ? (e) => abrir([e]) : undefined} />
       )}
 
       <Dialog open={!!graficaNivel} onOpenChange={(abierto) => !abierto && setRuta([])}>
@@ -148,7 +176,7 @@ export function TarjetaGrafica({ grafica: original, contexto }: { grafica: TGraf
             {grafica.descripcion && <DialogDescription>{grafica.descripcion}</DialogDescription>}
           </DialogHeader>
           <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-            <Grafica grafica={grafica} alto={Math.max(420, Math.min(640, grafica.datos.length * 30 + 60))} onBarra={grafica.detalle ? (b) => { if (tieneDetalle([b])) { setAmpliada(false); setRuta([b]); } } : undefined} />
+            <Grafica grafica={grafica} alto={Math.max(420, Math.min(640, grafica.datos.length * 30 + 60))} onBarra={pedirDetalle && conDetalle.size ? (b) => { if (conDetalle.has(b)) { setAmpliada(false); void abrir([b]); } } : undefined} />
             <TablaGrafica grafica={grafica} />
           </div>
         </DialogContent>

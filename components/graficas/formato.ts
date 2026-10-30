@@ -9,6 +9,8 @@ export function fmt(v: number | null | undefined, formato: Formato, compacto = f
   const signo = n < 0 ? "-" : "";
   const a = Math.abs(n);
   const pre = formato === "usd" ? "$" : "";
+  // Un conteo (clientes, facturas) se lee completo hasta 100.000: "1 k" escondía 1.017.
+  if (compacto && formato === "num" && a < 100_000) return `${signo}${a.toLocaleString("en-US", { maximumFractionDigits: 1 })}`;
   if (compacto && a >= 1_000_000) return `${signo}${pre}${(a / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: a >= 10_000_000 ? 1 : 2 })} M`;
   if (compacto && a >= 10_000) return `${signo}${pre}${(a / 1_000).toLocaleString("en-US", { maximumFractionDigits: 0 })} k`;
   if (compacto && a >= 1_000) return `${signo}${pre}${(a / 1_000).toLocaleString("en-US", { maximumFractionDigits: 1 })} k`;

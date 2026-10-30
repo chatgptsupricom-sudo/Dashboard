@@ -55,6 +55,7 @@ export function Leyenda({ series, ocultas, alternar }: { series: Serie[]; oculta
           key={s.clave}
           type="button"
           onClick={() => alternar(s.clave)}
+          aria-pressed={!ocultas.has(s.clave)}
           className={`flex items-center gap-1.5 text-xs rounded-md px-1.5 py-0.5 transition hover:bg-slate-100 ${ocultas.has(s.clave) ? "opacity-40 line-through" : "text-slate-600"}`}
           title={ocultas.has(s.clave) ? "Mostrar" : "Ocultar"}
         >
@@ -328,8 +329,22 @@ export function TablaGrafica({
           {grafica.datos.map((d, i) => (
             <tr
               key={i}
-              className={`border-t border-slate-100 ${onFila && clicable?.(String(d.etiqueta)) ? "cursor-pointer hover:bg-blue-50" : ""}`}
-              onClick={onFila && clicable?.(String(d.etiqueta)) ? () => onFila(String(d.etiqueta)) : undefined}
+              className={`border-t border-slate-100 ${onFila && clicable?.(String(d.etiqueta)) ? "cursor-pointer hover:bg-blue-50 focus:bg-blue-50 focus:outline-none" : ""}`}
+              {...(onFila && clicable?.(String(d.etiqueta))
+                ? {
+                    onClick: () => onFila(String(d.etiqueta)),
+                    // Se abre también con el teclado (Tab + Enter), no solo con el mouse.
+                    tabIndex: 0,
+                    role: "button",
+                    "aria-label": `Ver detalle de ${String(d.etiqueta)}`,
+                    onKeyDown: (e: React.KeyboardEvent) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onFila(String(d.etiqueta));
+                      }
+                    },
+                  }
+                : {})}
             >
               <td className="px-3 py-1.5 text-slate-700">{String(d.etiqueta)}</td>
               {grafica.series.map((s) => (
@@ -340,7 +355,7 @@ export function TablaGrafica({
             </tr>
           ))}
         </tbody>
-        {sumable && grafica.tipo !== "lineas" && grafica.tipo !== "area" && (
+        {sumable && !grafica.sinTotal && grafica.tipo !== "lineas" && grafica.tipo !== "area" && (
           <tfoot className="bg-slate-50 font-semibold">
             <tr className="border-t border-slate-200">
               <td className="px-3 py-2 text-slate-700">Total</td>

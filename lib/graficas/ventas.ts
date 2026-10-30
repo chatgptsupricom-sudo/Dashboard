@@ -1,7 +1,7 @@
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { cachear, catalogo, dominioVentas, hoyCaracas, idsPorCodigo } from "@/lib/compras/datosOdoo";
-import { CORTE_ODOO, SQL_SIN_INTERCOMPANIA, SQL_SIN_VENDEDOR_LOCAL, rangoSmartbit } from "@/lib/smartbit";
+import { CORTE_ODOO, SQL_SIN_INTERCOMPANIA, rangoSmartbit } from "@/lib/smartbit";
 import { contarDiasUtiles } from "@/lib/feriados";
 import {
   COLOR_SEDE, GRIS, NOMBRE_SEDE, PALETA, agregarRuta, bloque, detalleDe, etiquetaMes, finDeMes, mesesHasta, r2, topConOtros, variacion,
@@ -24,11 +24,20 @@ const MESES_SERIE = 24;
 
 /**
  * Fuera del ranking de vendedores, no del total: "Asistente de Ventas",
- * Dameris y Hercilio Camacho no son vendedores (mismo criterio que el Agente IA) y Bladimir
- * Vasquez dejó de vender (VENDEDORES_RETIRADOS de lib/vendedores/retirados.ts,
- * que la rama Dario todavía no tiene). Por nombre, porque Smartbit no trae id.
+ * Dameris y Hercilio Camacho no son vendedores (mismo criterio que el Agente
+ * IA), "Local" y "Caja" son el mostrador de Smartbit, y Bladimir Vasquez dejó
+ * de vender (VENDEDORES_RETIRADOS de lib/vendedores/retirados.ts, que la rama
+ * Dario todavía no tiene). Por nombre, porque Smartbit no trae id.
  */
-const NO_VENDEDORES = ["asistente", "dameris", "hercilio", "bladimir vasquez"];
+const NO_VENDEDORES = ["asistente", "dameris", "hercilio", "bladimir vasquez", "local", "caja"];
+/**
+ * Un cliente cuenta una vez aunque compre en dos sedes (en Odoo cada sede tiene
+ * su contacto) o aparezca en Smartbit y en Odoo: por nombre sin mayúsculas,
+ * acentos ni signos.
+ */
+const claveCliente = (nombre: string) =>
+  nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
 const noEsVendedor = (nombre: string) => {
   const n = nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   return NO_VENDEDORES.some((x) => n.includes(x));
@@ -65,8 +74,12 @@ function porFechaOdoo(cid: number, desde: string, hasta: string, por: "month" | 
 
 /* ---------------------------------------------------------------- Smartbit */
 
-const SIN_GRUPO_FACTURAS = `${SQL_SIN_INTERCOMPANIA.replace("codigo_cliente", "rif")} AND ${SQL_SIN_VENDEDOR_LOCAL}`;
-const SIN_GRUPO_ARTICULOS = `${SQL_SIN_INTERCOMPANIA} AND ${SQL_SIN_VENDEDOR_LOCAL}`;
+// Las ventas del mostrador ("Local") sí cuentan en el total: en Odoo, desde el
+// corte, también cuentan, y sin ellas Valencia bajaba ~15 % antes de abril-2026
+// (solo salen del ranking de vendedores, ver NO_VENDEDORES). Por eso aquí no
+// va SQL_SIN_VENDEDOR_LOCAL, a diferencia de los dashboards de lib/smartbit.ts.
+const SIN_GRUPO_FACTURAS = SQL_SIN_INTERCOMPANIA.replace("codigo_cliente", "rif");
+const SIN_GRUPO_ARTICULOS = SQL_SIN_INTERCOMPANIA;
 
 type FilaSmartbit = { cid: number; clave: string; venta: number; documentos: number };
 type Clave = "mes" | "dia" | "cliente" | "vendedor";
@@ -221,7 +234,7 @@ function detalleOdoo(cid: number, desde: string, hasta: string): Promise<Detalle
       const m = info.get(id);
       if (!m || m.move_type === "out_refund") continue;
       out.documentos++;
-      if (m.commercial_partner_id) out.compradores.add(`odoo:${m.commercial_partner_id[0]}`);
+      if (m.commercial_partner_id) out.compradores.add(claveCliente(String(m.commercial_partner_id[1] || "")));
     }
     out.clientes = [...clientes].map(([nombre, venta]) => ({ nombre, venta }));
     out.vendedores = [...vendedores].map(([nombre, v]) => ({ nombre, ...v }));
@@ -241,7 +254,7 @@ async function detalleSmartbit(cids: number[], desde: string, hasta: string): Pr
     clientes: clientes.map((f) => ({ nombre: f.clave, venta: f.venta })),
     vendedores: vendedores.map((f) => ({ nombre: f.clave, id: null, venta: f.venta })),
     documentos: clientes.reduce((s, f) => s + f.documentos, 0),
-    compradores: new Set(clientes.filter((f) => f.venta > 0).map((f) => `sb:${f.clave.toLowerCase()}`)),
+    compradores: new Set(clientes.filter((f) => f.venta > 0).map((f) => claveCliente(f.clave))),
   };
 }
 
@@ -287,7 +300,8 @@ export async function graficasVentas(cids: number[], sede: string, mes: string):
       const inicio = new Date(a, m - 1, 1);
       const transcurridos = contarDiasUtiles(inicio, new Date(`${hoy}T12:00:00`));
       const totales = contarDiasUtiles(inicio, new Date(a, m, 0));
-      if (transcurridos > 0) {
+      // El último día hábil la proyección ya es la venta: no se muestra.
+      if (transcurridos > 0 && transcurridos < totales) {
         kpis.push({ id: "proyeccion", etiqueta: "Proyección de cierre", valor: r2((venta / transcurridos) * totales), formato: "usd", delta: variacion((venta / transcurridos) * totales, ventaAnt), referencia: "vs mes anterior", nota: `${transcurridos} de ${totales} días hábiles` });
       }
     }

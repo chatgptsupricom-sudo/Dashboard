@@ -5,7 +5,7 @@ import { ESTADOS, URGENCIAS } from "@/lib/solicitudes-personal/tipos";
 import { reporte } from "@/lib/asistencia/datos";
 import { hoyCaracas } from "@/lib/compras/datosOdoo";
 import {
-  ESTADO, GRIS, PALETA, RAMPA, bloque, etiquetaMes, finDeMes, mesesHasta, r2,
+  ESTADO, GRIS, NOMBRE_SEDE, PALETA, RAMPA, bloque, etiquetaMes, finDeMes, mesesHasta, r2,
   type DatosArea, type Grafica, type Kpi,
 } from "./tipos";
 
@@ -14,6 +14,9 @@ import {
  * personal (lib/solicitudes-personal) y Asistencia por biométrico del mes
  * (lib/asistencia). Sin nombres de personas: solo conteos.
  */
+
+/** "YYYY-MM" en hora de Caracas de un timestamp ISO (created_at viene en UTC). */
+const mesCaracas = (iso: string | null) => (iso ? new Date(Date.parse(iso) - 4 * 3_600_000).toISOString().slice(0, 7) : "");
 
 const COLOR_ESTADO_SOLICITUD: Record<string, string> = {
   pendiente: ESTADO.aviso,
@@ -37,6 +40,9 @@ export async function graficasRrhh(cids: number[], sede: string, mes: string, pa
       ? Promise.resolve([])
       : bloque(avisos, "la asistencia", async () => {
           const reportes = await Promise.allSettled(cids.map((c) => reporte(c, desdeMes, hastaMes)));
+          reportes.forEach((r, i) => {
+            if (r.status === "rejected") avisos.push(`No se pudo leer la asistencia de ${NOMBRE_SEDE[cids[i]]}.`);
+          });
           return reportes.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
         }),
   ]);
@@ -45,11 +51,12 @@ export async function graficasRrhh(cids: number[], sede: string, mes: string, pa
     const reqs = matriz.requisiciones.filter((r) => cids.includes(Number(r.sede)));
     const ids = new Set(reqs.map((r) => r.id));
     const ind = indicadores(reqs, matriz.candidatos.filter((c) => ids.has(c.requisicion_id)));
-    kpis.push({ id: "abiertas", etiqueta: "Vacantes en búsqueda", valor: ind.abiertas, formato: "num", nota: `${ind.vencidas} pasadas de su meta` });
-    kpis.push({ id: "contratados", etiqueta: "Contratados", valor: ind.contratados, formato: "num", nota: `${ind.enProceso} candidatos en proceso` });
+    kpis.push({ id: "abiertas", etiqueta: "Vacantes en búsqueda", valor: ind.abiertas, formato: "num", nota: `hoy · ${ind.vencidas} pasadas de su meta` });
+    kpis.push({ id: "contratados", etiqueta: "Contratados", valor: ind.contratados, formato: "num", nota: `desde el inicio · ${ind.enProceso} en proceso` });
     kpis.push({ id: "cobertura", etiqueta: "Días para cubrir una vacante", valor: ind.promedioCobertura, formato: "dias", mejor: "baja", nota: ind.dentroDeMeta != null ? `${ind.dentroDeMeta} % dentro de la meta` : undefined });
     graficas.push({
       id: "rrhh_embudo",
+      sinTotal: true,
       titulo: "Embudo de selección",
       descripcion: "Candidatos que llegaron a cada fase.",
       tipo: "barras_h",
@@ -98,7 +105,7 @@ export async function graficasRrhh(cids: number[], sede: string, mes: string, pa
       formato: "num",
       datos: meses.map((m) => ({
         etiqueta: etiquetaMes(m),
-        ...Object.fromEntries(Object.keys(ESTADOS).map((e) => [e, sols.filter((s) => String(s.created_at || "").slice(0, 7) === m && s.estado === e).length])),
+        ...Object.fromEntries(Object.keys(ESTADOS).map((e) => [e, sols.filter((s) => mesCaracas(s.created_at) === m && s.estado === e).length])),
       })),
       series: Object.entries(ESTADOS).map(([e, x]) => ({ clave: e, etiqueta: x.etiqueta, color: COLOR_ESTADO_SOLICITUD[e] })),
     });

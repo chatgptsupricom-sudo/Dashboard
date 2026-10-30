@@ -159,13 +159,15 @@ export async function graficasCobranza(cids: number[], sede: string, mes: string
 
   if (series) {
     const c = series.carteraHoy;
-    kpis.push({ id: "cartera", etiqueta: "Cartera abierta", valor: r2(c.total), formato: "usd", nota: `${c.facturas} documentos` });
+    // carteraHoy es la cartera a crédito del KPI de CxC (lib/cxc/seriesSemanales.ts):
+    // sin contado, sin lo vencido antes de 2025 y sin SUPER TECHNO.
+    kpis.push({ id: "cartera", etiqueta: "Cartera a crédito", valor: r2(c.total), formato: "usd", nota: `${c.facturas} documentos, sin contado` });
     kpis.push({ id: "vencido", etiqueta: "Cartera vencida", valor: r2(c.vencido), formato: "usd", mejor: "baja", nota: `${c.facturasVencidas} vencidas` });
-    kpis.push({ id: "pct_vencido", etiqueta: "% vencido", valor: c.pct, formato: "pct", mejor: "baja" });
+    kpis.push({ id: "pct_vencido", etiqueta: "% vencido", valor: c.pct, formato: "pct", mejor: "baja", nota: "de la cartera a crédito" });
     graficas.push({
       id: "cartera_antiguedad",
-      titulo: "Antigüedad de la cartera",
-      descripcion: `Saldo abierto por días vencidos al ${enCurso ? "día de hoy" : "cierre del mes"}. Sin cartera vencida antes de 2025.`,
+      titulo: "Antigüedad de la cartera a crédito",
+      descripcion: `Saldo por días vencidos al ${enCurso ? "día de hoy" : "cierre del mes"}, como el KPI de Cartera vencida de CxC: sin ventas de contado, sin lo vencido antes de 2025 ni SUPER TECHNO.`,
       tipo: "barras",
       formato: "usd",
       ancho: 2,
