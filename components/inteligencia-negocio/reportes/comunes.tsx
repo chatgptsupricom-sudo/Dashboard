@@ -149,6 +149,8 @@ export interface Columna<T> {
   ancho?: string;
   /** Solo en pantalla (ej. un botón): no va al Excel ni se ordena. */
   soloPantalla?: boolean;
+  /** Solo en el Excel (ej. un texto largo que no cabe en la tabla). */
+  soloExcel?: boolean;
 }
 
 const POR_PAGINA = 200;
@@ -233,6 +235,7 @@ export function TablaReporte<T extends Record<string, any>>({
     setOrden((o) => (o?.clave === clave ? { clave, desc: !o.desc } : { clave, desc: esNumerica(col?.tipo) }));
   };
 
+  const enPantalla = columnas.filter((c) => !c.soloExcel);
   const totales = pie?.(visibles) ?? {};
   const hayPie = columnas.some((c) => c.sumar) || Object.keys(totales).length > 0;
 
@@ -294,7 +297,7 @@ export function TablaReporte<T extends Record<string, any>>({
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-slate-50">
               <TableRow>
-                {columnas.map((c) => (
+                {enPantalla.map((c) => (
                   <TableHead
                     key={c.clave}
                     onClick={() => !c.soloPantalla && ordenarPor(c.clave)}
@@ -311,11 +314,11 @@ export function TablaReporte<T extends Record<string, any>>({
             </TableHeader>
             <TableBody>
               {visibles.length === 0 ? (
-                <FilaVacia columnas={columnas.length} />
+                <FilaVacia columnas={enPantalla.length} />
               ) : (
                 visibles.slice(0, mostrar).map((f, i) => (
                   <TableRow key={i}>
-                    {columnas.map((c) => (
+                    {enPantalla.map((c) => (
                       <TableCell
                         key={c.clave}
                         className={`text-xs py-2 ${esNumerica(c.tipo) ? "text-right tabular-nums whitespace-nowrap" : ""} ${c.ancho ?? ""}`}
@@ -330,7 +333,7 @@ export function TablaReporte<T extends Record<string, any>>({
             {hayPie && visibles.length > 0 && (
               <TableFooter className="sticky bottom-0 bg-slate-100">
                 <TableRow>
-                  {columnas.map((c, i) => (
+                  {enPantalla.map((c, i) => (
                     <TableCell
                       key={c.clave}
                       className={`text-xs font-semibold py-2 ${esNumerica(c.tipo) ? "text-right tabular-nums whitespace-nowrap" : ""}`}

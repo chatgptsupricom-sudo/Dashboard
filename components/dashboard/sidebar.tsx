@@ -80,6 +80,7 @@ import {
   ShieldCheck,
   Target,
   Timer,
+  TrafficCone,
   TrendingDown,
   TrendingUp,
   Trophy,
@@ -355,6 +356,8 @@ export function Sidebar({
     { id: "planificacion_visitas", label: "Planificación de visitas", icon: MapPin, slug: "/planificacion" },
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
+    // Semáforo de clientes: cartera en verde/amarillo/rojo contra su historial (lib/semaforo-clientes).
+    { id: "semaforo_clientes", label: "Semáforo de clientes", icon: TrafficCone, slug: "/semaforo-clientes", absoluteHref: true },
     { id: "metas_marca", label: t("metas_marca"), icon: Target, slug: "/metas-marca" },
     { id: "stock_marca", label: t("stock_marca"), icon: Boxes, slug: "/stock-marca" },
     { id: "sorteo_caracas", label: t("sorteo_caracas"), icon: Trophy, slug: "/sorteo" },
@@ -572,7 +575,7 @@ export function Sidebar({
   // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
   // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
   const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
-  const ventasSuperAdminIds = ["reportes_comerciales"];
+  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -1436,6 +1439,13 @@ export function Sidebar({
                               label: t("reportes_comerciales"),
                               href: `/${locale}/reportes-comerciales`,
                               permission: "reportes_comerciales",
+                            }]
+                          : []),
+                        ...((isSuperAdminRole || isBIRole) && allowedSections.includes("semaforo_clientes")
+                          ? [{
+                              label: "Semáforo de clientes",
+                              href: `/${locale}/semaforo-clientes`,
+                              permission: "semaforo_clientes",
                             }]
                           : []),
                         {

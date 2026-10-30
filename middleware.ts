@@ -8,6 +8,7 @@ import { puedeVerReportesComerciales } from "@/lib/reportes-comerciales/acceso";
 import { esHostNC, RUTA_INTERNA, RUTA_PUBLICA } from "@/lib/notas-credito/hostCliente";
 import { puedeEditarPoliticas, puedeVerPoliticas } from "@/lib/politicas/permisos";
 import { puedeVerSolicitudesPersonal } from "@/lib/solicitudes-personal/tipos";
+import { puedeVerSemaforo } from "@/lib/semaforo-clientes/acceso";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -178,7 +179,9 @@ export default async function middleware(request: NextRequest) {
     // (lib/notas-credito/acceso.ts); aquí solo se exige la sesión.
     pathname.includes("/notas-credito") ||
     // Solicitudes de personal: gerentes, RRHH y SuperAdmin (lib/solicitudes-personal/tipos.ts).
-    pathname.includes("/solicitudes-personal");
+    pathname.includes("/solicitudes-personal") ||
+    // Semáforo de clientes: vendedores, Gerencia de Ventas, SuperAdmin y BI (lib/semaforo-clientes/acceso.ts).
+    pathname.includes("/semaforo-clientes");
 
   if (isProtectedPath) {
     if (!token) {
@@ -439,6 +442,11 @@ export default async function middleware(request: NextRequest) {
 
       // 10e. Solicitudes de personal: los gerentes que piden, RRHH y SuperAdmin.
       if (pathname.includes("/solicitudes-personal") && !puedeVerSolicitudesPersonal(userRole)) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
+      // 10f. Semáforo de clientes: el vendedor ve su cartera, la gerencia su sede, la dirección todo.
+      if (pathname.includes("/semaforo-clientes") && !puedeVerSemaforo(userRole)) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 

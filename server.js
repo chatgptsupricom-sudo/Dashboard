@@ -288,6 +288,30 @@ app.prepare().then(() => {
   );
 
   // ==========================================
+  // FOTO SEMANAL DEL SEMAFORO DE CLIENTES (lib/semaforo-clientes)
+  // ==========================================
+
+  // Lunes 6:00: el estado de cada cliente de las tres sedes, para comparar
+  // semana contra semana aunque nadie abra la pantalla.
+  cron.schedule(
+    "0 6 * * 1",
+    async () => {
+      try {
+        const response = await fetch(`http://localhost:${PORT}/api/cron/semaforo-clientes`, {
+          headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        });
+        const data = await response.json();
+        if (response.ok) console.log("Semáforo de clientes:", data);
+        else console.error("Fallo la foto del semáforo de clientes:", data);
+      } catch (error) {
+        console.error("Error de red en la foto del semáforo de clientes:", error.message);
+      }
+    },
+    { scheduled: true, timezone: "America/Caracas" },
+  );
+  console.log("> Cron programado: foto semanal del Semáforo de clientes, lunes 6:00 (America/Caracas)");
+
+  // ==========================================
   // CIERRE AUTOMATICO DEL REPORTE DE VENTAS TRIMESTRAL
   // (sedes/marcas segun REPORTES_COMERCIALES_CRON, default 7:EZVIZ = Panama)
   // ==========================================
