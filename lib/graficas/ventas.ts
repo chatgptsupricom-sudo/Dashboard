@@ -3,7 +3,6 @@ import { callOdooRPC } from "@/lib/odoo";
 import { cachear, catalogo, dominioVentas, hoyCaracas, idsPorCodigo } from "@/lib/compras/datosOdoo";
 import { CORTE_ODOO, SQL_SIN_INTERCOMPANIA, SQL_SIN_VENDEDOR_LOCAL, rangoSmartbit } from "@/lib/smartbit";
 import { contarDiasUtiles } from "@/lib/feriados";
-import { esVendedorRetirado } from "@/lib/vendedores/retirados";
 import {
   COLOR_SEDE, GRIS, NOMBRE_SEDE, PALETA, bloque, detalleDe, etiquetaMes, finDeMes, mesesHasta, r2, sumarDetalle, topConOtros, variacion,
   type DatosArea, type Grafica, type Kpi,
@@ -23,10 +22,17 @@ import {
 
 const MESES_SERIE = 24;
 
-/** No son vendedores (mismo criterio que el Agente IA): fuera del ranking, no del total. */
-const NO_VENDEDORES = ["asistente", "dameris"];
-const noEsVendedor = (nombre: string, id: number | null) =>
-  NO_VENDEDORES.some((n) => nombre.toLowerCase().includes(n)) || esVendedorRetirado(id != null ? [id, nombre] : { name: nombre });
+/**
+ * Fuera del ranking de vendedores, no del total: "Asistente de Ventas" y
+ * Dameris no son vendedores (mismo criterio que el Agente IA) y Bladimir
+ * Vasquez dejó de vender (VENDEDORES_RETIRADOS de lib/vendedores/retirados.ts,
+ * que la rama Dario todavía no tiene). Por nombre, porque Smartbit no trae id.
+ */
+const NO_VENDEDORES = ["asistente", "dameris", "bladimir vasquez"];
+const noEsVendedor = (nombre: string) => {
+  const n = nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  return NO_VENDEDORES.some((x) => n.includes(x));
+};
 
 /* -------------------------------------------------------------------- Odoo */
 
@@ -398,7 +404,7 @@ export async function graficasVentas(cids: number[], sede: string, mes: string):
       }
       for (const x of d.clientes) sumar(cliente, x.nombre, x.venta);
       // El ranking es de vendedores: sin "Asistente de Ventas", Dameris ni los retirados (su venta sigue en el total).
-      for (const x of d.vendedores) if (!noEsVendedor(x.nombre, x.id)) sumar(vendedor, x.nombre, x.venta);
+      for (const x of d.vendedores) if (!noEsVendedor(x.nombre)) sumar(vendedor, x.nombre, x.venta);
       for (const x of d.compradores) compradores.add(x);
       documentos += d.documentos;
     }
