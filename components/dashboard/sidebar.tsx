@@ -294,6 +294,8 @@ export function Sidebar({
     { id: "alert", label: t("alertas"), icon: Bell, slug: "/alert" },
     { id: "cxc_alerts", label: "Alertas CxC", icon: AlertTriangle, slug: "/alertas" },
     { id: "dashboard", label: t("dashboard"), icon: LayoutDashboard, slug: "" },
+    // Centro de mando del SuperAdmin: gráficas de ventas, cobranza, inventario, RMA y RRHH (lib/graficas).
+    { id: "graficas", label: "Centro de mando", icon: PieChart, slug: "/graficas" },
     { id: "actividad", label: t("actividades"), icon: Calendar, slug: "/actividad" },
     { id: "stoplight_reports", label: t("stoplight_report"), icon: BarChart3, slug: "/StoplightReport" },
     { id: "users", label: t("usuarios"), icon: Users, slug: "/usuarios" },

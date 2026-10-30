@@ -49,6 +49,7 @@ export const rolePermissions: RolePermissions = {
       "politicas", // Políticas y Acuerdos (lib/politicas)
       "alert", // Sistema de alertas para el SuperAdmin
       "dashboard", // Stats y KPIs generales
+      "graficas", // Centro de mando: gráficas de todas las áreas (lib/graficas)
       "adminleads", // Clave para el menú principal (Dashboard Leads)
       "monitoreo_leads", // Clave para el submenú Monitoreo
       "cierres_adminleads", // Clave para el submenú Cierres
