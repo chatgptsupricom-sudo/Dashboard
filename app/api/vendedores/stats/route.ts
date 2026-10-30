@@ -306,6 +306,7 @@ import { jwtSecretBytes, jwtSecretString } from "@/lib/secretos";
 import { canalSumaVentasSql } from "@/lib/canales";
 import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
+import { lineasProductoOdoo } from "@/lib/smartbit";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 import { esVendedorRetirado } from "@/lib/vendedores/retirados";
@@ -446,18 +447,18 @@ export async function GET(request: Request) {
 
     let topProductos: string[] = [];
     if (misFacturasIds.length > 0) {
-      const raw = await callOdooRPC<any[]>("account.move.line", "read_group", [
-        [
-          ["move_id", "in", misFacturasIds],
-          ["product_id", "!=", false],
-        ],
-        ["product_id", "quantity"],
-        ["product_id"],
-        0,
-        5,
-        "quantity desc",
+      // Las notas de crédito restan unidades (lineasProductoOdoo); sin
+      // display_type = 'product' las líneas de costo triplicaban las unidades.
+      const raw = await lineasProductoOdoo([
+        ["move_id", "in", misFacturasIds],
+        ["display_type", "=", "product"],
+        ["product_id", "!=", false],
       ]);
-      topProductos = raw.map((p) => p.product_id[1]);
+      topProductos = raw
+        .filter((p) => p.quantity > 0)
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 5)
+        .map((p) => p.product_id[1]);
     }
 
     // 6. Gráfico de Evolución
