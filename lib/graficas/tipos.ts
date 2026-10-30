@@ -59,11 +59,46 @@ export type Grafica = {
   colorPorFila?: string[];
   /** Texto cuando no hay datos. */
   vacio?: string;
+  /** Al hacer clic en una barra: lo que la compone (ej. los productos de esa marca). */
+  detalle?: Detalle;
   /** La misma gráfica en otra medida (ej. unidades): la tarjeta muestra un selector. */
-  alterna?: { etiqueta: string; formato: Formato; datos: Record<string, string | number | null>[] };
+  alterna?: { etiqueta: string; formato: Formato; datos: Record<string, string | number | null>[]; detalle?: Detalle };
   /** Nombre de la medida principal en ese selector (default "Monto"). */
   etiquetaPrincipal?: string;
 };
+
+/** Detalle de cada barra, por su etiqueta: `que` dice qué se lista ("Productos"). */
+export type Detalle = { que: string; filas: Record<string, { etiqueta: string; valor: number }[]> };
+
+/** Cuántas filas del detalle se mandan por barra. */
+export const MAX_DETALLE = 30;
+
+/**
+ * Detalle de las barras de `datos` (menos "Otros…"): las `MAX_DETALLE`
+ * mayores de cada una según `porBarra` (etiqueta de la barra → nombre → valor).
+ */
+export function detalleDe(
+  que: string,
+  datos: Record<string, string | number | null>[],
+  porBarra: Map<string, Map<string, number>>,
+  redondeo: (n: number) => number = r2,
+): Detalle {
+  const filas: Detalle["filas"] = {};
+  for (const d of datos) {
+    const k = String(d.etiqueta);
+    const m = porBarra.get(k);
+    if (!m) continue;
+    filas[k] = [...m].sort((a, b) => b[1] - a[1]).slice(0, MAX_DETALLE).map(([etiqueta, valor]) => ({ etiqueta, valor: redondeo(valor) }));
+  }
+  return { que, filas };
+}
+
+/** Suma `v` en `porBarra[barra][nombre]`. */
+export function sumarDetalle(porBarra: Map<string, Map<string, number>>, barra: string, nombre: string, v: number) {
+  const m = porBarra.get(barra) ?? new Map<string, number>();
+  m.set(nombre, (m.get(nombre) || 0) + v);
+  porBarra.set(barra, m);
+}
 
 export type DatosArea = {
   area: Area;

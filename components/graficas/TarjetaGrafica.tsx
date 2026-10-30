@@ -24,8 +24,21 @@ function Boton({ titulo, onClick, children, activo }: { titulo: string; onClick:
 export function TarjetaGrafica({ grafica: original, contexto }: { grafica: TGrafica; contexto: string }) {
   const [alterna, setAlterna] = useState(false);
   const grafica: TGrafica = alterna && original.alterna
-    ? { ...original, datos: original.alterna.datos, formato: original.alterna.formato }
+    ? { ...original, datos: original.alterna.datos, formato: original.alterna.formato, detalle: original.alterna.detalle }
     : original;
+  // Barra elegida con un clic: abre lo que la compone (ej. productos de esa marca).
+  const [barra, setBarra] = useState<string | null>(null);
+  const filasBarra = barra ? grafica.detalle?.filas[barra] : undefined;
+  const graficaBarra: TGrafica | null = filasBarra && grafica.detalle
+    ? {
+        id: `${grafica.id}-detalle`,
+        titulo: `${grafica.detalle.que} de ${barra}`,
+        tipo: "barras_h",
+        formato: grafica.formato,
+        datos: filasBarra,
+        series: [{ clave: "valor", etiqueta: grafica.series.length === 1 ? grafica.series[0].etiqueta : "Total", color: grafica.series[0].color }],
+      }
+    : null;
   const [tabla, setTabla] = useState(false);
   const [ampliada, setAmpliada] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -49,6 +62,9 @@ export function TarjetaGrafica({ grafica: original, contexto }: { grafica: TGraf
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-slate-900 leading-tight">{grafica.titulo}</h3>
           {grafica.descripcion && <p className="text-xs text-slate-500 mt-0.5">{grafica.descripcion}</p>}
+          {grafica.detalle && (
+            <p className="text-[11px] text-blue-600 mt-0.5">Clic en una barra para ver sus {grafica.detalle.que.toLowerCase()}.</p>
+          )}
         </div>
         {original.alterna && (
           <div className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs" role="radiogroup" aria-label="Medida">
@@ -78,7 +94,26 @@ export function TarjetaGrafica({ grafica: original, contexto }: { grafica: TGraf
           </Boton>
         </div>
       </div>
-      {tabla ? <TablaGrafica grafica={grafica} /> : <Grafica grafica={grafica} />}
+      {tabla ? <TablaGrafica grafica={grafica} /> : <Grafica grafica={grafica} onBarra={setBarra} />}
+
+      <Dialog open={!!graficaBarra} onOpenChange={(abierto) => !abierto && setBarra(null)}>
+        <DialogContent className="max-w-[min(1100px,95vw)] sm:max-w-[min(1100px,95vw)]">
+          {graficaBarra && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{graficaBarra.titulo}</DialogTitle>
+                <DialogDescription>
+                  {grafica.titulo}. {filasBarra!.length >= 30 ? "Los 30 con más peso." : `${filasBarra!.length} en total.`}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 lg:grid-cols-[1fr_380px] max-h-[75vh] overflow-y-auto">
+                <Grafica grafica={graficaBarra} />
+                <TablaGrafica grafica={graficaBarra} />
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={ampliada} onOpenChange={setAmpliada}>
         <DialogContent className="max-w-[min(1200px,95vw)] sm:max-w-[min(1200px,95vw)]">
@@ -87,7 +122,7 @@ export function TarjetaGrafica({ grafica: original, contexto }: { grafica: TGraf
             {grafica.descripcion && <DialogDescription>{grafica.descripcion}</DialogDescription>}
           </DialogHeader>
           <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-            <Grafica grafica={grafica} alto={Math.max(420, Math.min(640, grafica.datos.length * 30 + 60))} />
+            <Grafica grafica={grafica} alto={Math.max(420, Math.min(640, grafica.datos.length * 30 + 60))} onBarra={(b) => { setAmpliada(false); setBarra(b); }} />
             <TablaGrafica grafica={grafica} />
           </div>
         </DialogContent>

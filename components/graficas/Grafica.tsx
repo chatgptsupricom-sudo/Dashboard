@@ -69,19 +69,41 @@ export function Leyenda({ series, ocultas, alternar }: { series: Serie[]; oculta
   );
 }
 
-/** Etiqueta del eje de categorías recortada para que no tape la gráfica. */
+/** Letras de 11 px que caben por línea en el eje de categorías. */
+const letrasPorLinea = (ancho: number) => Math.floor(ancho / 6.2);
+
+/** Parte un nombre en dos líneas por palabras; lo que no quepa en la segunda se corta con "…". */
+function enDosLineas(t: string, max: number): string[] {
+  if (t.length <= max) return [t];
+  let corte = t.lastIndexOf(" ", max);
+  if (corte <= 0) corte = max;
+  const resto = t.slice(corte).trim();
+  return [t.slice(0, corte).trim(), resto.length > max ? `${resto.slice(0, max - 1)}…` : resto];
+}
+
+/** Etiqueta del eje de categorías: completa, en una o dos líneas. */
 function TickCategoria({ x, y, payload, ancho }: any) {
   const t = String(payload.value ?? "");
-  const max = Math.floor(ancho / 6.2);
+  const lineas = enDosLineas(t, letrasPorLinea(ancho));
   return (
-    <text x={x} y={y} dy={4} textAnchor="end" fill="#52514e" fontSize={11}>
+    <text x={x} y={y} textAnchor="end" fill="#52514e" fontSize={11}>
       <title>{t}</title>
-      {t.length > max ? `${t.slice(0, max - 1)}…` : t}
+      {lineas.map((l, i) => (
+        <tspan key={i} x={x} dy={i === 0 ? (lineas.length > 1 ? -2 : 4) : 12}>{l}</tspan>
+      ))}
     </text>
   );
 }
 
-export function Grafica({ grafica, alto, compacta = false }: { grafica: TGrafica; alto?: number; compacta?: boolean }) {
+export function Grafica({
+  grafica, alto, compacta = false, onBarra,
+}: {
+  grafica: TGrafica;
+  alto?: number;
+  compacta?: boolean;
+  /** Clic en una barra (con su etiqueta): solo si la gráfica trae detalle. */
+  onBarra?: (etiqueta: string) => void;
+}) {
   const [ocultas, setOcultas] = useState<Set<string>>(new Set());
   const alternar = (c: string) =>
     setOcultas((prev) => {
@@ -99,8 +121,13 @@ export function Grafica({ grafica, alto, compacta = false }: { grafica: TGrafica
     [grafica],
   );
   const hayDatos = grafica.datos.some((d) => grafica.series.some((s) => Number(d[s.clave]) !== 0 && d[s.clave] != null));
-  const altura = alto ?? (horizontal ? Math.max(220, grafica.datos.length * (grafica.series.length > 1 && !apilada ? 34 : 26) + 40) : 280);
-  const anchoCategoria = compacta ? 90 : 150;
+  // El eje de nombres crece con el nombre más largo (hasta 260 px) y lo que no cabe pasa a una segunda línea.
+  const masLarga = Math.max(0, ...grafica.datos.map((d) => String(d.etiqueta ?? "").length));
+  const anchoCategoria = compacta ? 100 : Math.min(260, Math.max(90, Math.ceil(masLarga * 6.2) + 8));
+  const dosLineas = horizontal && masLarga > letrasPorLinea(anchoCategoria);
+  const alturaFila = grafica.series.length > 1 && !apilada ? 34 : dosLineas ? 32 : 26;
+  const altura = alto ?? (horizontal ? Math.max(220, grafica.datos.length * alturaFila + 40) : 280);
+  const clicable = !!onBarra && !!grafica.detalle;
 
   if (!hayDatos) {
     return (
@@ -260,6 +287,11 @@ export function Grafica({ grafica, alto, compacta = false }: { grafica: TGrafica
                 stackId={apilada ? "a" : undefined}
                 radius={radio(s)}
                 maxBarSize={horizontal ? 22 : 44}
+                cursor={clicable ? "pointer" : undefined}
+                onClick={clicable ? (d: any) => {
+                  const etiqueta = String(d?.payload?.etiqueta ?? d?.etiqueta ?? "");
+                  if (grafica.detalle!.filas[etiqueta]) onBarra!(etiqueta);
+                } : undefined}
                 stroke={apilada ? SUPERFICIE : undefined}
                 strokeWidth={apilada ? 1 : 0}
               >

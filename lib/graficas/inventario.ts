@@ -3,7 +3,7 @@ import { almacenSede, cachear, catalogo, costos, diasEntre, hoyCaracas, transito
 import { menorRotacion } from "@/lib/compras/reportes";
 import { FIN_CARGA_INICIAL, TRAMOS, tramoDe, type Tramo } from "@/lib/gerente-marca/tipos";
 import {
-  COLOR_SEDE, ESTADO, NOMBRE_SEDE, PALETA, RAMPA, bloque, r2, topConOtros,
+  COLOR_SEDE, ESTADO, NOMBRE_SEDE, PALETA, RAMPA, bloque, detalleDe, r2, sumarDetalle, topConOtros,
   type DatosArea, type Grafica, type Kpi,
 } from "./tipos";
 
@@ -61,15 +61,29 @@ const sumar = (mapa: Map<string, Medida>, clave: string, v: number, u: number) =
 };
 
 /** Barras horizontales de una sola serie, en monto y en unidades (cada medida con su propio top). */
-function barrasDoble(id: string, titulo: string, mapa: Map<string, Medida>, max: number, otros: string, color: string, descripcion?: string): Grafica {
+function barrasDoble(
+  id: string, titulo: string, mapa: Map<string, Medida>, max: number, otros: string, color: string,
+  descripcion?: string, productos?: Productos,
+): Grafica {
   const filas = (k: "v" | "u") => [...mapa].map(([etiqueta, m]) => ({ etiqueta, valor: k === "u" ? Math.round(m.u) : m.v }));
+  const datos = topConOtros(filas("v"), max, otros);
+  const datosU = topConOtros(filas("u"), max, otros);
   return {
     id, titulo, descripcion, tipo: "barras_h", formato: "usd",
-    datos: topConOtros(filas("v"), max, otros),
+    datos,
     series: [{ clave: "valor", etiqueta: "Inventario", color }],
-    alterna: { etiqueta: "Unidades", formato: "num", datos: topConOtros(filas("u"), max, otros) },
+    detalle: productos && detalleDe("Productos", datos, productos.v),
+    alterna: { etiqueta: "Unidades", formato: "num", datos: datosU, detalle: productos && detalleDe("Productos", datosU, productos.u, Math.round) },
   };
 }
+
+/** Productos de cada barra, en monto y en unidades (para el clic). */
+type Productos = { v: Map<string, Map<string, number>>; u: Map<string, Map<string, number>> };
+const nuevosProductos = (): Productos => ({ v: new Map(), u: new Map() });
+const sumarProducto = (p: Productos, barra: string, nombre: string, v: number, u: number) => {
+  sumarDetalle(p.v, barra, nombre, v);
+  sumarDetalle(p.u, barra, nombre, u);
+};
 
 export async function graficasInventario(cids: number[], sede: string, mes: string): Promise<DatosArea> {
   const avisos: string[] = [];
@@ -100,6 +114,9 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
     const porCategoria = new Map<string, Medida>();
     const porProducto = new Map<string, Medida>();
     const llegandoMarca = new Map<string, Medida>();
+    const prodMarca = nuevosProductos();
+    const prodCategoria = nuevosProductos();
+    const prodLlegando = nuevosProductos();
     const porSedeMedida: Record<number, { disponible: Medida; reservado: Medida; llegando: Medida }> = {};
 
     for (const { cid, almacen, costo, llegando: llega } of porSede) {
@@ -125,8 +142,11 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
         m[cid].v += v;
         m[cid].u += s.fisico;
         porMarca.set(marca, m);
+        const nombreProd = p ? `${p.codigo} · ${p.nombre}` : `Producto ${id}`;
         sumar(porCategoria, p?.categoria || "Sin categoría", v, s.fisico);
-        sumar(porProducto, p ? `${p.codigo} · ${p.nombre}` : `Producto ${id}`, v, s.fisico);
+        sumar(porProducto, nombreProd, v, s.fisico);
+        sumarProducto(prodMarca, marca, nombreProd, v, s.fisico);
+        sumarProducto(prodCategoria, p?.categoria || "Sin categoría", nombreProd, v, s.fisico);
       }
       for (const [id, q] of llega) {
         const v = q * (costo.get(id) || 0);
@@ -134,7 +154,9 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
         llegando.u += q;
         s0.llegando.v += v;
         s0.llegando.u += q;
-        sumar(llegandoMarca, cat.get(id)?.marca || "SIN MARCA", v, q);
+        const p = cat.get(id);
+        sumar(llegandoMarca, p?.marca || "SIN MARCA", v, q);
+        sumarProducto(prodLlegando, p?.marca || "SIN MARCA", p ? `${p.codigo} · ${p.nombre}` : `Producto ${id}`, v, q);
       }
       porSedeMedida[cid] = s0;
     }
@@ -186,11 +208,12 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
       formato: "usd",
       datos: filasMarca("v"),
       series: cids.map((c) => ({ clave: String(c), etiqueta: nombre[c], color: COLOR_SEDE[c] })),
-      alterna: { etiqueta: "Unidades", formato: "num", datos: filasMarca("u") },
+      detalle: detalleDe("Productos", filasMarca("v"), prodMarca.v),
+      alterna: { etiqueta: "Unidades", formato: "num", datos: filasMarca("u"), detalle: detalleDe("Productos", filasMarca("u"), prodMarca.u, Math.round) },
     });
-    graficas.push(barrasDoble("inv_categoria", "Inventario por categoría", porCategoria, 12, "Otras categorías", PALETA[2]));
+    graficas.push(barrasDoble("inv_categoria", "Inventario por categoría", porCategoria, 12, "Otras categorías", PALETA[2], undefined, prodCategoria));
     graficas.push({
-      ...barrasDoble("inv_llegando", "Por llegar, por marca", llegandoMarca, 10, "Otras marcas", PALETA[2], "Recepciones de órdenes de compra pendientes."),
+      ...barrasDoble("inv_llegando", "Por llegar, por marca", llegandoMarca, 10, "Otras marcas", PALETA[2], "Recepciones de órdenes de compra pendientes.", prodLlegando),
       vacio: "No hay órdenes de compra por recibir.",
     });
     const productos = barrasDoble("inv_productos", "Top 15 productos", porProducto, 15, "Otros", PALETA[0]);

@@ -3,8 +3,9 @@ import { callOdooRPC } from "@/lib/odoo";
 import { cachear, catalogo, dominioVentas, hoyCaracas, idsPorCodigo } from "@/lib/compras/datosOdoo";
 import { CORTE_ODOO, SQL_SIN_INTERCOMPANIA, SQL_SIN_VENDEDOR_LOCAL, rangoSmartbit } from "@/lib/smartbit";
 import { contarDiasUtiles } from "@/lib/feriados";
+import { esVendedorRetirado } from "@/lib/vendedores/retirados";
 import {
-  COLOR_SEDE, GRIS, NOMBRE_SEDE, PALETA, bloque, etiquetaMes, finDeMes, mesesHasta, r2, topConOtros, variacion,
+  COLOR_SEDE, GRIS, NOMBRE_SEDE, PALETA, bloque, detalleDe, etiquetaMes, finDeMes, mesesHasta, r2, sumarDetalle, topConOtros, variacion,
   type DatosArea, type Grafica, type Kpi,
 } from "./tipos";
 
@@ -21,6 +22,11 @@ import {
  */
 
 const MESES_SERIE = 24;
+
+/** No son vendedores (mismo criterio que el Agente IA): fuera del ranking, no del total. */
+const NO_VENDEDORES = ["asistente", "dameris"];
+const noEsVendedor = (nombre: string, id: number | null) =>
+  NO_VENDEDORES.some((n) => nombre.toLowerCase().includes(n)) || esVendedorRetirado(id != null ? [id, nombre] : { name: nombre });
 
 /* -------------------------------------------------------------------- Odoo */
 
@@ -106,19 +112,26 @@ function ventasSmartbit(cids: number[], desde: string, hasta: string, clave: Cla
   });
 }
 
-/** Productos de Smartbit (histórico por artículo) antes del corte. */
-function productosSmartbit(cids: number[], desde: string, hasta: string): Promise<{ codigo: string; nombre: string; venta: number }[]> {
-  return cachear(`graf|psb|${cids.join(",")}|${desde}|${hasta}`, async () => {
+/** Línea de venta agrupada: quién compró, quién vendió y qué. */
+type Linea = { cliente: string; vendedor: string; vendedorId: number | null; id: number | null; codigo: string; nombre: string; venta: number };
+
+/** Líneas de Smartbit (histórico por artículo) antes del corte. */
+function lineasSmartbit(cids: number[], desde: string, hasta: string): Promise<Linea[]> {
+  return cachear(`graf|lsb|${cids.join(",")}|${desde}|${hasta}`, async () => {
     const r = rangoSmartbit(desde, hasta);
     if (!r) return [];
     const { rows } = await query(
-      `SELECT codigo_articulo AS codigo, MAX(articulo) AS nombre, SUM(venta) AS venta
+      `SELECT ${CLAVE_SQL.cliente("")} AS cliente, ${CLAVE_SQL.vendedor("")} AS vendedor,
+              codigo_articulo AS codigo, MAX(articulo) AS nombre, SUM(venta) AS venta
          FROM ventas_smartbit
         WHERE company_id IN (${cids.map(() => "?").join(",")}) AND fecha BETWEEN ? AND ? AND ${SIN_GRUPO_ARTICULOS}
-        GROUP BY codigo_articulo`,
+        GROUP BY cliente, vendedor, codigo_articulo`,
       [...cids, r[0], r[1]],
     );
-    return rows.map((x: any) => ({ codigo: String(x.codigo || ""), nombre: String(x.nombre || x.codigo || "Sin nombre"), venta: Number(x.venta) || 0 }));
+    return rows.map((x: any) => ({
+      cliente: String(x.cliente), vendedor: String(x.vendedor), vendedorId: null, id: null,
+      codigo: String(x.codigo || ""), nombre: String(x.nombre || x.codigo || "Sin nombre"), venta: Number(x.venta) || 0,
+    }));
   });
 }
 
@@ -157,24 +170,24 @@ async function diario(cids: number[], mes: string): Promise<Map<string, number>>
 }
 
 type DetalleMes = {
-  /** id de Odoo, o null con el código de Smartbit. */
-  productos: { id: number | null; codigo: string; nombre: string; venta: number }[];
+  lineas: Linea[];
+  /** Total por cliente y por vendedor (en Smartbit, de la cabecera donde la hay). */
   clientes: { nombre: string; venta: number }[];
-  vendedores: { nombre: string; venta: number }[];
+  vendedores: { nombre: string; id: number | null; venta: number }[];
   documentos: number;
   /** Clientes con compra (en Odoo por id, en Smartbit por nombre). */
   compradores: Set<string>;
 };
 
-/** Lo del mes en Odoo de una sede: por producto y por factura (cliente y vendedor). */
+/** Lo del mes en Odoo de una sede: cada factura con sus productos. */
 function detalleOdoo(cid: number, desde: string, hasta: string): Promise<DetalleMes> {
   return cachear(`graf|vdet|${cid}|${desde}|${hasta}`, async () => {
-    const out: DetalleMes = { productos: [], clientes: [], vendedores: [], documentos: 0, compradores: new Set() };
+    const out: DetalleMes = { lineas: [], clientes: [], vendedores: [], documentos: 0, compradores: new Set() };
     const r = rangoOdoo(desde, hasta);
     if (!r) return out;
     const dom = [...(await dominioVentas(cid)), ["invoice_date", ">=", r[0]], ["invoice_date", "<=", r[1]]];
-    const [prods, movs] = await Promise.all([agrupar(dom, ["product_id"]), agrupar(dom, ["move_id"])]);
-    const ids = movs.map((g) => g.move_id?.[0]).filter(Boolean) as number[];
+    const grupos = await agrupar(dom, ["move_id", "product_id"]);
+    const ids = [...new Set(grupos.map((g) => g.move_id?.[0]).filter(Boolean))] as number[];
     const info = new Map<number, any>();
     for (let i = 0; i < ids.length; i += 2000) {
       const lote = await callOdooRPC<any[]>("account.move", "read", [ids.slice(i, i + 2000), ["move_type", "commercial_partner_id", "invoice_user_id"]]);
@@ -182,38 +195,45 @@ function detalleOdoo(cid: number, desde: string, hasta: string): Promise<Detalle
       for (const m of lote) info.set(m.id, m);
     }
     const clientes = new Map<string, number>();
-    const vendedores = new Map<string, number>();
-    for (const g of movs) {
+    const vendedores = new Map<string, { id: number | null; venta: number }>();
+    for (const g of grupos) {
       if (!g.move_id) continue;
       const m = info.get(g.move_id[0]) || {};
       const venta = -(Number(g.balance) || 0);
       const cliente = m.commercial_partner_id ? String(m.commercial_partner_id[1] || "") : "(sin cliente)";
       const vendedor = m.invoice_user_id ? String(m.invoice_user_id[1] || "") : "Sin vendedor";
+      const vendedorId = m.invoice_user_id ? Number(m.invoice_user_id[0]) : null;
       clientes.set(cliente, (clientes.get(cliente) || 0) + venta);
-      vendedores.set(vendedor, (vendedores.get(vendedor) || 0) + venta);
-      if (m.move_type !== "out_refund") {
-        out.documentos++;
-        if (m.commercial_partner_id) out.compradores.add(`odoo:${m.commercial_partner_id[0]}`);
+      const v = vendedores.get(vendedor) ?? { id: vendedorId, venta: 0 };
+      v.venta += venta;
+      vendedores.set(vendedor, v);
+      if (g.product_id) {
+        out.lineas.push({ cliente, vendedor, vendedorId, id: g.product_id[0], codigo: "", nombre: String(g.product_id[1] || ""), venta });
       }
     }
-    out.productos = prods.filter((g) => g.product_id).map((g) => ({ id: g.product_id[0], codigo: "", nombre: String(g.product_id[1] || ""), venta: -(Number(g.balance) || 0) }));
+    for (const id of ids) {
+      const m = info.get(id);
+      if (!m || m.move_type === "out_refund") continue;
+      out.documentos++;
+      if (m.commercial_partner_id) out.compradores.add(`odoo:${m.commercial_partner_id[0]}`);
+    }
     out.clientes = [...clientes].map(([nombre, venta]) => ({ nombre, venta }));
-    out.vendedores = [...vendedores].map(([nombre, venta]) => ({ nombre, venta }));
+    out.vendedores = [...vendedores].map(([nombre, v]) => ({ nombre, ...v }));
     return out;
   });
 }
 
 /** Lo del mes en Smartbit de las sedes. */
 async function detalleSmartbit(cids: number[], desde: string, hasta: string): Promise<DetalleMes> {
-  const [clientes, vendedores, productos] = await Promise.all([
+  const [clientes, vendedores, lineas] = await Promise.all([
     ventasSmartbit(cids, desde, hasta, "cliente"),
     ventasSmartbit(cids, desde, hasta, "vendedor"),
-    productosSmartbit(cids, desde, hasta),
+    lineasSmartbit(cids, desde, hasta),
   ]);
   return {
-    productos: productos.map((p) => ({ id: null, ...p })),
+    lineas,
     clientes: clientes.map((f) => ({ nombre: f.clave, venta: f.venta })),
-    vendedores: vendedores.map((f) => ({ nombre: f.clave, venta: f.venta })),
+    vendedores: vendedores.map((f) => ({ nombre: f.clave, id: null, venta: f.venta })),
     documentos: clientes.reduce((s, f) => s + f.documentos, 0),
     compradores: new Set(clientes.filter((f) => f.venta > 0).map((f) => `sb:${f.clave.toLowerCase()}`)),
   };
@@ -351,19 +371,34 @@ export async function graficasVentas(cids: number[], sede: string, mes: string):
     const producto = new Map<string, number>();
     const cliente = new Map<string, number>();
     const vendedor = new Map<string, number>();
+    // Lo que compone cada barra, para el clic: productos de cada marca, categoría, cliente y vendedor; clientes de cada producto.
+    const prodMarca = new Map<string, Map<string, number>>();
+    const prodCategoria = new Map<string, Map<string, number>>();
+    const prodCliente = new Map<string, Map<string, number>>();
+    const prodVendedor = new Map<string, Map<string, number>>();
+    const clienteProducto = new Map<string, Map<string, number>>();
     const compradores = new Set<string>();
     let documentos = 0;
     const sumar = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) || 0) + v);
     for (const d of partes) {
-      for (const p of d.productos) {
+      for (const l of d.lineas) {
         // Smartbit trae el código: se busca en Odoo para su marca y categoría.
-        const c = cat.get(p.id ?? porCodigo.get(p.codigo.trim().toUpperCase()) ?? -1);
-        sumar(marca, c?.marca || "SIN MARCA", p.venta);
-        sumar(categoria, c?.categoria || "Sin categoría", p.venta);
-        sumar(producto, c ? `${c.codigo} · ${c.nombre}` : `${p.codigo ? `${p.codigo} · ` : ""}${p.nombre}`, p.venta);
+        const c = cat.get(l.id ?? porCodigo.get(l.codigo.trim().toUpperCase()) ?? -1);
+        const m = c?.marca || "SIN MARCA";
+        const k = c?.categoria || "Sin categoría";
+        const p = c ? `${c.codigo} · ${c.nombre}` : `${l.codigo ? `${l.codigo} · ` : ""}${l.nombre}`;
+        sumar(marca, m, l.venta);
+        sumar(categoria, k, l.venta);
+        sumar(producto, p, l.venta);
+        sumarDetalle(prodMarca, m, p, l.venta);
+        sumarDetalle(prodCategoria, k, p, l.venta);
+        sumarDetalle(prodCliente, l.cliente, p, l.venta);
+        sumarDetalle(prodVendedor, l.vendedor, p, l.venta);
+        sumarDetalle(clienteProducto, p, l.cliente, l.venta);
       }
       for (const x of d.clientes) sumar(cliente, x.nombre, x.venta);
-      for (const x of d.vendedores) sumar(vendedor, x.nombre, x.venta);
+      // El ranking es de vendedores: sin "Asistente de Ventas", Dameris ni los retirados (su venta sigue en el total).
+      for (const x of d.vendedores) if (!noEsVendedor(x.nombre, x.id)) sumar(vendedor, x.nombre, x.venta);
       for (const x of d.compradores) compradores.add(x);
       documentos += d.documentos;
     }
@@ -376,15 +411,20 @@ export async function graficasVentas(cids: number[], sede: string, mes: string):
     }
 
     const aFilas = (m: Map<string, number>) => [...m].map(([etiqueta, valor]) => ({ etiqueta, valor }));
-    const barra = (id: string, titulo: string, filas: { etiqueta: string; valor: number }[], color: string, descripcion?: string): Grafica => ({
+    const barra = (
+      id: string, titulo: string, filas: { etiqueta: string; valor: number }[], color: string,
+      que: string, porBarra: Map<string, Map<string, number>>, descripcion?: string,
+    ): Grafica => ({
       id, titulo, descripcion, tipo: "barras_h", formato: "usd", datos: filas,
       series: [{ clave: "valor", etiqueta: "Venta", color }],
+      detalle: detalleDe(que, filas, porBarra),
     });
-    graficas.push(barra("venta_marca", "Venta por marca", topConOtros(aFilas(marca), 12, "Otras marcas"), PALETA[0], `${etiquetaMes(mes)}, sin IVA.`));
-    graficas.push(barra("venta_categoria", "Venta por categoría", topConOtros(aFilas(categoria), 12, "Otras categorías"), PALETA[2]));
-    graficas.push(barra("venta_clientes", "Top 10 clientes", topConOtros(aFilas(cliente), 10, "Resto de clientes").slice(0, 10), PALETA[6]));
-    graficas.push(barra("venta_vendedor", "Venta por vendedor", topConOtros(aFilas(vendedor), 15, "Otros vendedores"), PALETA[1]));
-    graficas.push({ ...barra("venta_productos", "Top 15 productos", topConOtros(aFilas(producto), 15).slice(0, 15), PALETA[0]), ancho: 2 });
+    graficas.push(barra("venta_marca", "Venta por marca", topConOtros(aFilas(marca), 12, "Otras marcas"), PALETA[0], "Productos", prodMarca, `${etiquetaMes(mes)}, sin IVA.`));
+    graficas.push(barra("venta_categoria", "Venta por categoría", topConOtros(aFilas(categoria), 12, "Otras categorías"), PALETA[2], "Productos", prodCategoria));
+    graficas.push(barra("venta_clientes", "Top 10 clientes", topConOtros(aFilas(cliente), 10, "Resto de clientes").slice(0, 10), PALETA[6], "Productos", prodCliente));
+    graficas.push(barra("venta_vendedor", "Venta por vendedor", topConOtros(aFilas(vendedor), 15, "Otros vendedores"), PALETA[1], "Productos", prodVendedor,
+      "Sin Asistente de Ventas, Dameris ni vendedores retirados."));
+    graficas.push({ ...barra("venta_productos", "Top 15 productos", topConOtros(aFilas(producto), 15).slice(0, 15), PALETA[0], "Clientes", clienteProducto), ancho: 2 });
   }
 
   return { area: "ventas", sede, mes, generado: new Date().toISOString(), kpis, graficas, avisos };
