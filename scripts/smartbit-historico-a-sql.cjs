@@ -46,6 +46,9 @@ const num = (v) => (typeof v === "number" ? v : Number(String(v ?? "").replace(/
 const texto = (v) => (v == null ? "" : String(v).trim());
 // Mismo criterio que normalizarRif() de lib/smartbit.ts.
 const rif = (v) => texto(v).toUpperCase().replace(/[^A-Z0-9]/g, "");
+// El mismo vendedor en las dos tablas: Smartbit trae espacios dobles ("DANIELA  SUAREZ").
+// El RIF también va igual en las dos (sin guiones, puntos ni espacios), así cruzan con RIF_SQL.
+const vendedor = (v) => texto(v).replace(/\s+/g, " ");
 // `max` = largo de la columna (MySQL estricto rechaza lo que sobra).
 const esc = (v, max) => {
   const s = texto(v);
@@ -91,8 +94,8 @@ for (const r of d.filas) {
   a.venta += venta;
   porAnio.set(f.slice(0, 4), a);
   renglones.push(
-    `(${companyId},'${f}',${esc(numeroDoc(r[c.doc], trn === "NCC"), 30)},NULL,NULL,${esc(r[c.vend], 150)},` +
-      `${esc(r[c.rif], 60)},${esc(r[c.cliente], 255)},${esc(r[c.sku], 80)},${esc(r[c.prod], 255)},` +
+    `(${companyId},'${f}',${esc(numeroDoc(r[c.doc], trn === "NCC"), 30)},NULL,NULL,${esc(vendedor(r[c.vend]), 150)},` +
+      `${esc(rif(r[c.rif]), 60)},${esc(r[c.cliente], 255)},${esc(r[c.sku], 80)},${esc(r[c.prod], 255)},` +
       `${esc(r[c.serial], 80)},NULL,${venta.toFixed(2)},${unidades},NULL)`,
   );
 }
@@ -111,7 +114,7 @@ for (const r of h.filas) {
   ventaFacturas += venta;
   facturas.push(
     `(${companyId},'${fecha(r[k.fecha])}',${esc(numeroDoc(r[k.doc], devolucion), 30)},${esc(rif(r[k.rif]), 30)},` +
-      `${esc(r[k.cliente], 255)},${esc(texto(r[k.vend]).replace(/\s+/g, " "), 150)},${num(r[k.unid])},${venta.toFixed(2)})`,
+      `${esc(r[k.cliente], 255)},${esc(vendedor(r[k.vend]), 150)},${num(r[k.unid])},${venta.toFixed(2)})`,
   );
 }
 
