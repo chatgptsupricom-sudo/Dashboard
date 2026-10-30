@@ -12,11 +12,16 @@
 // Histórico (Excel) del Dashboard. Un cierre ganado deja el lead como
 // CONCRETADO (con estatus_original, igual que "Por revisar") para que entre en
 // Recompra; "Ya es cliente" no entra, como en los leads del panel.
+//
+// El vendedor asignado (`seller_id`) los ve en su tablero, Cierres y
+// estadísticas (/api/vendedores/leads y /stats) junto a los del panel, con
+// id "excel-<id>" porque los id de las dos tablas se repiten.
 
 import { query } from "@/lib/db";
 import { mismaOperacion } from "@/lib/adminleads/sucursal";
 import { asegurarTablas } from "@/lib/adminleads/recompra";
 import { normalizarRif } from "@/lib/smartbit";
+import { canalSumaVentasSql } from "@/lib/canales";
 
 const PANAMA = 7;
 
@@ -50,8 +55,21 @@ function alcanceSql(userCids: number | null) {
     : `COALESCE(s.cids, h.company_id) <> ${PANAMA}`;
 }
 
-/** Leads de Excel con la forma de un lead del panel. `soloCerradosEnPanel`: los de la sección Cierres. */
-export async function listarLeadsExcel(userCids: number | null, soloCerradosEnPanel = false) {
+/**
+ * Ventas cerradas desde el tablero (mismos motivos y canales que suman en las
+ * estadísticas del vendedor), con columnas de `leads` para un UNION ALL. Solo
+ * número y fecha: los textos de las dos tablas pueden tener otra collation.
+ */
+export const VENTAS_EXCEL_SQL = `SELECT id, seller_id, panel_monto AS monto_cerrado_usd, panel_fecha_cierre AS fecha_venta
+  FROM leads_historicos
+  WHERE cerrado_en_panel = 1 AND panel_status = 'CERRADO' AND panel_motivo IN ('VENTA', 'GANADO', 'YA_ES_CLIENTE')
+    AND ${canalSumaVentasSql("red_social")}`;
+
+/**
+ * Leads de Excel con la forma de un lead del panel. `soloCerradosEnPanel`: los
+ * de la sección Cierres. Con `sellerId`, solo los de ese vendedor (su tablero).
+ */
+export async function listarLeadsExcel(userCids: number | null, soloCerradosEnPanel = false, sellerId?: number) {
   await asegurarTablas();
   const [{ rows }, { rows: estados }] = await Promise.all([
     query(
@@ -61,7 +79,8 @@ export async function listarLeadsExcel(userCids: number | null, soloCerradosEnPa
               DATE_FORMAT(h.panel_fecha_cierre, '%Y-%m-%d %H:%i:%s') AS cierre
          FROM leads_historicos h
          LEFT JOIN sellers s ON s.id = h.seller_id
-        WHERE ${alcanceSql(userCids)} ${soloCerradosEnPanel ? "AND h.cerrado_en_panel = 1" : ""}`,
+        WHERE ${sellerId ? "h.seller_id = ?" : alcanceSql(userCids)} ${soloCerradosEnPanel ? "AND h.cerrado_en_panel = 1" : ""}`,
+      sellerId ? [sellerId] : [],
     ),
     query("SELECT name FROM lead_statuses ORDER BY order_index ASC").catch(() => ({ rows: [] as any[] })),
   ]);
@@ -85,6 +104,7 @@ export async function listarLeadsExcel(userCids: number | null, soloCerradosEnPa
       status,
       motivo_cierre: status === "CERRADO" ? motivo : null,
       seller_id: h.seller_id,
+      seller_name: h.seller_nombre || "",
       // El vendedor del panel si se reasignó; si no, el nombre que traía el Excel.
       vendedor_nombre: h.seller_nombre || h.vendedor || "",
       vendedor_excel: h.vendedor || "",
@@ -114,15 +134,16 @@ export class ErrorLeadExcel extends Error {
  * (y { leadId, newSellerId } para reasignar, como /api/adminleads/reasignar).
  * `reabrir` (sección Cierres, como /api/adminleads/reactivar) también reabre un
  * lead ganado; `reactivacion` (arrastrar en el tablero) solo un perdido.
+ * Con `delVendedor` (id de sellers, tablero del vendedor) solo toca sus leads y no reasigna.
  */
-export async function actualizarLeadExcel(body: any, userCids: number | null) {
+export async function actualizarLeadExcel(body: any, userCids: number | null, delVendedor?: number) {
   await asegurarTablas();
   const id = Number(body.id ?? body.leadId);
   if (!id) throw new ErrorLeadExcel("ID requerido");
   const { rows } = await query(
     `SELECT h.* FROM leads_historicos h LEFT JOIN sellers s ON s.id = h.seller_id
-      WHERE h.id = ? AND ${alcanceSql(userCids)}`,
-    [id],
+      WHERE h.id = ? AND ${delVendedor ? "h.seller_id = ?" : alcanceSql(userCids)}`,
+    delVendedor ? [id, delVendedor] : [id],
   );
   const lead = rows[0];
   if (!lead) throw new ErrorLeadExcel("Lead no encontrado", 404);
@@ -142,6 +163,7 @@ export async function actualizarLeadExcel(body: any, userCids: number | null) {
     : {};
 
   if (body.newSellerId !== undefined) {
+    if (delVendedor) throw new ErrorLeadExcel("Solo el administrador reasigna leads", 403);
     const sellerId = body.newSellerId ? Number(body.newSellerId) : null;
     if (sellerId) {
       const { rows: s } = await query("SELECT cids FROM sellers WHERE id = ?", [sellerId]);

@@ -5,12 +5,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { requireSession } from "@/lib/auth/roles";
 import { corregirLead, datosDeFactura } from "@/lib/adminleads/facturaLead";
+import { actualizarLeadExcel, ErrorLeadExcel, listarLeadsExcel } from "@/lib/adminleads/leadsExcel";
 
 declare global {
   var io: any;
 }
 
 const JWT_SECRET = jwtSecretBytes();
+
+// Los leads de Excel (leads_historicos) van con id "excel-<id>": sus id se
+// repiten con los de `leads` (lib/adminleads/leadsExcel.ts).
+const ID_EXCEL = "excel-";
 
 export async function GET(request: Request) {
   try {
@@ -50,8 +55,11 @@ export async function GET(request: Request) {
       `;
     const result = await query(sql, [sellerId]);
     const rows = Array.isArray(result) ? result : (result as any).rows;
+    const excel = (await listarLeadsExcel(null, false, sellerId)).map((l) => ({ ...l, id: `${ID_EXCEL}${l.id}` }));
+    const fecha = (l: any) => new Date(l.fecha_ingreso || 0).getTime();
+    const todos = [...(rows || []), ...excel].sort((a, b) => fecha(b) - fecha(a));
 
-    return NextResponse.json(rows || [], {
+    return NextResponse.json(todos, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate",
       },
@@ -68,6 +76,19 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const body = await request.json();
+
+    if (String(body.id ?? "").startsWith(ID_EXCEL)) {
+      const { rows: sellers } = await query("SELECT id FROM sellers WHERE user_id = ?", [Number(auth.payload?.uid)]);
+      if (!sellers[0]) return NextResponse.json({ error: "No eres vendedor" }, { status: 403 });
+      try {
+        await actualizarLeadExcel({ ...body, id: Number(String(body.id).slice(ID_EXCEL.length)) }, null, sellers[0].id);
+      } catch (e) {
+        if (e instanceof ErrorLeadExcel) return NextResponse.json({ error: e.message }, { status: e.status });
+        throw e;
+      }
+      return NextResponse.json({ success: true });
+    }
+
     const {
       id,
       status,
@@ -351,6 +372,8 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get("id");
     if (!id)
       return NextResponse.json({ error: "ID requerido" }, { status: 400 });
+    if (id.startsWith(ID_EXCEL))
+      return NextResponse.json({ error: "Los leads de Excel no se borran desde aquí." }, { status: 400 });
 
     await query("DELETE FROM leads WHERE id = ?", [id]);
 
