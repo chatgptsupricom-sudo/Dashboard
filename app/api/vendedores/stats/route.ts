@@ -310,15 +310,10 @@ import { lineasProductoOdoo } from "@/lib/smartbit";
 import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 import { esVendedorRetirado } from "@/lib/vendedores/retirados";
-import { VENTAS_EXCEL_SQL } from "@/lib/adminleads/leadsExcel";
-import { asegurarTablas } from "@/lib/adminleads/recompra";
 
 // Los cierres de "Pagina Web" no suman a lo cerrado ni a lo vendido.
 const SUMA = canalSumaVentasSql("canal_origen");
-// Ventas de leads del panel + las de leads de Excel cerradas desde su tablero.
-const VENTAS = `(SELECT id, seller_id, monto_cerrado_usd, fecha_venta FROM leads
-  WHERE status = 'CERRADO' AND motivo_cierre IN ('VENTA', 'GANADO', 'YA_ES_CLIENTE') AND ${SUMA}
-  UNION ALL ${VENTAS_EXCEL_SQL})`;
+const SUMA_L = canalSumaVentasSql("l.canal_origen");
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -628,7 +623,6 @@ export async function GET(request: Request) {
     let crecimientoLeads = 0;
     let miRankingLeads = 0;
     try {
-      await asegurarTablas();
       const sellerResult = await query(
         "SELECT id FROM sellers WHERE user_id = ?",
         [uid],
@@ -642,8 +636,9 @@ export async function GET(request: Request) {
 
         let leadsQuery = `
           SELECT COUNT(*) as count, COALESCE(SUM(monto_cerrado_usd), 0) as total
-          FROM ${VENTAS} v
-          WHERE seller_id = ?
+          FROM leads
+          WHERE seller_id = ? AND status = 'CERRADO' AND (motivo_cierre = 'VENTA' OR motivo_cierre = 'GANADO' OR motivo_cierre = 'YA_ES_CLIENTE')
+            AND ${SUMA}
         `;
         const leadsParams: any[] = [sellerId];
 
@@ -734,15 +729,17 @@ export async function GET(request: Request) {
         }
 
         const leadsMontoActual: any = await query(
-          `SELECT COALESCE(SUM(monto_cerrado_usd), 0) as total FROM ${VENTAS} v
-           WHERE seller_id = ? AND fecha_venta >= ?${finActual ? " AND fecha_venta < ?" : ""}`,
+          `SELECT COALESCE(SUM(monto_cerrado_usd), 0) as total FROM leads
+           WHERE seller_id = ? AND status = 'CERRADO' AND (motivo_cierre = 'VENTA' OR motivo_cierre = 'GANADO' OR motivo_cierre = 'YA_ES_CLIENTE')
+           AND ${SUMA} AND fecha_venta >= ?${finActual ? " AND fecha_venta < ?" : ""}`,
           finActual
             ? [sellerId, inicioActual, finActual]
             : [sellerId, inicioActual],
         );
         const leadsMontoAnterior: any = await query(
-          `SELECT COALESCE(SUM(monto_cerrado_usd), 0) as total FROM ${VENTAS} v
-           WHERE seller_id = ? AND fecha_venta >= ? AND fecha_venta < ?`,
+          `SELECT COALESCE(SUM(monto_cerrado_usd), 0) as total FROM leads
+           WHERE seller_id = ? AND status = 'CERRADO' AND (motivo_cierre = 'VENTA' OR motivo_cierre = 'GANADO' OR motivo_cierre = 'YA_ES_CLIENTE')
+           AND ${SUMA} AND fecha_venta >= ? AND fecha_venta < ?`,
           [sellerId, inicioAnterior, finAnterior],
         );
 
@@ -767,7 +764,8 @@ export async function GET(request: Request) {
           SELECT s.id as seller_id, COUNT(l.id) as total_cerrados,
             COALESCE(SUM(l.monto_cerrado_usd), 0) as monto_cerrado
           FROM sellers s
-          LEFT JOIN ${VENTAS} l ON s.id = l.seller_id
+          LEFT JOIN leads l ON s.id = l.seller_id AND l.motivo_cierre IN ('VENTA', 'GANADO', 'YA_ES_CLIENTE')
+            AND l.status = 'CERRADO' AND ${SUMA_L}
         `;
         const rankingParams: any[] = [];
         if (periodo !== "total" && fechaInicio) {

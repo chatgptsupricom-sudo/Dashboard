@@ -22,8 +22,7 @@ export default function CierrePage() {
       .then((res) => res.json())
       .then((data) => {
         const filtered = data
-          // De los leads de Excel, solo los cerrados desde el tablero (como Cierres de AdminLeads).
-          .filter((l: any) => l.status === "CERRADO" && (l.origen !== "excel" || l.cerrado_en_panel))
+          .filter((l: any) => l.status === "CERRADO")
           .map((l: any) => ({
             ...l,
             empresa: l.name,

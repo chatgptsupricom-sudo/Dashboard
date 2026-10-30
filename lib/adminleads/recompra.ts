@@ -93,6 +93,8 @@ export function asegurarTablas(): Promise<void> {
       ["panel_segunda_compra", "TINYINT NOT NULL DEFAULT 0"],
       ["panel_reactivacion", "TINYINT NOT NULL DEFAULT 0"],
       ["cerrado_en_panel", "TINYINT NOT NULL DEFAULT 0"],
+      // Lead de `leads` al que pasó al reasignarlo a un vendedor (0 = pasando).
+      ["lead_id", "INT NULL"],
     ];
     for (const [col, tipo] of delTablero) {
       if (!hay.has(col)) await query(`ALTER TABLE leads_historicos ADD COLUMN ${col} ${tipo}`);
@@ -772,7 +774,7 @@ export async function calcularRecompra(opts: {
       `SELECT id, nombre, rif, company_id, vendedor, red_social, COALESCE(campana_editada, campana) AS campana, monto, factura_txt,
               DATE_FORMAT(fecha_interaccion, '%Y-%m-%d') AS entrada,
               DATE_FORMAT(primera_venta, '%Y-%m-%d') AS primera
-         FROM leads_historicos WHERE estatus = 'CONCRETADO'`,
+         FROM leads_historicos WHERE estatus = 'CONCRETADO' AND lead_id IS NULL`,
     ),
     facturasOdoo(),
   ]);
@@ -981,7 +983,7 @@ export async function revisarLeads(soloSede: number | null): Promise<LeadPorRevi
     `SELECT id, company_id, nombre, DATE_FORMAT(fecha_interaccion, '%Y-%m-%d') AS fecha, telefono, vendedor,
             estatus, monto, factura_txt, observacion, rif
        FROM leads_historicos
-      WHERE revisado = 0 AND fecha_interaccion IS NOT NULL
+      WHERE revisado = 0 AND fecha_interaccion IS NOT NULL AND lead_id IS NULL
         AND ((estatus = 'CONCRETADO' AND rif IS NULL) OR estatus IS NULL OR estatus <> 'CONCRETADO')
         ${soloSede ? "AND company_id = ?" : ""}`,
     soloSede ? [soloSede] : [],
