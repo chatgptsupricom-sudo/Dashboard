@@ -4,7 +4,7 @@ import { cachear, catalogo, dominioVentas, hoyCaracas, idsPorCodigo } from "@/li
 import { CORTE_ODOO, SQL_SIN_INTERCOMPANIA, rangoSmartbit } from "@/lib/smartbit";
 import { contarDiasUtiles } from "@/lib/feriados";
 import {
-  COLOR_SEDE, GRIS, NOMBRE_SEDE, PALETA, agregarRuta, bloque, detalleDe, etiquetaMes, finDeMes, mesesHasta, r2, topConOtros, variacion,
+  COLOR_SEDE, GRIS, NOMBRE_SEDE, PALETA, agregarRuta, bloque, claveCliente, detalleDe, etiquetaMes, finDeMes, mesesHasta, r2, topConOtros, variacion,
   MAX_DETALLE, type Arbol, type DatosArea, type Grafica, type Kpi,
 } from "./tipos";
 
@@ -30,14 +30,6 @@ const MESES_SERIE = 24;
  * Dario todavía no tiene). Por nombre, porque Smartbit no trae id.
  */
 const NO_VENDEDORES = ["asistente", "dameris", "hercilio", "bladimir vasquez", "local", "caja"];
-/**
- * Un cliente cuenta una vez aunque compre en dos sedes (en Odoo cada sede tiene
- * su contacto) o aparezca en Smartbit y en Odoo: por nombre sin mayúsculas,
- * acentos ni signos.
- */
-const claveCliente = (nombre: string) =>
-  nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-
 const noEsVendedor = (nombre: string) => {
   const n = nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   return NO_VENDEDORES.some((x) => n.includes(x));

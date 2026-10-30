@@ -5,7 +5,7 @@ import { esICExcluido } from "@/lib/intercompania";
 import { hoyCaracas } from "@/lib/compras/datosOdoo";
 import { CORTE_ODOO } from "@/lib/smartbit";
 import {
-  COLOR_SEDE, ESTADO, GRIS, NOMBRE_SEDE, PALETA, bloque, etiquetaMes, finDeMes, mesesHasta, r2, topConOtros, variacion,
+  COLOR_SEDE, ESTADO, GRIS, NOMBRE_SEDE, PALETA, bloque, claveCliente, etiquetaMes, finDeMes, mesesHasta, r2, topConOtros, variacion,
   type DatosArea, type Grafica, type Kpi,
 } from "./tipos";
 
@@ -132,11 +132,14 @@ export async function graficasCobranza(cids: number[], sede: string, mes: string
     });
 
     const porDiario = new Map<string, number>();
-    const porCliente = new Map<string, number>();
+    const porCliente = new Map<string, { nombre: string; valor: number }>();
     for (const c of delMes(mes)) {
       porDiario.set(c.journalName || "Sin diario", (porDiario.get(c.journalName || "Sin diario") || 0) + c.monto);
       // Por empresa: la factura puede estar a nombre de un contacto o una dirección suya.
-      porCliente.set(c.clienteNombre || "(sin cliente)", (porCliente.get(c.clienteNombre || "(sin cliente)") || 0) + c.monto);
+      const nombre = c.clienteNombre || "(sin cliente)";
+      const x = porCliente.get(claveCliente(nombre)) ?? { nombre, valor: 0 };
+      x.valor += c.monto;
+      porCliente.set(claveCliente(nombre), x);
     }
     const filas = (mapa: Map<string, number>) => [...mapa].map(([etiqueta, valor]) => ({ etiqueta, valor }));
     graficas.push({
@@ -152,7 +155,7 @@ export async function graficasCobranza(cids: number[], sede: string, mes: string
       titulo: "Top 10 clientes que pagaron",
       tipo: "barras_h",
       formato: "usd",
-      datos: topConOtros(filas(porCliente), 10).slice(0, 10),
+      datos: topConOtros([...porCliente.values()].map(({ nombre, valor }) => ({ etiqueta: nombre, valor })), 10).slice(0, 10),
       series: [{ clave: "valor", etiqueta: "Cobrado", color: PALETA[6] }],
     });
   }
