@@ -3,7 +3,8 @@ import { almacenSede, cachear, catalogo, costos, diasEntre, hoyCaracas, transito
 import { menorRotacion } from "@/lib/compras/reportes";
 import { FIN_CARGA_INICIAL, TRAMOS, tramoDe, type Tramo } from "@/lib/gerente-marca/tipos";
 import {
-  COLOR_SEDE, ESTADO, NOMBRE_SEDE, PALETA, RAMPA, bloque, detalleDe, r2, sumarDetalle, topConOtros,
+  COLOR_SEDE, ESTADO, NOMBRE_SEDE, PALETA, RAMPA, agregarRuta, bloque, detalleDe, MAX_DETALLE, r2, topConOtros,
+  type Arbol,
   type DatosArea, type Grafica, type Kpi,
 } from "./tipos";
 
@@ -63,7 +64,7 @@ const sumar = (mapa: Map<string, Medida>, clave: string, v: number, u: number) =
 /** Barras horizontales de una sola serie, en monto y en unidades (cada medida con su propio top). */
 function barrasDoble(
   id: string, titulo: string, mapa: Map<string, Medida>, max: number, otros: string, color: string,
-  descripcion?: string, productos?: Productos,
+  descripcion?: string, productos?: Productos, queOtros?: string,
 ): Grafica {
   const filas = (k: "v" | "u") => [...mapa].map(([etiqueta, m]) => ({ etiqueta, valor: k === "u" ? Math.round(m.u) : m.v }));
   const datos = topConOtros(filas("v"), max, otros);
@@ -72,17 +73,18 @@ function barrasDoble(
     id, titulo, descripcion, tipo: "barras_h", formato: "usd",
     datos,
     series: [{ clave: "valor", etiqueta: "Inventario", color }],
-    detalle: productos && detalleDe("Productos", datos, productos.v),
-    alterna: { etiqueta: "Unidades", formato: "num", datos: datosU, detalle: productos && detalleDe("Productos", datosU, productos.u, Math.round) },
+    detalle: productos && detalleDe(datos, productos.v, SOLO_PRODUCTOS, queOtros),
+    alterna: { etiqueta: "Unidades", formato: "num", datos: datosU, detalle: productos && detalleDe(datosU, productos.u, SOLO_PRODUCTOS, queOtros, Math.round) },
   };
 }
 
 /** Productos de cada barra, en monto y en unidades (para el clic). */
-type Productos = { v: Map<string, Map<string, number>>; u: Map<string, Map<string, number>> };
+type Productos = { v: Arbol; u: Arbol };
+const SOLO_PRODUCTOS = [{ que: "Productos", max: MAX_DETALLE }];
 const nuevosProductos = (): Productos => ({ v: new Map(), u: new Map() });
 const sumarProducto = (p: Productos, barra: string, nombre: string, v: number, u: number) => {
-  sumarDetalle(p.v, barra, nombre, v);
-  sumarDetalle(p.u, barra, nombre, u);
+  agregarRuta(p.v, [barra, nombre], v);
+  agregarRuta(p.u, [barra, nombre], u);
 };
 
 export async function graficasInventario(cids: number[], sede: string, mes: string): Promise<DatosArea> {
@@ -208,12 +210,12 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
       formato: "usd",
       datos: filasMarca("v"),
       series: cids.map((c) => ({ clave: String(c), etiqueta: nombre[c], color: COLOR_SEDE[c] })),
-      detalle: detalleDe("Productos", filasMarca("v"), prodMarca.v),
-      alterna: { etiqueta: "Unidades", formato: "num", datos: filasMarca("u"), detalle: detalleDe("Productos", filasMarca("u"), prodMarca.u, Math.round) },
+      detalle: detalleDe(filasMarca("v"), prodMarca.v, SOLO_PRODUCTOS, "Marcas"),
+      alterna: { etiqueta: "Unidades", formato: "num", datos: filasMarca("u"), detalle: detalleDe(filasMarca("u"), prodMarca.u, SOLO_PRODUCTOS, "Marcas", Math.round) },
     });
-    graficas.push(barrasDoble("inv_categoria", "Inventario por categoría", porCategoria, 12, "Otras categorías", PALETA[2], undefined, prodCategoria));
+    graficas.push(barrasDoble("inv_categoria", "Inventario por categoría", porCategoria, 12, "Otras categorías", PALETA[2], undefined, prodCategoria, "Categorías"));
     graficas.push({
-      ...barrasDoble("inv_llegando", "Por llegar, por marca", llegandoMarca, 10, "Otras marcas", PALETA[2], "Recepciones de órdenes de compra pendientes.", prodLlegando),
+      ...barrasDoble("inv_llegando", "Por llegar, por marca", llegandoMarca, 10, "Otras marcas", PALETA[2], "Recepciones de órdenes de compra pendientes.", prodLlegando, "Marcas"),
       vacio: "No hay órdenes de compra por recibir.",
     });
     const productos = barrasDoble("inv_productos", "Top 15 productos", porProducto, 15, "Otros", PALETA[0]);

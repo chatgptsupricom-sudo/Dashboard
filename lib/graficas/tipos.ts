@@ -67,37 +67,68 @@ export type Grafica = {
   etiquetaPrincipal?: string;
 };
 
-/** Detalle de cada barra, por su etiqueta: `que` dice qué se lista ("Productos"). */
-export type Detalle = { que: string; filas: Record<string, { etiqueta: string; valor: number }[]> };
+/** Separa las etiquetas del camino de clics en las llaves de `Detalle`. */
+export const SEP = "\u001f";
 
-/** Cuántas filas del detalle se mandan por barra. */
-export const MAX_DETALLE = 30;
+export type FilaDetalle = { etiqueta: string; valor: number };
 
 /**
- * Detalle de las barras de `datos` (menos "Otros…"): las `MAX_DETALLE`
- * mayores de cada una según `porBarra` (etiqueta de la barra → nombre → valor).
+ * Lo que se ve al hacer clic en una barra y, dentro, en cada fila: la llave
+ * es el camino de etiquetas clicadas unidas por SEP (["ANDREA MARQUEZ"] →
+ * sus clientes; ["ANDREA MARQUEZ", cliente] → los productos de ese cliente con
+ * ella). Una fila se puede clicar si su camino tiene llave.
  */
-export function detalleDe(
-  que: string,
-  datos: Record<string, string | number | null>[],
-  porBarra: Map<string, Map<string, number>>,
-  redondeo: (n: number) => number = r2,
-): Detalle {
-  const filas: Detalle["filas"] = {};
-  for (const d of datos) {
-    const k = String(d.etiqueta);
-    const m = porBarra.get(k);
-    if (!m) continue;
-    filas[k] = [...m].sort((a, b) => b[1] - a[1]).slice(0, MAX_DETALLE).map(([etiqueta, valor]) => ({ etiqueta, valor: redondeo(valor) }));
+export type Detalle = Record<string, { que: string; filas: FilaDetalle[] }>;
+
+/** Valores acumulados por camino (ej. vendedor → cliente → producto). */
+export type Arbol = Map<string, { valor: number; hijos: Arbol }>;
+
+/** Filas del detalle por nivel. */
+export const MAX_DETALLE = 30;
+
+/** Suma `v` en cada nivel del camino. */
+export function agregarRuta(arbol: Arbol, ruta: string[], v: number) {
+  let nivel = arbol;
+  for (const k of ruta) {
+    let n = nivel.get(k);
+    if (!n) {
+      n = { valor: 0, hijos: new Map() };
+      nivel.set(k, n);
+    }
+    n.valor += v;
+    nivel = n.hijos;
   }
-  return { que, filas };
 }
 
-/** Suma `v` en `porBarra[barra][nombre]`. */
-export function sumarDetalle(porBarra: Map<string, Map<string, number>>, barra: string, nombre: string, v: number) {
-  const m = porBarra.get(barra) ?? new Map<string, number>();
-  m.set(nombre, (m.get(nombre) || 0) + v);
-  porBarra.set(barra, m);
+/**
+ * Detalle de las barras de `datos` según `arbol`: el nivel i del árbol (desde
+ * los hijos de la barra) se lista como `niveles[i].que`, con sus
+ * `niveles[i].max` mayores. La barra "Otros…", que no está en el árbol,
+ * lista lo que agrupa (como `otros`) y de ahí sigue igual que las demás.
+ */
+export function detalleDe(
+  datos: Record<string, string | number | null>[],
+  arbol: Arbol,
+  niveles: { que: string; max: number }[],
+  otros?: string,
+  redondeo: (n: number) => number = r2,
+): Detalle {
+  const out: Detalle = {};
+  const nivel = (i: number) => (i < 0 ? { que: otros!, max: MAX_DETALLE } : niveles[i]);
+  const bajar = (ruta: string[], hijos: Arbol, i: number) => {
+    if (i >= niveles.length || !hijos.size) return;
+    const top = [...hijos].sort((a, b) => b[1].valor - a[1].valor).slice(0, nivel(i).max);
+    out[ruta.join(SEP)] = { que: nivel(i).que, filas: top.map(([etiqueta, n]) => ({ etiqueta, valor: redondeo(n.valor) })) };
+    for (const [etiqueta, n] of top) bajar([...ruta, etiqueta], n.hijos, i + 1);
+  };
+  const conBarra = new Set(datos.map((d) => String(d.etiqueta)));
+  for (const d of datos) {
+    const k = String(d.etiqueta);
+    const n = arbol.get(k);
+    if (n) bajar([k], n.hijos, 0);
+    else if (otros) bajar([k], new Map([...arbol].filter(([e]) => !conBarra.has(e))), -1);
+  }
+  return out;
 }
 
 export type DatosArea = {

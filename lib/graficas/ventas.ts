@@ -4,8 +4,8 @@ import { cachear, catalogo, dominioVentas, hoyCaracas, idsPorCodigo } from "@/li
 import { CORTE_ODOO, SQL_SIN_INTERCOMPANIA, SQL_SIN_VENDEDOR_LOCAL, rangoSmartbit } from "@/lib/smartbit";
 import { contarDiasUtiles } from "@/lib/feriados";
 import {
-  COLOR_SEDE, GRIS, NOMBRE_SEDE, PALETA, bloque, detalleDe, etiquetaMes, finDeMes, mesesHasta, r2, sumarDetalle, topConOtros, variacion,
-  type DatosArea, type Grafica, type Kpi,
+  COLOR_SEDE, GRIS, NOMBRE_SEDE, PALETA, agregarRuta, bloque, detalleDe, etiquetaMes, finDeMes, mesesHasta, r2, topConOtros, variacion,
+  MAX_DETALLE, type Arbol, type DatosArea, type Grafica, type Kpi,
 } from "./tipos";
 
 /**
@@ -23,12 +23,12 @@ import {
 const MESES_SERIE = 24;
 
 /**
- * Fuera del ranking de vendedores, no del total: "Asistente de Ventas" y
- * Dameris no son vendedores (mismo criterio que el Agente IA) y Bladimir
+ * Fuera del ranking de vendedores, no del total: "Asistente de Ventas",
+ * Dameris y Hercilio Camacho no son vendedores (mismo criterio que el Agente IA) y Bladimir
  * Vasquez dejó de vender (VENDEDORES_RETIRADOS de lib/vendedores/retirados.ts,
  * que la rama Dario todavía no tiene). Por nombre, porque Smartbit no trae id.
  */
-const NO_VENDEDORES = ["asistente", "dameris", "bladimir vasquez"];
+const NO_VENDEDORES = ["asistente", "dameris", "hercilio", "bladimir vasquez"];
 const noEsVendedor = (nombre: string) => {
   const n = nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   return NO_VENDEDORES.some((x) => n.includes(x));
@@ -377,12 +377,13 @@ export async function graficasVentas(cids: number[], sede: string, mes: string):
     const producto = new Map<string, number>();
     const cliente = new Map<string, number>();
     const vendedor = new Map<string, number>();
-    // Lo que compone cada barra, para el clic: productos de cada marca, categoría, cliente y vendedor; clientes de cada producto.
-    const prodMarca = new Map<string, Map<string, number>>();
-    const prodCategoria = new Map<string, Map<string, number>>();
-    const prodCliente = new Map<string, Map<string, number>>();
-    const prodVendedor = new Map<string, Map<string, number>>();
-    const clienteProducto = new Map<string, Map<string, number>>();
+    // Lo que compone cada barra, para el clic: marca/categoría/cliente → productos,
+    // vendedor → clientes → productos, producto → clientes.
+    const arbolMarca: Arbol = new Map();
+    const arbolCategoria: Arbol = new Map();
+    const arbolCliente: Arbol = new Map();
+    const arbolVendedor: Arbol = new Map();
+    const arbolProducto: Arbol = new Map();
     const compradores = new Set<string>();
     let documentos = 0;
     const sumar = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) || 0) + v);
@@ -396,11 +397,11 @@ export async function graficasVentas(cids: number[], sede: string, mes: string):
         sumar(marca, m, l.venta);
         sumar(categoria, k, l.venta);
         sumar(producto, p, l.venta);
-        sumarDetalle(prodMarca, m, p, l.venta);
-        sumarDetalle(prodCategoria, k, p, l.venta);
-        sumarDetalle(prodCliente, l.cliente, p, l.venta);
-        sumarDetalle(prodVendedor, l.vendedor, p, l.venta);
-        sumarDetalle(clienteProducto, p, l.cliente, l.venta);
+        agregarRuta(arbolMarca, [m, p], l.venta);
+        agregarRuta(arbolCategoria, [k, p], l.venta);
+        agregarRuta(arbolCliente, [l.cliente, p], l.venta);
+        if (!noEsVendedor(l.vendedor)) agregarRuta(arbolVendedor, [l.vendedor, l.cliente, p], l.venta);
+        agregarRuta(arbolProducto, [p, l.cliente], l.venta);
       }
       for (const x of d.clientes) sumar(cliente, x.nombre, x.venta);
       // El ranking es de vendedores: sin "Asistente de Ventas", Dameris ni los retirados (su venta sigue en el total).
@@ -417,20 +418,23 @@ export async function graficasVentas(cids: number[], sede: string, mes: string):
     }
 
     const aFilas = (m: Map<string, number>) => [...m].map(([etiqueta, valor]) => ({ etiqueta, valor }));
+    const productos = [{ que: "Productos", max: MAX_DETALLE }];
     const barra = (
       id: string, titulo: string, filas: { etiqueta: string; valor: number }[], color: string,
-      que: string, porBarra: Map<string, Map<string, number>>, descripcion?: string,
+      arbol: Arbol, niveles: { que: string; max: number }[], otros?: string, descripcion?: string,
     ): Grafica => ({
       id, titulo, descripcion, tipo: "barras_h", formato: "usd", datos: filas,
       series: [{ clave: "valor", etiqueta: "Venta", color }],
-      detalle: detalleDe(que, filas, porBarra),
+      detalle: detalleDe(filas, arbol, niveles, otros),
     });
-    graficas.push(barra("venta_marca", "Venta por marca", topConOtros(aFilas(marca), 12, "Otras marcas"), PALETA[0], "Productos", prodMarca, `${etiquetaMes(mes)}, sin IVA.`));
-    graficas.push(barra("venta_categoria", "Venta por categoría", topConOtros(aFilas(categoria), 12, "Otras categorías"), PALETA[2], "Productos", prodCategoria));
-    graficas.push(barra("venta_clientes", "Top 10 clientes", topConOtros(aFilas(cliente), 10, "Resto de clientes").slice(0, 10), PALETA[6], "Productos", prodCliente));
-    graficas.push(barra("venta_vendedor", "Venta por vendedor", topConOtros(aFilas(vendedor), 15, "Otros vendedores"), PALETA[1], "Productos", prodVendedor,
-      "Sin Asistente de Ventas, Dameris ni vendedores retirados."));
-    graficas.push({ ...barra("venta_productos", "Top 15 productos", topConOtros(aFilas(producto), 15).slice(0, 15), PALETA[0], "Clientes", clienteProducto), ancho: 2 });
+    graficas.push(barra("venta_marca", "Venta por marca", topConOtros(aFilas(marca), 12, "Otras marcas"), PALETA[0], arbolMarca, productos, "Marcas", `${etiquetaMes(mes)}, sin IVA.`));
+    graficas.push(barra("venta_categoria", "Venta por categoría", topConOtros(aFilas(categoria), 12, "Otras categorías"), PALETA[2], arbolCategoria, productos, "Categorías"));
+    graficas.push(barra("venta_clientes", "Top 10 clientes", topConOtros(aFilas(cliente), 10, "Resto de clientes").slice(0, 10), PALETA[6], arbolCliente, productos));
+    // Vendedor → sus clientes → lo que le compró cada uno (menos filas por nivel: son dos niveles).
+    graficas.push(barra("venta_vendedor", "Venta por vendedor", topConOtros(aFilas(vendedor), 15, "Otros vendedores"), PALETA[1], arbolVendedor,
+      [{ que: "Clientes", max: 25 }, { que: "Productos", max: 15 }], "Vendedores",
+      "Sin Asistente de Ventas, Dameris, Hercilio ni vendedores retirados."));
+    graficas.push({ ...barra("venta_productos", "Top 15 productos", topConOtros(aFilas(producto), 15).slice(0, 15), PALETA[0], arbolProducto, [{ que: "Clientes", max: MAX_DETALLE }]), ancho: 2 });
   }
 
   return { area: "ventas", sede, mes, generado: new Date().toISOString(), kpis, graficas, avisos };
