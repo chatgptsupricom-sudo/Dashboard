@@ -85,7 +85,8 @@ function useCuenta(valor: number | null, ms = 900): number | null {
     const de = desde.current;
     let raf = 0;
     const paso = (t: number) => {
-      const p = Math.min(1, (t - inicio) / ms);
+      // El primer cuadro puede traer una hora anterior a `inicio`: sin el max(0) el número arrancaba negativo.
+      const p = Math.min(1, Math.max(0, (t - inicio) / ms));
       const e = 1 - Math.pow(1 - p, 3);
       setV(de + (valor - de) * e);
       if (p < 1) raf = requestAnimationFrame(paso);
