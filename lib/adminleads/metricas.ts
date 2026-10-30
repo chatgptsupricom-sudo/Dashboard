@@ -118,7 +118,7 @@ export async function calcularMetricas(payload: any, sp: URLSearchParams) {
        IFNULL(SUM(CASE WHEN h.panel_motivo = 'YA_ES_CLIENTE' THEN h.panel_monto ELSE 0 END), 0) AS monto_ya_cliente
      FROM leads_historicos h
      LEFT JOIN sellers sx ON sx.id = h.seller_id
-     WHERE h.cerrado_en_panel = 1 AND h.panel_status = 'CERRADO'
+     WHERE h.cerrado_en_panel = 1 AND h.panel_status = 'CERRADO' AND h.lead_id IS NULL
        ${conFechas ? `AND ${entre("h.panel_fecha_cierre")}` : ""}
        ${sede ? `AND ${sedeExcel} = ?` : `AND ${sedeExcel} <> ${PANAMA}`}
        ${sellerId ? "AND h.seller_id = ?" : ""}

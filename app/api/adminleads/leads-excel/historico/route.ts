@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
     : null;
   if (userCids === 7) sede = 7;
   else if ((userCids === 9 || userCids === 10) && sede === 7) sede = null;
-  const donde = sede ? "company_id = ?" : "company_id <> 7";
+  // Los que pasaron al panel ya cuentan como leads del panel.
+  const donde = `lead_id IS NULL AND ${sede ? "company_id = ?" : "company_id <> 7"}`;
 
   try {
     await asegurarTablas();
