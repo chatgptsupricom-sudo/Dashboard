@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { AREAS, NOMBRE_AREA, type Area, type DatosArea, type Kpi } from "@/lib/graficas/tipos";
 import { Grafica } from "./Grafica";
-import { TarjetaGrafica } from "./TarjetaGrafica";
+import { TarjetaGrafica, type PedirDetalle } from "./TarjetaGrafica";
 import { fmt, fmtDelta } from "./formato";
 
 type Estado = { estado: "cargando" | "listo" | "error"; datos?: DatosArea; error?: string };
@@ -184,7 +184,7 @@ function Avisos({ avisos }: { avisos: string[] }) {
   );
 }
 
-function VistaArea({ estado, contexto, reintentar }: { estado?: Estado; contexto: string; reintentar: () => void }) {
+function VistaArea({ estado, contexto, reintentar, pedirDetalle }: { estado?: Estado; contexto: string; reintentar: () => void; pedirDetalle: PedirDetalle }) {
   if (!estado || estado.estado === "cargando") {
     return (
       <div className="space-y-4">
@@ -210,8 +210,11 @@ function VistaArea({ estado, contexto, reintentar }: { estado?: Estado; contexto
         {d.kpis.map((k) => <TarjetaKpi key={k.id} kpi={k} />)}
       </div>
       <Avisos avisos={d.avisos} />
+      <p className="text-[11px] text-slate-400">
+        Datos de las {new Date(d.generado).toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" })}. Se guardan 10 minutos; «Recargar» (R) trae lo último.
+      </p>
       <div className="grid gap-4 lg:grid-cols-2">
-        {d.graficas.map((g) => <TarjetaGrafica key={g.id} grafica={g} contexto={contexto} />)}
+        {d.graficas.map((g) => <TarjetaGrafica key={`${g.id}-${contexto}`} grafica={g} contexto={contexto} pedirDetalle={pedirDetalle} />)}
       </div>
     </div>
   );
@@ -308,17 +311,25 @@ export function CentroGraficas() {
   const raiz = useRef<HTMLDivElement>(null);
   const meses = useMemo(opcionesMes, []);
 
-  const cargar = useCallback((areas: readonly Area[], señal?: AbortSignal) => {
+  // "Recargar" (botón o R) pide al servidor que no use lo guardado de los últimos 10 min.
+  const refrescar = useRef(false);
+  // El reintento de un área tiene su propio controlador: al cambiar de sede o mes también se cancela.
+  const reintento = useRef<AbortController | null>(null);
+  const cargar = useCallback((areas: readonly Area[], señal: AbortSignal) => {
+    const extra = refrescar.current ? "&refrescar=1" : "";
+    refrescar.current = false;
     setEstados((prev) => ({ ...prev, ...Object.fromEntries(areas.map((a) => [a, { estado: "cargando" }])) }));
     for (const a of areas) {
-      fetch(`/api/superadmin/graficas/${a}?sede=${sede}&mes=${mes}`, { signal: señal, cache: "no-store" })
+      fetch(`/api/superadmin/graficas/${a}?sede=${sede}&mes=${mes}${extra}`, { signal: señal, cache: "no-store" })
         .then(async (r) => {
           const j = await r.json().catch(() => ({}));
+          if (señal.aborted) return;
           if (!r.ok || !j.success) throw new Error(j.error || `Error ${r.status}`);
           setEstados((prev) => ({ ...prev, [a]: { estado: "listo", datos: j.data } }));
         })
         .catch((e) => {
-          if (e?.name === "AbortError") return;
+          // Abortado (cambió la sede o el mes): la respuesta ya no corresponde a lo que se ve.
+          if (señal.aborted || e?.name === "AbortError") return;
           setEstados((prev) => ({ ...prev, [a]: { estado: "error", error: e?.message || "No se pudieron leer los datos." } }));
         });
     }
@@ -327,8 +338,32 @@ export function CentroGraficas() {
   useEffect(() => {
     const ctrl = new AbortController();
     cargar(AREAS, ctrl.signal);
-    return () => ctrl.abort();
+    return () => {
+      ctrl.abort();
+      reintento.current?.abort();
+    };
   }, [cargar, vuelta]);
+
+  const reintentar = (a: Area) => {
+    reintento.current?.abort();
+    reintento.current = new AbortController();
+    cargar([a], reintento.current.signal);
+  };
+
+  const recargar = () => {
+    refrescar.current = true;
+    setVuelta((v) => v + 1);
+  };
+
+  // Un nivel del detalle de una barra (lo arma el servidor; ver nodoDetalle en lib/graficas/tipos.ts).
+  const pedirDetalle = useCallback((area: Area): PedirDetalle => async (grafica, alterna, ruta) => {
+    const q = new URLSearchParams({ sede, mes, grafica, ruta: JSON.stringify(ruta) });
+    if (alterna) q.set("medida", "alterna");
+    const r = await fetch(`/api/superadmin/graficas/${area}?${q}`, { cache: "no-store" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || `Error ${r.status}`);
+    return j.data;
+  }, [sede, mes]);
 
   // Reloj del encabezado.
   useEffect(() => {
@@ -340,7 +375,12 @@ export function CentroGraficas() {
   useEffect(() => {
     if (!presentando) return;
     const t = setInterval(() => setPestana((p) => PESTANAS[(PESTANAS.indexOf(p) + 1) % PESTANAS.length]), ROTACION_MS);
-    return () => clearInterval(t);
+    // En presentación (una TV todo el día) los datos se vuelven a pedir cada 15 min.
+    const datos = setInterval(() => setVuelta((v) => v + 1), 15 * 60_000);
+    return () => {
+      clearInterval(t);
+      clearInterval(datos);
+    };
   }, [presentando]);
 
   useEffect(() => {
@@ -354,9 +394,10 @@ export function CentroGraficas() {
     const tecla = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (e.ctrlKey || e.metaKey || e.altKey || ["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName) || t.isContentEditable) return;
+      if (document.querySelector('[role="dialog"]')) return;
       const n = Number(e.key);
       if (n >= 1 && n <= PESTANAS.length) setPestana(PESTANAS[n - 1]);
-      else if (e.key.toLowerCase() === "r") setVuelta((v) => v + 1);
+      else if (e.key.toLowerCase() === "r") recargar();
       else if (e.key.toLowerCase() === "p") setPresentando((p) => !p);
     };
     window.addEventListener("keydown", tecla);
@@ -423,7 +464,7 @@ export function CentroGraficas() {
             </select>
             <button
               type="button"
-              onClick={() => setVuelta((v) => v + 1)}
+              onClick={recargar}
               title="Recargar (R)"
               className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
             >
@@ -450,7 +491,7 @@ export function CentroGraficas() {
         </div>
 
         {/* Pestañas */}
-        <nav className="relative mt-5 -mb-1 flex gap-1 overflow-x-auto" aria-label="Áreas">
+        <nav className="relative mt-5 -mb-1 flex gap-1 overflow-x-auto" aria-label="Áreas" role="tablist">
           {PESTANAS.map((p, i) => {
             const Icono = ICONO[p];
             const e = p === "resumen" ? undefined : estados[p];
@@ -459,6 +500,8 @@ export function CentroGraficas() {
               <button
                 key={p}
                 type="button"
+                role="tab"
+                aria-selected={activa}
                 onClick={() => setPestana(p)}
                 title={`${NOMBRE_PESTANA[p]} (${i + 1})`}
                 className={`relative inline-flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition ${activa ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:bg-slate-100"}`}
@@ -481,7 +524,7 @@ export function CentroGraficas() {
       {pestana === "resumen" ? (
         <VistaResumen estados={estados} ir={setPestana} />
       ) : (
-        <VistaArea estado={estados[pestana]} contexto={`${pestana}-${contexto}`} reintentar={() => cargar([pestana])} />
+        <VistaArea estado={estados[pestana]} contexto={`${pestana}-${contexto}`} reintentar={() => reintentar(pestana)} pedirDetalle={pedirDetalle(pestana)} />
       )}
     </div>
   );

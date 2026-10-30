@@ -35,12 +35,7 @@ export async function graficasRma(cids: number[], sede: string, mes: string): Pr
   const hasta = `${finDeMes(mes)} 23:59:59`;
   const mesAnterior = mesesHasta(mes, 2)[0];
 
-  const [activos, nuevos, resultados, salida, marcas, plazos] = await Promise.all([
-    bloque(avisos, "los casos activos", async () =>
-      (await query(
-        `SELECT c.status, c.company_id, COUNT(*) AS n FROM rma_cases c
-          WHERE c.despachado_at IS NULL AND ${filtro} GROUP BY c.status, c.company_id`, pSede,
-      )).rows),
+  const [nuevos, resultados, salida, marcas, plazos] = await Promise.all([
     bloque(avisos, "los casos nuevos", async () =>
       (await query(
         `SELECT DATE_FORMAT(c.created_at, '%Y-%m') AS mes, c.company_id, COUNT(*) AS n FROM rma_cases c
@@ -70,26 +65,29 @@ export async function graficasRma(cids: number[], sede: string, mes: string): Pr
       todas ? casosConPlazo() : (await Promise.all(cids.map((c) => casosConPlazo({ companyId: c })))).flat()),
   ]);
 
-  if (activos) {
-    const total = activos.reduce((s: number, r: any) => s + Number(r.n), 0);
-    const enTaller = activos.filter((r: any) => !RESUELTOS.includes(r.status) && r.status !== "por_llegar")
-      .reduce((s: number, r: any) => s + Number(r.n), 0);
-    kpis.push({ id: "activos", etiqueta: "Casos sin despachar", valor: total, formato: "num", nota: `${enTaller} en el taller` });
-    const estados = [...new Set(activos.map((r: any) => String(r.status)))];
-    const sedesFila = todas ? [...cids, 0] : cids;
+  // Con "todas" también salen los casos sin sede, como serie aparte.
+  const sedesFila = todas ? [...cids, 0] : cids;
+  const deSede = (companyId: unknown, c: number) => (c === 0 ? !cids.includes(Number(companyId)) : Number(companyId) === c);
+  const seriesSede = sedesFila.map((c) => ({ clave: String(c), etiqueta: NOMBRE_SEDE[c] || "Sin sede", color: COLOR_SEDE[c] || "#a3a29c" }));
+
+  // Los activos salen de casosConPlazo, igual que el semáforo: sin los resueltos
+  // que llevan más de 30 días sin despacho ni los tickets del portal que nunca llegaron.
+  if (plazos) {
+    const enTaller = plazos.filter((c) => c.plazo.etapa === "diagnostico" || c.plazo.etapa === "reparacion").length;
+    kpis.push({ id: "activos", etiqueta: "Casos en curso", valor: plazos.length, formato: "num", nota: `hoy · ${enTaller} en el taller` });
+    const estados = [...new Set(plazos.map((c) => String(c.status)))];
     graficas.push({
       id: "rma_estados",
-      titulo: "Casos activos por estado",
-      descripcion: "Equipos que todavía no han salido.",
+      titulo: "Casos en curso por estado",
+      descripcion: "Hoy, sin importar el mes elegido: equipos que todavía no han salido.",
       tipo: "apiladas_h",
       formato: "num",
       datos: estados.map((st): Record<string, string | number> => ({
         etiqueta: etiquetaEstado[st] || st,
-        ...Object.fromEntries(sedesFila.map((c) => [String(c), activos
-          .filter((r: any) => r.status === st && (c === 0 ? !cids.includes(Number(r.company_id)) : Number(r.company_id) === c))
-          .reduce((s: number, r: any) => s + Number(r.n), 0)])),
+        ...Object.fromEntries(sedesFila.map((c) => [String(c), plazos.filter((p) => p.status === st && deSede(p.company_id, c)).length])),
       })).sort((a, b) => sedesFila.reduce((s, c) => s + Number(b[String(c)]), 0) - sedesFila.reduce((s, c) => s + Number(a[String(c)]), 0)),
-      series: sedesFila.map((c) => ({ clave: String(c), etiqueta: NOMBRE_SEDE[c] || "Sin sede", color: COLOR_SEDE[c] || "#a3a29c" })),
+      series: seriesSede,
+      vacio: "No hay casos en curso.",
     });
   }
 
@@ -103,9 +101,9 @@ export async function graficasRma(cids: number[], sede: string, mes: string): Pr
       formato: "num",
       datos: meses.map((m) => ({
         etiqueta: etiquetaMes(m),
-        ...Object.fromEntries(cids.map((c) => [String(c), nuevos.filter((r: any) => r.mes === m && Number(r.company_id) === c).reduce((s: number, r: any) => s + Number(r.n), 0)])),
+        ...Object.fromEntries(sedesFila.map((c) => [String(c), nuevos.filter((r: any) => r.mes === m && deSede(r.company_id, c)).reduce((s: number, r: any) => s + Number(r.n), 0)])),
       })),
-      series: cids.map((c) => ({ clave: String(c), etiqueta: NOMBRE_SEDE[c], color: COLOR_SEDE[c] })),
+      series: seriesSede,
     });
   }
 
@@ -144,11 +142,11 @@ export async function graficasRma(cids: number[], sede: string, mes: string): Pr
 
   if (plazos) {
     const vencidos = plazos.filter((c) => c.plazo.nivel === "vencido").length;
-    kpis.unshift({ id: "vencidos", etiqueta: "Fuera de plazo", valor: vencidos, formato: "num", mejor: "baja", nota: `${plazos.filter((c) => c.plazo.nivel === "aviso").length} por vencer` });
+    kpis.unshift({ id: "vencidos", etiqueta: "Fuera de plazo", valor: vencidos, formato: "num", mejor: "baja", nota: `hoy · ${plazos.filter((c) => c.plazo.nivel === "aviso").length} por vencer` });
     graficas.unshift({
       id: "rma_semaforo",
       titulo: "Semáforo de plazos",
-      descripcion: "Diagnóstico en 48 h hábiles y salida antes del 7.º día hábil.",
+      descripcion: "Hoy, sin importar el mes elegido. Diagnóstico en 48 h hábiles y salida antes del 7.º día hábil.",
       tipo: "apiladas_h",
       formato: "num",
       datos: ETAPAS.map((e) => {
@@ -178,6 +176,10 @@ export async function graficasRma(cids: number[], sede: string, mes: string): Pr
       datos: marcas.map((r: any) => ({ etiqueta: String(r.marca), valor: Number(r.n) })),
       series: [{ clave: "valor", etiqueta: "Casos", color: PALETA[6] }],
     });
+  }
+
+  if (plazos && !plazos.length && nuevos && !nuevos.length) {
+    avisos.push("No hay casos de RMA registrados en el panel para esta sede en los últimos 12 meses.");
   }
 
   return { area: "rma", sede, mes, generado: new Date().toISOString(), kpis, graficas, avisos };

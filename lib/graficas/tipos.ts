@@ -59,10 +59,23 @@ export type Grafica = {
   colorPorFila?: string[];
   /** Texto cuando no hay datos. */
   vacio?: string;
-  /** Al hacer clic en una barra: lo que la compone (ej. los productos de esa marca). */
+  /** La tabla no lleva fila de Total (ej. un embudo: cada fase incluye a la siguiente). */
+  sinTotal?: boolean;
+  /**
+   * Al hacer clic en una barra: lo que la compone (ej. los productos de esa
+   * marca). Se queda en el servidor; la respuesta solo lleva `conDetalle`.
+   */
   detalle?: Detalle;
+  /** En la respuesta: las barras que tienen detalle (se pide al hacer clic, ver `nodoDetalle`). */
+  conDetalle?: string[];
   /** La misma gráfica en otra medida (ej. unidades): la tarjeta muestra un selector. */
-  alterna?: { etiqueta: string; formato: Formato; datos: Record<string, string | number | null>[]; detalle?: Detalle };
+  alterna?: {
+    etiqueta: string;
+    formato: Formato;
+    datos: Record<string, string | number | null>[];
+    detalle?: Detalle;
+    conDetalle?: string[];
+  };
   /** Nombre de la medida principal en ese selector (default "Monto"). */
   etiquetaPrincipal?: string;
 };
@@ -129,6 +142,35 @@ export function detalleDe(
     else if (otros) bajar([k], new Map([...arbol].filter(([e]) => !conBarra.has(e))), -1);
   }
   return out;
+}
+
+/** Un nivel del detalle, como lo pide la pantalla: sus filas y cuáles se pueden seguir abriendo. */
+export type NodoDetalle = { que: string; filas: FilaDetalle[]; conDetalle: string[] };
+
+const barrasConDetalle = (det?: Detalle) => (det ? Object.keys(det).filter((k) => !k.includes(SEP)) : undefined);
+
+/**
+ * El área sin los árboles de detalle (en Ventas eran ~500 KB que casi nadie
+ * abre): cada gráfica lleva solo qué barras se pueden abrir.
+ */
+export function liviano(d: DatosArea): DatosArea {
+  return {
+    ...d,
+    graficas: d.graficas.map(({ detalle, alterna, ...g }) => ({
+      ...g,
+      conDetalle: barrasConDetalle(detalle),
+      alterna: alterna && { etiqueta: alterna.etiqueta, formato: alterna.formato, datos: alterna.datos, conDetalle: barrasConDetalle(alterna.detalle) },
+    })),
+  };
+}
+
+/** El nivel `ruta` del detalle de una gráfica (de su medida principal o de la `alterna`). */
+export function nodoDetalle(d: DatosArea, graficaId: string, alterna: boolean, ruta: string[]): NodoDetalle | null {
+  const g = d.graficas.find((x) => x.id === graficaId);
+  const det = alterna ? g?.alterna?.detalle : g?.detalle;
+  const nodo = det?.[ruta.join(SEP)];
+  if (!det || !nodo) return null;
+  return { ...nodo, conDetalle: nodo.filas.filter((f) => det[[...ruta, f.etiqueta].join(SEP)]).map((f) => f.etiqueta) };
 }
 
 export type DatosArea = {

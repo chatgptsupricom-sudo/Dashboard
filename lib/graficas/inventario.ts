@@ -1,6 +1,4 @@
-import { callOdooRPC } from "@/lib/odoo";
-import { almacenSede, cachear, catalogo, costos, diasEntre, hoyCaracas, transito } from "@/lib/compras/datosOdoo";
-import { menorRotacion } from "@/lib/compras/reportes";
+import { almacenSede, cachear, catalogo, costos, diaCaracas, diasEntre, disponible, hoyCaracas, leerTodo, transito, ultimaVenta } from "@/lib/compras/datosOdoo";
 import { FIN_CARGA_INICIAL, TRAMOS, tramoDe, type Tramo } from "@/lib/gerente-marca/tipos";
 import {
   COLOR_SEDE, ESTADO, NOMBRE_SEDE, PALETA, RAMPA, agregarRuta, bloque, detalleDe, MAX_DETALLE, r2, topConOtros,
@@ -19,31 +17,35 @@ import {
 type Medida = { v: number; u: number };
 const vacia = (): Medida => ({ v: 0, u: 0 });
 
-/** Valor al costo y unidades por tramo de antigüedad de una sede. */
+/**
+ * Valor al costo y unidades por tramo de antigüedad de una sede: cada quant del
+ * almacén con su `in_date` en día de Caracas, igual que la Antigüedad del
+ * Gerente de Marca (lib/gerente-marca/datos.ts).
+ */
 function antiguedad(cid: number): Promise<Record<Tramo, Medida>> {
   return cachear(`graf|antig|${cid}|${hoyCaracas()}`, async () => {
     const [almacen, costo] = await Promise.all([almacenSede(cid), costos(cid)]);
-    const grupos = await callOdooRPC<any[]>(
-      "stock.quant", "read_group",
-      [[["location_id", "in", almacen.ubicaciones], ["company_id", "=", cid], ["quantity", ">", 0]], ["quantity:sum"], ["product_id", "in_date:week"]],
-      { lazy: false },
+    const quants = await leerTodo(
+      "stock.quant",
+      [["location_id", "in", almacen.ubicaciones], ["company_id", "=", cid], ["quantity", ">", 0]],
+      ["product_id", "quantity", "in_date"],
     );
-    if (!Array.isArray(grupos)) throw new Error("Odoo no respondió la antigüedad del stock");
     const hoy = hoyCaracas();
     const out = Object.fromEntries(TRAMOS.map((t) => [t.id, vacia()])) as Record<Tramo, Medida>;
-    for (const g of grupos) {
-      const id = g.product_id?.[0];
-      const desde = String(g.__range?.["in_date:week"]?.from || "").slice(0, 10);
-      if (!id || !desde) continue;
-      const q = Number(g.quantity) || 0;
-      const t = out[tramoDe(diasEntre(desde, hoy), desde < FIN_CARGA_INICIAL)];
-      t.u += q;
-      t.v += q * (costo.get(id) || 0);
+    for (const q of quants) {
+      const id = q.product_id?.[0];
+      const unidades = Number(q.quantity) || 0;
+      if (!id || unidades <= 0 || !q.in_date) continue;
+      const dias = Math.max(0, diasEntre(diaCaracas(q.in_date), hoy));
+      const t = out[tramoDe(dias, String(q.in_date).slice(0, 10) < FIN_CARGA_INICIAL)];
+      t.u += unidades;
+      t.v += unidades * (costo.get(id) || 0);
     }
     return out;
   });
 }
 
+/** Tramos de días desde la última venta del producto en la sede (todo el stock disponible). */
 const BUCKETS_DORMIDO = [
   { id: "0-30", etiqueta: "Vendido en 30 días", max: 30 },
   { id: "31-60", etiqueta: "31-60 días", max: 60 },
@@ -51,6 +53,7 @@ const BUCKETS_DORMIDO = [
   { id: "91-180", etiqueta: "91-180 días", max: 180 },
   { id: "181-365", etiqueta: "181-365 días", max: 365 },
   { id: "365+", etiqueta: "Más de un año", max: Infinity },
+  { id: "nuevo", etiqueta: "Sin venta, llegó hace ≤30 días", max: -1 },
   { id: "nunca", etiqueta: "Nunca vendido", max: -1 },
 ];
 
@@ -110,8 +113,9 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
     const total = vacia();
     const reservado = vacia();
     const llegando = vacia();
-    let skus = 0;
-    let sinCosto = 0;
+    // Un producto en varias sedes cuenta una vez.
+    const skus = new Set<number>();
+    const sinCosto = new Set<number>();
     const porMarca = new Map<string, Record<number, Medida>>();
     const porCategoria = new Map<string, Medida>();
     const porProducto = new Map<string, Medida>();
@@ -127,13 +131,13 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
         if (s.fisico <= 0) continue;
         const p = cat.get(id);
         const c = costo.get(id) || 0;
-        if (!c) sinCosto++;
+        if (!c) sinCosto.add(id);
         const v = s.fisico * c;
         total.v += v;
         total.u += s.fisico;
         reservado.v += s.reservado * c;
         reservado.u += s.reservado;
-        skus++;
+        skus.add(id);
         s0.disponible.v += (s.fisico - s.reservado) * c;
         s0.disponible.u += s.fisico - s.reservado;
         s0.reservado.v += s.reservado * c;
@@ -165,11 +169,12 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
 
     const almacenes = porSede.map((x) => nombre[x.cid]).join(", ");
     kpis.push({ id: "valor", etiqueta: "Inventario al costo", valor: r2(total.v), formato: "usd", nota: "hoy" });
-    kpis.push({ id: "unidades", etiqueta: "Unidades en almacén", valor: Math.round(total.u), formato: "num" });
-    kpis.push({ id: "skus", etiqueta: "Productos con stock", valor: skus, formato: "num" });
+    kpis.push({ id: "unidades", etiqueta: "Unidades en almacén", valor: Math.round(total.u), formato: "num", nota: "hoy" });
+    kpis.push({ id: "skus", etiqueta: "Productos con stock", valor: skus.size, formato: "num", nota: "hoy" });
     kpis.push({ id: "reservado", etiqueta: "Reservado para pedidos", valor: r2(reservado.v), formato: "usd", nota: `${Math.round(reservado.u).toLocaleString("en-US")} unidades` });
     kpis.push({ id: "llegando", etiqueta: "Por llegar (al costo)", valor: r2(llegando.v), formato: "usd", nota: `${Math.round(llegando.u).toLocaleString("en-US")} unidades` });
-    if (sinCosto) avisos.push(`${sinCosto} productos con stock no tienen costo en Odoo: cuentan en unidades pero no en monto.`);
+    if (sinCosto.size) avisos.push(`${sinCosto.size} productos con stock no tienen costo en Odoo: cuentan en unidades pero no en monto.`);
+    avisos.push("El inventario es el de hoy: no cambia con el mes elegido.");
 
     const filaSede = (k: "v" | "u") => cids.map((c) => ({
       etiqueta: nombre[c],
@@ -229,7 +234,10 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
 
   const [antig, dormido] = await Promise.all([
     bloque(avisos, "la antigüedad del inventario", () => Promise.all(cids.map(antiguedad))),
-    bloque(avisos, "la rotación", () => Promise.all(cids.map(menorRotacion))),
+    bloque(avisos, "la última venta de cada producto", () => Promise.all(cids.map(async (cid) => {
+      const [almacen, costo, ultima] = await Promise.all([almacenSede(cid), costos(cid), ultimaVenta(cid)]);
+      return { almacen, costo, ultima };
+    }))),
   ]);
 
   if (antig) {
@@ -250,26 +258,42 @@ export async function graficasInventario(cids: number[], sede: string, mes: stri
   }
 
   if (dormido) {
+    const hoy = hoyCaracas();
+    const cat = base?.cat ?? (await catalogo());
     const valores = Object.fromEntries(BUCKETS_DORMIDO.map((b) => [b.id, vacia()]));
-    for (const filas of dormido) {
-      for (const f of filas) {
-        const b = f.days_inactive == null ? "nunca" : BUCKETS_DORMIDO.find((x) => x.max >= 0 && f.days_inactive! <= x.max)!.id;
-        valores[b].v += f.stockDisponible * f.costo;
-        valores[b].u += f.stockDisponible;
+    const prodDormido = nuevosProductos();
+    for (const { almacen, costo, ultima } of dormido) {
+      for (const [id, s] of almacen.stock) {
+        const u = disponible(s);
+        if (u <= 0) continue;
+        const venta = ultima.get(id);
+        const nuevo = !venta && !!s.enStockDesde && diasEntre(s.enStockDesde, hoy) <= 30;
+        const b = venta
+          ? BUCKETS_DORMIDO.find((x) => x.max >= 0 && diasEntre(venta, hoy) <= x.max)!
+          : BUCKETS_DORMIDO.find((x) => x.id === (nuevo ? "nuevo" : "nunca"))!;
+        const v = u * (costo.get(id) || 0);
+        valores[b.id].v += v;
+        valores[b.id].u += u;
+        const p = cat.get(id);
+        sumarProducto(prodDormido, b.etiqueta, p ? `${p.codigo} · ${p.nombre}` : `Producto ${id}`, v, u);
       }
     }
     const dormidoValor = valores["181-365"].v + valores["365+"].v + valores.nunca.v;
-    kpis.push({ id: "dormido", etiqueta: "Capital dormido", valor: r2(dormidoValor), formato: "usd", mejor: "baja", nota: "sin venderse en 6 meses o nunca" });
+    kpis.push({ id: "dormido", etiqueta: "Capital dormido", valor: r2(dormidoValor), formato: "usd", mejor: "baja", nota: "disponible sin venderse en 6 meses o nunca" });
+    const datosV = BUCKETS_DORMIDO.map((b) => ({ etiqueta: b.etiqueta, valor: r2(valores[b.id].v) }));
+    const datosU = BUCKETS_DORMIDO.map((b) => ({ etiqueta: b.etiqueta, valor: Math.round(valores[b.id].u) }));
     graficas.push({
       id: "inv_dormido",
       titulo: "Inventario por días sin vender",
-      descripcion: "Stock disponible según la última venta del producto en la sede (Odoo o Smartbit).",
+      descripcion: "Todo el stock disponible (sin lo reservado), según la última venta del producto en la sede (Odoo o Smartbit).",
       tipo: "barras",
       formato: "usd",
-      datos: BUCKETS_DORMIDO.map((b) => ({ etiqueta: b.etiqueta, valor: r2(valores[b.id].v) })),
+      ancho: 2,
+      datos: datosV,
       series: [{ clave: "valor", etiqueta: "Inventario", color: PALETA[0] }],
-      colorPorFila: [ESTADO.bien, RAMPA[2], RAMPA[4], ESTADO.aviso, ESTADO.serio, ESTADO.critico, "#8c222b"],
-      alterna: { etiqueta: "Unidades", formato: "num", datos: BUCKETS_DORMIDO.map((b) => ({ etiqueta: b.etiqueta, valor: Math.round(valores[b.id].u) })) },
+      colorPorFila: [ESTADO.bien, RAMPA[2], RAMPA[4], ESTADO.aviso, ESTADO.serio, ESTADO.critico, RAMPA[1], "#8c222b"],
+      detalle: detalleDe(datosV, prodDormido.v, SOLO_PRODUCTOS),
+      alterna: { etiqueta: "Unidades", formato: "num", datos: datosU, detalle: detalleDe(datosU, prodDormido.u, SOLO_PRODUCTOS, undefined, Math.round) },
     });
   }
 
