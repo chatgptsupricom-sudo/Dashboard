@@ -1,6 +1,6 @@
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { calcularDSO } from "@/lib/cxc/dso";
-import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
+import { calcularSeriesCxC, type SeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { terminosSinIC } from "@/lib/intercompania";
 
@@ -74,7 +74,8 @@ function indicador(saldo: number, movimiento: number, dias: number, sinMovimient
   return { dias: Math.round((saldo / movimiento) * dias), saldo: r2(saldo), movimiento: r2(movimiento) };
 }
 
-export async function diasPromedio(companyIds: number[], mes: string): Promise<DiasPromedio> {
+/** Las fechas con que se mide el mes (y con que se arma su serie de cartera, `seriesDelMes`). */
+function cortesDelMes(mes: string) {
   const [anio, m] = mes.split("-").map(Number);
   const inicio = new Date(anio, m - 1, 1);
   const finMes = new Date(anio, m, 0);
@@ -82,6 +83,21 @@ export async function diasPromedio(companyIds: number[], mes: string): Promise<D
   const hoy = new Date();
   hoy.setHours(23, 59, 59, 999);
   const corte = finMes < hoy ? finMes : hoy;
+  return { anio, m, inicio, finMes, hoy, corte };
+}
+
+/**
+ * La serie de cartera del mes tal como la usa `diasPromedio`: quien también la
+ * necesita (el Centro de mando) la arma una vez y se la pasa, porque es lo más
+ * lento (rehace el saldo de cada factura abierta).
+ */
+export function seriesDelMes(companyIds: number[], mes: string): Promise<SeriesCxC> {
+  const { anio, m, hoy, corte } = cortesDelMes(mes);
+  return calcularSeriesCxC(companyIds, obtenerSemanasDelMes(anio, m), hoy, corte);
+}
+
+export async function diasPromedio(companyIds: number[], mes: string, seriesListas?: Promise<SeriesCxC>): Promise<DiasPromedio> {
+  const { anio, m, inicio, finMes, hoy, corte } = cortesDelMes(mes);
   const desde = fecha(inicio);
   const corteDia = fecha(corte);
   const dias = Math.max(1, Math.round((new Date(corteDia).getTime() - new Date(desde).getTime()) / 86_400_000) + 1);
@@ -94,7 +110,7 @@ export async function diasPromedio(companyIds: number[], mes: string): Promise<D
   ];
 
   const [series, inventario, costoVendido, cxp, compras] = await Promise.all([
-    calcularSeriesCxC(companyIds, obtenerSemanasDelMes(anio, m), hoy, corte),
+    seriesListas ?? calcularSeriesCxC(companyIds, obtenerSemanasDelMes(anio, m), hoy, corte),
     suma("stock.valuation.layer", [empresa, ["create_date", "<", finDiaUtc(corteDia)]], "value"),
     suma("stock.valuation.layer", [
       empresa,
