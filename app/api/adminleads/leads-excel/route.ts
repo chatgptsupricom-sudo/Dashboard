@@ -2,7 +2,8 @@
 //   GET                -> leads de Excel con la forma de /api/adminleads/leads
 //   GET ?cerrados=1    -> solo los cerrados desde el tablero (sección Cierres)
 //   PATCH              -> mismo cuerpo que PATCH /api/vendedores/leads;
-//                         { leadId, newSellerId } reasigna; { id, status, reabrir } reabre
+//                         { leadId, newSellerId } reasigna (pasa el lead al panel);
+//                         { id, status, reabrir } reabre
 
 import { actualizarLeadExcel, ErrorLeadExcel, listarLeadsExcel } from "@/lib/adminleads/leadsExcel";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
@@ -30,7 +31,7 @@ export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
   try {
-    await actualizarLeadExcel(await request.json(), cidsDe(auth.payload));
+    await actualizarLeadExcel(await request.json(), cidsDe(auth.payload), auth.payload);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     if (error instanceof ErrorLeadExcel) return NextResponse.json({ error: error.message }, { status: error.status });
