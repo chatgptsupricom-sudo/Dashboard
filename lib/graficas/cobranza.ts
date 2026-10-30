@@ -1,8 +1,6 @@
 import { obtenerCobros, esRelacionada, cuadrarCobros, type Cobro } from "@/lib/cxc/cobros";
-import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { BANDAS } from "@/lib/cxc/bandas";
-import { obtenerSemanasDelMes } from "@/lib/feriados";
-import { diasPromedio } from "@/lib/inteligencia-negocio/diasPromedio";
+import { diasPromedio, seriesDelMes } from "@/lib/inteligencia-negocio/diasPromedio";
 import { esICExcluido } from "@/lib/intercompania";
 import { hoyCaracas } from "@/lib/compras/datosOdoo";
 import { CORTE_ODOO } from "@/lib/smartbit";
@@ -51,18 +49,19 @@ export async function graficasCobranza(cids: number[], sede: string, mes: string
 
   const meses = mesesHasta(mes, MESES_COBROS).filter((m) => finDeMes(m) >= CORTE_ODOO);
   const desde = `${meses[0]}-01` < CORTE_ODOO ? CORTE_ODOO : `${meses[0]}-01`;
-  const [a, m] = mes.split("-").map(Number);
-  const hoyDate = new Date();
-  const corte = enCurso ? hoyDate : new Date(a, m, 0, 23, 59, 59);
+  // La serie de cartera (lo más lento: rehace el saldo de cada factura abierta)
+  // se arma una sola vez y la usan la antigüedad y los días promedio.
+  const seriesP = seriesDelMes(cids, mes);
+  seriesP.catch(() => {}); // el error lo informa cada bloque que la usa
 
   const [cobrosTodos, series, dias] = await Promise.all([
     bloque(avisos, "los cobros", () => obtenerCobros(cids, { desde, hasta: fin })),
-    bloque(avisos, "la cartera", () => calcularSeriesCxC(cids, obtenerSemanasDelMes(a, m), hoyDate, corte)),
-    bloque(avisos, "los días promedio", () => diasPromedio(cids, mes)),
+    bloque(avisos, "la cartera", () => seriesP),
+    bloque(avisos, "los días promedio", () => diasPromedio(cids, mes, seriesP)),
   ]);
 
   if (cobrosTodos) {
-    const cobros = cobrosTodos.filter((c) => !c.interno && !esRelacionada(c.partnerName) && !esICExcluido(c.partnerId));
+    const cobros = cobrosTodos.filter((c) => !c.interno && !esRelacionada(c.clienteNombre) && !esICExcluido(c.clienteId));
     const delMes = (x: string) => cobros.filter((c) => c.fecha.slice(0, 7) === x);
     const total = (xs: Cobro[]) => xs.reduce((s, c) => s + c.monto, 0);
     const cobradoMes = total(delMes(mes));
@@ -136,7 +135,8 @@ export async function graficasCobranza(cids: number[], sede: string, mes: string
     const porCliente = new Map<string, number>();
     for (const c of delMes(mes)) {
       porDiario.set(c.journalName || "Sin diario", (porDiario.get(c.journalName || "Sin diario") || 0) + c.monto);
-      porCliente.set(c.partnerName || "(sin cliente)", (porCliente.get(c.partnerName || "(sin cliente)") || 0) + c.monto);
+      // Por empresa: la factura puede estar a nombre de un contacto o una dirección suya.
+      porCliente.set(c.clienteNombre || "(sin cliente)", (porCliente.get(c.clienteNombre || "(sin cliente)") || 0) + c.monto);
     }
     const filas = (mapa: Map<string, number>) => [...mapa].map(([etiqueta, valor]) => ({ etiqueta, valor }));
     graficas.push({
