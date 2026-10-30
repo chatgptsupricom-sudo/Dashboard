@@ -101,7 +101,7 @@ export function Grafica({
   grafica: TGrafica;
   alto?: number;
   compacta?: boolean;
-  /** Clic en una barra (con su etiqueta): solo si la gráfica trae detalle. */
+  /** Clic en una barra (con su etiqueta). */
   onBarra?: (etiqueta: string) => void;
 }) {
   const [ocultas, setOcultas] = useState<Set<string>>(new Set());
@@ -127,7 +127,7 @@ export function Grafica({
   const dosLineas = horizontal && masLarga > letrasPorLinea(anchoCategoria);
   const alturaFila = grafica.series.length > 1 && !apilada ? 34 : dosLineas ? 32 : 26;
   const altura = alto ?? (horizontal ? Math.max(220, grafica.datos.length * alturaFila + 40) : 280);
-  const clicable = !!onBarra && !!grafica.detalle;
+  const clicable = !!onBarra;
 
   if (!hayDatos) {
     return (
@@ -288,10 +288,7 @@ export function Grafica({
                 radius={radio(s)}
                 maxBarSize={horizontal ? 22 : 44}
                 cursor={clicable ? "pointer" : undefined}
-                onClick={clicable ? (d: any) => {
-                  const etiqueta = String(d?.payload?.etiqueta ?? d?.etiqueta ?? "");
-                  if (grafica.detalle!.filas[etiqueta]) onBarra!(etiqueta);
-                } : undefined}
+                onClick={clicable ? (d: any) => onBarra!(String(d?.payload?.etiqueta ?? d?.etiqueta ?? "")) : undefined}
                 stroke={apilada ? SUPERFICIE : undefined}
                 strokeWidth={apilada ? 1 : 0}
               >
@@ -306,7 +303,14 @@ export function Grafica({
 }
 
 /** Vista de tabla de la misma gráfica (accesible y para copiar números). */
-export function TablaGrafica({ grafica }: { grafica: TGrafica }) {
+export function TablaGrafica({
+  grafica, onFila, clicable,
+}: {
+  grafica: TGrafica;
+  /** Clic en una fila que `clicable` acepte. */
+  onFila?: (etiqueta: string) => void;
+  clicable?: (etiqueta: string) => boolean;
+}) {
   const total = (clave: string) => grafica.datos.reduce((s, d) => s + (Number(d[clave]) || 0), 0);
   const sumable = grafica.formato === "usd" || grafica.formato === "num";
   return (
@@ -322,7 +326,11 @@ export function TablaGrafica({ grafica }: { grafica: TGrafica }) {
         </thead>
         <tbody>
           {grafica.datos.map((d, i) => (
-            <tr key={i} className="border-t border-slate-100">
+            <tr
+              key={i}
+              className={`border-t border-slate-100 ${onFila && clicable?.(String(d.etiqueta)) ? "cursor-pointer hover:bg-blue-50" : ""}`}
+              onClick={onFila && clicable?.(String(d.etiqueta)) ? () => onFila(String(d.etiqueta)) : undefined}
+            >
               <td className="px-3 py-1.5 text-slate-700">{String(d.etiqueta)}</td>
               {grafica.series.map((s) => (
                 <td key={s.clave} className="px-3 py-1.5 text-right tabular-nums text-slate-900">
