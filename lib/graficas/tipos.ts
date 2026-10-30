@@ -250,6 +250,15 @@ export function topConOtros<T extends { etiqueta: string; valor: number }>(filas
   return top;
 }
 
+/**
+ * Un cliente es el mismo aunque esté en dos sedes (en Odoo cada sede tiene su
+ * contacto, a veces con un punto de diferencia: "CIUDAD DIGITAL, C.A." /
+ * "CIUDAD DIGITAL, C.A") o en Smartbit y en Odoo: por nombre sin mayúsculas,
+ * acentos ni signos.
+ */
+export const claveCliente = (nombre: string) =>
+  nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
 /** Corre un bloque y, si falla, deja el aviso en vez de tumbar el área entera. */
 export async function bloque<T>(avisos: string[], nombre: string, fn: () => Promise<T>): Promise<T | null> {
   try {
