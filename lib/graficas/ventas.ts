@@ -74,10 +74,11 @@ function porFechaOdoo(cid: number, desde: string, hasta: string, por: "month" | 
 
 /* ---------------------------------------------------------------- Smartbit */
 
-// Las ventas del mostrador ("Local") sí cuentan en el total: en Odoo, desde el
-// corte, también cuentan, y sin ellas Valencia bajaba ~15 % antes de abril-2026
-// (solo salen del ranking de vendedores, ver NO_VENDEDORES). Por eso aquí no
-// va SQL_SIN_VENDEDOR_LOCAL, a diferencia de los dashboards de lib/smartbit.ts.
+// Las ventas del mostrador ("Local") a clientes de afuera sí cuentan en el total,
+// como en Odoo desde el corte; solo salen del ranking de vendedores (NO_VENDEDORES).
+// Por eso aquí no va SQL_SIN_VENDEDOR_LOCAL, a diferencia de los dashboards de
+// lib/smartbit.ts. Ojo: casi todo lo que factura "Local" en Valencia es a Supricom
+// CCS (intercompañía) y eso sigue fuera por SQL_SIN_INTERCOMPANIA.
 const SIN_GRUPO_FACTURAS = SQL_SIN_INTERCOMPANIA.replace("codigo_cliente", "rif");
 const SIN_GRUPO_ARTICULOS = SQL_SIN_INTERCOMPANIA;
 
