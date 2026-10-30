@@ -3,6 +3,7 @@ import {
   crecimientoVsMesAnterior,
   desdeOdoo,
   HISTORIA_DESDE,
+  lineasProductoOdoo,
   mensualSmartbit,
   mezclarClientes,
   mezclarLineasProducto,
@@ -90,8 +91,8 @@ export async function GET(request: NextRequest) {
         .map((inv: any) => inv.id);
     }
 
+    // Facturas y notas de crédito: lineasProductoOdoo las resta.
     const baseFilters = [
-      ["move_id.move_type", "=", "out_invoice"],
       ["parent_state", "=", "posted"],
       ["display_type", "=", "product"],
       ["product_id", "!=", false],
@@ -112,14 +113,7 @@ export async function GET(request: NextRequest) {
     const today = now.toISOString().split("T")[0];
 
     const [odooLines, sbResumen, sbMensual] = await Promise.all([
-      callOdooRPC<any[]>("account.move.line", "read_group", [
-        currentMonthFilters,
-        ["price_subtotal", "quantity", "product_id"],
-        ["product_id"],
-        0,
-        0,
-        "price_subtotal desc",
-      ]),
+      lineasProductoOdoo(currentMonthFilters),
       // Mismo criterio que Odoo: los vendedores excluidos solo se quitan de
       // productos/clientes cuando se mira una sola sede.
       resumenSmartbit(cids, start, end, sellerExcludeRules.length > 0
@@ -127,7 +121,7 @@ export async function GET(request: NextRequest) {
         : undefined),
       mensualSmartbit(cids, historiaDesde, today, sellerExclusions),
     ]);
-    const linesData = mezclarLineasProducto(odooLines || [], sbResumen.productos);
+    const linesData = mezclarLineasProducto(odooLines, sbResumen.productos);
 
     // Los productos que solo vienen de Smartbit ("sb:...") no tienen stock en Odoo.
     const productIds = linesData
@@ -199,11 +193,12 @@ export async function GET(request: NextRequest) {
           companyFilter,
           ...clientsExcludedFilter,
         ],
-        ["amount_untaxed", "partner_id"],
+        // _signed: en una NC amount_untaxed viene positivo y sumaba en vez de restar.
+        ["amount_untaxed_signed", "partner_id"],
         ["partner_id"],
         0,
         0,
-        "amount_untaxed desc",
+        "amount_untaxed_signed desc",
       ]),
       callOdooRPC<any[]>("account.move", "read_group", [
         [
@@ -310,7 +305,10 @@ export async function GET(request: NextRequest) {
           .slice(0, 5),
       },
       salesByUser: sellersData,
-      topClients: mezclarClientes(clientsRanking || [], sbResumen.clientes)
+      topClients: mezclarClientes(
+        (clientsRanking || []).map((c) => ({ ...c, amount_untaxed: c.amount_untaxed_signed || 0 })),
+        sbResumen.clientes,
+      )
         .filter((c: any) => {
           const name = (c.partner_id?.[1] || "").toLowerCase();
           return !name.includes("supricom");
