@@ -9,16 +9,18 @@ import { CORTE_ODOO } from "@/lib/smartbit";
  *   DSO = CxC a crédito al cierre del mes ÷ ventas a crédito del mes × días del mes
  *
  * Los tres términos son del MISMO período (mezclar ventas de un año con días
- * de un mes da un número sin sentido). Mes en curso: corte y días a hoy.
+ * de un mes da un número sin sentido). Mes en curso: corte y días a hoy, y
+ * mientras lleve menos de `DIAS_MINIMOS` días se toman las ventas de los
+ * últimos `DIAS_MINIMOS` días: con 1-2 días de ventas el DSO se disparaba
+ * (2-nov-2026: 3.865 días en Valencia, 8.645 con las tres sedes).
  *
- *   CxC al cierre   = la CxC final del CEI (seriesSemanales.ts → carteraCEI):
+ *   CxC al cierre   = seriesSemanales.ts → carteraCEI:
  *                     saldo contable de la cuenta por cobrar, sin contado,
  *                     cartera vieja, Supricom ni SUPER TECHNO.
- *   ventas crédito  = las del CEI (efectividad.ts → facturasDelPeriodo):
+ *   ventas crédito  = efectividad.ts → facturasDelPeriodo:
  *                     facturas − notas de crédito a crédito del mes, con IVA.
  *
- * Así la tarjeta usa exactamente las cifras de Efectividad. Medido en
- * sep-2026: Valencia 37 días, igual que el tiempo real que tardaron en pagar
+ * Medido en sep-2026: Valencia 37 días, igual que el tiempo real que tardaron en pagar
  * (Tiempo de Cobro, 37,6).
  *
  * ── Historia ──
@@ -39,7 +41,7 @@ import { CORTE_ODOO } from "@/lib/smartbit";
  * tarjeta: la del libro además resta los pagos sin aplicar.
  *
  * Antes de abril 2026 Odoo no tiene las ventas (están en Smartbit), así que
- * esos meses salen sin DSO, igual que el CEI.
+ * esos meses salen sin DSO.
  */
 
 export interface DsoCliente {
@@ -58,12 +60,14 @@ export interface DsoCliente {
 export interface DsoResultado {
   /** DSO del mes. `null` si no hubo ventas a crédito. */
   value: number | null;
-  /** CxC a crédito al cierre (la CxC final del CEI). */
+  /** CxC a crédito al cierre. */
   carteraAbierta: number;
   /** Ventas a crédito del mes. */
   ventasNetas: number;
   /** Días del período (del 1 al cierre, o a hoy en el mes en curso). */
   dias: number;
+  /** true = mes en curso con pocos días: ventas y días son los últimos DIAS_MINIMOS. */
+  ventanaMovil: boolean;
   /** Nº de clientes con saldo a crédito al cierre. */
   clientesIncluidos: number;
   /** Clientes con saldo a crédito al cierre, ordenados por saldo. */
@@ -73,6 +77,8 @@ export interface DsoResultado {
 const DIA_MS = 24 * 60 * 60 * 1000;
 /** Ventana de ventas del DSO por cliente. */
 export const DIAS_CLIENTE = 90;
+/** Mes en curso con menos días que esto: el DSO usa las ventas de los últimos DIAS_MINIMOS días. */
+export const DIAS_MINIMOS = 30;
 const idDe = (v: any): number | undefined => (Array.isArray(v) ? v[0] : v || undefined);
 const fechaLocal = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -89,12 +95,21 @@ export async function calcularDSO(
   const corte = finDia < hoy ? finDia : hoy;
   const inicio = new Date(monthStart);
   inicio.setHours(0, 0, 0, 0);
-  const dias = Math.max(1, Math.floor((corte.getTime() - inicio.getTime()) / DIA_MS) + 1);
+  const diasDe = (desde: Date) => Math.max(1, Math.floor((corte.getTime() - desde.getTime()) / DIA_MS) + 1);
+  const corteOdoo = new Date(`${CORTE_ODOO}T00:00:00`);
+  // Mes en curso con pocos días: las ventas del mes son casi cero y el DSO se
+  // dispara. Se toman los últimos DIAS_MINIMOS días (sin pasar del corte de Odoo).
+  const ventanaMovil = finDia >= hoy && diasDe(inicio) < DIAS_MINIMOS;
+  if (ventanaMovil) {
+    inicio.setTime(new Date(corte).setHours(0, 0, 0, 0));
+    inicio.setDate(inicio.getDate() - (DIAS_MINIMOS - 1));
+    if (inicio < corteOdoo) inicio.setTime(corteOdoo.getTime());
+  }
+  const dias = diasDe(inicio);
 
   const desdeCliente = new Date(corte);
   desdeCliente.setHours(0, 0, 0, 0);
   desdeCliente.setDate(desdeCliente.getDate() - (DIAS_CLIENTE - 1));
-  const corteOdoo = new Date(`${CORTE_ODOO}T00:00:00`);
   if (desdeCliente < corteOdoo) desdeCliente.setTime(corteOdoo.getTime());
   const diasCliente = Math.max(1, Math.floor((corte.getTime() - desdeCliente.getTime()) / DIA_MS) + 1);
 
@@ -139,6 +154,7 @@ export async function calcularDSO(
     carteraAbierta: r2(cxc.total),
     ventasNetas: r2(ventas),
     dias,
+    ventanaMovil,
     clientesIncluidos: clientes.length,
     clientes,
   };

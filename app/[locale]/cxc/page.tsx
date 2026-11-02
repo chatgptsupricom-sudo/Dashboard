@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   TrendingUp,
   TrendingDown,
@@ -89,7 +89,11 @@ export default function CxcDashboardPage() {
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
+  // Cambiar sede y mes seguido lanza dos cargas; la que llegue de última
+  // pisaba a la otra. Solo se pinta la respuesta de la carga más reciente.
+  const ultimaCarga = useRef(0);
   const fetchData = useCallback(async () => {
+    const carga = ++ultimaCarga.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -98,11 +102,12 @@ export default function CxcDashboardPage() {
       params.set("year", String(selectedYear));
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar?${params}`);
       const json = await res.json();
+      if (carga !== ultimaCarga.current) return;
       if (json.success) setData(json.data);
     } catch (e) {
       console.error("Error:", e);
     }
-    setLoading(false);
+    if (carga === ultimaCarga.current) setLoading(false);
   }, [empresa, selectedMonth, selectedYear]);
 
   useEffect(() => { fetchData(); }, [fetchData]);

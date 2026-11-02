@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { BANDAS, COLOR_BANDA } from "@/lib/cxc/bandas";
 import {
@@ -179,7 +179,11 @@ export default function CxCReport() {
   const COMPANY_OPTIONS = getCompanyOptions(t);
   const MONTHS = t.raw("meses") as string[];
 
+  // Cambiar sede y mes seguido lanza dos cargas; la que llegue de última
+  // pisaba a la otra. Solo se pinta la respuesta de la carga más reciente.
+  const ultimaCarga = useRef(0);
   const fetchData = useCallback(async () => {
+    const carga = ++ultimaCarga.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -189,11 +193,12 @@ export default function CxCReport() {
 
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar?${params}`);
       const json = await res.json();
+      if (carga !== ultimaCarga.current) return;
       if (json.success) setData(json.data);
     } catch (err) {
       console.error("Error fetching CxC data:", err);
     } finally {
-      setLoading(false);
+      if (carga === ultimaCarga.current) setLoading(false);
     }
   }, [empresa, selectedMonth, selectedYear]);
 

@@ -306,13 +306,13 @@ async function leerGET(request: NextRequest) {
       const monthStart = getMonthStart(currentYear, currentMonth);
       const monthEnd = new Date(currentYear, currentMonth + 1, 0);
       const series = await calcularSeriesCxC(companyIds, obtenerSemanasDelMes(currentYear, currentMonth + 1), today);
-      const { value, carteraAbierta, ventasNetas, dias, clientesIncluidos, clientes } =
+      const { value, carteraAbierta, ventasNetas, dias, ventanaMovil, clientesIncluidos, clientes } =
         await calcularDSO(companyIds, monthStart, monthEnd, today, series);
       return NextResponse.json({
         success: true,
         data: {
           type: "dso",
-          summary: { dso: value, carteraAbierta, ventasNetas, dias, count: clientesIncluidos },
+          summary: { dso: value, carteraAbierta, ventasNetas, dias, ventanaMovil, count: clientesIncluidos },
           clientes,
         },
       });
