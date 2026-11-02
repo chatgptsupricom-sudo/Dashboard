@@ -18,6 +18,10 @@ import {
 /** "YYYY-MM" en hora de Caracas de un timestamp ISO (created_at viene en UTC). */
 const mesCaracas = (iso: string | null) => (iso ? new Date(Date.parse(iso) - 4 * 3_600_000).toISOString().slice(0, 7) : "");
 
+/** Sin nada que contar, la gráfica muestra su texto de vacío en vez de barras en cero. */
+const siHay = <T extends Record<string, unknown>>(filas: T[]) =>
+  filas.some((f) => Object.entries(f).some(([k, v]) => k !== "etiqueta" && typeof v === "number" && v > 0)) ? filas : [];
+
 const COLOR_ESTADO_SOLICITUD: Record<string, string> = {
   pendiente: ESTADO.aviso,
   aprobada: ESTADO.bien,
@@ -58,10 +62,10 @@ export async function graficasRrhh(cids: number[], sede: string, mes: string, pa
       id: "rrhh_embudo",
       sinTotal: true,
       titulo: "Embudo de selección",
-      descripcion: "Candidatos que llegaron a cada fase.",
+      descripcion: "Candidatos que llegaron a cada fase, desde el inicio (no cambia con el mes).",
       tipo: "barras_h",
       formato: "num",
-      datos: ind.embudo.map((e) => ({ etiqueta: e.etiqueta, valor: e.cantidad })),
+      datos: siHay(ind.embudo.map((e) => ({ etiqueta: e.etiqueta, valor: e.cantidad }))),
       series: [{ clave: "valor", etiqueta: "Candidatos", color: PALETA[0] }],
       // Ordinal: cada fase un azul más oscuro.
       colorPorFila: ind.embudo.map((_, i) => RAMPA[Math.min(RAMPA.length - 1, Math.round((i * (RAMPA.length - 1)) / Math.max(1, ind.embudo.length - 1)))]),
@@ -70,7 +74,7 @@ export async function graficasRrhh(cids: number[], sede: string, mes: string, pa
     graficas.push({
       id: "rrhh_fuentes",
       titulo: "Candidatos por fuente",
-      descripcion: "De dónde vienen y cuántos llegan a la terna y se contratan.",
+      descripcion: "De dónde vienen y cuántos llegan a la terna y se contratan, desde el inicio.",
       tipo: "barras_h",
       formato: "num",
       datos: ind.porFuente.map((f) => ({ etiqueta: f.fuente, candidatos: f.candidatos, terna: f.terna, contratados: f.contratados })),
@@ -84,6 +88,7 @@ export async function graficasRrhh(cids: number[], sede: string, mes: string, pa
     graficas.push({
       id: "rrhh_unidades",
       titulo: "Días para cubrir, por unidad",
+      descripcion: "Requisiciones cubiertas desde el inicio.",
       tipo: "barras_h",
       formato: "dias",
       datos: ind.porUnidad.filter((u) => u.promedio != null).map((u) => ({ etiqueta: u.unidad, valor: u.promedio })),
@@ -103,25 +108,28 @@ export async function graficasRrhh(cids: number[], sede: string, mes: string, pa
       descripcion: "Por mes en que se pidieron y cómo están hoy.",
       tipo: "apiladas",
       formato: "num",
-      datos: meses.map((m) => ({
+      datos: siHay(meses.map((m) => ({
         etiqueta: etiquetaMes(m),
         ...Object.fromEntries(Object.keys(ESTADOS).map((e) => [e, sols.filter((s) => mesCaracas(s.created_at) === m && s.estado === e).length])),
-      })),
+      }))),
       series: Object.entries(ESTADOS).map(([e, x]) => ({ clave: e, etiqueta: x.etiqueta, color: COLOR_ESTADO_SOLICITUD[e] })),
+      vacio: "No hubo solicitudes de personal en estos 6 meses.",
     });
     graficas.push({
       id: "rrhh_urgencia",
       titulo: "Solicitudes aprobadas por urgencia",
+      descripcion: "Desde el inicio.",
       tipo: "barras",
       formato: "num",
-      datos: Object.entries(URGENCIAS).map(([u, x]) => ({ etiqueta: x.etiqueta, valor: sols.filter((s) => s.estado === "aprobada" && s.urgencia === u).length })),
+      vacio: "Todavía no hay solicitudes aprobadas.",
+      datos: siHay(Object.entries(URGENCIAS).map(([u, x]) => ({ etiqueta: x.etiqueta, valor: sols.filter((s) => s.estado === "aprobada" && s.urgencia === u).length }))),
       series: [{ clave: "valor", etiqueta: "Solicitudes", color: PALETA[0] }],
       colorPorFila: [ESTADO.critico, ESTADO.aviso, GRIS],
     });
   }
 
-  if (asistencia && asistencia.length) {
-    const empleados = asistencia.flatMap((r) => r.empleados).filter((e) => e.laborables > 0);
+  const empleados = (asistencia ?? []).flatMap((r) => r.empleados).filter((e) => e.laborables > 0);
+  if (empleados.length) {
     const asist = empleados.reduce((s, e) => s + e.asistencias, 0);
     const retardos = empleados.reduce((s, e) => s + e.retardos, 0);
     const ausencias = empleados.reduce((s, e) => s + e.ausencias, 0);
@@ -174,8 +182,11 @@ export async function graficasRrhh(cids: number[], sede: string, mes: string, pa
         .sort((a, b) => a.valor - b.valor),
       series: [{ clave: "valor", etiqueta: "% puntual", color: PALETA[2] }],
     });
-  } else if (asistencia) {
-    avisos.push("No hay marcas del biométrico cargadas para esta sede y mes.");
+  }
+  if (asistencia) {
+    // Una sede sin biométrico cargado devuelve el reporte vacío, no un error: se avisa cuál.
+    const sinDatos = cids.filter((c) => !asistencia.some((r) => r.sede === c && r.empleados.length));
+    if (sinDatos.length) avisos.push(`No hay marcas del biométrico de ${etiquetaMes(mes)} en ${sinDatos.map((c) => NOMBRE_SEDE[c]).join(", ")}.`);
   }
 
   return { area: "rrhh", sede, mes, generado: new Date().toISOString(), kpis, graficas, avisos };
