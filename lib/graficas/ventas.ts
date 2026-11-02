@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { cachear, catalogo, dominioVentas, hoyCaracas, idsPorCodigo } from "@/lib/compras/datosOdoo";
 import { CORTE_ODOO, SQL_SIN_INTERCOMPANIA, rangoSmartbit } from "@/lib/smartbit";
-import { contarDiasUtiles } from "@/lib/feriados";
+import { contarDiasUtiles, esDiaUtil } from "@/lib/feriados";
 import {
   COLOR_SEDE, GRIS, NOMBRE_SEDE, PALETA, agregarRuta, bloque, claveCliente, detalleDe, etiquetaMes, finDeMes, mesesHasta, r2, topConOtros, variacion,
   MAX_DETALLE, type Arbol, type DatosArea, type Grafica, type Kpi,
@@ -168,6 +168,26 @@ async function seriePorSede(cids: number[], meses: string[]): Promise<Map<number
 }
 
 /** Venta por día de las sedes en el mes (Smartbit + Odoo). */
+/**
+ * Mes en curso: [lo de `mes` en sus días hábiles ya terminados (hasta ayer, con
+ * lo vendido entre medio), lo de `otroMes` hasta su día hábil número N]. Así
+ * el lunes 2 no se compara medio día contra el 1 y 2 completos de un mes que
+ * arrancó miércoles. null si todavía no terminó ningún día hábil.
+ */
+export function mismosDiasHabiles(
+  mes: string, hoy: string, actual: Map<string, number> | null, otroMes: string, otro: Map<string, number> | null,
+): [number, number] | null {
+  if (!actual || !otro) return null;
+  const habiles = (m: string) =>
+    Array.from({ length: Number(finDeMes(m).slice(8)) }, (_, i) => `${m}-${String(i + 1).padStart(2, "0")}`)
+      .filter((f) => esDiaUtil(new Date(`${f}T12:00:00`)));
+  const n = habiles(mes).filter((f) => f < hoy).length;
+  const corte = habiles(otroMes)[n - 1];
+  if (!n || !corte) return null;
+  const sumar = (d: Map<string, number>, hasta: (f: string) => boolean) => [...d].reduce((s, [f, v]) => (hasta(f) ? s + v : s), 0);
+  return [sumar(actual, (f) => f < hoy), sumar(otro, (f) => f <= corte)];
+}
+
 async function diario(cids: number[], mes: string): Promise<Map<string, number>> {
   const desde = `${mes}-01`;
   const hasta = finDeMes(mes);
@@ -275,28 +295,29 @@ export async function graficasVentas(cids: number[], sede: string, mes: string):
     bloque(avisos, "la venta diaria del mes anterior", () => diario(cids, mesAnterior)),
     enCurso ? bloque(avisos, "la venta diaria del año pasado", () => diario(cids, mesAnio)) : Promise.resolve(null),
   ]);
-  // Mes en curso: se compara contra los mismos días de los otros meses (al día 2, contra el mes completo daba −100 %).
-  const hastaDia = (d: Map<string, number> | null) =>
-    d && [...d].reduce((s, [fecha, v]) => (fecha.slice(8) <= hoy.slice(8) ? s + v : s), 0);
 
   if (series) {
     const venta = suma(series, mes);
     const ventaAnt = suma(series, mesAnterior);
     const ventaAnio = suma(series, mesAnio);
-    const antMismosDias = enCurso ? hastaDia(diaAnterior) : ventaAnt;
-    const anioMismosDias = enCurso ? hastaDia(diaAnio) : ventaAnio;
+    // Mes en curso: lo de los días hábiles ya terminados contra los primeros tantos del otro mes.
+    const vsAnt: [number, number] | null = enCurso ? mismosDiasHabiles(mes, hoy, diaActual, mesAnterior, diaAnterior) : [venta, ventaAnt];
+    const vsAnio: [number, number] | null = enCurso ? mismosDiasHabiles(mes, hoy, diaActual, mesAnio, diaAnio) : [venta, ventaAnio];
     kpis.push({
-      id: "venta_mes", etiqueta: "Venta del mes", valor: r2(venta), formato: "usd", delta: variacion(venta, antMismosDias),
-      referencia: enCurso ? "vs mismos días del mes anterior" : "vs mes anterior",
+      id: "venta_mes", etiqueta: "Venta del mes", valor: r2(venta), formato: "usd", delta: vsAnt && variacion(...vsAnt),
+      referencia: enCurso ? "vs mismos días hábiles del mes anterior" : "vs mes anterior",
     });
     kpis.push({
-      id: "venta_anio", etiqueta: "Crecimiento anual", valor: variacion(venta, anioMismosDias), formato: "pct",
-      nota: `contra ${enCurso ? "los mismos días de " : ""}${etiquetaMes(mesAnio)}`,
+      id: "venta_anio", etiqueta: "Crecimiento anual", valor: vsAnio && variacion(...vsAnio), formato: "pct",
+      nota: `contra ${enCurso ? "los mismos días hábiles de " : ""}${etiquetaMes(mesAnio)}`,
     });
     const acumulado = mesesAnio.filter((m) => m.slice(0, 4) === mes.slice(0, 4)).reduce((s, m) => s + suma(series, m), 0);
     const acumuladoAnt = mesesPrevios.filter((m) => m.slice(0, 4) === String(Number(mes.slice(0, 4)) - 1) && m.slice(5) <= mes.slice(5))
-      .reduce((s, m) => s + suma(series, m), 0) - (enCurso && anioMismosDias != null ? ventaAnio - anioMismosDias : 0);
-    kpis.push({ id: "venta_ytd", etiqueta: `Acumulado ${mes.slice(0, 4)}`, valor: r2(acumulado), formato: "usd", delta: variacion(acumulado, acumuladoAnt), referencia: "vs mismo período del año pasado" });
+      .reduce((s, m) => s + suma(series, m), 0);
+    // En curso, el mes de este año y el del año pasado entran solo por sus días hábiles terminados.
+    const ytd: [number, number] | null = !enCurso ? [acumulado, acumuladoAnt]
+      : vsAnio && [acumulado - venta + vsAnio[0], acumuladoAnt - ventaAnio + vsAnio[1]];
+    kpis.push({ id: "venta_ytd", etiqueta: `Acumulado ${mes.slice(0, 4)}`, valor: r2(acumulado), formato: "usd", delta: ytd && variacion(...ytd), referencia: "vs mismo período del año pasado" });
 
     if (enCurso) {
       const [a, m] = mes.split("-").map(Number);
