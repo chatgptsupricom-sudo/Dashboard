@@ -768,8 +768,8 @@ const DE_LA_SEDE = "(? IS NULL OR company_id = ?)";
  * SuperAdmin todas (null). undefined = Administracion sin sede valida (403).
  */
 export function sedeBinance(payload: { role?: unknown; cids?: unknown } | null | undefined) {
-  // Cuentas por Cobrar lo ve de su sede, como Administracion (solo lee).
-  const cxc = String(payload?.role ?? "").toLowerCase().trim() === ROL_CXC;
+  // Cuentas por Cobrar trabaja en su sede, como Administracion.
+  const cxc = esRolCxC(payload);
   if (!esRolAdministracion(payload?.role) && !cxc) return null;
   return sedeDelToken(payload) ?? undefined;
 }
@@ -808,6 +808,8 @@ export async function ordenesRegistradasEnOdoo(orderIds: string[]): Promise<Set<
 
 /** Rol que solo lee la conciliacion (GET), de su sede. */
 export const ROL_CXC = "cuentas por cobrar";
+export const esRolCxC = (payload: { role?: unknown } | null | undefined) =>
+  String(payload?.role ?? "").toLowerCase().trim() === ROL_CXC;
 
 export const NOMBRE_SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 

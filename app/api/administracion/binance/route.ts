@@ -22,6 +22,7 @@ import {
   movimientosBorrables,
   NOMBRE_SEDE,
   ordenesRegistradasEnOdoo,
+  esRolCxC,
   ROL_CXC,
   rangoSemana,
   sedeBinance,
@@ -44,10 +45,16 @@ export async function GET(request: NextRequest) {
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
   try {
+    // ?vista=comprobantes: lo que ve Cuentas por Cobrar al subir, solo los
+    // comprobantes de la semana con su estado (sin el estado de cuenta).
+    if (request.nextUrl.searchParams.get("vista") === "comprobantes") {
+      const { comprobantes } = await conciliacionSemana(semana, sede);
+      return NextResponse.json({ success: true, semana, comprobantes });
+    }
     // Cuentas por Cobrar solo ve los conciliados que todavia no registro en Odoo
     // (ni pendientes ni pagos sin comprobante). ?vista=cxc: la misma vista para
     // el SuperAdmin y Administracion.
-    const esCxC = String(auth.payload?.role ?? "").toLowerCase().trim() === ROL_CXC;
+    const esCxC = esRolCxC(auth.payload);
     if (esCxC || request.nextUrl.searchParams.get("vista") === "cxc") {
       const { comprobantes } = await conciliacionSemana(semana, sede);
       const conciliados = comprobantes.filter((c) => c.estado === "conciliado" || c.estado === "manual");
@@ -96,7 +103,9 @@ function respuestaRepetido(
 // Un archivo que ya se subio (misma huella SHA-256) no se vuelve a leer con la
 // IA: al subir otra vez una carpeta entera solo se paga lo nuevo.
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  // Los comprobantes los sube Cuentas por Cobrar (y Administracion como respaldo);
+  // el estado de cuenta, solo Administracion.
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_CXC]);
   if (auth.error) return auth.error;
   if (!hayIA()) {
     return NextResponse.json({ error: "Falta configurar OPENAI_API_KEY en el servidor" }, { status: 503 });
@@ -132,6 +141,9 @@ export async function POST(request: NextRequest) {
     }
     const sha = huella(datos);
     if (form.get("tipo") === "estado") {
+      if (esRolCxC(auth.payload)) {
+        return NextResponse.json({ error: "El estado de cuenta lo sube Administración" }, { status: 403 });
+      }
       if (await capturaYaSubida(sha)) {
         return NextResponse.json({ success: true, estado: true, yaEstaba: true, recibidos: 0, nuevos: 0, repetidos: 0 });
       }
@@ -233,7 +245,7 @@ export async function PATCH(request: NextRequest) {
 // DELETE /api/administracion/binance?estado=YYYY-MM-DD — borrar el estado de
 // cuenta de esa semana: solo lo que subio esta sede y nadie mas (el SuperAdmin, todo).
 export async function DELETE(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_CXC]);
   if (auth.error) return auth.error;
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
@@ -241,6 +253,8 @@ export async function DELETE(request: NextRequest) {
   try {
     const semana = p.get("estado");
     if (semana !== null) {
+      // Cuentas por Cobrar borra comprobantes, no el estado de cuenta.
+      if (esRolCxC(auth.payload)) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
       if (!rangoSemana(semana)) return NextResponse.json({ error: "Semana inválida" }, { status: 400 });
       return NextResponse.json({ success: true, borrados: await borrarMovimientosSemana(semana, sede) });
     }
