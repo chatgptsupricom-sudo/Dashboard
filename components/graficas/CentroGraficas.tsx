@@ -313,6 +313,10 @@ export function CentroGraficas() {
   const [presentando, setPresentando] = useState(false);
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
   const [reloj, setReloj] = useState(() => new Date());
+  // Inventario: la foto de hoy o «Histórico y movimientos» (se pide solo al abrirla).
+  const [vistaInv, setVistaInv] = useState<"hoy" | "historia">("hoy");
+  const [historia, setHistoria] = useState<{ llave: string; estado: Estado } | null>(null);
+  const [intentoHistoria, setIntentoHistoria] = useState(0);
   const raiz = useRef<HTMLDivElement>(null);
   const meses = useMemo(opcionesMes, []);
   const recorrido = useRecorrido("tour-centro-mando-v1", true, { cadaVez: true });
@@ -358,6 +362,12 @@ export function CentroGraficas() {
       selector: '[data-tour="cm-herramientas"]',
       titulo: "Herramientas de cada gráfica",
       texto: "Ver los números en tabla, ampliar la gráfica o bajarla como imagen PNG. Donde aparece «Monto / Unidades» se cambia la medida.",
+    },
+    {
+      selector: '[data-tour="cm-vista-inv"]',
+      titulo: "Inventario: hoy e histórico",
+      texto: "En Inventario, «Hoy» es la foto del almacén ahora. «Histórico y movimientos» muestra el inventario al cierre de cada mes y todo lo que entró y salió en el mes elegido: compras, ventas, devoluciones, ajustes y envíos entre sedes, con clic hasta cada producto y documento.",
+      antes: () => setPestana("inventario"),
     },
     {
       selector: '[data-tour="cm-recargar"]',
@@ -416,15 +426,41 @@ export function CentroGraficas() {
     cargar([a], reintento.current.signal);
   };
 
+  const refrescarHistoria = useRef(false);
   const recargar = () => {
     refrescar.current = true;
+    refrescarHistoria.current = true;
     setVuelta((v) => v + 1);
   };
 
+  const llaveHistoria = `${sede}-${mes}-${vuelta}-${intentoHistoria}`;
+  useEffect(() => {
+    if (pestana !== "inventario" || vistaInv !== "historia" || historia?.llave === llaveHistoria) return;
+    const ctrl = new AbortController();
+    const extra = refrescarHistoria.current ? "&refrescar=1" : "";
+    refrescarHistoria.current = false;
+    setHistoria({ llave: llaveHistoria, estado: { estado: "cargando" } });
+    fetch(`/api/superadmin/graficas/inventario?vista=historia&sede=${sede}&mes=${mes}${extra}`, { signal: ctrl.signal, cache: "no-store" })
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (ctrl.signal.aborted) return;
+        if (!r.ok || !j.success) throw new Error(j.error || `Error ${r.status}`);
+        setHistoria({ llave: llaveHistoria, estado: { estado: "listo", datos: j.data } });
+      })
+      .catch((e) => {
+        if (ctrl.signal.aborted || e?.name === "AbortError") return;
+        setHistoria({ llave: llaveHistoria, estado: { estado: "error", error: e?.message || "No se pudieron leer los datos." } });
+      });
+    return () => ctrl.abort();
+    // historia fuera de las dependencias: solo se vuelve a pedir si cambia la llave.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pestana, vistaInv, llaveHistoria]);
+
   // Un nivel del detalle de una barra (lo arma el servidor; ver nodoDetalle en lib/graficas/tipos.ts).
-  const pedirDetalle = useCallback((area: Area): PedirDetalle => async (grafica, alterna, ruta) => {
+  const pedirDetalle = useCallback((area: Area, enHistoria = false): PedirDetalle => async (grafica, alterna, ruta) => {
     const q = new URLSearchParams({ sede, mes, grafica, ruta: JSON.stringify(ruta) });
     if (alterna) q.set("medida", "alterna");
+    if (enHistoria) q.set("vista", "historia");
     const r = await fetch(`/api/superadmin/graficas/${area}?${q}`, { cache: "no-store" });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || `Error ${r.status}`);
@@ -617,8 +653,31 @@ export function CentroGraficas() {
 
       <style>{`@keyframes progreso { from { transform: scaleX(0) } to { transform: scaleX(1) } }`}</style>
 
+      {pestana === "inventario" && (
+        <div data-tour="cm-vista-inv" className="inline-flex rounded-xl border border-slate-200 bg-white p-1" role="radiogroup" aria-label="Vista del inventario">
+          {([["hoy", "Hoy"], ["historia", "Histórico y movimientos"]] as const).map(([id, texto]) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={vistaInv === id}
+              onClick={() => setVistaInv(id)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${vistaInv === id ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              {texto}
+            </button>
+          ))}
+        </div>
+      )}
       {pestana === "resumen" ? (
         <VistaResumen estados={estados} ir={setPestana} />
+      ) : pestana === "inventario" && vistaInv === "historia" ? (
+        <VistaArea
+          estado={historia?.estado}
+          contexto={`historia-${contexto}`}
+          reintentar={() => setIntentoHistoria((n) => n + 1)}
+          pedirDetalle={pedirDetalle("inventario", true)}
+        />
       ) : (
         <VistaArea estado={estados[pestana]} contexto={`${pestana}-${contexto}`} reintentar={() => reintentar(pestana)} pedirDetalle={pedirDetalle(pestana)} />
       )}
