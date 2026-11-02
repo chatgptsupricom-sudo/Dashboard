@@ -23,6 +23,7 @@ import {
   Save,
   Trash2,
   Truck,
+  Upload,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
@@ -37,6 +38,9 @@ import {
   formatearDuracion,
   inicioRecepcion,
   separarPrecintos,
+  cantidadAparte,
+  esperadoSede,
+  todoAparte,
   type Contenedor,
   type Etapa,
   type TipoDano,
@@ -57,6 +61,7 @@ import FotoCaptura, { type ArchivoRecepcion } from "./FotoCaptura";
 import EscenaRecepcion from "./EscenaRecepcion";
 import CruceOdoo from "./CruceOdoo";
 import SerialesOdoo from "./SerialesOdoo";
+import SubirSeriales from "./SubirSeriales";
 
 /**
  * Detalle de una recepcion por packing list.
@@ -130,6 +135,9 @@ type Item = {
   /** Producto de Odoo (factura, o cruzado con lib/recepcion/cruceIa.ts). */
   odoo_product_id?: number | null;
   cantidad_esperada: string | number;
+  /** Factura especial de Caracas: esas unidades no se reciben aca (flujo.ts `cantidadAparte`). */
+  factura_aparte?: string | null;
+  cantidad_aparte?: string | number | null;
   cajas_esperadas: number | null;
   cantidad_recibida: string | number | null;
   motivo_diferencia: string | null;
@@ -228,6 +236,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Pistola: producto con serial seleccionado y renglones con la lista de seriales abierta.
   const [seleccionado, setSeleccionado] = useState<number | null>(null);
   const [verSeriales, setVerSeriales] = useState<Record<number, boolean>>({});
+  // Renglon con la carga masiva de seriales abierta.
+  const [subiendo, setSubiendo] = useState<number | null>(null);
   // El ultimo renglon contado se ilumina unos segundos y se trae a la vista,
   // para ver que producto sumo cada lectura de la pistola.
   const [ultimo, setUltimo] = useState<number | null>(null);
@@ -692,7 +702,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   };
   /** Lo que el packing list dice para ese contenedor (con uno solo, todo). */
   const esperadoEn = (i: Item, cid: number): number | null => {
-    if (contenedores.length === 1 && cid === contenedores[0].id) return Number(i.cantidad_esperada);
+    if (contenedores.length === 1 && cid === contenedores[0].id) return esperadoSede(i);
     const f = (i.conteo || []).find((x) => Number(x.contenedor_id) === cid);
     return f && f.cantidad_esperada !== null ? Number(f.cantidad_esperada) : null;
   };
@@ -739,8 +749,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   const ev = evaluarConteo(
     items.map((i) => ({
       id: i.id,
-      cantidad_esperada: Number(i.cantidad_esperada),
-      cantidad_recibida: totalDe(i),
+      // Lo de la factura especial no se recibe aca: se compara con lo de esta sede.
+      cantidad_esperada: esperadoSede(i),
+      cantidad_recibida: todoAparte(i) ? totalDe(i) ?? 0 : totalDe(i),
       motivo_diferencia: conteo[i.id]?.motivo || null,
       golpeado: (conteo[i.id]?.danos?.length ?? 0) > 0,
       danos: danosANumero(conteo[i.id]?.danos),
@@ -798,8 +809,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
             id: i.id,
             producto: i.producto,
             codigo: i.codigo,
-            esperada: Number(i.cantidad_esperada),
-            recibida: totalDe(i),
+            esperada: esperadoSede(i),
+            recibida: todoAparte(i) ? totalDe(i) ?? 0 : totalDe(i),
             danado: (conteo[i.id]?.danos?.length ?? 0) > 0,
           }))}
           contenedores={contenedores.map((c) => ({ id: c.id, numero: c.numero, etapa: c.etapa }))}
@@ -1254,7 +1265,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     codigo: i.codigo,
                     producto: i.producto,
                     lleva_serial: !!i.lleva_serial,
-                    esperado: Number(i.cantidad_esperada),
+                    esperado: esperadoSede(i),
                     recibido: i.lleva_serial ? (i.seriales || []).length : totalDe(i) ?? 0,
                   }))}
                   seleccionado={seleccionado}
@@ -1332,7 +1343,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 .map((i) => {
                 const c = conteo[i.id] || { recibida: "", motivo: "", danos: [], nota: "" };
                 const conDano = c.danos.length > 0;
-                const esperado = Number(i.cantidad_esperada);
+                // Lo de la factura especial de Caracas no se cuenta aca.
+                const esperado = esperadoSede(i);
+                const aparte = cantidadAparte(i);
+                const soloCaracas = todoAparte(i);
                 // El total (todos los contenedores) contra el packing list.
                 const total = totalDe(i);
                 const recibidaNum = total;
@@ -1381,6 +1395,17 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           </span>
                         )}
                         <p className="text-sm text-slate-800 truncate">{i.producto}</p>
+                        {aparte > 0 && (
+                          <p className="mt-0.5 inline-flex flex-wrap items-center gap-1 rounded-md bg-orange-100 px-1.5 py-0.5 text-[11px] font-medium text-orange-900">
+                            <span className="font-bold uppercase tracking-wide">{t("especial_badge")}</span>
+                            {i.factura_aparte && i.factura_aparte !== "CARACAS" && <span className="font-mono">{i.factura_aparte}</span>}
+                            <span>
+                              {soloCaracas
+                                ? t("especial_todo", { cantidad: fmt(aparte) })
+                                : t("especial_parte", { cantidad: fmt(aparte), total: fmt(Number(i.cantidad_esperada)), sede: fmt(esperado) })}
+                            </span>
+                          </p>
+                        )}
                         {total !== null && total > esperado && (
                           <span className="inline-block mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 rounded px-1.5 py-0.5">
                             {t("sobrante")} +{fmt(total - esperado)}
@@ -1439,13 +1464,42 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                                 {esSeleccionado ? t("pistoleando") : t("pistolear_seriales")}
                               </button>
                             )}
+                            {contando && contMio !== null && (
+                              <button
+                                type="button"
+                                onClick={() => setSubiendo(subiendo === i.id ? null : i.id)}
+                                className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold ${
+                                  subiendo === i.id ? "bg-violet-600 text-white" : "border border-violet-300 text-violet-700 bg-white"
+                                }`}
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                {t("subir_seriales.boton")}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {subiendo === i.id && contando && contMio !== null && (
+                          <div className="mt-2">
+                            <SubirSeriales
+                              recepcionId={rec.id}
+                              itemId={i.id}
+                              producto={i.producto}
+                              contenedorId={contMio}
+                              onListo={() => void cargar()}
+                              onCerrar={() => setSubiendo(null)}
+                            />
                           </div>
                         )}
                       </div>
                       <span className="text-sm font-semibold tabular-nums text-slate-700 text-right">
                         {porCont ? (espMio === null ? "—" : fmt(espMio)) : esperado}
                       </span>
-                      {porCont && contMio === null ? (
+                      {soloCaracas && (total ?? 0) === 0 ? (
+                        // Todo es de la factura especial: no se cuenta aca.
+                        <span className="w-full h-10 px-2 flex items-center justify-end rounded-lg border border-dashed border-orange-200 bg-orange-50 text-[11px] font-semibold text-orange-700">
+                          {t("especial_no_cuenta")}
+                        </span>
+                      ) : porCont && contMio === null ? (
                         // Sin contenedor elegido no se cuenta: no se sabe en cual.
                         <span className="w-full h-10 px-2 flex items-center justify-end rounded-lg border border-dashed border-slate-200 text-sm text-slate-300">
                           —

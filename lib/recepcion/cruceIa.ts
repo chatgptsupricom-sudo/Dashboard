@@ -4,6 +4,7 @@ import { query } from "@/lib/db";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { productoPorRenglon, productosDeLaOc } from "@/lib/recepcion/odoo";
 import { cargarRecepcion } from "@/lib/recepcion/servidor";
+import { cantidadAparte, todoAparte } from "@/lib/recepcion/flujo";
 
 /**
  * Renglones de un packing list que no se pudieron cruzar con un producto de
@@ -114,8 +115,8 @@ async function contexto(recepcionId: number) {
   if (rec.etapa !== "cerrado") throw new ErrorCruce("Se cruza con Odoo despues de cerrar la recepcion", 409);
   const poId = Number(rec.odoo_purchase_order_id) || 0;
   if (!poId) throw new ErrorCruce("La recepcion no tiene OC de Odoo: elige la OC primero", 409);
-  // Lo de otra factura (factura_aparte) no se cruza: no se carga en esta sede.
-  const propios = (datos.items as any[]).filter((i) => !i.factura_aparte);
+  // Lo que es todo de la factura especial no se cruza: no se carga en esta sede.
+  const propios = (datos.items as any[]).filter((i) => !todoAparte(i));
   const productoDe = await productoPorRenglon(propios, await productosDeLaOc(poId));
   const sin: RenglonSinProducto[] = propios
     .filter((i) => !productoDe.has(Number(i.id)))
@@ -128,12 +129,13 @@ async function contexto(recepcionId: number) {
       seriales: (i.seriales || []).length,
     }));
   const apartados: RenglonApartado[] = (datos.items as any[])
-    .filter((i) => i.factura_aparte)
+    .filter((i) => cantidadAparte(i) > 0)
     .map((i) => ({
       item_id: Number(i.id),
       producto: String(i.producto || ""),
       codigo: i.codigo ? String(i.codigo) : null,
-      recibido: Number(i.cantidad_recibida) || 0,
+      // Las unidades de la factura especial (no se reciben aca).
+      recibido: cantidadAparte(i),
       factura: String(i.factura_aparte),
     }));
   return { datos, rec, poId, sin, apartados };
@@ -180,7 +182,8 @@ export async function marcarAparte(recepcionId: number, itemId: number, factura:
       throw new ErrorCruce("Ese producto ya entro en Odoo con esta recepcion: hay que devolverlo en Odoo, no se puede apartar aca", 409);
     }
   }
-  await query("UPDATE recepcion_packing_items SET factura_aparte = ? WHERE id = ? AND recepcion_id = ?", [
+  // Apartar a mano = todo el renglon (cantidad_aparte NULL).
+  await query("UPDATE recepcion_packing_items SET factura_aparte = ?, cantidad_aparte = NULL WHERE id = ? AND recepcion_id = ?", [
     valor,
     itemId,
     recepcionId,
@@ -238,7 +241,7 @@ export async function completarDesdeExcel(
         resultado.ya_en_odoo.push(`${factura} · ${item.codigo || "sin codigo"} · ${item.producto}`);
         continue;
       }
-      await query("UPDATE recepcion_packing_items SET factura_aparte = ? WHERE id = ?", [factura, item.id]);
+      await query("UPDATE recepcion_packing_items SET factura_aparte = ?, cantidad_aparte = NULL WHERE id = ?", [factura, item.id]);
       resultado.apartados++;
     }
   }

@@ -13,7 +13,9 @@ import { query } from "@/lib/db";
  *   recepcion_packing.odoo_recepciones_previas  IN de la OC hechas antes de empezar
  *   recepcion_packing_items.odoo_product_id  producto de Odoo del renglon
  *   recepcion_packing_items.factura_aparte   otra factura del embarque (ej.
- *     INV1062, de Caracas): el renglon se cuenta pero no se carga en esta sede
+ *     INV1062, la factura especial de Caracas): eso no se recibe en esta sede
+ *   recepcion_packing_items.cantidad_aparte  cuantas unidades del renglon son
+ *     de esa factura (NULL = todo el renglon); ver `cantidadAparte` en flujo.ts
  */
 
 const COLUMNAS_RECEPCION: Array<[string, string]> = [
@@ -48,6 +50,7 @@ export function asegurarColumnasOdoo(): Promise<void> {
       await agregar("recepcion_packing_items", [
         ["odoo_product_id", "INT DEFAULT NULL"],
         ["factura_aparte", "VARCHAR(50) DEFAULT NULL"],
+        ["cantidad_aparte", "DECIMAL(14,3) DEFAULT NULL"],
       ]);
     })().catch((e) => {
       columnasListas = null;

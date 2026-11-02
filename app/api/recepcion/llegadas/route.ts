@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
 import { completarCodigos } from "@/lib/recepcion/codigosLlegadas";
+import { esperadoSede } from "@/lib/recepcion/flujo";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -86,7 +87,8 @@ export async function GET(request: NextRequest) {
       `SELECT r.etapa,
               COALESCE(r.llegada_at, r.cerrado_at) AS llegada,
               DATE_FORMAT(r.fecha_estimada, '%Y-%m-%d') AS estimada,
-              i.codigo, i.producto, i.odoo_product_id, i.cantidad_esperada, i.cantidad_recibida
+              i.codigo, i.producto, i.odoo_product_id, i.cantidad_esperada, i.cantidad_recibida,
+              i.factura_aparte, i.cantidad_aparte
          FROM recepcion_packing r
          JOIN recepcion_packing_items i ON i.recepcion_id = r.id
         WHERE r.cids = ?
@@ -104,9 +106,10 @@ export async function GET(request: NextRequest) {
         if (f.llegada) acc.sumar(`${diaLocal(new Date(f.llegada))}|llego`, { ...f, cantidad: f.cantidad_recibida });
       } else if (f.etapa === "descargando") {
         const dia = f.llegada ? diaLocal(new Date(f.llegada)) : f.estimada;
-        if (dia) acc.sumar(`${dia}|contando`, { ...f, cantidad: f.cantidad_esperada });
+        if (dia) acc.sumar(`${dia}|contando`, { ...f, cantidad: esperadoSede(f) });
       } else {
-        acc.sumar(`${f.estimada || "sin_fecha"}|por_llegar`, { ...f, cantidad: f.cantidad_esperada });
+        // Lo de la factura especial de Caracas no llega a esta sede.
+        acc.sumar(`${f.estimada || "sin_fecha"}|por_llegar`, { ...f, cantidad: esperadoSede(f) });
       }
     }
 
