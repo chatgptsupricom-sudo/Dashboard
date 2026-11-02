@@ -88,6 +88,7 @@ export function TarjetaGrafica({ grafica: original, contexto, pedirDetalle }: { 
   return (
     <div
       ref={ref}
+      data-tour="cm-grafica"
       className={`group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:shadow-[0_8px_24px_-12px_rgba(15,23,42,0.18)] ${grafica.ancho === 2 ? "lg:col-span-2" : ""}`}
     >
       <div className="flex items-start gap-3 mb-3">
@@ -117,7 +118,7 @@ export function TarjetaGrafica({ grafica: original, contexto, pedirDetalle }: { 
             ))}
           </div>
         )}
-        <div data-no-exportar="1" className="flex gap-0.5 opacity-60 group-hover:opacity-100 transition">
+        <div data-no-exportar="1" data-tour="cm-herramientas" className="flex gap-0.5 opacity-60 group-hover:opacity-100 transition">
           <Boton titulo={tabla ? "Ver gráfica" : "Ver tabla"} onClick={() => setTabla((t) => !t)} activo={tabla}>
             {tabla ? <BarChart3 className="h-3.5 w-3.5" /> : <Table2 className="h-3.5 w-3.5" />}
           </Boton>

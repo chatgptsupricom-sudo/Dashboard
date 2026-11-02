@@ -7,9 +7,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, ArrowDownRight, ArrowUpRight, Boxes, HandCoins, LayoutGrid, Loader2, Maximize, Minimize,
+  AlertTriangle, ArrowDownRight, ArrowUpRight, Boxes, CircleHelp, HandCoins, LayoutGrid, Loader2, Maximize, Minimize,
   Play, RefreshCw, ShoppingCart, Square, Users, Wrench,
 } from "lucide-react";
+import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 import { AREAS, NOMBRE_AREA, type Area, type DatosArea, type Kpi } from "@/lib/graficas/tipos";
 import { Grafica } from "./Grafica";
 import { TarjetaGrafica, type PedirDetalle } from "./TarjetaGrafica";
@@ -225,7 +226,7 @@ function VistaResumen({ estados, ir }: { estados: Partial<Record<Area, Estado>>;
   const pulso = PULSO.map(([a, id]) => ({ area: a, kpi: estados[a]?.datos?.kpis.find((k) => k.id === id) }));
   return (
     <div className="space-y-6">
-      <section>
+      <section data-tour="cm-pulso">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Pulso de la empresa</h2>
         <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
           {pulso.map(({ area, kpi }, i) =>
@@ -249,7 +250,7 @@ function VistaResumen({ estados, ir }: { estados: Partial<Record<Area, Estado>>;
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+      <section data-tour="cm-areas" className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
         {AREAS.map((a) => {
           const e = estados[a];
           const Icono = ICONO[a];
@@ -311,6 +312,67 @@ export function CentroGraficas() {
   const [reloj, setReloj] = useState(() => new Date());
   const raiz = useRef<HTMLDivElement>(null);
   const meses = useMemo(opcionesMes, []);
+  const recorrido = useRecorrido("tour-centro-mando-v1", true, { cadaVez: true });
+  const pasosTour: PasoRecorrido[] = [
+    {
+      titulo: "Centro de mando",
+      texto: "Las cifras de Ventas, Cobranza, Inventario, RMA y Recursos Humanos en un solo tablero, leídas en vivo de Odoo y del panel. Todo va sin intercompañía: las ventas y cobros entre Supricom, Office Solutions Center y Ofimaster no cuentan.",
+      antes: () => setPestana("resumen"),
+    },
+    {
+      selector: '[data-tour="cm-sede"]',
+      titulo: "Sede",
+      texto: "Todas suma las tres sedes; o elige Valencia, Caracas o Panamá. Cada sede tiene siempre su color en las gráficas.",
+    },
+    {
+      selector: '[data-tour="cm-mes"]',
+      titulo: "Mes",
+      texto: "Todo se calcula para el mes elegido. Antes de abril 2026 las ventas salen de Smartbit y desde ahí de Odoo; la cobranza solo existe desde abril 2026. Inventario, los casos de RMA en curso y las vacantes de RRHH son siempre de hoy.",
+    },
+    {
+      selector: '[data-tour="cm-pestanas"]',
+      titulo: "Áreas",
+      texto: "Resumen y una pestaña por área. Cada área se lee por separado: si una tarda o falla, las demás se ven igual (un punto rojo marca la que falló). Atajo: teclas 1 a 6.",
+    },
+    {
+      selector: '[data-tour="cm-pulso"]',
+      titulo: "Pulso de la empresa",
+      texto: "Los números clave de cada área, con la variación contra el mes anterior: verde si mejoró, rojo si empeoró. Clic en uno para ir a su área.",
+      antes: () => setPestana("resumen"),
+    },
+    {
+      selector: '[data-tour="cm-areas"]',
+      titulo: "Una tarjeta por área",
+      texto: "Tres indicadores y la gráfica principal de cada área. «Ver todo» abre el área completa.",
+    },
+    {
+      selector: '[data-tour="cm-grafica"]',
+      titulo: "Gráficas con detalle",
+      texto: "Clic en una barra para ver qué la compone: un vendedor muestra sus clientes y un cliente, sus productos. «Otros…» también se abre. Arriba del detalle está el camino para volver a cada nivel.",
+      antes: () => setPestana("ventas"),
+    },
+    {
+      selector: '[data-tour="cm-herramientas"]',
+      titulo: "Herramientas de cada gráfica",
+      texto: "Ver los números en tabla, ampliar la gráfica o bajarla como imagen PNG. Donde aparece «Monto / Unidades» se cambia la medida.",
+    },
+    {
+      selector: '[data-tour="cm-recargar"]',
+      titulo: "Recargar",
+      texto: "Los datos se guardan 10 minutos para que el tablero abra rápido (Cobranza tarda unos 20 segundos la primera vez). Recargar, o la tecla R, trae lo último de Odoo.",
+    },
+    {
+      selector: '[data-tour="cm-presentar"]',
+      titulo: "Presentar en una TV",
+      texto: "Presentar (tecla P) pasa sola de un área a otra cada 20 segundos y vuelve a pedir los datos cada 15 minutos. Junto con pantalla completa sirve para dejarlo en una TV.",
+      antes: () => setPestana("resumen"),
+    },
+    {
+      selector: '[data-tour="cm-ayuda"]',
+      titulo: "¿Cómo funciona?",
+      texto: "Este recorrido sale cada vez que entras, hasta que marques «No volver a mostrar». Con este botón lo vuelves a abrir.",
+    },
+  ];
 
   // "Recargar" (botón o R) pide al servidor que no use lo guardado de los últimos 10 min.
   const refrescar = useRef(false);
@@ -441,7 +503,15 @@ export function CentroGraficas() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1" role="radiogroup" aria-label="Sede">
+            <button
+              type="button"
+              data-tour="cm-ayuda"
+              onClick={recorrido.abrir}
+              className="h-10 inline-flex items-center gap-1 rounded-xl px-3 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+            >
+              <CircleHelp className="h-4 w-4" /> ¿Cómo funciona?
+            </button>
+            <div data-tour="cm-sede" className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1" role="radiogroup" aria-label="Sede">
               {SEDES.map((s) => (
                 <button
                   key={s.id}
@@ -459,6 +529,7 @@ export function CentroGraficas() {
               value={mes}
               onChange={(e) => setMes(e.target.value)}
               aria-label="Mes"
+              data-tour="cm-mes"
               className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
             >
               {meses.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
@@ -467,10 +538,12 @@ export function CentroGraficas() {
               type="button"
               onClick={recargar}
               title="Recargar (R)"
+              data-tour="cm-recargar"
               className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
             >
               <RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />
             </button>
+            <div data-tour="cm-presentar" className="flex gap-2">
             <button
               type="button"
               onClick={() => setPresentando((p) => !p)}
@@ -488,11 +561,12 @@ export function CentroGraficas() {
             >
               {pantallaCompleta ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
             </button>
+            </div>
           </div>
         </div>
 
         {/* Pestañas */}
-        <nav className="relative mt-5 -mb-1 flex gap-1 overflow-x-auto" aria-label="Áreas" role="tablist">
+        <nav data-tour="cm-pestanas" className="relative mt-5 -mb-1 flex gap-1 overflow-x-auto" aria-label="Áreas" role="tablist">
           {PESTANAS.map((p, i) => {
             const Icono = ICONO[p];
             const e = p === "resumen" ? undefined : estados[p];
@@ -527,6 +601,7 @@ export function CentroGraficas() {
       ) : (
         <VistaArea estado={estados[pestana]} contexto={`${pestana}-${contexto}`} reintentar={() => reintentar(pestana)} pedirDetalle={pedirDetalle(pestana)} />
       )}
+      <RecorridoGuiado pasos={pasosTour} abierto={recorrido.abierto} onCerrar={recorrido.cerrar} />
     </div>
   );
 }
