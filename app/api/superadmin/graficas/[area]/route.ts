@@ -7,6 +7,7 @@ import { AREAS, SEDES_GRAFICAS, liviano, nodoDetalle, type Area, type DatosArea 
 import { graficasVentas } from "@/lib/graficas/ventas";
 import { graficasCobranza } from "@/lib/graficas/cobranza";
 import { graficasInventario } from "@/lib/graficas/inventario";
+import { graficasInventarioHistoria } from "@/lib/graficas/inventarioHistoria";
 import { graficasRma } from "@/lib/graficas/rma";
 import { graficasRrhh } from "@/lib/graficas/rrhh";
 
@@ -22,8 +23,8 @@ export const maxDuration = 120;
 const MINUTOS_CACHE = 10;
 const cache = new Map<string, { vence: number; valor: Promise<DatosArea> }>();
 
-function leer(area: Area, cids: number[], sede: string, mes: string, payload: any, refrescar: boolean): Promise<DatosArea> {
-  const llave = `${area}|${sede}|${mes}`;
+function leer(area: Area, historia: boolean, cids: number[], sede: string, mes: string, payload: any, refrescar: boolean): Promise<DatosArea> {
+  const llave = `${area}${historia ? "|historia" : ""}|${sede}|${mes}`;
   const ahora = Date.now();
   for (const [k, v] of cache) if (v.vence <= ahora) cache.delete(k);
   const hit = cache.get(llave);
@@ -34,7 +35,7 @@ function leer(area: Area, cids: number[], sede: string, mes: string, payload: an
     switch (area) {
       case "ventas": return graficasVentas(cids, sede, mes);
       case "cobranza": return graficasCobranza(cids, sede, mes);
-      case "inventario": return graficasInventario(cids, sede, mes);
+      case "inventario": return historia ? graficasInventarioHistoria(cids, sede, mes) : graficasInventario(cids, sede, mes);
       case "rma": return graficasRma(cids, sede, mes);
       case "rrhh": return graficasRrhh(cids, sede, mes, payload);
     }
@@ -47,6 +48,7 @@ function leer(area: Area, cids: number[], sede: string, mes: string, payload: an
 
 /**
  * GET /api/superadmin/graficas/<ventas|cobranza|inventario|rma|rrhh>?sede=todas|valencia|caracas|panama&mes=YYYY-MM[&refrescar=1]
+ * Inventario con `&vista=historia`: el stock al cierre de cada mes y los movimientos del mes (lib/graficas/inventarioHistoria.ts).
  * Centro de gráficas del SuperAdmin (lib/graficas/). Solo SuperAdmin.
  * Con `&grafica=<id>&ruta=<JSON de etiquetas>[&medida=alterna]` devuelve solo
  * ese nivel del detalle (lo que se abre al hacer clic en una barra).
@@ -77,7 +79,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   try {
-    const data = await leer(area as Area, cids, sede, mes, auth.payload, sp.get("refrescar") === "1");
+    const data = await leer(area as Area, area === "inventario" && sp.get("vista") === "historia", cids, sede, mes, auth.payload, sp.get("refrescar") === "1");
     if (ruta) {
       const nodo = nodoDetalle(data, sp.get("grafica")!, sp.get("medida") === "alterna", ruta);
       if (!nodo) return NextResponse.json({ error: "Sin detalle para esa barra" }, { status: 404 });
