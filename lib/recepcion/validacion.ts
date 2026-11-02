@@ -1,6 +1,6 @@
 import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
 import { query } from "@/lib/db";
-import { SUCURSALES, limpiarPrecintos } from "@/lib/recepcion/flujo";
+import { FACTURA_ESPECIAL_SIN_NUMERO, SUCURSALES, limpiarPrecintos } from "@/lib/recepcion/flujo";
 
 /**
  * Validacion de un packing list (cabecera + renglones), compartida por el
@@ -40,9 +40,12 @@ export type ItemNuevo = {
    * cantidad del renglon: si no, no se sabe y se compara solo el total.
    */
   reparto: Array<{ contenedor: string; cantidad: number }> | null;
-  /** Otra factura del embarque (la factura especial de Caracas): no se recibe aca. */
+  /** Factura Especial de Caracas (compra directa, ver flujo.ts): no se recibe aca. */
   factura_aparte: string | null;
-  /** Cuantas unidades del renglon son de esa factura (null = todo el renglon). */
+  /**
+   * Cuantas unidades del renglon son de esa factura (null = todo el renglon).
+   * Solo viaja en el formulario: al guardar, el renglon se parte en dos.
+   */
   cantidad_aparte: number | null;
 };
 
@@ -134,7 +137,7 @@ export function validarCabeceraEItems(body: any):
       return { error: `Renglon ${n + 1}: cantidad invalida` };
     }
     const cajas = it?.cajas_esperadas === "" || it?.cajas_esperadas == null ? null : Number(it.cajas_esperadas);
-    // Factura especial de Caracas: cuantas unidades del renglon no son de esta sede.
+    // Factura Especial de Caracas (compra directa): cuantas unidades del renglon son de esa factura.
     let aparte: { factura: string; cantidad: number | null } | null = null;
     const factura = texto(it?.factura_aparte, 50);
     const crudaAparte = it?.cantidad_aparte;
@@ -146,7 +149,7 @@ export function validarCabeceraEItems(body: any):
       if (cant !== null && cant > cantidad) {
         return { error: `Renglon ${n + 1}: la factura especial (${cant}) no puede pasar de la cantidad del renglon (${cantidad})` };
       }
-      aparte = { factura: (factura || "CARACAS").toUpperCase(), cantidad: cant };
+      aparte = { factura: (factura || FACTURA_ESPECIAL_SIN_NUMERO).toUpperCase(), cantidad: cant };
     }
     items.push({
       codigo: texto(it?.codigo, MAX.codigo),
@@ -158,6 +161,22 @@ export function validarCabeceraEItems(body: any):
       cantidad_aparte: aparte?.cantidad ?? null,
     });
   }
+
+  // Factura Especial de Caracas: esas unidades quedan en su propio renglon,
+  // que Almacen cuenta y serializa como cualquier otro pero no se carga en el
+  // Odoo de esta sede (es otra compra, no un reparto entre sedes). El resto
+  // sigue en el renglon original. Cuanto trae cada contenedor ya no se sabe
+  // por separado: se descarta en los dos.
+  const separados: ItemNuevo[] = items.flatMap((i) => {
+    if (!i.factura_aparte) return [i];
+    const aparte = i.cantidad_aparte ?? i.cantidad_esperada;
+    if (aparte >= i.cantidad_esperada) return [{ ...i, cantidad_aparte: null }];
+    return [
+      { ...i, factura_aparte: null, cantidad_aparte: null, reparto: null, cantidad_esperada: Math.round((i.cantidad_esperada - aparte) * 1000) / 1000 },
+      { ...i, cantidad_aparte: null, reparto: null, cajas_esperadas: null, cantidad_esperada: aparte },
+    ];
+  });
+  if (separados.length > MAX.items) return { error: `Maximo ${MAX.items} renglones` };
 
   return {
     cab: {
@@ -174,7 +193,7 @@ export function validarCabeceraEItems(body: any):
       fecha_estimada: fecha,
       observaciones: texto(body?.observaciones, MAX.observaciones),
     },
-    items,
+    items: separados,
     contenedores,
   };
 }
@@ -215,14 +234,13 @@ export async function insertarItems(recepcionId: number, items: ItemNuevo[]) {
         i.cantidad_esperada,
         i.cajas_esperadas,
         i.factura_aparte,
-        i.factura_aparte ? i.cantidad_aparte : null,
       );
-      return "(?, ?, ?, ?, ?, ?, ?)";
+      return "(?, ?, ?, ?, ?, ?)";
     })
     .join(", ");
   await query(
     `INSERT INTO recepcion_packing_items
-       (recepcion_id, codigo, producto, cantidad_esperada, cajas_esperadas, factura_aparte, cantidad_aparte)
+       (recepcion_id, codigo, producto, cantidad_esperada, cajas_esperadas, factura_aparte)
      VALUES ${marcas}`,
     valores,
   );

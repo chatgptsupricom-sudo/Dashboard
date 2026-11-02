@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, FileSpreadsheet, FileText, Loader2, Plus, Send, Trash2, Upload, X } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { SUCURSALES, separarPrecintos } from "@/lib/recepcion/flujo";
+import { SUCURSALES, separarPrecintos, FACTURA_ESPECIAL_SIN_NUMERO } from "@/lib/recepcion/flujo";
 import { leerExcel } from "@/lib/recepcion/leerExcel";
 import { porBulto, type Conversion } from "@/lib/recepcion/unidades";
 import {
@@ -37,8 +37,8 @@ type Renglon = {
   cajas_esperadas: string;
   // Lo lee la IA del PDF; se pierde si se cambia la cantidad a mano (ya no suma).
   reparto?: Reparto | null;
-  // Factura especial de Caracas (INV1062 en POSITION): esas unidades van directo
-  // a Caracas y no se reciben aca. null = no marcado; "" = marcado sin numero.
+  // Factura Especial de Caracas (compra directa; INV1062 en POSITION): esas
+  // unidades no se reciben aca. null = no marcado; "" = marcado sin numero.
   factura_aparte?: string | null;
   // Cuantas unidades del renglon son de esa factura.
   cantidad_aparte?: string;
@@ -310,7 +310,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
       ),
     );
 
-  // Factura especial de Caracas: al marcarla propone todo el renglon.
+  // Factura Especial de Caracas: al marcarla propone todo el renglon.
   const marcarEspecial = (i: number, marcada: boolean) =>
     setRenglones((p) =>
       p.map((r, n) =>
@@ -383,7 +383,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
             cantidad_esperada: Number(r.cantidad_esperada),
             cajas_esperadas: r.cajas_esperadas === "" ? null : Number(r.cajas_esperadas),
             reparto: r.reparto || null,
-            factura_aparte: r.factura_aparte != null ? r.factura_aparte.trim() || "CARACAS" : null,
+            factura_aparte: r.factura_aparte != null ? r.factura_aparte.trim() || FACTURA_ESPECIAL_SIN_NUMERO : null,
             cantidad_aparte: r.factura_aparte != null && r.cantidad_aparte ? Number(r.cantidad_aparte) : null,
           })),
         }),
@@ -650,7 +650,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
-                {/* Factura especial de Caracas: esas unidades no se reciben aca. */}
+                {/* Factura Especial de Caracas (compra directa): esas unidades no se reciben aca. */}
                 <div
                   className={`col-span-full -mt-1 flex flex-wrap items-center gap-2 text-[11px] ${
                     r.factura_aparte != null ? "rounded-lg bg-amber-50 px-2 py-1.5 text-amber-900" : "text-slate-500"
@@ -685,7 +685,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
                         })}
                       </span>
                       <input
-                        value={r.factura_aparte}
+                        value={r.factura_aparte === FACTURA_ESPECIAL_SIN_NUMERO ? "" : r.factura_aparte}
                         onChange={(e) => cambiarEspecial(i, "factura_aparte", e.target.value.slice(0, 50).toUpperCase())}
                         placeholder={t("especial_factura")}
                         aria-label={t("especial_factura")}

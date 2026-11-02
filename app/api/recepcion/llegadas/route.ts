@@ -2,7 +2,7 @@ import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
 import { completarCodigos } from "@/lib/recepcion/codigosLlegadas";
-import { esperadoSede } from "@/lib/recepcion/flujo";
+import { esFacturaEspecial } from "@/lib/recepcion/flujo";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
               COALESCE(r.llegada_at, r.cerrado_at) AS llegada,
               DATE_FORMAT(r.fecha_estimada, '%Y-%m-%d') AS estimada,
               i.codigo, i.producto, i.odoo_product_id, i.cantidad_esperada, i.cantidad_recibida,
-              i.factura_aparte, i.cantidad_aparte
+              i.factura_aparte
          FROM recepcion_packing r
          JOIN recepcion_packing_items i ON i.recepcion_id = r.id
         WHERE r.cids = ? AND r.descartado_at IS NULL
@@ -102,14 +102,15 @@ export async function GET(request: NextRequest) {
 
     const acc = new Acumulador();
     for (const f of r.rows as any[]) {
+      // La Factura Especial de Caracas (compra directa) no entra al inventario de Valencia.
+      if (esFacturaEspecial(f)) continue;
       if (f.etapa === "cerrado") {
         if (f.llegada) acc.sumar(`${diaLocal(new Date(f.llegada))}|llego`, { ...f, cantidad: f.cantidad_recibida });
       } else if (f.etapa === "descargando") {
         const dia = f.llegada ? diaLocal(new Date(f.llegada)) : f.estimada;
-        if (dia) acc.sumar(`${dia}|contando`, { ...f, cantidad: esperadoSede(f) });
+        if (dia) acc.sumar(`${dia}|contando`, { ...f, cantidad: f.cantidad_esperada });
       } else {
-        // Lo de la factura especial de Caracas no llega a esta sede.
-        acc.sumar(`${f.estimada || "sin_fecha"}|por_llegar`, { ...f, cantidad: esperadoSede(f) });
+        acc.sumar(`${f.estimada || "sin_fecha"}|por_llegar`, { ...f, cantidad: f.cantidad_esperada });
       }
     }
 

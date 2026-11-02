@@ -1,7 +1,7 @@
 import { query } from "@/lib/db";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { normalizarCodigo } from "@/lib/escaneo/codigos";
-import { SUCURSALES, cantidadAparte, esperadoSede, todoAparte, type EstadoOdoo } from "@/lib/recepcion/flujo";
+import { SUCURSALES, esFacturaEspecial, type EstadoOdoo } from "@/lib/recepcion/flujo";
 import { cargarRecepcion } from "@/lib/recepcion/servidor";
 import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
 
@@ -720,15 +720,14 @@ async function recibidosPorProducto(
 ): Promise<{ recibidos: Recibido[]; sinProducto: string[]; apartados: string[] }> {
   // Lo de otra factura no se carga aca: ni se busca su producto.
   const apartados = items
-    .filter((i) => cantidadAparte(i) > 0)
+    .filter((i) => esFacturaEspecial(i))
     .map(
       (i) =>
-        `${i.factura_aparte} · ${i.codigo || "sin codigo"} · ${i.producto} (${cantidadAparte(i)} de ${Number(i.cantidad_esperada)})`,
+        `${i.factura_aparte} · ${i.codigo || "sin codigo"} · ${i.producto} (${Number(i.cantidad_recibida || 0)} de ${Number(i.cantidad_esperada)})`,
     );
-  // Factura especial de Caracas: si es todo el renglon no se carga nada; si
-  // es una parte, Almacen conto solo lo de esta sede (`esperadoSede`) y eso
-  // es lo que entra.
-  const propios = items.filter((i) => !todoAparte(i));
+  // Factura Especial de Caracas (compra directa): su renglon se conto y se
+  // serializo, pero no se carga en esta sede.
+  const propios = items.filter((i) => !esFacturaEspecial(i));
   const productoDe = await productoPorRenglon(propios, productosOc);
   const mapa = new Map<number, Recibido>();
   const sinProducto: string[] = [];

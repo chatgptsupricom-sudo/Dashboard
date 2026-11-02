@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -38,9 +38,7 @@ import {
   formatearDuracion,
   inicioRecepcion,
   separarPrecintos,
-  cantidadAparte,
-  esperadoSede,
-  todoAparte,
+  FACTURA_ESPECIAL_SIN_NUMERO,
   type Contenedor,
   type Etapa,
   type TipoDano,
@@ -135,9 +133,8 @@ type Item = {
   /** Producto de Odoo (factura, o cruzado con lib/recepcion/cruceIa.ts). */
   odoo_product_id?: number | null;
   cantidad_esperada: string | number;
-  /** Factura especial de Caracas: esas unidades no se reciben aca (flujo.ts `cantidadAparte`). */
+  /** Renglon de la Factura Especial de Caracas (compra directa): se cuenta y serializa, no se carga en Odoo aca. */
   factura_aparte?: string | null;
-  cantidad_aparte?: string | number | null;
   cajas_esperadas: number | null;
   cantidad_recibida: string | number | null;
   motivo_diferencia: string | null;
@@ -712,7 +709,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   };
   /** Lo que el packing list dice para ese contenedor (con uno solo, todo). */
   const esperadoEn = (i: Item, cid: number): number | null => {
-    if (contenedores.length === 1 && cid === contenedores[0].id) return esperadoSede(i);
+    if (contenedores.length === 1 && cid === contenedores[0].id) return Number(i.cantidad_esperada);
     const f = (i.conteo || []).find((x) => Number(x.contenedor_id) === cid);
     return f && f.cantidad_esperada !== null ? Number(f.cantidad_esperada) : null;
   };
@@ -759,9 +756,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   const ev = evaluarConteo(
     items.map((i) => ({
       id: i.id,
-      // Lo de la factura especial no se recibe aca: se compara con lo de esta sede.
-      cantidad_esperada: esperadoSede(i),
-      cantidad_recibida: todoAparte(i) ? totalDe(i) ?? 0 : totalDe(i),
+      cantidad_esperada: Number(i.cantidad_esperada),
+      cantidad_recibida: totalDe(i),
       motivo_diferencia: conteo[i.id]?.motivo || null,
       golpeado: (conteo[i.id]?.danos?.length ?? 0) > 0,
       danos: danosANumero(conteo[i.id]?.danos),
@@ -819,8 +815,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
             id: i.id,
             producto: i.producto,
             codigo: i.codigo,
-            esperada: esperadoSede(i),
-            recibida: todoAparte(i) ? totalDe(i) ?? 0 : totalDe(i),
+            esperada: Number(i.cantidad_esperada),
+            recibida: totalDe(i),
             danado: (conteo[i.id]?.danos?.length ?? 0) > 0,
           }))}
           contenedores={contenedores.map((c) => ({ id: c.id, numero: c.numero, etapa: c.etapa }))}
@@ -1275,7 +1271,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                     codigo: i.codigo,
                     producto: i.producto,
                     lleva_serial: !!i.lleva_serial,
-                    esperado: esperadoSede(i),
+                    esperado: Number(i.cantidad_esperada),
                     recibido: i.lleva_serial ? (i.seriales || []).length : totalDe(i) ?? 0,
                   }))}
                   seleccionado={seleccionado}
@@ -1344,19 +1340,19 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 !items.some((i) =>
                   `${i.producto} ${i.codigo || ""}`.toLowerCase().includes(filtro.trim().toLowerCase()),
                 ) && <p className="py-4 text-center text-sm text-slate-400">{t("sin_resultados")}</p>}
-              {items
+              {/* La Factura Especial de Caracas va al final, en su propia seccion. */}
+              {[...items.filter((i) => !i.factura_aparte), ...items.filter((i) => i.factura_aparte)]
                 .filter(
                   (i) =>
                     !filtro.trim() ||
                     `${i.producto} ${i.codigo || ""}`.toLowerCase().includes(filtro.trim().toLowerCase()),
                 )
-                .map((i) => {
+                .map((i, n, lista) => {
                 const c = conteo[i.id] || { recibida: "", motivo: "", danos: [], nota: "" };
                 const conDano = c.danos.length > 0;
-                // Lo de la factura especial de Caracas no se cuenta aca.
-                const esperado = esperadoSede(i);
-                const aparte = cantidadAparte(i);
-                const soloCaracas = todoAparte(i);
+                const esperado = Number(i.cantidad_esperada);
+                const especial = !!i.factura_aparte;
+                const primeraEspecial = especial && !lista[n - 1]?.factura_aparte;
                 // El total (todos los contenedores) contra el packing list.
                 const total = totalDe(i);
                 const recibidaNum = total;
@@ -1386,8 +1382,14 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 const esSeleccionado = seleccionado === i.id;
                 const seriales = i.seriales || [];
                 return (
+                  <Fragment key={i.id}>
+                  {primeraEspecial && (
+                    <div className="mt-4 mb-1 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+                      <p className="text-sm font-semibold text-orange-900">{t("especial_seccion")}</p>
+                      <p className="text-[11px] text-orange-800">{t("especial_seccion_ayuda")}</p>
+                    </div>
+                  )}
                   <div
-                    key={i.id}
                     id={`renglon-${i.id}`}
                     className={`py-3 border-b border-slate-50 last:border-0 transition-colors duration-500 ${
                       ultimo === i.id
@@ -1405,15 +1407,11 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           </span>
                         )}
                         <p className="text-sm text-slate-800 truncate">{i.producto}</p>
-                        {aparte > 0 && (
+                        {especial && (
                           <p className="mt-0.5 inline-flex flex-wrap items-center gap-1 rounded-md bg-orange-100 px-1.5 py-0.5 text-[11px] font-medium text-orange-900">
                             <span className="font-bold uppercase tracking-wide">{t("especial_badge")}</span>
-                            {i.factura_aparte && i.factura_aparte !== "CARACAS" && <span className="font-mono">{i.factura_aparte}</span>}
-                            <span>
-                              {soloCaracas
-                                ? t("especial_todo", { cantidad: fmt(aparte) })
-                                : t("especial_parte", { cantidad: fmt(aparte), total: fmt(Number(i.cantidad_esperada)), sede: fmt(esperado) })}
-                            </span>
+                            {i.factura_aparte !== FACTURA_ESPECIAL_SIN_NUMERO && <span className="font-mono">{i.factura_aparte}</span>}
+                            <span>{t("especial_detalle")}</span>
                           </p>
                         )}
                         {total !== null && total > esperado && (
@@ -1504,12 +1502,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       <span className="text-sm font-semibold tabular-nums text-slate-700 text-right">
                         {porCont ? (espMio === null ? "—" : fmt(espMio)) : esperado}
                       </span>
-                      {soloCaracas && (total ?? 0) === 0 ? (
-                        // Todo es de la factura especial: no se cuenta aca.
-                        <span className="w-full h-10 px-2 flex items-center justify-end rounded-lg border border-dashed border-orange-200 bg-orange-50 text-[11px] font-semibold text-orange-700">
-                          {t("especial_no_cuenta")}
-                        </span>
-                      ) : porCont && contMio === null ? (
+                      {porCont && contMio === null ? (
                         // Sin contenedor elegido no se cuenta: no se sabe en cual.
                         <span className="w-full h-10 px-2 flex items-center justify-end rounded-lg border border-dashed border-slate-200 text-sm text-slate-300">
                           —
@@ -1722,6 +1715,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       </div>
                     )}
                   </div>
+                  </Fragment>
                 );
               })}
 
