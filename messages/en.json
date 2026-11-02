@@ -2240,8 +2240,7 @@
     "facturas": "Invoices",
     "cobrado_mes": "Collected this month",
     "facturado_mes": "Invoiced this month",
-    "recuperado_mes": "Recovered this month",
-    "ventas_credito_mes": "Credit sales"
+    "cobrado_de_por_cobrar": "Collected {cobrado} of {porCobrar}"
   },
   "ui": {
     "months": [

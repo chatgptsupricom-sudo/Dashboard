@@ -8,8 +8,9 @@
  * cliente. Se excluye la factura, no el cliente: si el cliente tiene deuda
  * reciente, esa sí cuenta.
  *
- * El CEI (lib/cxc/efectividad.ts) y el resto de la pantalla (aging, top
- * deudores, por sede, estado de cuenta) sí las siguen mostrando.
+ * Tampoco en Efectividad de Cobranza (lib/cxc/efectividad.ts). El resto de
+ * la pantalla (aging, top deudores, por sede, estado de cuenta) sí las sigue
+ * mostrando.
  */
 export const VENCIMIENTO_DESDE = "2025-01-01";
 

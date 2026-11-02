@@ -31,12 +31,11 @@ function getCompanyOptions(t: ReturnType<typeof useTranslations<"cxc">>) {
 }
 
 interface KPIs {
-  // CEI estándar, solo crédito: recuperado ÷ exigible (lib/cxc/efectividad.ts → calcularCEI).
+  // Cobrado ÷ lo que había que cobrar en el mes, solo crédito (lib/cxc/efectividad.ts → detalleEfectividad).
   efectividad: {
-    value: number | null; meta: number; recuperado: number; ventasCredito: number;
-    carteraInicial: number; carteraFinal: number; carteraFinalNoVencida: number; exigible: number;
-    pagosRegistrados: number; pagos: number; facturas: number; parcial: boolean;
-    relacionadas?: number;
+    value: number | null; meta: number; porCobrar: number; venciaAntes: number; vencioEnElMes: number;
+    notasCredito: number; cobrado: number; falta: number; facturas: number; vencidasHasta: string;
+    parcial: boolean; relacionadas?: number; cierreGuardado?: string | null;
   };
   carteraVencida: { value: number; meta: number; saldoVencido: number; carteraTotal: number; relacionadas?: number };
   recuperacion: { value: number | null; meta: number; saldoVencidoInicial: number; recuperadoEnElMes: number; relacionadas?: number };
@@ -55,7 +54,7 @@ interface CompanyData {
   overdueInvoices: number;
   monthInvoiced: number;
   monthPaid: number;
-  /** CEI de la sede (lib/cxc/efectividad.ts); null si no hay exigible. */
+  /** Efectividad de la sede (lib/cxc/efectividad.ts); null si no había nada que cobrar. */
   efectividad: number | null;
 }
 
@@ -278,7 +277,7 @@ export default function CxCReport() {
               value={data.kpis.efectividad.value != null ? `${data.kpis.efectividad.value}%` : "N/A"}
               meta={`${t("meta")}: ${data.kpis.efectividad.meta}%`}
               subtitle={
-                `${t("recuperado_mes")}: ${formatCurrency(data.kpis.efectividad.recuperado)} / ${t("ventas_credito_mes")}: ${formatCurrency(data.kpis.efectividad.ventasCredito)}` +
+                t("cobrado_de_por_cobrar", { cobrado: formatCurrency(data.kpis.efectividad.cobrado), porCobrar: formatCurrency(data.kpis.efectividad.porCobrar) }) +
                 ((data.kpis.efectividad.relacionadas ?? 0) > 0.005
                   ? ` · SUPER TECHNO LLC: ${formatCurrency(data.kpis.efectividad.relacionadas!)} (${t("fuera_del_calculo")})`
                   : "")
