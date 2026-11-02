@@ -65,8 +65,12 @@ export async function graficasCobranza(cids: number[], sede: string, mes: string
     const delMes = (x: string) => cobros.filter((c) => c.fecha.slice(0, 7) === x);
     const total = (xs: Cobro[]) => xs.reduce((s, c) => s + c.monto, 0);
     const cobradoMes = total(delMes(mes));
-    const cobradoAnt = total(delMes(mesAnterior));
-    kpis.push({ id: "cobrado_mes", etiqueta: "Cobrado en el mes", valor: r2(cobradoMes), formato: "usd", delta: variacion(cobradoMes, cobradoAnt), referencia: "vs mes anterior" });
+    // Mes en curso: contra los mismos días del mes anterior, no contra el mes completo.
+    const cobradoAnt = total(delMes(mesAnterior).filter((c) => !enCurso || c.fecha.slice(8) <= hoy.slice(8)));
+    kpis.push({
+      id: "cobrado_mes", etiqueta: "Cobrado en el mes", valor: r2(cobradoMes), formato: "usd", delta: variacion(cobradoMes, cobradoAnt),
+      referencia: enCurso ? "vs mismos días del mes anterior" : "vs mes anterior",
+    });
     kpis.push({ id: "pagos", etiqueta: "Pagos recibidos", valor: new Set(delMes(mes).map((c) => c.pagoMoveId ?? c.reconcileId)).size, formato: "num" });
 
     graficas.push({
