@@ -503,7 +503,8 @@ export function CentroGraficas() {
   return (
     <div ref={raiz} className={`space-y-5 ${pantallaCompleta ? "overflow-y-auto bg-[#f8fafc] p-8" : ""}`}>
       {/* Encabezado */}
-      <header className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white px-6 py-5">
+      {/* overflow-clip: con overflow-hidden el adorno de la esquina dejaba desplazar el encabezado (el recorrido lo corría 64 px). */}
+      <header className="relative overflow-clip rounded-3xl border border-slate-200/80 bg-white px-6 py-5">
         <div className="pointer-events-none absolute inset-0 opacity-[0.55] [background-image:radial-gradient(circle_at_1px_1px,#e2e8f0_1px,transparent_0)] [background-size:18px_18px]" />
         <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-gradient-to-br from-blue-100/70 via-emerald-50/50 to-transparent blur-2xl" />
         <div className="relative flex flex-wrap items-end gap-4">
