@@ -442,26 +442,16 @@ export const SUCURSALES: Array<{ cids: number; nombre: string }> = [
 ];
 
 /**
- * Factura especial de Caracas: a veces el embarque trae productos de otra
- * factura (INV1062) que van directo a Caracas y no entran a la recepcion ni
- * al inventario de esta sede. Compras marca en el renglon cuantas unidades
- * son de esa factura (`cantidad_aparte`; sin cantidad = todo el renglon).
- * Almacen las aparta y cuenta solo lo de esta sede: `esperadoSede`.
+ * Factura Especial de Caracas: una COMPRA DIRECTA de Caracas que viaja en el
+ * mismo embarque (ej. INV1062). Esos productos no entran a la recepcion ni al
+ * inventario de esta sede. Compras marca en el renglon cuantas unidades son
+ * de esa factura y, al guardar, quedan en su propio renglon (`factura_aparte`
+ * = el numero de la factura, o FACTURA_ESPECIAL_SIN_NUMERO), que Almacen
+ * cuenta y serializa como los demas pero sale aparte y no se carga en Odoo.
+ *
+ * Nunca se mezcla con un reparto de la mercancia de un packing list entre
+ * sedes: esto no es "lo que le toca a Caracas", es otra compra.
  */
-export type ConAparte = { factura_aparte?: unknown; cantidad_aparte?: unknown; cantidad_esperada: unknown };
+export const FACTURA_ESPECIAL_SIN_NUMERO = "FACTURA ESPECIAL";
 
-export function cantidadAparte(i: ConAparte): number {
-  if (!i.factura_aparte) return 0;
-  const esperado = Number(i.cantidad_esperada) || 0;
-  const v = i.cantidad_aparte;
-  const n = v === null || v === undefined || v === "" ? esperado : Number(v);
-  return Math.min(esperado, Math.max(0, Number.isFinite(n) ? n : esperado));
-}
-
-/** Lo que el packing list trae para esta sede (sin lo de la factura especial). */
-export function esperadoSede(i: ConAparte): number {
-  return Math.round(((Number(i.cantidad_esperada) || 0) - cantidadAparte(i)) * 1000) / 1000;
-}
-
-/** Todo el renglon es de la factura especial: no se cuenta aqui. */
-export const todoAparte = (i: ConAparte) => !!i.factura_aparte && esperadoSede(i) <= 0;
+export const esFacturaEspecial = (i: { factura_aparte?: unknown }) => !!i.factura_aparte;

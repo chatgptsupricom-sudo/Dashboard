@@ -1,6 +1,6 @@
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { productoPorRenglon, productosDeLaOc } from "@/lib/recepcion/odoo";
-import { todoAparte } from "@/lib/recepcion/flujo";
+import { esFacturaEspecial } from "@/lib/recepcion/flujo";
 
 /**
  * Seriales que faltan para cargar en Odoo una recepcion ya cerrada.
@@ -89,8 +89,8 @@ export async function renglonesSinSeriales(datos: { recepcion: any; items: any[]
   const rec = datos.recepcion;
   if (!abiertaParaSeriales(rec)) return [];
   const cargado = resultadoDe(rec.odoo_resultado).cargado;
-  // Lo que es todo de la factura especial no se carga aca: no pide seriales.
-  const recibidos = datos.items.filter((i) => Number(i.cantidad_recibida || 0) > 0 && !todoAparte(i));
+  // La Factura Especial de Caracas no se carga en Odoo aca: no pide seriales.
+  const recibidos = datos.items.filter((i) => Number(i.cantidad_recibida || 0) > 0 && !esFacturaEspecial(i));
   if (recibidos.length === 0) return [];
   const producto = await productoConSerial(rec, recibidos);
   return recibidos
