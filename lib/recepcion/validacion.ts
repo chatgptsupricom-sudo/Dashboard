@@ -40,8 +40,10 @@ export type ItemNuevo = {
    * cantidad del renglon: si no, no se sabe y se compara solo el total.
    */
   reparto: Array<{ contenedor: string; cantidad: number }> | null;
-  /** Otra factura del embarque (otra sede): se cuenta pero no se carga en Odoo aca. */
+  /** Otra factura del embarque (la factura especial de Caracas): no se recibe aca. */
   factura_aparte: string | null;
+  /** Cuantas unidades del renglon son de esa factura (null = todo el renglon). */
+  cantidad_aparte: number | null;
 };
 
 const llaveContenedor = (v: unknown) => String(v ?? "").toUpperCase().replace(/[\s-]+/g, "");
@@ -132,13 +134,28 @@ export function validarCabeceraEItems(body: any):
       return { error: `Renglon ${n + 1}: cantidad invalida` };
     }
     const cajas = it?.cajas_esperadas === "" || it?.cajas_esperadas == null ? null : Number(it.cajas_esperadas);
+    // Factura especial de Caracas: cuantas unidades del renglon no son de esta sede.
+    let aparte: { factura: string; cantidad: number | null } | null = null;
+    const factura = texto(it?.factura_aparte, 50);
+    const crudaAparte = it?.cantidad_aparte;
+    if (factura || (crudaAparte !== undefined && crudaAparte !== null && crudaAparte !== "")) {
+      const cant = crudaAparte === undefined || crudaAparte === null || crudaAparte === "" ? null : Number(crudaAparte);
+      if (cant !== null && (!Number.isFinite(cant) || cant <= 0)) {
+        return { error: `Renglon ${n + 1}: la cantidad de la factura especial tiene que ser mayor que 0` };
+      }
+      if (cant !== null && cant > cantidad) {
+        return { error: `Renglon ${n + 1}: la factura especial (${cant}) no puede pasar de la cantidad del renglon (${cantidad})` };
+      }
+      aparte = { factura: (factura || "CARACAS").toUpperCase(), cantidad: cant };
+    }
     items.push({
       codigo: texto(it?.codigo, MAX.codigo),
       producto,
       cantidad_esperada: cantidad,
       cajas_esperadas: cajas !== null && Number.isFinite(cajas) && cajas >= 0 ? Math.round(cajas) : null,
       reparto: validarReparto(it?.reparto, cantidad, contenedores),
-      factura_aparte: texto(it?.factura_aparte, 50)?.toUpperCase() ?? null,
+      factura_aparte: aparte?.factura ?? null,
+      cantidad_aparte: aparte?.cantidad ?? null,
     });
   }
 
@@ -191,13 +208,21 @@ export async function insertarItems(recepcionId: number, items: ItemNuevo[]) {
   const valores: any[] = [];
   const marcas = items
     .map((i) => {
-      valores.push(recepcionId, i.codigo, i.producto, i.cantidad_esperada, i.cajas_esperadas, i.factura_aparte);
-      return "(?, ?, ?, ?, ?, ?)";
+      valores.push(
+        recepcionId,
+        i.codigo,
+        i.producto,
+        i.cantidad_esperada,
+        i.cajas_esperadas,
+        i.factura_aparte,
+        i.factura_aparte ? i.cantidad_aparte : null,
+      );
+      return "(?, ?, ?, ?, ?, ?, ?)";
     })
     .join(", ");
   await query(
     `INSERT INTO recepcion_packing_items
-       (recepcion_id, codigo, producto, cantidad_esperada, cajas_esperadas, factura_aparte)
+       (recepcion_id, codigo, producto, cantidad_esperada, cajas_esperadas, factura_aparte, cantidad_aparte)
      VALUES ${marcas}`,
     valores,
   );

@@ -2,8 +2,10 @@ import { query } from "@/lib/db";
 import {
   alinearPrecintos,
   compararPrecintos,
+  esperadoSede,
   evaluarConteo,
   limpiarDanos,
+  todoAparte,
   limpiarPrecintos,
 } from "@/lib/recepcion/flujo";
 import { cargarEnOdoo, ocPendiente, productoPorCodigo } from "@/lib/recepcion/odoo";
@@ -498,8 +500,10 @@ export async function POST(
         const ev = evaluarConteo(
           datos.items.map((i) => ({
             id: Number(i.id),
-            cantidad_esperada: Number(i.cantidad_esperada),
-            cantidad_recibida: i.cantidad_recibida === null ? null : Number(i.cantidad_recibida),
+            // Lo de la factura especial de Caracas no se recibe aca.
+            cantidad_esperada: esperadoSede(i),
+            cantidad_recibida:
+              i.cantidad_recibida === null ? (todoAparte(i) ? 0 : null) : Number(i.cantidad_recibida),
             motivo_diferencia: i.motivo_diferencia,
             golpeado: Number(i.golpeado) === 1,
             danos: i.danos || [],

@@ -2,8 +2,9 @@
 
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Loader2, ScanBarcode, X } from "lucide-react";
+import { CheckCircle2, Loader2, ScanBarcode, Upload, X } from "lucide-react";
 import Pistola from "@/components/escaneo/Pistola";
+import SubirSeriales from "./SubirSeriales";
 import type { RenglonSinSeriales } from "@/lib/recepcion/serialesFaltantes";
 
 /**
@@ -39,6 +40,7 @@ export default function SerialesOdoo({
   const [verSeriales, setVerSeriales] = useState<Record<number, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [quitando, setQuitando] = useState<number | null>(null);
+  const [subiendo, setSubiendo] = useState<number | null>(null);
 
   const leer = useCallback(async () => {
     try {
@@ -154,7 +156,29 @@ export default function SerialesOdoo({
                   {seleccionado === f.item_id ? t("pistoleando") : t("pistolear")}
                 </button>
               )}
+              {puedePistolear && f.faltan > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSubiendo(subiendo === f.item_id ? null : f.item_id)}
+                  className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold ${
+                    subiendo === f.item_id ? "bg-violet-600 text-white" : "border border-violet-300 text-violet-700 bg-white"
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  {t("subir")}
+                </button>
+              )}
             </div>
+            {subiendo === f.item_id && (
+              <SubirSeriales
+                recepcionId={recepcionId}
+                itemId={f.item_id}
+                producto={f.producto}
+                contenedorId={null}
+                onListo={onCambio}
+                onCerrar={() => setSubiendo(null)}
+              />
+            )}
             {f.seriales.length > 0 && (
               <button
                 type="button"
