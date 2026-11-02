@@ -183,17 +183,16 @@ export default function CxcDashboardPage() {
                 {data.kpis.efectividad.value !== null ? `${data.kpis.efectividad.value}%` : "N/A"}
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
-              <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Recuperado del mes: {formatCurrency(data.kpis.efectividad.recuperado)}</span>
+              <div className="mt-3 text-xs text-slate-700">
+                Se cobró <strong>{formatCurrency(data.kpis.efectividad.cobrado)}</strong> de <strong>{formatCurrency(data.kpis.efectividad.porCobrar)}</strong>
               </div>
-              <div className="text-xs text-slate-500 mt-1">
-                Ventas a crédito: {formatCurrency(data.kpis.efectividad.ventasCredito)}
-              </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
-                Exigible {formatCurrency(data.kpis.efectividad.exigible)} (CxC inicial + ventas crédito − CxC final no vencida)
+              <div className="text-xs text-slate-500 mt-0.5">Falta: {formatCurrency(data.kpis.efectividad.falta)}</div>
+              <div className="text-[11px] text-slate-400 mt-1.5">
+                Por cobrar = ya vencido al empezar {formatCurrency(data.kpis.efectividad.venciaAntes)} + venció en el mes {formatCurrency(data.kpis.efectividad.vencioEnElMes)}
+                {data.kpis.efectividad.notasCredito > 0.005 ? ` − notas de crédito ${formatCurrency(data.kpis.efectividad.notasCredito)}` : ""}
               </div>
               {data.kpis.efectividad.parcial && (
-                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: cobrado hasta hoy</div>
               )}
             </div>
 

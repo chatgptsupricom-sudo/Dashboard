@@ -2,7 +2,8 @@ import { callOdooRPC } from "@/lib/odoo";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { requireRoles } from "@/lib/auth/roles";
-import { detalleCEI, saldoRelacionada } from "@/lib/cxc/efectividad";
+import { detalleEfectividad, saldoRelacionada } from "@/lib/cxc/efectividad";
+import { efectividadDelMes } from "@/lib/cxc/cierreEfectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { obtenerSemanasDelMes } from "@/lib/feriados";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
@@ -75,14 +76,16 @@ async function leerGET(request: NextRequest) {
         : [7, 9, 10];
 
     if (type === "efectividad") {
-      // CEI con su detalle por cliente. Mismos helpers que la tarjeta
-      // (lib/cxc/efectividad.ts) para que nunca discrepen.
+      // Con su detalle por cliente. Mismo cálculo que la tarjeta
+      // (lib/cxc/efectividad.ts) para que nunca discrepen y, con el mes
+      // cerrado, la misma foto de cierre (lib/cxc/cierreEfectividad.ts).
       const semanas = obtenerSemanasDelMes(currentYear, currentMonth + 1);
-      const { carteraCEI } = await calcularSeriesCxC(companyIds, semanas, today);
-      const { resumen, clientes } = await detalleCEI(companyIds, monthStart, monthEnd, [], today, carteraCEI);
+      const mes = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+      const { detalle, cierreGuardado } = await efectividadDelMes(companyIds, mes, monthEnd, today,
+        () => detalleEfectividad(companyIds, monthStart, monthEnd, semanas, today));
       return NextResponse.json({
         success: true,
-        data: { type: "efectividad", summary: resumen, clientes },
+        data: { type: "efectividad", summary: { ...detalle.resumen, cierreGuardado }, clientes: detalle.clientes },
       });
     }
 

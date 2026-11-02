@@ -372,7 +372,7 @@ export default function CxcDashboardPage() {
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${getTrafficDot(data.kpis.efectividad.value ?? 0, umbral(data.kpis.efectividad.meta))}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Efectividad Cobranza</span>
-                  <Ayuda texto={`CEI = (CxC inicial + ventas a crédito − CxC final) ÷ (CxC inicial + ventas a crédito − CxC final no vencida). CxC final = al cierre del mes (o hoy si el mes sigue abierto). ${AYUDA_CXC}`} />
+                  <Ayuda texto={`De lo que había que cobrar en el mes, cuánto se cobró. Había que cobrar = lo que ya venía vencido al empezar el mes + lo que se venció en el mes, menos las notas de crédito. Cobrado = pagos y retenciones de esas facturas dentro del mes. Una factura cuenta como vencida desde el día siguiente a su vencimiento: la que vence el último día del mes cuenta en el mes siguiente. ${AYUDA_CXC}`} />
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">{peso("efectividad_cobranza", 35)}</span>
               </div>
@@ -380,18 +380,16 @@ export default function CxcDashboardPage() {
                 {data.kpis.efectividad.value !== null ? `${data.kpis.efectividad.value}%` : "N/A"}
               </div>
               <div className="text-xs text-slate-500 mt-1">Meta: {data.kpis.efectividad.meta}%</div>
-              <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
-                <span>Recuperado del mes: {formatCurrency(data.kpis.efectividad.recuperado)}</span>
+              <div className="mt-3 text-xs text-slate-700">
+                Se cobró <strong>{formatCurrency(data.kpis.efectividad.cobrado)}</strong> de <strong>{formatCurrency(data.kpis.efectividad.porCobrar)}</strong>
               </div>
-              <div className="text-xs text-slate-500 mt-1">
-                Exigible: {formatCurrency(data.kpis.efectividad.exigible)}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Recuperado ÷ exigible (solo crédito) · clic para ver el detalle</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
-                CxC inicial {formatCurrency(data.kpis.efectividad.carteraInicial)} + ventas crédito {formatCurrency(data.kpis.efectividad.ventasCredito)} − CxC final {formatCurrency(data.kpis.efectividad.carteraFinal)}
+              <div className="text-xs text-slate-500 mt-0.5">Falta: {formatCurrency(data.kpis.efectividad.falta)}</div>
+              <div className="text-[11px] text-slate-400 mt-1.5">
+                Por cobrar = ya vencido al empezar {formatCurrency(data.kpis.efectividad.venciaAntes)} + venció en el mes {formatCurrency(data.kpis.efectividad.vencioEnElMes)}
+                {data.kpis.efectividad.notasCredito > 0.005 ? ` − notas de crédito ${formatCurrency(data.kpis.efectividad.notasCredito)}` : ""}
               </div>
               {data.kpis.efectividad.parcial && (
-                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: corte final al día de hoy</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">Mes en curso: vencido hasta el {formatDate(data.kpis.efectividad.vencidasHasta)}, cobrado hasta hoy</div>
               )}
               <AvisoRelacionada monto={data.kpis.efectividad.relacionadas} />
             </div>
@@ -1201,51 +1199,44 @@ export default function CxcDashboardPage() {
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Exigible del mes</span>
-                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.exigible)}</span>
-                    <span className="text-[10px] text-blue-500/80 block">CxC inicial + ventas crédito − CxC final no vencida</span>
+                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">Había que cobrar</span>
+                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.porCobrar)}</span>
+                    <span className="text-[10px] text-blue-500/80 block">{kpiData.summary.facturas} facturas</span>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Recuperado del mes</span>
-                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.recuperado)}</span>
-                    <span className="text-[10px] text-emerald-500/80 block">CxC inicial + ventas crédito − CxC final</span>
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Se cobró</span>
+                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.cobrado)}</span>
+                    <span className="text-[10px] text-emerald-500/80 block">pagos y retenciones del mes</span>
+                  </div>
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3.5 text-center">
+                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest block mb-1">Falta</span>
+                    <span className="text-lg font-bold text-red-800">{formatCurrency(kpiData.summary.falta)}</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Componentes</span>
-                    <span className="text-xs font-semibold text-slate-700 block">CxC inicial {formatCurrency(kpiData.summary.carteraInicial)}</span>
-                    <span className="text-xs font-semibold text-slate-700 block">+ Ventas crédito {formatCurrency(kpiData.summary.ventasCredito)}</span>
-                    <span className="text-xs font-semibold text-slate-700 block">CxC final {formatCurrency(kpiData.summary.carteraFinal)}</span>
-                    <span className="text-xs font-semibold text-slate-700 block">· no vencida {formatCurrency(kpiData.summary.carteraFinalNoVencida)}</span>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Efectividad (CEI)</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Efectividad</span>
                     <span className="text-lg font-bold text-slate-800">{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</span>
-                    <span className="text-[10px] text-slate-400 block">recuperado ÷ exigible</span>
+                    <span className="text-[10px] text-slate-400 block">se cobró ÷ había que cobrar</span>
                   </div>
                 </div>
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-[11px] text-slate-600 space-y-2">
                   <div className="text-xs font-bold text-slate-700">¿Cómo se calcula?</div>
                   <div className="font-mono text-slate-700 bg-white border border-slate-100 rounded-lg p-2 overflow-x-auto">
-                    CEI = (CxC inicial + Ventas crédito − CxC final) ÷ (CxC inicial + Ventas crédito − CxC final no vencida) × 100
+                    Había que cobrar = {formatCurrency(kpiData.summary.venciaAntes)} (ya vencido al empezar el mes) + {formatCurrency(kpiData.summary.vencioEnElMes)} (venció en el mes)
+                    {kpiData.summary.notasCredito > 0.005 ? ` − ${formatCurrency(kpiData.summary.notasCredito)} (notas de crédito)` : ""}
+                    {" "}= {formatCurrency(kpiData.summary.porCobrar)}
                     <br />
-                    = ({formatCurrency(kpiData.summary.carteraInicial)} + {formatCurrency(kpiData.summary.ventasCredito)} − {formatCurrency(kpiData.summary.carteraFinal)}) ÷ ({formatCurrency(kpiData.summary.carteraInicial)} + {formatCurrency(kpiData.summary.ventasCredito)} − {formatCurrency(kpiData.summary.carteraFinalNoVencida)})
-                    {" "}= <strong>{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</strong>
+                    Efectividad = {formatCurrency(kpiData.summary.cobrado)} ÷ {formatCurrency(kpiData.summary.porCobrar)} = <strong>{kpiData.summary.value != null ? `${kpiData.summary.value}%` : "N/A"}</strong>
                   </div>
                   <ul className="space-y-1 list-disc pl-4">
-                    <li><strong>Solo crédito:</strong> se toman las facturas cuyo plazo de pago tiene días (7, 15, 30…). Las de contado (&quot;Immediate Payment&quot;) quedan fuera de los tres términos. Las notas de crédito siguen el plazo de la factura que revierten.</li>
-                    <li><strong>CxC inicial:</strong> lo que los clientes debían a crédito al empezar el mes, sin las facturas vencidas antes de 2025 (Incobrables).</li>
-                    <li><strong>Ventas crédito:</strong> facturas a crédito del mes menos sus notas de crédito, con IVA.</li>
-                    <li><strong>CxC final:</strong> lo que deben al {kpiData.summary.parcial ? "día de hoy" : "cierre del mes"}. La parte <strong>no vencida</strong> se resta del denominador porque todavía no se podía exigir.</li>
-                    <li><strong>Recuperado</strong> = lo que salió de la cartera: pagos (aunque todavía no estén aplicados a una factura), retenciones y descuentos.</li>
+                    <li><strong>Ya vencido al empezar el mes:</strong> lo que esas facturas todavía debían el día 1.</li>
+                    <li><strong>Venció en el mes:</strong> facturas que se vencieron hasta el {formatDate(kpiData.summary.vencidasHasta)}, se hayan facturado antes o dentro del mes. Una factura cuenta como vencida desde el día siguiente a su vencimiento, así que la que vence el último día del mes cuenta en el mes siguiente.</li>
+                    <li><strong>Se cobró:</strong> pagos (banco y caja) y retenciones de <em>esas</em> facturas dentro del mes. Un pago adelantado de una factura que todavía no vencía no cuenta, y lo cobrado de una factura nunca pasa de lo que debía.</li>
+                    <li><strong>Solo crédito</strong> (plazo de pago con días). Fuera: contado, incobrables (vencidas antes de 2025 o marcadas a mano), Supricom y SUPER TECHNO LLC.</li>
                   </ul>
-                  <p className="text-slate-500">
-                    La CxC de cada fecha es el saldo contable de la cuenta de clientes a esa fecha (el mismo del reporte de antigüedad de Odoo), menos la parte de contado y las facturas vencidas antes de 2025. Quedan fuera Supricom y la empresa relacionada SUPER TECHNO LLC.
-                  </p>
                   <AvisoRelacionada monto={kpiData.summary.relacionadas} />
-                  <p className="text-slate-500">
-                    100% = se recuperó todo lo exigible. Como referencia, entraron {formatCurrency(kpiData.summary.pagosRegistrados)} en {kpiData.summary.pagos} pagos a banco y caja (no entran en la fórmula).
-                    {kpiData.summary.parcial ? " Mes en curso: el corte final es hoy." : ""}
-                  </p>
+                  {kpiData.summary.parcial && (
+                    <p className="text-slate-500">Mes en curso: el número sube a medida que se cobra y baja cuando se vencen facturas nuevas.</p>
+                  )}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
@@ -1253,9 +1244,10 @@ export default function CxcDashboardPage() {
                       <tr className="bg-slate-50/80">
                         <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
                         <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vendedor</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas crédito</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagos registrados</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pagos ÷ ventas</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Había que cobrar</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Se cobró</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Falta</th>
+                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">%</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1263,10 +1255,11 @@ export default function CxcDashboardPage() {
                         <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                           <td className="py-2.5 px-3 font-medium text-slate-700 max-w-[260px] truncate" title={c.nombre}>{c.nombre}</td>
                           <td className="py-2.5 px-3 text-slate-500 max-w-[160px] truncate">{c.vendedor || "—"}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-600">{c.facturado ? formatCurrency(c.facturado) : "—"}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.porCobrar)}</td>
                           <td className="py-2.5 px-3 text-right text-emerald-600 font-medium">{c.cobrado ? formatCurrency(c.cobrado) : "—"}</td>
+                          <td className="py-2.5 px-3 text-right text-red-600">{c.falta > 0.005 ? formatCurrency(c.falta) : "—"}</td>
                           <td className="py-2.5 px-3 text-right font-medium text-slate-800">
-                            {c.facturado > 0 ? `${Math.round((c.cobrado / c.facturado) * 100)}%` : "—"}
+                            {c.porCobrar > 0.005 ? `${Math.round((c.cobrado / c.porCobrar) * 100)}%` : "—"}
                           </td>
                         </tr>
                       ))}

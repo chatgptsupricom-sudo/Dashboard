@@ -4,7 +4,7 @@ import { query } from "@/lib/db";
  * Facturas que la usuaria de CxC marcó a mano como incobrables (tabla MySQL
  * `cxc_incobrables`, sql/cxc_incobrables.sql). Se tratan igual que la cartera
  * vieja (lib/cxc/carteraVieja.ts): fuera de Cartera Vencida, Recuperación,
- * DSO y CEI, y dentro de la tarjeta Incobrables.
+ * DSO y Efectividad, y dentro de la tarjeta Incobrables.
  *
  * Si la MySQL no responde (o la tabla todavía no existe) devuelve un conjunto
  * vacío y los KPIs siguen solo con la regla automática de 2025: mejor un KPI

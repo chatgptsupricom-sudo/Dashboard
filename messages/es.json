@@ -1678,8 +1678,7 @@
     "descripcion": "Dashboard de Cuentas por Cobrar - KPIs de cartera",
     "cobrado_mes": "Cobrado del mes",
     "facturado_mes": "Facturado del mes",
-    "recuperado_mes": "Recuperado del mes",
-    "ventas_credito_mes": "Ventas a crédito"
+    "cobrado_de_por_cobrar": "Se cobró {cobrado} de {porCobrar}"
   },
   "ui": {
     "months": [

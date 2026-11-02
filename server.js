@@ -288,6 +288,30 @@ app.prepare().then(() => {
   );
 
   // ==========================================
+  // FOTO DE CIERRE DE LA EFECTIVIDAD DE COBRANZA (lib/cxc/cierreEfectividad.ts)
+  // ==========================================
+
+  // Día 1 a las 23:00: congela la efectividad del mes que cerró, para que no
+  // se mueva con lo que se cargue después en Odoo.
+  cron.schedule(
+    "0 23 1 * *",
+    async () => {
+      try {
+        const response = await fetch(`http://localhost:${PORT}/api/cron/cierre-efectividad-cxc`, {
+          headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        });
+        const data = await response.json();
+        if (response.ok) console.log("Cierre de efectividad CxC:", data);
+        else console.error("Fallo la foto de cierre de efectividad CxC:", data);
+      } catch (error) {
+        console.error("Error de red en la foto de cierre de efectividad CxC:", error.message);
+      }
+    },
+    { scheduled: true, timezone: "America/Caracas" },
+  );
+  console.log("> Cron programado: foto de cierre de Efectividad de Cobranza, día 1 23:00 (America/Caracas)");
+
+  // ==========================================
   // CIERRE AUTOMATICO DEL REPORTE DE VENTAS TRIMESTRAL
   // (sedes/marcas segun REPORTES_COMERCIALES_CRON, default 7:EZVIZ = Panama)
   // ==========================================

@@ -3,7 +3,8 @@ import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
-import { calcularCEI } from "@/lib/cxc/efectividad";
+import { detalleEfectividad } from "@/lib/cxc/efectividad";
+import { efectividadDelMes } from "@/lib/cxc/cierreEfectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { calcularDSO } from "@/lib/cxc/dso";
@@ -315,7 +316,7 @@ async function leerGET(request: NextRequest) {
     ]);
     const sinAplicar = Math.round(Number(sinAplicarGrupo?.[0]?.amount_residual || 0) * 100) / 100;
 
-    // ── Efectividad (CEI) y su fila semanal ──
+    // ── Efectividad y su fila semanal ──
     // (lib/cxc/efectividad.ts, compartido con el modal de detalle). Se usan las mismas semanas que arma el Stoplight de ventas (mismo
     // helper) para que la fila quede alineada con los encabezados
     // `weekHeaders`. La lógica vive en lib/cxc/efectividad.ts, compartida con
@@ -327,10 +328,7 @@ async function leerGET(request: NextRequest) {
     // Series semanales de Cartera Vencida y Recuperación: las dos reconstruyen
     // el saldo de cada factura en cortes pasados (lib/cxc/seriesSemanales.ts).
     // `carteraHoy` sale del mismo método que las celdas semanales, para que el
-    // promedio del KPI y su fila aten entre sí.
-    // El CEI usa el saldo contable al inicio y al final del mes, pero le resta
-    // el contado y la cartera vieja por factura con esas mismas series, así
-    // que va después (seriesSemanales.ts → carteraCEI).
+    // promedio del KPI y su fila aten entre sí. El DSO usa además `carteraCEI`.
     const seriesCxc = await calcularSeriesCxC(companyIds, semanasCxc, today, corteCartera);
 
     // Incobrables: la cartera vieja (vencida antes de 2025) que los KPIs dejan
@@ -348,11 +346,18 @@ async function leerGET(request: NextRequest) {
       facturas: viejas.size,
       clientes: new Set((clientesViejas || []).map((m: any) => m.partner_id?.[0]).filter(Boolean)).size,
     };
-    // El DSO usa la CxC final y las ventas a crédito del CEI (lib/cxc/dso.ts).
-    const [efectividadCalc, dsoCalc] = await Promise.all([
-      calcularCEI(companyIds, monthStart, monthEnd, semanasCxc, today, seriesCxc.carteraCEI),
+    // Efectividad: cobrado ÷ lo que había que cobrar (lib/cxc/efectividad.ts).
+    // Mes cerrado: sale de la foto de cierre (lib/cxc/cierreEfectividad.ts)
+    // para que no se mueva con lo que se cargue después en Odoo. Un rango de
+    // fechas a mano no es un mes: siempre en vivo.
+    const calcularEfectividad = () => detalleEfectividad(companyIds, monthStart, monthEnd, semanasCxc, today);
+    const [efectividadMes, dsoCalc] = await Promise.all([
+      startDateParam && endDateParam
+        ? calcularEfectividad().then((detalle) => ({ detalle, cierreGuardado: null }))
+        : efectividadDelMes(companyIds, mes, monthEnd, today, calcularEfectividad),
       calcularDSO(companyIds, monthStart, monthEnd, today, seriesCxc),
     ]);
+    const efectividadCalc = efectividadMes.detalle.resumen;
     const efectividad = efectividadCalc.value;
     const semanaEfectividad = efectividadCalc.semana;
 
@@ -374,22 +379,22 @@ async function leerGET(request: NextRequest) {
       data: {
         kpis: {
           efectividad: {
-            // CEI estándar, solo crédito: (CxC inicial + ventas crédito − CxC
-            // final) ÷ (CxC inicial + ventas crédito − CxC final no vencida)
-            // (lib/cxc/efectividad.ts → calcularCEI).
+            // Cobrado ÷ lo que había que cobrar en el mes, solo crédito
+            // (lib/cxc/efectividad.ts → detalleEfectividad).
             value: efectividad,
             meta: cxcMetas["efectividad_cobranza"] || 85,
-            recuperado: efectividadCalc.recuperado,
-            ventasCredito: efectividadCalc.ventasCredito,
-            carteraInicial: efectividadCalc.carteraInicial,
-            carteraFinal: efectividadCalc.carteraFinal,
-            carteraFinalNoVencida: efectividadCalc.carteraFinalNoVencida,
-            exigible: efectividadCalc.exigible,
-            pagosRegistrados: efectividadCalc.pagosRegistrados,
-            pagos: efectividadCalc.pagos,
+            porCobrar: efectividadCalc.porCobrar,
+            venciaAntes: efectividadCalc.venciaAntes,
+            vencioEnElMes: efectividadCalc.vencioEnElMes,
+            notasCredito: efectividadCalc.notasCredito,
+            cobrado: efectividadCalc.cobrado,
+            falta: efectividadCalc.falta,
             facturas: efectividadCalc.facturas,
+            vencidasHasta: efectividadCalc.vencidasHasta,
             parcial: efectividadCalc.parcial,
             relacionadas: efectividadCalc.relacionadas,
+            // Mes cerrado: fecha de la foto; null = en vivo. La pantalla no lo muestra.
+            cierreGuardado: efectividadMes.cierreGuardado,
           },
           carteraVencida: {
             // Se calcula con el mismo método que la fila semanal (reconstruyendo
@@ -441,8 +446,8 @@ async function leerGET(request: NextRequest) {
         // Incobrables ni SUPER TECHNO): las bandas suman la cartera del Resumen.
         agingDistribution: seriesCxc.carteraHoy.aging,
         // Cartera, vencida y facturas por sede con el mismo cálculo que las
-        // tarjetas (sin Incobrables ni SUPER TECHNO); la efectividad es el CEI
-        // de la sede. El aging por sede sigue saliendo del reporte de Odoo.
+        // tarjetas (sin Incobrables ni SUPER TECHNO); la efectividad es la de
+        // la sede. El aging por sede sigue saliendo del reporte de Odoo.
         byCompany: byCompany.map((co) => {
           const sede = seriesCxc.carteraHoyPorSede[co.companyId];
           return {
