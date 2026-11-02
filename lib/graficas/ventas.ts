@@ -268,24 +268,34 @@ export async function graficasVentas(cids: number[], sede: string, mes: string):
   const mesesPrevios = mesesHasta(mesesHasta(mes, 13)[0], 12);
   const todos = [...new Set([...mesesPrevios, ...meses])].sort();
 
-  const [series, diaActual, diaAnterior] = await Promise.all([
+  const mesAnio = mesesPrevios[mesesPrevios.length - 1];
+  const [series, diaActual, diaAnterior, diaAnio] = await Promise.all([
     bloque(avisos, "la venta mensual", () => seriePorSede(cids, todos)),
     bloque(avisos, "la venta diaria del mes", () => diario(cids, mes)),
     bloque(avisos, "la venta diaria del mes anterior", () => diario(cids, mesAnterior)),
+    enCurso ? bloque(avisos, "la venta diaria del año pasado", () => diario(cids, mesAnio)) : Promise.resolve(null),
   ]);
+  // Mes en curso: se compara contra los mismos días de los otros meses (al día 2, contra el mes completo daba −100 %).
+  const hastaDia = (d: Map<string, number> | null) =>
+    d && [...d].reduce((s, [fecha, v]) => (fecha.slice(8) <= hoy.slice(8) ? s + v : s), 0);
 
   if (series) {
     const venta = suma(series, mes);
     const ventaAnt = suma(series, mesAnterior);
-    const ventaAnio = suma(series, mesesPrevios[mesesPrevios.length - 1]);
-    kpis.push({ id: "venta_mes", etiqueta: "Venta del mes", valor: r2(venta), formato: "usd", delta: variacion(venta, ventaAnt), referencia: "vs mes anterior" });
+    const ventaAnio = suma(series, mesAnio);
+    const antMismosDias = enCurso ? hastaDia(diaAnterior) : ventaAnt;
+    const anioMismosDias = enCurso ? hastaDia(diaAnio) : ventaAnio;
     kpis.push({
-      id: "venta_anio", etiqueta: "Crecimiento anual", valor: variacion(venta, ventaAnio), formato: "pct",
-      nota: `contra ${etiquetaMes(mesesPrevios[mesesPrevios.length - 1])}`,
+      id: "venta_mes", etiqueta: "Venta del mes", valor: r2(venta), formato: "usd", delta: variacion(venta, antMismosDias),
+      referencia: enCurso ? "vs mismos días del mes anterior" : "vs mes anterior",
+    });
+    kpis.push({
+      id: "venta_anio", etiqueta: "Crecimiento anual", valor: variacion(venta, anioMismosDias), formato: "pct",
+      nota: `contra ${enCurso ? "los mismos días de " : ""}${etiquetaMes(mesAnio)}`,
     });
     const acumulado = mesesAnio.filter((m) => m.slice(0, 4) === mes.slice(0, 4)).reduce((s, m) => s + suma(series, m), 0);
     const acumuladoAnt = mesesPrevios.filter((m) => m.slice(0, 4) === String(Number(mes.slice(0, 4)) - 1) && m.slice(5) <= mes.slice(5))
-      .reduce((s, m) => s + suma(series, m), 0);
+      .reduce((s, m) => s + suma(series, m), 0) - (enCurso && anioMismosDias != null ? ventaAnio - anioMismosDias : 0);
     kpis.push({ id: "venta_ytd", etiqueta: `Acumulado ${mes.slice(0, 4)}`, valor: r2(acumulado), formato: "usd", delta: variacion(acumulado, acumuladoAnt), referencia: "vs mismo período del año pasado" });
 
     if (enCurso) {

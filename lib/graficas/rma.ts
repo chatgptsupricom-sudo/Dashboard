@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { hoyCaracas } from "@/lib/compras/datosOdoo";
 import { casosConPlazo } from "@/lib/rma/plazosCasos";
 import { etiquetaEstado } from "@/components/rma/estados";
 import {
@@ -93,7 +94,9 @@ export async function graficasRma(cids: number[], sede: string, mes: string): Pr
 
   if (nuevos) {
     const delMes = (m: string) => nuevos.filter((r: any) => r.mes === m).reduce((s: number, r: any) => s + Number(r.n), 0);
-    kpis.push({ id: "nuevos", etiqueta: "Casos nuevos del mes", valor: delMes(mes), formato: "num", delta: variacion(delMes(mes), delMes(mesAnterior)), referencia: "vs mes anterior", mejor: "baja" });
+    kpis.push({ id: "nuevos", etiqueta: "Casos nuevos del mes", valor: delMes(mes), formato: "num",
+      // Mes en curso sin variación: contra el mes anterior completo siempre sale a la baja.
+      delta: mes === hoyCaracas().slice(0, 7) ? null : variacion(delMes(mes), delMes(mesAnterior)), referencia: "vs mes anterior", mejor: "baja" });
     graficas.push({
       id: "rma_nuevos",
       titulo: "Casos nuevos por mes",
