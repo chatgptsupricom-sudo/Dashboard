@@ -434,6 +434,7 @@ async function leerGET(request: NextRequest) {
             carteraAbierta: dsoCalc.carteraAbierta,
             ventasNetas: dsoCalc.ventasNetas,
             dias: dsoCalc.dias,
+            ventanaMovil: dsoCalc.ventanaMovil,
             clientes: dsoCalc.clientesIncluidos,
           },
           incobrables,
