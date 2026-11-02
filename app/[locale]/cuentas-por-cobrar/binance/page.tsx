@@ -4,14 +4,17 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Aviso, FilaVacia } from "@/components/administracion/comunes";
+import ConciliacionBinance from "@/components/administracion/ConciliacionBinance";
 import type { Comprobante, PagoBinance } from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
-import { Bitcoin, CalendarDays, Loader2, Search } from "lucide-react";
+import { Bitcoin, ChevronLeft, ChevronRight, Loader2, Search, Upload, ClipboardList } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-// Conciliación Binance para Cuentas por Cobrar: la hoja "Conciliación" del
-// Excel que arma Administración, solo con los conciliados, de su sede y para
-// ver. La API ya les manda solo los conciliados (/api/administracion/binance).
+// Conciliación Binance para Cuentas por Cobrar, en dos pestañas sobre la misma
+// semana: "Cargar comprobantes" (ConciliacionBinance modo "cxc": sube y ve en qué
+// quedó cada uno) y "Por registrar en Odoo" (la hoja "Conciliación" del Excel de
+// Administración, solo con los conciliados de su sede que faltan en Odoo).
 
 const DIA = 86400_000;
 
@@ -124,42 +127,78 @@ export default function BinanceCxCPage() {
     : lista;
   const etiquetaSemana = opciones.find((o) => o.value === semana)?.label;
 
+  // Las semanas van de la mas nueva a la mas vieja: "anterior" es el indice siguiente.
+  const indice = opciones.findIndex((o) => o.value === semana);
+
   return (
     <div className="space-y-6">
-      <div className="min-w-0">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2">
-          <Bitcoin className="h-7 w-7 text-amber-500" />
-          Conciliación Binance
-        </h1>
-        <p className="text-gray-500 text-sm">Pagos por Binance que Administración ya concilió y todavía no están registrados en Odoo, por semana.</p>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Bitcoin className="h-7 w-7 text-amber-500" />
+            Conciliación Binance
+          </h1>
+          <p className="text-gray-500 text-sm">
+            Sube los comprobantes de la semana; Administración los concilia con el estado de cuenta.
+          </p>
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border bg-white p-1 w-fit">
+          <button
+            type="button"
+            onClick={() => setSemana(opciones[indice + 1].value)}
+            disabled={indice >= opciones.length - 1}
+            className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-30"
+            aria-label="Semana anterior"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <select
+            value={semana}
+            onChange={(e) => setSemana(e.target.value)}
+            className="bg-transparent px-1 py-1 text-sm font-medium outline-none"
+            aria-label="Semana"
+          >
+            {opciones.map((o) => (
+              <option key={o.value} value={o.value}>
+                Semana {o.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setSemana(opciones[indice - 1].value)}
+            disabled={indice <= 0}
+            className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-30"
+            aria-label="Semana siguiente"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {error && <Aviso tono="rojo">{error}</Aviso>}
 
-      {/* minmax(0,1fr): sin eso la tabla ancha estira la columna y la pagina se desborda en pantallas angostas. */}
-      <div className="grid gap-6 grid-cols-[minmax(0,1fr)] lg:grid-cols-[230px_minmax(0,1fr)] items-start">
-        <Card>
-          <CardContent className="p-2">
-            <p className="px-3 pt-2 pb-1 text-xs font-medium text-gray-500">Semanas</p>
-            <nav className="flex lg:flex-col gap-1 overflow-x-auto" aria-label="Semanas">
-              {opciones.map((o) => (
-                <button
-                  key={o.value}
-                  onClick={() => setSemana(o.value)}
-                  aria-current={o.value === semana ? "true" : undefined}
-                  className={`flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm text-left ${
-                    o.value === semana ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-50"
-                  }`}
-                >
-                  <CalendarDays className="h-4 w-4 shrink-0" />
-                  {o.label}
-                </button>
-              ))}
-            </nav>
-          </CardContent>
-        </Card>
+      <Tabs defaultValue="cargar" className="space-y-4">
+        <TabsList className="h-auto flex-wrap justify-start gap-1 bg-slate-100 p-1">
+          <TabsTrigger value="cargar" className="gap-2 px-3 py-2">
+            <Upload className="h-4 w-4" />
+            Cargar comprobantes
+          </TabsTrigger>
+          <TabsTrigger value="odoo" className="gap-2 px-3 py-2">
+            <ClipboardList className="h-4 w-4" />
+            Por registrar en Odoo
+            {conciliados && conciliados.length > 0 && (
+              <Badge variant="secondary" className="ml-1">{conciliados.length}</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
 
-        <div className="space-y-3 min-w-0">
+        {/* forceMount: cambiar de pestaña no corta una carga que va por la mitad. */}
+        <TabsContent value="cargar" forceMount className="mt-0 data-[state=inactive]:hidden">
+          <ConciliacionBinance modo="cxc" semana={semana} />
+        </TabsContent>
+
+        <TabsContent value="odoo" className="mt-0 space-y-3 min-w-0">
           <div className="flex gap-1 overflow-x-auto" role="group" aria-label="Filtrar por día">
             {[{ valor: null as string | null, label: "Todos" }, ...dias].map((d) => {
               const n = d.valor ? semanaCompleta.filter((c) => diaDe(c) === d.valor).length : semanaCompleta.length;
@@ -264,8 +303,8 @@ export default function BinanceCxCPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
