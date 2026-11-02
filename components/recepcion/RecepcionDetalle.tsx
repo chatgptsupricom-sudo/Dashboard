@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -23,6 +23,7 @@ import {
   Save,
   Trash2,
   Truck,
+  Upload,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
@@ -37,6 +38,7 @@ import {
   formatearDuracion,
   inicioRecepcion,
   separarPrecintos,
+  FACTURA_ESPECIAL_SIN_NUMERO,
   type Contenedor,
   type Etapa,
   type TipoDano,
@@ -57,6 +59,7 @@ import FotoCaptura, { type ArchivoRecepcion } from "./FotoCaptura";
 import EscenaRecepcion from "./EscenaRecepcion";
 import CruceOdoo from "./CruceOdoo";
 import SerialesOdoo from "./SerialesOdoo";
+import SubirSeriales from "./SubirSeriales";
 
 /**
  * Detalle de una recepcion por packing list.
@@ -130,6 +133,8 @@ type Item = {
   /** Producto de Odoo (factura, o cruzado con lib/recepcion/cruceIa.ts). */
   odoo_product_id?: number | null;
   cantidad_esperada: string | number;
+  /** Renglon de la Factura Especial de Caracas (compra directa): se cuenta y serializa, no se carga en Odoo aca. */
+  factura_aparte?: string | null;
   cajas_esperadas: number | null;
   cantidad_recibida: string | number | null;
   motivo_diferencia: string | null;
@@ -228,6 +233,8 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Pistola: producto con serial seleccionado y renglones con la lista de seriales abierta.
   const [seleccionado, setSeleccionado] = useState<number | null>(null);
   const [verSeriales, setVerSeriales] = useState<Record<number, boolean>>({});
+  // Renglon con la carga masiva de seriales abierta.
+  const [subiendo, setSubiendo] = useState<number | null>(null);
   // El ultimo renglon contado se ilumina unos segundos y se trae a la vista,
   // para ver que producto sumo cada lectura de la pistola.
   const [ultimo, setUltimo] = useState<number | null>(null);
@@ -1323,16 +1330,19 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 !items.some((i) =>
                   `${i.producto} ${i.codigo || ""}`.toLowerCase().includes(filtro.trim().toLowerCase()),
                 ) && <p className="py-4 text-center text-sm text-slate-400">{t("sin_resultados")}</p>}
-              {items
+              {/* La Factura Especial de Caracas va al final, en su propia seccion. */}
+              {[...items.filter((i) => !i.factura_aparte), ...items.filter((i) => i.factura_aparte)]
                 .filter(
                   (i) =>
                     !filtro.trim() ||
                     `${i.producto} ${i.codigo || ""}`.toLowerCase().includes(filtro.trim().toLowerCase()),
                 )
-                .map((i) => {
+                .map((i, n, lista) => {
                 const c = conteo[i.id] || { recibida: "", motivo: "", danos: [], nota: "" };
                 const conDano = c.danos.length > 0;
                 const esperado = Number(i.cantidad_esperada);
+                const especial = !!i.factura_aparte;
+                const primeraEspecial = especial && !lista[n - 1]?.factura_aparte;
                 // El total (todos los contenedores) contra el packing list.
                 const total = totalDe(i);
                 const recibidaNum = total;
@@ -1362,8 +1372,14 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 const esSeleccionado = seleccionado === i.id;
                 const seriales = i.seriales || [];
                 return (
+                  <Fragment key={i.id}>
+                  {primeraEspecial && (
+                    <div className="mt-4 mb-1 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+                      <p className="text-sm font-semibold text-orange-900">{t("especial_seccion")}</p>
+                      <p className="text-[11px] text-orange-800">{t("especial_seccion_ayuda")}</p>
+                    </div>
+                  )}
                   <div
-                    key={i.id}
                     id={`renglon-${i.id}`}
                     className={`py-3 border-b border-slate-50 last:border-0 transition-colors duration-500 ${
                       ultimo === i.id
@@ -1381,6 +1397,13 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                           </span>
                         )}
                         <p className="text-sm text-slate-800 truncate">{i.producto}</p>
+                        {especial && (
+                          <p className="mt-0.5 inline-flex flex-wrap items-center gap-1 rounded-md bg-orange-100 px-1.5 py-0.5 text-[11px] font-medium text-orange-900">
+                            <span className="font-bold uppercase tracking-wide">{t("especial_badge")}</span>
+                            {i.factura_aparte !== FACTURA_ESPECIAL_SIN_NUMERO && <span className="font-mono">{i.factura_aparte}</span>}
+                            <span>{t("especial_detalle")}</span>
+                          </p>
+                        )}
                         {total !== null && total > esperado && (
                           <span className="inline-block mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 rounded px-1.5 py-0.5">
                             {t("sobrante")} +{fmt(total - esperado)}
@@ -1439,6 +1462,30 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                                 {esSeleccionado ? t("pistoleando") : t("pistolear_seriales")}
                               </button>
                             )}
+                            {contando && contMio !== null && (
+                              <button
+                                type="button"
+                                onClick={() => setSubiendo(subiendo === i.id ? null : i.id)}
+                                className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold ${
+                                  subiendo === i.id ? "bg-violet-600 text-white" : "border border-violet-300 text-violet-700 bg-white"
+                                }`}
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                {t("subir_seriales.boton")}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {subiendo === i.id && contando && contMio !== null && (
+                          <div className="mt-2">
+                            <SubirSeriales
+                              recepcionId={rec.id}
+                              itemId={i.id}
+                              producto={i.producto}
+                              contenedorId={contMio}
+                              onListo={() => void cargar()}
+                              onCerrar={() => setSubiendo(null)}
+                            />
                           </div>
                         )}
                       </div>
@@ -1658,6 +1705,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       </div>
                     )}
                   </div>
+                  </Fragment>
                 );
               })}
 

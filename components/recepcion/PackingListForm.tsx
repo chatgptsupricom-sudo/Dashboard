@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, FileSpreadsheet, FileText, Loader2, Plus, Send, Trash2, Upload, X } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
-import { SUCURSALES, separarPrecintos } from "@/lib/recepcion/flujo";
+import { SUCURSALES, separarPrecintos, FACTURA_ESPECIAL_SIN_NUMERO } from "@/lib/recepcion/flujo";
 import { leerExcel } from "@/lib/recepcion/leerExcel";
 import { porBulto, type Conversion } from "@/lib/recepcion/unidades";
 import {
@@ -37,8 +37,11 @@ type Renglon = {
   cajas_esperadas: string;
   // Lo lee la IA del PDF; se pierde si se cambia la cantidad a mano (ya no suma).
   reparto?: Reparto | null;
-  // Otra factura del embarque (INV1062 en POSITION): de otra sede, no se carga aca.
+  // Factura Especial de Caracas (compra directa; INV1062 en POSITION): esas
+  // unidades no se reciben aca. null = no marcado; "" = marcado sin numero.
   factura_aparte?: string | null;
+  // Cuantas unidades del renglon son de esa factura.
+  cantidad_aparte?: string;
   // Papel que el packing list traia en hojas o resmas y se paso a bultos.
   // Solo se muestra: se pierde, igual, si se cambia la cantidad a mano.
   conversion?: Conversion | null;
@@ -126,7 +129,14 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
               cantidad_esperada: String(Number(i.cantidad_esperada)),
               cajas_esperadas: i.cajas_esperadas === null ? "" : String(i.cajas_esperadas),
               reparto: reparto.length ? reparto : null,
-              factura_aparte: i.factura_aparte || null,
+              factura_aparte: i.factura_aparte ?? null,
+              // Sin cantidad guardada, era todo el renglon.
+              cantidad_aparte:
+                i.cantidad_aparte != null
+                  ? String(Number(i.cantidad_aparte))
+                  : i.factura_aparte
+                    ? String(Number(i.cantidad_esperada))
+                    : "",
             };
           }),
         );
@@ -185,6 +195,8 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           cajas_esperadas: l.cajas_esperadas === null ? "" : String(l.cajas_esperadas),
           conversion: l.conversion,
           factura_aparte: l.factura_aparte,
+          // El Excel marca el renglon entero (columna POSITION).
+          cantidad_aparte: l.factura_aparte ? String(l.cantidad_esperada) : "",
         })),
       );
       setAviso(t("excel_leido", { count: leidos.length }));
@@ -250,6 +262,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           reparto: Array.isArray(l.reparto) && l.reparto.length ? l.reparto : null,
           conversion: l.conversion || null,
           factura_aparte: l.factura_aparte || null,
+          cantidad_aparte: l.factura_aparte ? String(l.cantidad_esperada) : "",
         })),
       );
       setAviso(t("documento_leido", { count: d.renglones.length, contenedores: leidos.length }));
@@ -297,6 +310,24 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
       ),
     );
 
+  // Factura Especial de Caracas: al marcarla propone todo el renglon.
+  const marcarEspecial = (i: number, marcada: boolean) =>
+    setRenglones((p) =>
+      p.map((r, n) =>
+        n !== i
+          ? r
+          : marcada
+            ? { ...r, factura_aparte: r.factura_aparte ?? "", cantidad_aparte: r.cantidad_aparte || r.cantidad_esperada }
+            : { ...r, factura_aparte: null, cantidad_aparte: "" },
+      ),
+    );
+  const cambiarEspecial = (i: number, campo: "factura_aparte" | "cantidad_aparte", v: string) =>
+    setRenglones((p) => p.map((r, n) => (n === i ? { ...r, [campo]: v } : r)));
+  // Marcada sin cantidad valida (0, vacia o mas que el renglon).
+  const especialMal = (r: Renglon) =>
+    r.factura_aparte != null &&
+    !(Number(r.cantidad_aparte) > 0 && Number(r.cantidad_aparte) <= Number(r.cantidad_esperada || 0));
+
   const cambiarCont = (i: number, campo: keyof ContenedorForm, v: string) =>
     setContenedores((p) => p.map((c, n) => (n === i ? { ...c, [campo]: v } : c)));
 
@@ -313,7 +344,8 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
     referencia.trim() &&
     contenedoresOk &&
     limpios.length > 0 &&
-    limpios.every((r) => r.producto.trim() && r.cantidad_esperada.trim() !== "" && Number(r.cantidad_esperada) >= 0);
+    limpios.every((r) => r.producto.trim() && r.cantidad_esperada.trim() !== "" && Number(r.cantidad_esperada) >= 0) &&
+    !limpios.some(especialMal);
 
   const faltaParaGuardar: string[] = [];
   if (!proveedor.trim()) faltaParaGuardar.push(t("falta_pl_proveedor"));
@@ -323,6 +355,7 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
   else if (!limpios.every((r) => r.producto.trim() && r.cantidad_esperada.trim() !== "" && Number(r.cantidad_esperada) >= 0)) {
     faltaParaGuardar.push(t("falta_pl_renglon_incompleto"));
   }
+  if (limpios.some(especialMal)) faltaParaGuardar.push(t("falta_pl_especial"));
 
   const guardar = async () => {
     setError(null);
@@ -350,7 +383,8 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
             cantidad_esperada: Number(r.cantidad_esperada),
             cajas_esperadas: r.cajas_esperadas === "" ? null : Number(r.cajas_esperadas),
             reparto: r.reparto || null,
-            factura_aparte: r.factura_aparte || null,
+            factura_aparte: r.factura_aparte != null ? r.factura_aparte.trim() || FACTURA_ESPECIAL_SIN_NUMERO : null,
+            cantidad_aparte: r.factura_aparte != null && r.cantidad_aparte ? Number(r.cantidad_aparte) : null,
           })),
         }),
       });
@@ -616,19 +650,50 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
-                {r.factura_aparte && (
-                  <p className="col-span-full -mt-1 flex flex-wrap items-center gap-2 text-[11px] text-amber-800">
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold">{r.factura_aparte}</span>
-                    {t("factura_aparte_linea")}
-                    <button
-                      type="button"
-                      onClick={() => setRenglones((p) => p.map((x, n) => (n === i ? { ...x, factura_aparte: null } : x)))}
-                      className="font-semibold text-violet-700 hover:underline"
-                    >
-                      {t("factura_aparte_quitar")}
-                    </button>
-                  </p>
-                )}
+                {/* Factura Especial de Caracas (compra directa): esas unidades no se reciben aca. */}
+                <div
+                  className={`col-span-full -mt-1 flex flex-wrap items-center gap-2 text-[11px] ${
+                    r.factura_aparte != null ? "rounded-lg bg-amber-50 px-2 py-1.5 text-amber-900" : "text-slate-500"
+                  }`}
+                >
+                  <label className="inline-flex items-center gap-1.5 font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={r.factura_aparte != null}
+                      onChange={(e) => marcarEspecial(i, e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300"
+                    />
+                    {t("especial_check")}
+                  </label>
+                  {r.factura_aparte != null && (
+                    <>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        value={r.cantidad_aparte ?? ""}
+                        onChange={(e) => cambiarEspecial(i, "cantidad_aparte", e.target.value)}
+                        aria-label={t("especial_cantidad")}
+                        className={`h-8 w-20 px-2 rounded-lg border bg-white text-right tabular-nums ${
+                          especialMal(r) ? "border-red-300 bg-red-50" : "border-amber-300"
+                        }`}
+                      />
+                      <span>
+                        {t("especial_de", {
+                          total: Number(r.cantidad_esperada || 0).toLocaleString("es-VE"),
+                          sede: Math.max(0, Number(r.cantidad_esperada || 0) - (Number(r.cantidad_aparte) || 0)).toLocaleString("es-VE"),
+                        })}
+                      </span>
+                      <input
+                        value={r.factura_aparte === FACTURA_ESPECIAL_SIN_NUMERO ? "" : r.factura_aparte}
+                        onChange={(e) => cambiarEspecial(i, "factura_aparte", e.target.value.slice(0, 50).toUpperCase())}
+                        placeholder={t("especial_factura")}
+                        aria-label={t("especial_factura")}
+                        className="h-8 w-36 px-2 rounded-lg border border-amber-300 bg-white font-mono uppercase"
+                      />
+                    </>
+                  )}
+                </div>
                 {r.conversion && (
                   <p className="col-span-full -mt-1 text-[11px] text-slate-500">
                     {t(r.conversion.unidad === "hojas" ? "conversion_hojas" : "conversion_resmas", {
