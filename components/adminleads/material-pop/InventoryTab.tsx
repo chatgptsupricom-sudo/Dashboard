@@ -17,9 +17,9 @@ import { InventariosGuardados } from "./InventariosGuardados";
 /**
  * Inventario físico al estilo de Odoo: una fila por producto y ubicación con
  * lo que hay a mano y la cantidad contada. "Aplicar" marca la fila como
- * contada (verde) sin tocar el stock; cuando todo está contado, "Guardar
- * inventario" ajusta el stock de una vez (ajustes en el Historial) y deja el
- * conteo guardado para consultarlo o descargarlo.
+ * contada (verde); cuando todo está contado, "Guardar inventario" lo deja
+ * pendiente en "Inventarios guardados" sin tocar el stock. Ahí se revisa y se
+ * aplica (o se descarta).
  */
 
 const UBICACIONES: PopLocation[] = ["office", "warehouse"];
@@ -168,13 +168,12 @@ export function InventoryTab({
       if (!res.ok) throw new Error(json?.error || "No se pudo guardar el inventario");
       toast({
         title: `Inventario #${json.id} guardado`,
-        description: `${json.lineas} renglones, ${json.conDiferencia} con diferencia ajustados en el stock.`,
+        description: `${json.lineas} renglones, ${json.conDiferencia} con diferencia. El stock no cambia hasta aplicarlo.`,
       });
       setContado({});
       setListos({});
       setNota("");
       setRecargarGuardados((n) => n + 1);
-      await onDone();
       setVista("guardados");
     } catch (e: any) {
       toast({ title: "No se pudo guardar", description: e.message, variant: "destructive" });
@@ -208,7 +207,7 @@ export function InventoryTab({
       </div>
 
       {vista === "guardados" ? (
-        <InventariosGuardados recargar={recargarGuardados} />
+        <InventariosGuardados recargar={recargarGuardados} onAplicado={onDone} />
       ) : (
         <>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -241,8 +240,8 @@ export function InventoryTab({
             {completo && (
               <div className="mt-3 flex flex-col gap-2 rounded-lg bg-emerald-50 p-3 sm:flex-row sm:items-center">
                 <p className="text-sm text-emerald-800 sm:flex-1">
-                  Todo contado. Al guardar, el stock queda en lo contado y el inventario se guarda para consultarlo
-                  después.
+                  Todo contado. Al guardar, el inventario queda pendiente en «Inventarios guardados» para revisarlo;
+                  el stock no cambia hasta aplicarlo.
                 </p>
                 <Input
                   value={nota}
@@ -411,8 +410,8 @@ export function InventoryTab({
             </table>
           </div>
           <p className="text-xs text-slate-500">
-            Escribe lo contado y pulsa Aplicar (o Enter): la fila queda en verde. El stock no cambia hasta guardar el
-            inventario completo. El conteo en curso queda guardado en este navegador.
+            Escribe lo contado y pulsa Aplicar (o Enter): la fila queda en verde. El stock no cambia al contar ni al
+            guardar: solo al aplicar el inventario guardado. El conteo en curso queda en este navegador.
           </p>
         </>
       )}
