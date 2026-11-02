@@ -391,9 +391,18 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     usados.add(pago.id);
     // En el estado de cuenta la hora (o el monto unico, si no hay hora) es la
     // unica prueba: si coincide, esta conciliado; salvo que el cliente (nombre
-    // del archivo) no se parezca a quien pago en Binance: eso lo aprueba una persona.
+    // del archivo) no se parezca a quien pago en Binance: eso lo aprueba una
+    // persona. Pero si el comprobante trae su hora y el monto no se repite en la
+    // semana, es ese pago aunque el nombre no se parezca (pago un tercero, o la
+    // cuenta personal del dueño de la empresa del cliente).
+    const horaYMontoUnico =
+      (!base.fechaEstimada || base.horaTelefono) && pagos.filter((p) => mismoMonto(p, base)).length === 1;
     const estado =
-      origen !== "estado" ? "por_monto_hora" : nombreParecido(base.cliente, pago.pagador) ? "conciliado" : "nombre_distinto";
+      origen !== "estado"
+        ? "por_monto_hora"
+        : horaYMontoUnico || nombreParecido(base.cliente, pago.pagador)
+          ? "conciliado"
+          : "nombre_distinto";
     salida[i] = { ...base, fecha: base.fechaEstimada ? pago.fecha : base.fecha, estado, binance: pago };
   }
   return { comprobantes: salida, usados };
