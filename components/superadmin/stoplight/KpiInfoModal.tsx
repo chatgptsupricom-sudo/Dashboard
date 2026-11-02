@@ -40,13 +40,11 @@ export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
     <div className="text-sm text-slate-600 leading-relaxed space-y-3">
       {kpiId === "efectividad_cobranza" && (
         <>
-          <p><strong>{t("info_que_mide")}</strong> Índice de Efectividad de Cobranza (CEI): qué parte de lo que se podía cobrar en el mes se cobró.</p>
-          <p><strong>{t("info_formula")}</strong> (CxC inicial + Ventas a crédito − CxC final) ÷ (CxC inicial + Ventas a crédito − CxC final no vencida) × 100</p>
-          <p><strong>Solo crédito:</strong> Facturas cuyo plazo de pago tiene días (7, 15, 30…); las de contado quedan fuera de los tres términos. Las notas de crédito siguen el plazo de la factura que revierten.</p>
-          <p><strong>Numerador (recuperado):</strong> Lo que salió de la cartera en el mes: pagos (aunque todavía no estén aplicados a una factura), retenciones y descuentos.</p>
-          <p><strong>CxC inicial / final no vencida:</strong> Saldo contable de la cuenta de clientes al empezar el mes, y lo que deben al cierre (o hoy, en el mes en curso) que todavía no vence y por eso no era exigible. Sin las facturas vencidas antes de 2025, sin Supricom y sin la empresa relacionada SUPER TECHNO LLC (su saldo se muestra aparte).</p>
-          <p><strong>Ventas a crédito:</strong> Facturas a crédito menos sus notas de crédito emitidas en el período, con IVA.</p>
-          <p><strong>{t("info_semaforo")}</strong> Verde ≥85% | Amarillo 75%–84.99% | Rojo &lt;75%</p>
+          <p><strong>{t("info_que_mide")}</strong> De lo que había que cobrar en el mes, cuánto se cobró.</p>
+          <p><strong>{t("info_formula")}</strong> Se cobró ÷ Había que cobrar × 100</p>
+          <p><strong>Había que cobrar:</strong> lo que ya venía vencido al empezar el mes (su saldo al día 1) + lo que se venció en el mes, se haya facturado antes o dentro del mes, menos las notas de crédito aplicadas. Una factura cuenta como vencida desde el día siguiente a su vencimiento: la que vence el último día del mes cuenta en el mes siguiente.</p>
+          <p><strong>Se cobró:</strong> pagos (banco y caja) y retenciones de esas facturas dentro del mes. Un pago adelantado de una factura que todavía no vencía no cuenta.</p>
+          <p><strong>Solo crédito:</strong> facturas cuyo plazo de pago tiene días (7, 15, 30…). Sin incobrables (vencidas antes de 2025 o marcadas a mano), sin Supricom y sin la empresa relacionada SUPER TECHNO LLC (su saldo se muestra aparte).</p>          <p><strong>{t("info_semaforo")}</strong> Verde ≥85% | Amarillo 75%–84.99% | Rojo &lt;75%</p>
         </>
       )}
       {kpiId === "cartera_vencida" && (
@@ -72,7 +70,7 @@ export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
           <p><strong>{t("info_que_mide")}</strong> Cuántos días tarda, en promedio, cada cliente en pagar lo que se le factura.</p>
           <p><strong>{t("info_formula")}</strong> DSO = CxC a crédito al cierre del mes ÷ Ventas a crédito del mes × Días del mes</p>
           <p><strong>Mismo período:</strong> los tres términos son del mes elegido; en el mes en curso, al día de hoy.</p>
-          <p><strong>CxC y ventas:</strong> Las mismas de Efectividad (CEI): saldo contable a crédito sin Incobrables, Supricom ni SUPER TECHNO, y facturas a crédito menos notas de crédito, con IVA.</p>
+          <p><strong>CxC y ventas:</strong> saldo contable a crédito sin Incobrables, Supricom ni SUPER TECHNO, y facturas a crédito menos notas de crédito, con IVA.</p>
           <p><strong>{t("info_semaforo")}</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
         </>
       )}
