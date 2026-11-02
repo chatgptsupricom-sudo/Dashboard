@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   Boxes,
+  ClipboardCheck,
   ClipboardList,
   History,
   PackageMinus,
@@ -18,9 +19,11 @@ import { HistoryTab } from "./HistoryTab";
 import { AlertsTab } from "./AlertsTab";
 import { BrandClientsTab } from "./BrandClientsTab";
 import { RequestsTab } from "./RequestsTab";
+import { InventoryTab } from "./InventoryTab";
+import { useAuthStore } from "@/lib/stores/auth.store";
 import type { PopCategory, PopProduct, PopUom } from "@/lib/adminleads/material-pop/types";
 
-const TABS = ["catalog", "entries", "exits", "history", "requests", "brand-clients", "alerts"];
+const TABS = ["catalog", "inventory", "entries", "exits", "history", "requests", "brand-clients", "alerts"];
 
 export function MaterialPopPage() {
   const [products, setProducts] = useState<PopProduct[]>([]);
@@ -30,6 +33,11 @@ export function MaterialPopPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState("catalog");
   const [pendientes, setPendientes] = useState(0);
+  const { user } = useAuthStore();
+  // Inventario físico: solo el adminLeads de Valencia (y el SuperAdmin). BI y
+  // Marketing y Electrodomésticos ven el módulo pero no ajustan stock.
+  const rol = String(user?.role || "").toLowerCase();
+  const veInventario = rol === "superadmin" || (rol === "adminleads" && Number(user?.cids) === 9);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -121,6 +129,12 @@ export function MaterialPopPage() {
               {products.length}
             </span>
           </TabsTrigger>
+          {veInventario && (
+            <TabsTrigger value="inventory" className="gap-2 px-3 py-2">
+              <ClipboardCheck className="h-4 w-4" />
+              Inventario
+            </TabsTrigger>
+          )}
           <TabsTrigger value="entries" className="gap-2 px-3 py-2">
             <PackagePlus className="h-4 w-4" />
             Entradas
@@ -166,6 +180,12 @@ export function MaterialPopPage() {
             onRefresh={loadAll}
           />
         </TabsContent>
+
+        {veInventario && (
+          <TabsContent value="inventory">
+            <InventoryTab products={products} categories={categories} onDone={loadAll} />
+          </TabsContent>
+        )}
 
         <TabsContent value="entries">
           <EntriesTab
