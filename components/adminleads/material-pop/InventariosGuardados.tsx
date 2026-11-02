@@ -1,17 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Download, Loader2, X } from "lucide-react";
 import { POP_LOCATION_LABELS, type PopLocation } from "@/lib/adminleads/material-pop/types";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 interface Inventario {
   id: number;
   inventory_date: string;
   notes: string | null;
+  estado: "pendiente" | "aplicado" | "descartado";
   created_by_name: string | null;
   created_at: string;
+  applied_by_name: string | null;
+  applied_at: string | null;
   lineas: number;
   con_diferencia: number;
 }
@@ -25,7 +29,14 @@ interface Linea {
   on_hand: number;
   counted: number;
   difference: number;
+  stock_now: number;
 }
+
+const ESTADOS = {
+  pendiente: { label: "Pendiente de aplicar", clase: "bg-amber-100 text-amber-800" },
+  aplicado: { label: "Aplicado", clase: "bg-emerald-100 text-emerald-800" },
+  descartado: { label: "Descartado", clase: "bg-slate-100 text-slate-600" },
+};
 
 const API = "/api/adminleads/material-pop/inventarios";
 
@@ -69,7 +80,14 @@ function descargarCsv(inv: Inventario, lineas: Linea[]) {
   URL.revokeObjectURL(url);
 }
 
-export function InventariosGuardados({ recargar }: { recargar: number }) {
+export function InventariosGuardados({
+  recargar,
+  onAplicado,
+}: {
+  recargar: number;
+  onAplicado: () => Promise<void> | void;
+}) {
+  const { toast } = useToast();
   const [inventarios, setInventarios] = useState<Inventario[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +135,37 @@ export function InventariosGuardados({ recargar }: { recargar: number }) {
     if (await conLineas(inv)) setAbierto(inv.id);
   }
 
+  async function accion(inv: Inventario, que: "aplicar" | "descartar") {
+    const aviso =
+      que === "aplicar"
+        ? `¿Aplicar el inventario #${inv.id}? A lo que hay hoy en stock se le suma o resta la diferencia contada de ${inv.con_diferencia} renglón(es), y queda en el Historial.`
+        : `¿Descartar el inventario #${inv.id}? Queda en la lista pero ya no se puede aplicar.`;
+    if (!window.confirm(aviso)) return;
+    setOcupado(inv.id);
+    try {
+      const res = await fetch(API, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: inv.id, accion: que }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "No se pudo completar");
+      toast({ title: que === "aplicar" ? `Inventario #${inv.id} aplicado al stock` : `Inventario #${inv.id} descartado` });
+      if (que === "aplicar") await onAplicado();
+      setLineas((prev) => {
+        const sig = { ...prev };
+        delete sig[inv.id];
+        return sig;
+      });
+      setAbierto(null);
+      await cargar();
+    } catch (e: any) {
+      toast({ title: "No se pudo completar", description: e.message, variant: "destructive" });
+    } finally {
+      setOcupado(null);
+    }
+  }
+
   async function descargar(inv: Inventario) {
     const l = await conLineas(inv);
     if (l) descargarCsv(inv, l);
@@ -156,8 +205,11 @@ export function InventariosGuardados({ recargar }: { recargar: number }) {
                   <ChevronRight className="h-4 w-4 text-slate-400" />
                 )}
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
                     Inventario #{inv.id} · {fecha(inv.created_at)}
+                    <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-semibold", ESTADOS[inv.estado]?.clase)}>
+                      {ESTADOS[inv.estado]?.label || inv.estado}
+                    </span>
                   </p>
                   <p className="text-xs text-slate-500">
                     {inv.created_by_name || "—"} · {inv.lineas} renglones ·{" "}
@@ -166,8 +218,24 @@ export function InventariosGuardados({ recargar }: { recargar: number }) {
                     </span>
                     {inv.notes ? ` · ${inv.notes}` : ""}
                   </p>
+                  {inv.estado !== "pendiente" && inv.applied_at && (
+                    <p className="text-xs text-slate-400">
+                      {inv.estado === "aplicado" ? "Aplicado" : "Descartado"} por {inv.applied_by_name || "—"} ·{" "}
+                      {fecha(inv.applied_at)}
+                    </p>
+                  )}
                 </div>
               </button>
+              {inv.estado === "pendiente" && (
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={ocupado !== null} onClick={() => accion(inv, "aplicar")}>
+                    <Check className="mr-1 h-4 w-4" /> Aplicar al stock
+                  </Button>
+                  <Button variant="ghost" size="sm" disabled={ocupado !== null} onClick={() => accion(inv, "descartar")}>
+                    <X className="mr-1 h-4 w-4" /> Descartar
+                  </Button>
+                </div>
+              )}
               <Button variant="outline" size="sm" disabled={ocupado === inv.id} onClick={() => descargar(inv)}>
                 {ocupado === inv.id ? (
                   <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -180,6 +248,12 @@ export function InventariosGuardados({ recargar }: { recargar: number }) {
 
             {abierto === inv.id && (
               <div className="border-t border-slate-100 p-3">
+                {inv.estado === "pendiente" && l.some((x) => x.stock_now !== x.on_hand) && (
+                  <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Hubo movimientos después del conteo en los renglones marcados. Al aplicar se respeta lo que pasó
+                    después: a lo que hay hoy se le suma o resta la diferencia contada.
+                  </p>
+                )}
                 <label className="mb-2 flex items-center gap-1.5 text-sm text-slate-600">
                   <input type="checkbox" checked={soloDif} onChange={(e) => setSoloDif(e.target.checked)} />
                   Solo con diferencia
@@ -193,12 +267,19 @@ export function InventariosGuardados({ recargar }: { recargar: number }) {
                         <th className="px-3 py-2 text-right">A mano</th>
                         <th className="px-3 py-2 text-right">Contado</th>
                         <th className="px-3 py-2 text-right">Diferencia</th>
+                        {inv.estado === "pendiente" && <th className="px-3 py-2 text-right">Stock hoy</th>}
                         <th className="px-3 py-2">Unidad</th>
                       </tr>
                     </thead>
                     <tbody>
                       {visibles.map((x, i) => (
-                        <tr key={i} className="border-t border-slate-100">
+                        <tr
+                          key={i}
+                          className={cn(
+                            "border-t border-slate-100",
+                            inv.estado === "pendiente" && x.stock_now !== x.on_hand && "bg-amber-50",
+                          )}
+                        >
                           <td className="px-3 py-1.5">
                             <span className="font-mono text-xs text-slate-500">[{x.product_code}]</span>{" "}
                             {x.product_name}
@@ -216,12 +297,15 @@ export function InventariosGuardados({ recargar }: { recargar: number }) {
                             {x.difference > 0 ? "+" : ""}
                             {fmt(x.difference)}
                           </td>
+                          {inv.estado === "pendiente" && (
+                            <td className="px-3 py-1.5 text-right tabular-nums">{fmt(x.stock_now)}</td>
+                          )}
                           <td className="px-3 py-1.5 text-slate-500">{x.uom_name || "—"}</td>
                         </tr>
                       ))}
                       {visibles.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
+                          <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
                             Sin diferencias
                           </td>
                         </tr>
