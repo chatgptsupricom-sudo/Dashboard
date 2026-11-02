@@ -15,7 +15,8 @@ import { query } from "@/lib/db";
  *     lista (se recibio por fuera del panel): Compras y Almacen ya no lo ven
  *   recepcion_packing_items.odoo_product_id  producto de Odoo del renglon
  *   recepcion_packing_items.factura_aparte   otra factura del embarque (ej.
- *     INV1062, de Caracas): el renglon se cuenta pero no se carga en esta sede
+ *     INV1062, la Factura Especial de Caracas, una compra directa): el
+ *     renglon se cuenta y se serializa, pero no se carga en el Odoo de esta sede
  */
 
 const COLUMNAS_RECEPCION: Array<[string, string]> = [

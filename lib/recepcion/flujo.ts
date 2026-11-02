@@ -440,3 +440,18 @@ export const SUCURSALES: Array<{ cids: number; nombre: string }> = [
   { cids: 10, nombre: "Caracas" },
   { cids: 7, nombre: "Panamá" },
 ];
+
+/**
+ * Factura Especial de Caracas: una COMPRA DIRECTA de Caracas que viaja en el
+ * mismo embarque (ej. INV1062). Esos productos no entran a la recepcion ni al
+ * inventario de esta sede. Compras marca en el renglon cuantas unidades son
+ * de esa factura y, al guardar, quedan en su propio renglon (`factura_aparte`
+ * = el numero de la factura, o FACTURA_ESPECIAL_SIN_NUMERO), que Almacen
+ * cuenta y serializa como los demas pero sale aparte y no se carga en Odoo.
+ *
+ * Nunca se mezcla con un reparto de la mercancia de un packing list entre
+ * sedes: esto no es "lo que le toca a Caracas", es otra compra.
+ */
+export const FACTURA_ESPECIAL_SIN_NUMERO = "FACTURA ESPECIAL";
+
+export const esFacturaEspecial = (i: { factura_aparte?: unknown }) => !!i.factura_aparte;
