@@ -59,6 +59,9 @@ export interface Cobro {
   facturaTipo: string;
   partnerId?: number;
   partnerName: string;
+  /** La empresa del cliente (`commercial_partner_id`): `partner*` puede ser un contacto o una dirección suya. */
+  clienteId?: number;
+  clienteNombre: string;
   /** Partner interno (Supricom): cuenta como cobrado pero no en los KPIs. */
   interno: boolean;
   vendedorId?: number;
@@ -253,6 +256,8 @@ export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros):
       facturaTipo: f.move_type,
       partnerId: idDe(f.partner_id),
       partnerName,
+      clienteId: idDe(f.commercial_partner_id) ?? idDe(f.partner_id),
+      clienteNombre: nombreDe(f.commercial_partner_id) || partnerName,
       interno: esInterno(partnerName),
       vendedorId: idDe(f.invoice_user_id),
       vendedorName: nombreDe(f.invoice_user_id) || "Sin vendedor",
