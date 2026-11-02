@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   TrendingUp,
@@ -177,7 +177,11 @@ export default function CxcDashboardPage() {
   // Track where invoice detail was opened from
   const [detailOrigin, setDetailOrigin] = useState<"invoices" | "clientInvoices">("invoices");
 
+  // Cambiar sede y mes seguido lanza dos cargas; la que llegue de última
+  // pisaba a la otra. Solo se pinta la respuesta de la carga más reciente.
+  const ultimaCarga = useRef(0);
   const fetchData = useCallback(async () => {
+    const carga = ++ultimaCarga.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -187,11 +191,12 @@ export default function CxcDashboardPage() {
       params.set("year", String(selectedYear));
       const res = await fetch(`/api/superadmin/cuentas-por-cobrar?${params}`);
       const json = await res.json();
+      if (carga !== ultimaCarga.current) return;
       if (json.success) setData(json.data);
     } catch (e) {
       console.error("Error:", e);
     }
-    setLoading(false);
+    if (carga === ultimaCarga.current) setLoading(false);
   }, [empresa, userCids, selectedMonth, selectedYear]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -450,7 +455,7 @@ export default function CxcDashboardPage() {
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-600">
                 <span>CxC crédito al cierre: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
               </div>
-              <div className="text-xs text-slate-500 mt-1">Ventas crédito del mes: {formatCurrency(data.kpis.dso.ventasNetas)} · {data.kpis.dso.dias} días</div>
+              <div className="text-xs text-slate-500 mt-1">Ventas crédito {data.kpis.dso.ventanaMovil ? `últimos ${data.kpis.dso.dias} días` : "del mes"}: {formatCurrency(data.kpis.dso.ventasNetas)}{data.kpis.dso.ventanaMovil ? "" : ` · ${data.kpis.dso.dias} días`}</div>
             </div>
 
             {/* Informativa: sin meta ni peso. Es la cartera vencida antes de 2025
@@ -1467,7 +1472,7 @@ export default function CxcDashboardPage() {
                     <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.carteraAbierta)}</span>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">Ventas crédito del mes</span>
+                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">{kpiData.summary.ventanaMovil ? `Ventas crédito últimos ${kpiData.summary.dias} días` : "Ventas crédito del mes"}</span>
                     <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.ventasNetas)}</span>
                   </div>
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
@@ -1479,12 +1484,12 @@ export default function CxcDashboardPage() {
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Fórmula</span>
                   <p className="text-xs text-slate-600">
-                    DSO = CxC a crédito al cierre ÷ Ventas a crédito del mes × Días del mes
+                    DSO = CxC a crédito al cierre ÷ Ventas a crédito {kpiData.summary.ventanaMovil ? "del período" : "del mes"} × Días {kpiData.summary.ventanaMovil ? "del período" : "del mes"}
                     {" "}= {formatCurrency(kpiData.summary.carteraAbierta)} ÷ {formatCurrency(kpiData.summary.ventasNetas)} × {kpiData.summary.dias}
                     {" "}= <strong>{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</strong>
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    Mismas cifras que Efectividad: saldo contable a crédito (sin Incobrables, Supricom ni SUPER TECHNO) y facturas a crédito del mes menos sus notas de crédito, con IVA. Mes en curso: al día de hoy.
+                    Saldo contable a crédito (sin Incobrables, Supricom ni SUPER TECHNO) y facturas a crédito menos sus notas de crédito, con IVA. Mes en curso: al día de hoy y, mientras el mes lleve menos de 30 días, con las ventas de los últimos 30 días (con 1 o 2 días de ventas el DSO se dispara).
                     Por cliente, la misma fórmula con su saldo y sus ventas a crédito de los últimos 90 días (con un solo mes, un cliente que compró poco ese mes sale con un DSO enorme); sin ventas en esos días no hay DSO (—).
                   </p>
                 </div>
