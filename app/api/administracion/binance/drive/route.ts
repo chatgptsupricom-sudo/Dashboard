@@ -10,6 +10,7 @@ import {
   listarCarpeta,
 } from "@/lib/administracion/googleDrive";
 import { getPublicOrigin } from "@/lib/publicOrigin";
+import { esRolCxC, ROL_CXC } from "@/lib/administracion/binance";
 
 // Google Drive de la Conciliación Binance (lib/administracion/googleDrive.ts).
 //
@@ -24,10 +25,12 @@ import { getPublicOrigin } from "@/lib/publicOrigin";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_CXC]);
   if (auth.error) return auth.error;
   const p = request.nextUrl.searchParams;
   if (p.has("estado")) return NextResponse.json(await estadoDrive());
+  // Cuentas por Cobrar lee carpetas con la cuenta que conecto Administracion; conectarla no.
+  if (esRolCxC(auth.payload)) return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   const origen = getPublicOrigin(request);
   const vuelta = `${origen}/api/administracion/binance/drive`;
   try {
@@ -45,7 +48,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_CXC]);
   if (auth.error) return auth.error;
   const b = await request.json().catch(() => ({}));
   const id = idDeEnlace(String(b?.url || ""));

@@ -4,14 +4,16 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Aviso, FilaVacia } from "@/components/administracion/comunes";
+import ConciliacionBinance from "@/components/administracion/ConciliacionBinance";
 import type { Comprobante, PagoBinance } from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 import { Bitcoin, CalendarDays, Loader2, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-// Conciliación Binance para Cuentas por Cobrar: la hoja "Conciliación" del
-// Excel que arma Administración, solo con los conciliados, de su sede y para
-// ver. La API ya les manda solo los conciliados (/api/administracion/binance).
+// Conciliación Binance para Cuentas por Cobrar: arriba sube los comprobantes de
+// la semana y ve en qué quedó cada uno (ConciliacionBinance modo "cxc"); abajo,
+// la hoja "Conciliación" del Excel de Administración, solo con los conciliados
+// de su sede que faltan por registrar en Odoo.
 
 const DIA = 86400_000;
 
@@ -131,7 +133,9 @@ export default function BinanceCxCPage() {
           <Bitcoin className="h-7 w-7 text-amber-500" />
           Conciliación Binance
         </h1>
-        <p className="text-gray-500 text-sm">Pagos por Binance que Administración ya concilió y todavía no están registrados en Odoo, por semana.</p>
+        <p className="text-gray-500 text-sm">
+          Sube los comprobantes de la semana; Administración los concilia con el estado de cuenta. Abajo, los conciliados que todavía no están registrados en Odoo.
+        </p>
       </div>
 
       {error && <Aviso tono="rojo">{error}</Aviso>}
@@ -160,6 +164,8 @@ export default function BinanceCxCPage() {
         </Card>
 
         <div className="space-y-3 min-w-0">
+          <ConciliacionBinance modo="cxc" semana={semana} />
+          <h2 className="text-base font-semibold pt-3">Conciliados por registrar en Odoo</h2>
           <div className="flex gap-1 overflow-x-auto" role="group" aria-label="Filtrar por día">
             {[{ valor: null as string | null, label: "Todos" }, ...dias].map((d) => {
               const n = d.valor ? semanaCompleta.filter((c) => diaDe(c) === d.valor).length : semanaCompleta.length;
