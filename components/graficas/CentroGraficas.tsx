@@ -238,6 +238,9 @@ function VistaResumen({ estados, ir }: { estados: Partial<Record<Area, Estado>>;
               <div key={i} className="h-[132px] rounded-2xl border border-slate-200/80 bg-white p-5">
                 {estados[area]?.estado === "error" ? (
                   <p className="text-xs text-red-600">No cargó {NOMBRE_PESTANA[area]}</p>
+                ) : estados[area]?.estado === "listo" ? (
+                  // El área cargó pero no tiene ese dato (ej. una sede sin biométrico).
+                  <p className="text-xs text-slate-400">Sin datos de {NOMBRE_PESTANA[area]} para esta sede y mes</p>
                 ) : (
                   <>
                     <div className="h-3 w-24 rounded bg-slate-100 animate-pulse" />
@@ -364,7 +367,7 @@ export function CentroGraficas() {
     {
       selector: '[data-tour="cm-presentar"]',
       titulo: "Presentar en una TV",
-      texto: "Presentar (tecla P) pasa sola de un área a otra cada 20 segundos y vuelve a pedir los datos cada 15 minutos. Junto con pantalla completa sirve para dejarlo en una TV.",
+      texto: "Presentar (tecla P) pone el tablero en pantalla completa y pasa solo de un área a otra cada 20 segundos; los datos se vuelven a pedir cada 15 minutos. Sirve para dejarlo en una TV. Esc o «Detener» lo termina.",
       antes: () => setPestana("resumen"),
     },
     {
@@ -447,7 +450,11 @@ export function CentroGraficas() {
   }, [presentando]);
 
   useEffect(() => {
-    const cambio = () => setPantallaCompleta(!!document.fullscreenElement);
+    const cambio = () => {
+      setPantallaCompleta(!!document.fullscreenElement);
+      // Salir de pantalla completa (Esc) también termina la presentación.
+      if (!document.fullscreenElement) setPresentando(false);
+    };
     document.addEventListener("fullscreenchange", cambio);
     return () => document.removeEventListener("fullscreenchange", cambio);
   }, []);
@@ -461,11 +468,24 @@ export function CentroGraficas() {
       const n = Number(e.key);
       if (n >= 1 && n <= PESTANAS.length) setPestana(PESTANAS[n - 1]);
       else if (e.key.toLowerCase() === "r") recargar();
-      else if (e.key.toLowerCase() === "p") setPresentando((p) => !p);
+      else if (e.key.toLowerCase() === "p") presentarRef.current();
     };
     window.addEventListener("keydown", tecla);
     return () => window.removeEventListener("keydown", tecla);
   }, []);
+
+  // Presentar: pantalla completa al instante y pasa de área cada 20 s (antes solo rotaba y parecía no hacer nada).
+  const presentar = async () => {
+    if (presentando) {
+      setPresentando(false);
+      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+      return;
+    }
+    if (!document.fullscreenElement) await raiz.current?.requestFullscreen().catch(() => {});
+    setPresentando(true);
+  };
+  const presentarRef = useRef(presentar);
+  presentarRef.current = presentar;
 
   const alternarPantalla = async () => {
     try {
@@ -546,8 +566,8 @@ export function CentroGraficas() {
             <div data-tour="cm-presentar" className="flex gap-2">
             <button
               type="button"
-              onClick={() => setPresentando((p) => !p)}
-              title="Modo presentación: cambia de área sola cada 20 s (P)"
+              onClick={presentar}
+              title="Modo presentación: pantalla completa y cambia de área sola cada 20 s (P; Esc para salir)"
               className={`h-10 inline-flex items-center gap-1.5 rounded-xl px-3 text-sm font-medium transition ${presentando ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
             >
               {presentando ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
