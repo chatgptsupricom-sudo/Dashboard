@@ -228,10 +228,15 @@ export default function ConciliacionBinance({
   }, [cargar]);
 
   // El aviso de la subida se va solo 5 s despues de terminar (no mientras el
-  // mouse esta encima, para poder leer los errores).
+  // mouse esta encima). Si algun archivo no se subio se queda hasta cerrarlo,
+  // para que se vea cuales fallaron y por que.
   const [sobreAviso, setSobreAviso] = useState(false);
+  const cerrarAviso = () => {
+    setSubidas([]);
+    setIgnorados(0);
+  };
   useEffect(() => {
-    if (subiendo || sobreAviso || (!subidas.length && !ignorados)) return;
+    if (subiendo || sobreAviso || subidas.some((s) => !s.ok) || (!subidas.length && !ignorados)) return;
     const t = setTimeout(() => {
       setSubidas([]);
       setIgnorados(0);
@@ -533,6 +538,14 @@ export default function ConciliacionBinance({
                 <span className="text-gray-500"> · {ignorados} ignorados (no son fotos ni PDF)</span>
               )}
             </p>
+            {!subiendo && subidas.some((s) => !s.ok) && (
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-gray-500">Estos no se subieron. Corrígelos y vuelve a subirlos.</p>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={cerrarAviso}>
+                  Cerrar
+                </Button>
+              </div>
+            )}
             {subidas
               .filter((s) => !s.ok)
               .map((s, i) => (

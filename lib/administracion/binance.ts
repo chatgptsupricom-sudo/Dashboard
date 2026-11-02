@@ -1266,10 +1266,16 @@ export function fechaConCarpeta(dia: number, horaTelefono: number | null) {
     : { fechaMs: dia + horaTelefono * 60_000, estimada: true, soloDia: true, horaTelefono: true };
 }
 
-/** Cliente = nombre del archivo, sin extension ni el " (2)" de los repetidos. */
+/**
+ * Cliente = nombre del archivo, sin extension, sin el numero de adelante con que
+ * se ordenan varios comprobantes del mismo cliente ("1-ZENVO", "2 - ZENVO") ni
+ * el " (2)" de los repetidos. Un numero al final ("ZENVO 1") no se quita: hay
+ * clientes que terminan en numero ("TECNOLOGIA EXPRESS 2026").
+ */
 export const clienteDelArchivo = (nombre: string) =>
   nombre
     .replace(/\.[a-z0-9]{2,5}$/i, "")
+    .replace(/^\s*\d+\s*-\s*/, "")
     .replace(/\s*\(\d+\)$/, "")
     .replace(/[_]+/g, " ")
     .trim()
