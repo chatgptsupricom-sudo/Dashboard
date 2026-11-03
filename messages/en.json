@@ -3733,6 +3733,7 @@
     "no_llego_ninguno": "None arrived",
     "quitar_serial": "Remove serial {serial}",
     "descargar_seriales": "Download serials to Excel ({count})",
+    "descargar_observaciones": "Download notes to Excel ({count})",
     "motivo": "Reason for the difference (required)",
     "golpeado": "Box in bad condition",
     "dano_titulo": "Box condition",
