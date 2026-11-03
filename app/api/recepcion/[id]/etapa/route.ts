@@ -8,6 +8,8 @@ import {
 } from "@/lib/recepcion/flujo";
 import { cargarEnOdoo, ocPendiente, productoPorCodigo } from "@/lib/recepcion/odoo";
 import { contenedorDeConteo, ponerCantidad, recalcularTotales } from "@/lib/recepcion/conteo";
+import { avisarObservaciones } from "@/lib/recepcion/avisoObservaciones";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -378,6 +380,7 @@ export async function POST(
           referencia: rec.referencia,
           contenedor: contenedor.numero,
         });
+        avisarObservaciones(id, getPublicOrigin(request), Number(contenedor.id));
         break;
       }
 
@@ -566,6 +569,7 @@ export async function POST(
         } catch (e: any) {
           console.error(`[recepcion ${id}] no se pudo cargar en Odoo:`, e?.message);
         }
+        avisarObservaciones(id, getPublicOrigin(request));
         break;
       }
 
