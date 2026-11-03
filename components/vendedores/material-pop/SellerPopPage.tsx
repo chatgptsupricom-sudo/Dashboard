@@ -8,7 +8,7 @@ import {
   type MovementLine,
 } from "@/components/adminleads/material-pop/MovementLines";
 import { OdooClientSelect } from "@/components/adminleads/material-pop/OdooClientSelect";
-import type { PopProduct } from "@/lib/adminleads/material-pop/types";
+import { esMarcaUsoInterno, type PopProduct } from "@/lib/adminleads/material-pop/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -86,6 +86,23 @@ export function SellerPopPage() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Uso interno: solo material de la marca Supricom.
+  const productosElegibles =
+    destino === "interno" ? products.filter((p) => esMarcaUsoInterno(p.brand)) : products;
+
+  function elegirDestino(valor: "cliente" | "interno") {
+    setDestino(valor);
+    if (valor !== "interno") return;
+    // Lo que ya estaba elegido de otra marca sale de la solicitud.
+    setLines((prev) => {
+      const quedan = prev.filter((l) => {
+        if (l.productId === null) return true;
+        return esMarcaUsoInterno(products.find((p) => p.id === l.productId)?.brand);
+      });
+      return quedan.length > 0 ? quedan : [lineaVacia()];
+    });
+  }
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -238,7 +255,7 @@ export function SellerPopPage() {
               <h2 className="font-semibold text-slate-900">Nueva solicitud</h2>
             </div>
 
-            <MovementLines products={products} lines={lines} onChange={setLines} />
+            <MovementLines products={productosElegibles} lines={lines} onChange={setLines} />
 
             <div>
               <Label>¿Para quién es?</Label>
@@ -252,7 +269,7 @@ export function SellerPopPage() {
                   <button
                     key={valor}
                     type="button"
-                    onClick={() => setDestino(valor)}
+                    onClick={() => elegirDestino(valor)}
                     className={cn(
                       "flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
                       destino === valor

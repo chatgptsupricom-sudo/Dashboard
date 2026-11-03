@@ -2,6 +2,7 @@ import { query, getConnection } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { cambiarStock, leerStock } from "@/lib/adminleads/material-pop/stock";
 import { hayColumnaRecipiente } from "@/lib/adminleads/material-pop/columnas";
+import { esMarcaUsoInterno } from "@/lib/adminleads/material-pop/types";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -284,10 +285,13 @@ export async function crearSolicitud(opts: {
 
     for (const item of opts.items) {
       const [prod] = await conn.execute(
-        "SELECT id FROM pop_products WHERE id = ? AND is_active = 1 AND cids = ? LIMIT 1",
+        "SELECT id, code, brand FROM pop_products WHERE id = ? AND is_active = 1 AND cids = ? LIMIT 1",
         [item.productId, opts.cids],
       );
       if (prod.length === 0) throw new ErrorSolicitud("Producto no encontrado", 404);
+      if (usoInterno && !esMarcaUsoInterno(prod[0].brand)) {
+        throw new ErrorSolicitud(`${prod[0].code}: para uso interno solo hay material de la marca Supricom`);
+      }
       await conn.execute(
         "INSERT INTO pop_request_items (request_id, product_id, quantity) VALUES (?, ?, ?)",
         [id, item.productId, item.quantity],

@@ -62,9 +62,9 @@ export async function GET(request: NextRequest) {
       else porProducto.set(clave, { code: f.code, name: f.name, brand: f.brand, quantity: cantidad });
     }
 
-    // Si salió de las dos ubicaciones, la nota habla del almacén principal:
-    // en una salida a cliente es el traslado que hay que respaldar.
-    const origen = filas.some((f: any) => f.location === "warehouse") ? "warehouse" : "office";
+    // Si salió de las dos ubicaciones, la nota habla de la Oficina C7: en una
+    // salida a cliente es el traslado a C4 lo que hay que respaldar.
+    const origen = filas.some((f: any) => f.location === "office") ? "office" : "warehouse";
     const fecha = filas[0].movement_date
       ? String(new Date(filas[0].movement_date).toISOString().slice(0, 10))
       : null;
