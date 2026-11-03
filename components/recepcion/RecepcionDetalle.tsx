@@ -553,6 +553,46 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     XLSX.writeFile(wb, `Seriales_${rec.referencia}.xlsx`);
   };
 
+  // Todo lo anotado como novedad (lo guardado en el servidor): notas, precintos, diferencias y cajas en mal estado.
+  const observacionesExcel = () => {
+    const fecha = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("es-VE") : "");
+    const fila = (tipo: string, detalle: string, extra: Record<string, string | number> = {}) => ({
+      Tipo: tipo, Contenedor: "", Codigo: "", Producto: "", Esperado: "", Recibido: "", Diferencia: "", Detalle: detalle, Por: "", Fecha: "", ...extra,
+    });
+    if (!rec) return [];
+    const filas = [];
+    if (rec.observaciones) filas.push(fila("Observaciones del packing list", rec.observaciones, { Por: rec.creado_por, Fecha: fecha(rec.created_at) }));
+    for (const c of contenedores) {
+      if (c.precinto_coincide === 0)
+        filas.push(fila("Precinto distinto", `Esperado: ${c.precintos_esperados.join(", ")} · Recibido: ${c.precintos_recibidos.join(", ")}`, { Contenedor: c.numero, Por: c.llegada_por || "", Fecha: fecha(c.llegada_at) }));
+      for (const k of c.precintos_correcciones || [])
+        filas.push(fila("Corrección de precintos", `${k.antes.join(", ")} → ${k.despues.join(", ")}: ${k.motivo}`, { Contenedor: c.numero, Por: k.por, Fecha: fecha(k.at) }));
+      if (c.notas_cierre) filas.push(fila("Nota del contenedor", c.notas_cierre, { Contenedor: c.numero, Por: c.cerrado_por || "", Fecha: fecha(c.cerrado_at) }));
+    }
+    for (const i of items) {
+      const esperado = Number(i.cantidad_esperada);
+      const recibido = i.cantidad_recibida === null || i.cantidad_recibida === undefined ? null : Number(i.cantidad_recibida);
+      const producto = { Codigo: i.codigo || "", Producto: i.producto, Esperado: esperado, Recibido: recibido ?? "" };
+      if (i.motivo_diferencia)
+        filas.push(fila("Diferencia", i.motivo_diferencia, { ...producto, Diferencia: recibido === null ? "" : recibido - esperado }));
+      if (i.danos?.length) {
+        const danos = i.danos.map((d) => `${t(`dano_${d.tipo}`)}${d.cantidad ? ` (${d.cantidad})` : ""}`).join(", ");
+        filas.push(fila("Caja en mal estado", i.golpeado_nota ? `${danos}: ${i.golpeado_nota}` : danos, producto));
+      }
+    }
+    if (rec.notas_cierre) filas.push(fila("Nota de cierre", rec.notas_cierre, { Por: rec.cerrado_por || "", Fecha: fecha(rec.cerrado_at) }));
+    return filas;
+  };
+  const descargarObservaciones = () => {
+    if (!rec) return;
+    const ws = XLSX.utils.json_to_sheet(observacionesExcel());
+    ws["!cols"] = [28, 14, 14, 40, 10, 10, 10, 60, 24, 20].map((wch) => ({ wch }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Observaciones");
+    XLSX.writeFile(wb, `Observaciones_${rec.referencia}.xlsx`);
+  };
+  const nObservaciones = observacionesExcel().length;
+
   const corregirPrecintos = async (contenedorId: number) => {
     setError(null);
     setAviso(null);
@@ -1281,16 +1321,28 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                   onTerminar={() => setSeleccionado(null)}
                 />
               )}
-              {items.some((i) => (i.seriales || []).length > 0) && (
-                <div className="mb-3 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={descargarSeriales}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    {t("descargar_seriales", { count: items.reduce((n, i) => n + (i.seriales || []).length, 0) })}
-                  </button>
+              {(items.some((i) => (i.seriales || []).length > 0) || nObservaciones > 0) && (
+                <div className="mb-3 flex flex-wrap justify-end gap-4">
+                  {nObservaciones > 0 && (
+                    <button
+                      type="button"
+                      onClick={descargarObservaciones}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      {t("descargar_observaciones", { count: nObservaciones })}
+                    </button>
+                  )}
+                  {items.some((i) => (i.seriales || []).length > 0) && (
+                    <button
+                      type="button"
+                      onClick={descargarSeriales}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {t("descargar_seriales", { count: items.reduce((n, i) => n + (i.seriales || []).length, 0) })}
+                    </button>
+                  )}
                 </div>
               )}
 
