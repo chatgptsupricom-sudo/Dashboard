@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 type DetalleProducto = {
   producto: string;
@@ -78,7 +79,7 @@ export function BrandClientDetailDialog({
     if (marca) params.set("marca", marca);
     fetch(`/api/adminleads/material-pop/brand-clients/detalle?${params}`)
       .then(async (res) => {
-        const json = await res.json();
+        const json = await leerJson(res);
         if (!res.ok) throw new Error(json?.error || "No se pudo cargar el detalle");
         return json;
       })

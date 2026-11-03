@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 type Item = {
   productId: number;
@@ -96,7 +97,7 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
     try {
       const params = filtro ? `?status=${filtro}` : "";
       const res = await fetch(`/api/adminleads/material-pop/requests${params}`);
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) throw new Error(json?.error || "No se pudo cargar");
       setRequests(json.requests || []);
     } catch (e: any) {
@@ -159,7 +160,7 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) {
         toast({ title: json?.error || "No se pudo completar", variant: "destructive" });
         return;

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 /** Misma lógica que generateAbbreviation() en el servidor. */
 function previewAbbreviation(name: string): string {
@@ -142,7 +143,7 @@ export function ProductFormDialog({
         method: "POST",
         body: fd,
       });
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) throw new Error(json?.error || "No se pudo subir la imagen");
       setImageId(json.imageId);
       setImagePreview(json.imageUrl);
@@ -196,7 +197,7 @@ export function ProductFormDialog({
         body: JSON.stringify(payload),
       });
 
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) throw new Error(json?.error || "No se pudo guardar");
 
       await onSaved();
