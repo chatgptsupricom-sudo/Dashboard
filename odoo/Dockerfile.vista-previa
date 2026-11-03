@@ -3,6 +3,7 @@
 # y este archivo como Dockerfile (ver vista-previa/LEEME.md).
 FROM nginx:1.27-alpine
 COPY vista-previa.nginx.conf /etc/nginx/conf.d/default.conf
+COPY landing /usr/share/nginx/html/landing
 COPY vista-previa /usr/share/nginx/html/vista-previa
 COPY website_supricom_tienda/static /usr/share/nginx/html/website_supricom_tienda/static
 EXPOSE 80

@@ -8,9 +8,13 @@ Para verla hay que servir la carpeta `odoo/` (abrir los .html con doble clic no 
 
 y abrir http://localhost:8765/vista-previa/ (la portada enlaza las tres páginas).
 
+## Página de inicio nueva (`odoo/landing/`)
+
+Aparte de esta vista previa hay una página de inicio hecha desde cero, de una sola pieza: portada con los banners en abanico 3D, cinta de logos, destacados en un anillo 3D que se gira arrastrando, categorías que se recorren de lado con el scroll, cómo comprar, lista de códigos que se manda por WhatsApp a ventas, sedes y cierre. No usa el HTML de Odoo: solo enlaza a la tienda real (`supricom2.odoo.com`) y toma de ahí las fotos de los productos. Los datos (productos, marcas, totales) están en `odoo/landing/datos.js`, sacados de Odoo el 3-nov-2026. Se ve en http://localhost:8765/landing/ con el mismo servidor.
+
 ## En EasyPanel, como entorno de prueba
 
-`odoo/Dockerfile.vista-previa` arma un nginx con esta carpeta y las imágenes del módulo (`odoo/vista-previa.nginx.conf`: `/` lleva a `/vista-previa/` y todo sale con `X-Robots-Tag: noindex` para que Google no indexe la copia).
+`odoo/Dockerfile.vista-previa` arma un nginx con `landing/`, esta carpeta y las imágenes del módulo (`odoo/vista-previa.nginx.conf`: `/` lleva a `/landing/`, esta vista previa queda en `/vista-previa/` y todo sale con `X-Robots-Tag: noindex` para que Google no indexe la copia).
 
 1. En el proyecto de EasyPanel: **+ Servicio › App**, por ejemplo `tienda-prueba`.
 2. **Fuente › GitHub**: repo `chatgptsupricom-sudo/Dashboard`, la rama donde esté esta carpeta y **ruta de compilación `/odoo`**.

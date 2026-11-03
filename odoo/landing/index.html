@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>SUPRICOM · Tecnología al mayor</title>
+<meta name="description" content="Mayorista de tecnología: impresoras, cómputo, redes, audio, seguridad y energía. Precios para clientes con cuenta de distribuidor.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<a class="saltar" href="#contenido">Saltar al contenido</a>
+
+<header class="cabecera">
+    <div class="contenedor cabecera-fila">
+        <a class="marca" href="#inicio" aria-label="SUPRICOM, inicio">
+            <span class="marca-texto">SUPRI<b>CO</b>M</span>
+            <span class="marca-lema">¡Tu mayorista de confianza!</span>
+        </a>
+        <button class="menu-boton" type="button" aria-expanded="false" aria-controls="menu" aria-label="Abrir menú">
+            <span></span><span></span>
+        </button>
+        <nav id="menu" class="menu" aria-label="Secciones">
+            <a href="#destacados">Destacados</a>
+            <a href="#categorias">Categorías</a>
+            <a href="#comprar">Cómo comprar</a>
+            <a href="#sedes">Sedes</a>
+            <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
+            <a class="boton boton-tinta" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+        </nav>
+    </div>
+</header>
+
+<main id="contenido">
+
+    <!-- Portada: los banners reales del sitio en abanico 3D -->
+    <section id="inicio" class="portada" data-seccion>
+        <h1 class="solo-lectores">SUPRICOM, mayorista de tecnología</h1>
+        <div class="banners" role="region" aria-roledescription="carrusel" aria-label="Promociones">
+            <div class="banners-pista"></div>
+        </div>
+        <div class="contenedor banners-controles">
+            <div class="banners-pestanas" aria-label="Elegir banner"></div>
+            <div class="banners-flechas">
+                <button type="button" class="flecha" data-pausa aria-pressed="false" aria-label="Pausar banners">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="icono-pausa"><path d="M9 6v12M15 6v12"/></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="icono-seguir"><path d="m8 5 11 7-11 7z"/></svg>
+                </button>
+                <button type="button" class="flecha" data-dir="-1" aria-label="Banner anterior"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+                <button type="button" class="flecha" data-dir="1" aria-label="Banner siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Marcas -->
+    <section id="marcas" class="marcas" aria-label="Marcas que distribuimos">
+        <div class="marcas-ventana">
+            <div class="marcas-pista"></div>
+        </div>
+    </section>
+
+    <!-- Destacados: anillo 3D de productos reales; se gira arrastrando, con las flechas del teclado y con el scroll -->
+    <section id="destacados" class="vitrina" data-seccion>
+        <div class="contenedor vitrina-fila">
+            <div class="vitrina-texto aparece">
+                <h2 class="titulo">Destacados</h2>
+                <p class="titulo-nota">Un producto de cada categoría. Entra con tu cuenta para ver precio y disponibilidad.</p>
+                <div class="acciones">
+                    <a class="boton boton-blanco boton-grande" data-odoo="/shop">Ver el catálogo</a>
+                    <a class="boton boton-claro-oscuro boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+                </div>
+            </div>
+            <div class="orbita aparece" role="group" aria-roledescription="carrusel" aria-label="Productos destacados. Usa las flechas izquierda y derecha para girar.">
+                <div class="orbita-escena">
+                    <div class="anillo"></div>
+                </div>
+                <div class="orbita-sombra" aria-hidden="true"></div>
+                <p class="orbita-frente"></p>
+                <p class="orbita-ayuda" aria-hidden="true">Arrastra para girar</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Categorías: en escritorio el scroll vertical mueve la fila de lado; en el celular se desliza -->
+    <section id="categorias" class="categorias" data-seccion>
+        <div class="categorias-fija">
+            <div class="contenedor">
+                <h2 class="titulo aparece">Compra por categoría</h2>
+            </div>
+            <div class="categorias-pista"></div>
+        </div>
+    </section>
+
+    <!-- Cómo comprar -->
+    <section id="comprar" class="comprar" data-seccion>
+        <div class="contenedor">
+            <h2 class="titulo aparece">Así compras</h2>
+            <ol class="pasos">
+                <li class="paso aparece">
+                    <span class="paso-num">1</span>
+                    <h3>Pide tu cuenta</h3>
+                    <p>Con el RIF de tu empresa (RUC en Panamá). Al aprobarla ves los precios de tu sede.</p>
+                </li>
+                <li class="paso aparece">
+                    <span class="paso-num">2</span>
+                    <h3>Arma tu cotización</h3>
+                    <p>Agrega productos desde el catálogo o mándale tu lista de códigos a tu vendedor.</p>
+                </li>
+                <li class="paso aparece">
+                    <span class="paso-num">3</span>
+                    <h3>Tu vendedor la confirma</h3>
+                    <p>La pasa a pedido y coordina contigo el pago y la entrega o el retiro. En la web no se paga.</p>
+                </li>
+            </ol>
+        </div>
+    </section>
+
+    <!-- Lista de códigos: se revisa aquí y se manda por WhatsApp a ventas -->
+    <section id="pedido" class="pedido" data-seccion>
+        <div class="contenedor pedido-fila">
+            <div class="pedido-texto aparece">
+                <h2 class="titulo">¿Ya tienes tu lista de códigos?</h2>
+                <p>Pégala aquí, un código por línea con su cantidad. Te mostramos los que reconocemos y la mandas por WhatsApp a ventas para que te armen la cotización.</p>
+                <label class="campo" for="codigos">Código y cantidad</label>
+                <textarea id="codigos" rows="5" spellcheck="false" autocapitalize="characters" autocomplete="off" autocorrect="off" aria-describedby="pedido-resumen">5807C004AB 12
+MX20EC3 6
+KB260GCM 40</textarea>
+                <p id="pedido-resumen" class="pedido-resumen" role="status"></p>
+                <a class="boton boton-tinta boton-grande pedido-enviar" target="_blank" rel="noopener">Enviar por WhatsApp</a>
+            </div>
+            <div class="pedido-lista aparece"></div>
+        </div>
+    </section>
+
+    <!-- Sedes -->
+    <section id="sedes" class="sedes" data-seccion>
+        <div class="contenedor">
+            <h2 class="titulo aparece">Tres sedes</h2>
+            <div class="sedes-grilla">
+                <article class="sede aparece">
+                    <p class="sede-pais">Venezuela</p>
+                    <h3>Valencia</h3>
+                    <p><a href="tel:+584123326646">+58 412 3326646</a></p>
+                    <p><a href="mailto:webstore.valencia@supricom.com.ve">webstore.valencia@supricom.com.ve</a></p>
+                </article>
+                <article class="sede aparece">
+                    <p class="sede-pais">Venezuela</p>
+                    <h3>Caracas</h3>
+                    <p><a href="mailto:webstore.ccs@supricom.com.ve">webstore.ccs@supricom.com.ve</a></p>
+                </article>
+                <article class="sede aparece">
+                    <p class="sede-pais">Panamá</p>
+                    <h3>Panamá</h3>
+                    <p><a href="mailto:webstore@supricom.com.pa">webstore@supricom.com.pa</a></p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- Cierre -->
+    <section class="cierre">
+        <div class="contenedor">
+            <div class="cierre-caja aparece">
+                <h2>Pide tu cuenta de distribuidor</h2>
+                <p>Con el RIF de tu empresa. Al aprobarla ves los precios de tu sede y cotizas en la web.</p>
+                <a class="boton boton-blanco boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="pie">
+    <div class="contenedor pie-fila">
+        <span class="marca-texto">SUPRI<b>CO</b>M</span>
+        <nav aria-label="Pie">
+            <a data-odoo="/shop">Catálogo</a>
+            <a data-odoo="/quienes-somos">Quiénes somos</a>
+            <a data-odoo="/contactenos">Contacto</a>
+            <a data-odoo="/web/login">Mi cuenta</a>
+        </nav>
+        <p>© 2026 SUPRICOM. Precios solo para clientes registrados.</p>
+    </div>
+</footer>
+
+<script src="datos.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
