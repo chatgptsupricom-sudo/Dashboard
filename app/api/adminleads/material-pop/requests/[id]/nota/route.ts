@@ -38,7 +38,7 @@ export async function GET(
 
     // De dónde salió el material. Si ya se entregó, la ubicación real la dicen
     // los movimientos; si está aprobada, la elige quien emite la nota y por
-    // defecto es el almacén.
+    // defecto es la oficina (C7), como en la pantalla.
     let origen = (new URL(request.url).searchParams.get("origen") || "").trim();
     if (solicitud.status === "entregada" && solicitud.movementGroupId) {
       const salidas = await query(
@@ -48,7 +48,7 @@ export async function GET(
       );
       origen = salidas.rows?.[0]?.location || origen;
     }
-    if (origen !== "office" && origen !== "warehouse") origen = "warehouse";
+    if (origen !== "office" && origen !== "warehouse") origen = "office";
 
     // Uso interno sale como una salida de uso interno: destino = para qué es,
     // y lo recibe quien lo pidió.

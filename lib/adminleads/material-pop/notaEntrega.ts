@@ -17,12 +17,13 @@
 
 /**
  * Nombre de cada ubicación en el papel. Son los depósitos reales de Valencia:
- * el material vive en C7 y se traslada a C4, desde donde se despacha al
- * cliente. Si cambian las siglas, se cambian acá y en ningún otro lado.
+ * el material vive en la Oficina C7 y se traslada al Almacén C4, desde donde
+ * se despacha al cliente. En pantalla `office` es "Oficina" y `warehouse`
+ * "Almacén". Si cambian las siglas, se cambian acá y en ningún otro lado.
  */
 export const NOMBRE_UBICACION: Record<string, string> = {
-  warehouse: "Almacén C7",
-  office: "Almacén C4",
+  office: "Oficina C7",
+  warehouse: "Almacén C4",
 };
 
 export interface ItemNota {
@@ -59,7 +60,7 @@ export interface DatosNota {
   condicion?: string | null;
   observaciones?: string | null;
   items: ItemNota[];
-  /** `warehouse` (C7) u `office` (C4): de dónde sale el material. */
+  /** `office` (C7) o `warehouse` (C4): de dónde sale el material. */
   origen: string;
 }
 
@@ -109,14 +110,14 @@ function fraseMovimiento(datos: DatosNota): string {
     ? `, atendido por el vendedor <strong>${vendedor}</strong>`
     : "";
 
-  if (datos.origen === "office") {
+  if (datos.origen === "warehouse") {
     return `Se autoriza la salida del material detallado a continuación desde
-      <strong>${NOMBRE_UBICACION.office}</strong>, para su despacho al cliente
+      <strong>${NOMBRE_UBICACION.warehouse}</strong>, para su despacho al cliente
       <strong>${cliente}</strong>${atendido}.`;
   }
   return `Se autoriza la salida del material detallado a continuación desde
-    <strong>${NOMBRE_UBICACION.warehouse}</strong> y su traslado hasta
-    <strong>${NOMBRE_UBICACION.office}</strong>, desde donde se despacha al cliente
+    <strong>${NOMBRE_UBICACION.office}</strong> y su traslado hasta
+    <strong>${NOMBRE_UBICACION.warehouse}</strong>, desde donde se despacha al cliente
     <strong>${cliente}</strong>${atendido}.`;
 }
 
@@ -131,7 +132,7 @@ function firmas(datos: DatosNota, aCliente: boolean): string {
   const lineas = aCliente
     ? [
         `Autoriza · ${autoriza} (firma)`,
-        `Recepción ${escapar(NOMBRE_UBICACION.office)} (nombre, C.I. y firma)`,
+        `Recepción ${escapar(NOMBRE_UBICACION.warehouse)} (nombre, C.I. y firma)`,
         ...(recibe ? [`Recibe · ${recibe} (C.I. y firma)`] : []),
       ]
     : [
