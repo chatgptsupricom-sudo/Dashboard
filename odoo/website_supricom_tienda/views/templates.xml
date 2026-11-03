@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- "Disponible" / "Agotado" en cada tarjeta de la tienda, con lo libre (a mano menos
+         reservado) en el almacén del sitio. Nunca se muestra la cantidad: lo decidió la
+         dirección comercial (nov-2026). Solo para productos almacenables. -->
+    <template id="products_item_disponibilidad" inherit_id="website_sale.products_item"
+              name="SUPRICOM: Disponible / Agotado en la tarjeta">
+        <xpath expr="//div[hasclass('o_wsale_product_information_text')]" position="inside">
+            <t t-if="product.type == 'product'">
+                <t t-set="sup_libre" t-value="sum(website._get_product_available_qty(v) for v in product.sudo().product_variant_ids)"/>
+                <span t-if="sup_libre &gt; 0" class="s_sup_disp s_sup_disp_si">Disponible</span>
+                <span t-else="" class="s_sup_disp s_sup_disp_no">Agotado</span>
+            </t>
+        </xpath>
+    </template>
+
+</odoo>
