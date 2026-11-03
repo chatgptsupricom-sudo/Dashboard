@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Banners 3D: el banner activo al frente y los vecinos inclinados a los lados.
+         Sin JS (o en el editor) los banners quedan en una fila que se desliza de lado. -->
+    <template id="s_supricom_banners" name="Banners 3D">
+        <section class="s_supricom_banners" data-snippet="s_supricom_banners" data-name="Banners 3D">
+            <div class="s_supricom_banners_escena" data-intervalo="5500">
+                <div class="s_supricom_banners_piso" aria-hidden="true"></div>
+                <div class="s_supricom_banners_pista">
+                    <a class="s_supricom_banner" href="/shop" data-nombre="Somos el aliado">
+                        <img class="img img-fluid" src="/website_supricom_tienda/static/src/img/banners/aliado.jpg"
+                             alt="Somos el aliado que respalda tu tienda mes a mes"/>
+                    </a>
+                    <a class="s_supricom_banner" href="/shop?search=hikvision" data-nombre="Hikvision">
+                        <img class="img img-fluid" src="/website_supricom_tienda/static/src/img/banners/hikvision.jpg"
+                             alt="Hikvision: promociones únicas durante todo el año, disponibles en Supricom"/>
+                    </a>
+                    <a class="s_supricom_banner" href="/shop?search=papel" data-nombre="Papel HP">
+                        <img class="img img-fluid" src="/website_supricom_tienda/static/src/img/banners/papel_hp.jpg"
+                             alt="Líderes en distribución de papel HP en toda Venezuela"/>
+                    </a>
+                    <a class="s_supricom_banner" href="/shop?search=nexxt" data-nombre="Nexxt Home">
+                        <img class="img img-fluid" src="/website_supricom_tienda/static/src/img/banners/nexxt_home.jpg"
+                             alt="Nexxt Home: la manera inteligente de simplificar tu vida"/>
+                    </a>
+                </div>
+                <div class="container s_supricom_banners_controles o_not_editable">
+                    <div class="s_supricom_banners_puntos" role="tablist" aria-label="Banners"></div>
+                    <div class="s_supricom_banners_flechas">
+                        <button type="button" class="s_supricom_banners_prev" aria-label="Banner anterior">
+                            <i class="fa fa-chevron-left" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="s_supricom_banners_next" aria-label="Banner siguiente">
+                            <i class="fa fa-chevron-right" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </template>
+
+    <!-- Cinta de marcas: logos en recuadros que pasan solos. La copia para el bucle
+         la agrega el JS, así en el editor se edita una sola lista. -->
+    <template id="s_supricom_marcas" name="Cinta de marcas">
+        <section class="s_supricom_marcas" data-snippet="s_supricom_marcas" data-name="Cinta de marcas">
+            <div class="s_supricom_marcas_ventana">
+                <div class="s_supricom_marcas_pista">
+                    <a class="s_supricom_marca" href="/shop?search=HP" title="HP">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/hp.svg" alt="HP" style="height: 42px;"/>
+                    </a>
+                    <a class="s_supricom_marca s_supricom_marca_oscura" href="/shop?search=Havit" title="Havit">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/havit.png" alt="Havit"/>
+                    </a>
+                    <a class="s_supricom_marca" href="/shop?search=Canon" title="Canon">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/canon.svg" alt="Canon" style="height: 26px;"/>
+                    </a>
+                    <a class="s_supricom_marca" href="/shop?search=TP-Link" title="TP-Link">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/tplink.svg" alt="TP-Link" style="height: 34px;"/>
+                    </a>
+                    <a class="s_supricom_marca" href="/shop?search=Logitech" title="Logitech">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/logitech.svg" alt="Logitech"/>
+                    </a>
+                    <a class="s_supricom_marca s_supricom_marca_texto" href="/shop?search=Klip" title="Klip Xtreme">KLIP XTREME</a>
+                    <a class="s_supricom_marca s_supricom_marca_texto" href="/shop?search=Xtech" title="Xtech">XTECH</a>
+                    <a class="s_supricom_marca" href="/shop?search=Epson" title="Epson">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/epson.svg" alt="Epson" style="height: 26px;"/>
+                    </a>
+                    <a class="s_supricom_marca" href="/shop?search=Kingston" title="Kingston">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/kingston.svg" alt="Kingston"/>
+                    </a>
+                    <a class="s_supricom_marca" href="/shop?search=Nexxt" title="Nexxt">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/nexxt.svg" alt="Nexxt" style="height: 52px;"/>
+                    </a>
+                    <a class="s_supricom_marca" href="/shop?search=Targus" title="Targus">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/targus.svg" alt="Targus" style="height: 22px;"/>
+                    </a>
+                    <a class="s_supricom_marca" href="/shop?search=Ezviz" title="EZVIZ">
+                        <img src="/website_supricom_tienda/static/src/img/marcas/ezviz.svg" alt="EZVIZ" style="height: 32px;"/>
+                    </a>
+                </div>
+            </div>
+        </section>
+    </template>
+
+    <!-- Categorías: recuadros que se inclinan al pasar el mouse. Las fotos son las de
+         Odoo (product.template); cuando existan las categorías de la tienda, cambiar
+         cada enlace a su /shop/category/... desde el editor. -->
+    <template id="s_supricom_categorias" name="Categorías">
+        <section class="s_supricom_categorias pt48 pb48" data-snippet="s_supricom_categorias" data-name="Categorías">
+            <div class="container">
+                <div class="s_supricom_categorias_cabecera">
+                    <h2>Compra por categoría</h2>
+                    <a href="/shop">Ver todo el catálogo →</a>
+                </div>
+                <div class="s_supricom_categorias_grilla">
+                    <a class="s_supricom_categoria" href="/shop?search=impresora">
+                        <span class="s_supricom_categoria_texto">
+                            <span class="s_supricom_categoria_nombre">Impresoras</span>
+                            <span class="s_supricom_categoria_ir">Explorar →</span>
+                        </span>
+                        <img class="s_supricom_categoria_img" src="/web/image/product.template/109582/image_512" alt=""/>
+                    </a>
+                    <a class="s_supricom_categoria" href="/shop?search=toner">
+                        <span class="s_supricom_categoria_texto">
+                            <span class="s_supricom_categoria_nombre">Consumibles y papel</span>
+                            <span class="s_supricom_categoria_ir">Explorar →</span>
+                        </span>
+                        <img class="s_supricom_categoria_img" src="/web/image/product.template/108804/image_512" alt=""/>
+                    </a>
+                    <a class="s_supricom_categoria" href="/shop?search=laptop">
+                        <span class="s_supricom_categoria_texto">
+                            <span class="s_supricom_categoria_nombre">Laptops, monitores y cómputo</span>
+                            <span class="s_supricom_categoria_ir">Explorar →</span>
+                        </span>
+                        <img class="s_supricom_categoria_img" src="/web/image/product.template/111589/image_512" alt=""/>
+                    </a>
+                    <a class="s_supricom_categoria" href="/shop?search=mouse">
+                        <span class="s_supricom_categoria_texto">
+                            <span class="s_supricom_categoria_nombre">Periféricos y gaming</span>
+                            <span class="s_supricom_categoria_ir">Explorar →</span>
+                        </span>
+                        <img class="s_supricom_categoria_img" src="/web/image/product.template/111576/image_512" alt=""/>
+                    </a>
+                    <a class="s_supricom_categoria" href="/shop?search=router">
+                        <span class="s_supricom_categoria_texto">
+                            <span class="s_supricom_categoria_nombre">Redes y WiFi</span>
+                            <span class="s_supricom_categoria_ir">Explorar →</span>
+                        </span>
+                        <img class="s_supricom_categoria_img" src="/web/image/product.template/108549/image_512" alt=""/>
+                    </a>
+                    <a class="s_supricom_categoria" href="/shop?search=audifono">
+                        <span class="s_supricom_categoria_texto">
+                            <span class="s_supricom_categoria_nombre">Audio</span>
+                            <span class="s_supricom_categoria_ir">Explorar →</span>
+                        </span>
+                        <img class="s_supricom_categoria_img" src="/web/image/product.template/112044/image_512" alt=""/>
+                    </a>
+                    <a class="s_supricom_categoria" href="/shop?search=camara">
+                        <span class="s_supricom_categoria_texto">
+                            <span class="s_supricom_categoria_nombre">Seguridad y domótica</span>
+                            <span class="s_supricom_categoria_ir">Explorar →</span>
+                        </span>
+                        <img class="s_supricom_categoria_img" src="/web/image/product.template/108975/image_512" alt=""/>
+                    </a>
+                    <a class="s_supricom_categoria" href="/shop?search=ups">
+                        <span class="s_supricom_categoria_texto">
+                            <span class="s_supricom_categoria_nombre">Energía y UPS</span>
+                            <span class="s_supricom_categoria_ir">Explorar →</span>
+                        </span>
+                        <img class="s_supricom_categoria_img" src="/web/image/product.template/108002/image_512" alt=""/>
+                    </a>
+                </div>
+            </div>
+        </section>
+    </template>
+
+    <!-- Los tres bloques en el panel "Estructura" del editor (en 17.0 es un div, no <snippets>). -->
+    <template id="snippets" inherit_id="website.snippets" name="SUPRICOM: bloques de la tienda">
+        <xpath expr="//div[@id='snippet_structure']/div[hasclass('o_panel_body')]" position="inside">
+            <t t-snippet="website_supricom_tienda.s_supricom_banners" string="Banners 3D"
+               t-thumbnail="/website_supricom_tienda/static/src/img/banners/aliado.jpg"/>
+            <t t-snippet="website_supricom_tienda.s_supricom_marcas" string="Cinta de marcas"
+               t-thumbnail="/website_supricom_tienda/static/src/img/marcas/hp.svg"/>
+            <t t-snippet="website_supricom_tienda.s_supricom_categorias" string="Categorías"
+               t-thumbnail="/website_supricom_tienda/static/src/img/marcas/canon.svg"/>
+        </xpath>
+    </template>
+
+    <!-- En el editor: cada banner, marca y categoría se puede mover, duplicar o borrar. -->
+    <template id="snippet_options" inherit_id="website.snippet_options" name="SUPRICOM: opciones de los bloques">
+        <xpath expr="." position="inside">
+            <div data-selector=".s_supricom_banner" data-drop-near=".s_supricom_banner"/>
+            <div data-selector=".s_supricom_marca" data-drop-near=".s_supricom_marca"/>
+            <div data-selector=".s_supricom_categoria" data-drop-near=".s_supricom_categoria"/>
+        </xpath>
+    </template>
+
+</odoo>
