@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
+import { esVendedorRetirado } from "@/lib/vendedores/retirados";
 
 export async function GET(req: NextRequest) {
   const auth = await requireRoles(req, ["gerente de operaciones"]);
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
       "SELECT id, name, user_id FROM sellers WHERE cids = ?",
       [userCids],
     );
-    const sellers = (resultSellers || []).filter((s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO");
+    const sellers = (resultSellers || []).filter((s: any) => s.name?.toUpperCase().trim() !== "MARIA AUXILIADORA TOVAR CARO" && !esVendedorRetirado(s));
 
     // 2. Obtener cuotas actuales (último registro por seller)
     const [resultCuotas]: any = await db.query(`

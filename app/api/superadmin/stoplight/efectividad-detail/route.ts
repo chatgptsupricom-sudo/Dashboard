@@ -4,6 +4,7 @@ import { fechaLocal } from "@/lib/stoplight/margen";
 import { obtenerCotizaciones } from "@/lib/stoplight/cotizaciones";
 import { contarDiasUtiles } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 
 function normalize(str: string): string {
   return str
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
        WHERE s.cids = ?`,
       [companyId]
     );
-    const sellers = cuotaResult.rows as any[];
+    const sellers = sinRetirados(cuotaResult.rows as any[]);
 
     // 2. Cotizaciones emitidas en el período (lib/stoplight/cotizaciones):
     // efectividad = confirmadas ÷ emitidas.

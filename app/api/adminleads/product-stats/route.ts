@@ -45,13 +45,16 @@ export async function GET(request: NextRequest) {
     // No al revés: evita un rango invertido si cargan mal las fechas.
     if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
 
-    // Fetch invoice lines with product details
-    const lines = await callOdooRPC<any[]>(
+    // Fetch invoice lines with product details. Las notas de crédito se leen
+    // aparte y restan unidades; display_type = 'product' deja fuera las
+    // líneas de costo, que repiten producto y cantidad (unidades ×3).
+    const leerLineas = (tipo: string) => callOdooRPC<any[]>(
       "account.move.line",
       "search_read",
       [
         [
-          ["move_id.move_type", "=", "out_invoice"],
+          ["move_id.move_type", "=", tipo],
+          ["display_type", "=", "product"],
           ["move_id.state", "=", "posted"],
           ["move_id.invoice_date", ">=", startDate],
           ["move_id.invoice_date", "<=", endDate],
@@ -71,8 +74,13 @@ export async function GET(request: NextRequest) {
         limit: 50000,
       },
     );
+    const [facturas, notas] = await Promise.all([leerLineas("out_invoice"), leerLineas("out_refund")]);
+    const lines = [
+      ...(facturas || []),
+      ...(notas || []).map((l: any) => ({ ...l, quantity: -(Number(l.quantity) || 0) })),
+    ];
 
-    if (!lines || lines.length === 0) {
+    if (lines.length === 0) {
       return NextResponse.json({
         success: true,
         brands: [],
@@ -117,7 +125,7 @@ export async function GET(request: NextRequest) {
       const info = productMap.get(pid);
       if (!info) continue;
       const qty = Number(line.quantity) || 0;
-      if (qty <= 0) continue;
+      if (qty === 0) continue;
 
       // Brand aggregation
       if (!brandMap.has(info.brand)) {
@@ -137,13 +145,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Convert to sorted arrays
+    // Lo devuelto entero (neto ≤ 0) no entra en los rankings.
     const brands = [...brandMap.entries()]
+      .filter(([, data]) => data.qty > 0)
       .sort((a, b) => b[1].qty - a[1].qty)
       .slice(0, 20)
       .map(([name, data]) => ({
         name,
         qty: data.qty,
         products: [...data.products.entries()]
+          .filter(([, p]) => p.qty > 0)
           .sort((a, b) => b[1].qty - a[1].qty)
           .slice(0, 10)
           .map(([key, p]) => ({
@@ -154,6 +165,7 @@ export async function GET(request: NextRequest) {
       }));
 
     const categories = [...categoryMap.entries()]
+      .filter(([, qty]) => qty > 0)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 15)
       .map(([name, qty]) => ({ name, qty }));

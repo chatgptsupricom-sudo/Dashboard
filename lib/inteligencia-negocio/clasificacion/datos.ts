@@ -143,8 +143,25 @@ export interface FilaClasificacionCliente {
   origen: Origen | null;
 }
 
+/**
+ * Las actividades de antes del prompt de Compras (oct-2026) se leen con su
+ * equivalente; las que no tienen ("Revendedor por redes", "Otro") quedan sin
+ * clasificar y la IA las vuelve a hacer.
+ */
+const ACTIVIDADES_ANTERIORES: Record<string, Actividad> = {
+  "Tienda de tecnología / computación": "Tienda de computación y tecnología",
+  "Distribuidor mayorista de tecnología": "Distribuidor",
+  "Tienda gamer": "Tienda de computación y tecnología",
+  "Papelería / librería / suministros de oficina": "Papelería y librería",
+  "Centro de copiado / impresión / sublimación": "Consumibles, impresión y copiado",
+  "Energía y respaldo (UPS, estaciones, solar)": "Energía y respaldo",
+  "Electrodomésticos / hogar": "Hogar, electrodomésticos y multitienda",
+  "Empresa usuaria final (consumo propio)": "Corporativo",
+  "Institución / gobierno / educación": "Corporativo",
+};
+
 const actividadValida = (v: unknown): Actividad | null =>
-  (ACTIVIDADES as readonly string[]).includes(String(v)) ? (String(v) as Actividad) : null;
+  (ACTIVIDADES as readonly string[]).includes(String(v)) ? (String(v) as Actividad) : ACTIVIDADES_ANTERIORES[String(v)] ?? null;
 
 export async function leerClasificacionClientes(): Promise<Map<number, FilaClasificacionCliente>> {
   await ensureTablas();
@@ -169,7 +186,8 @@ export async function guardarClienteIA(
   id: number,
   datos: { actividad: string; detalle: string; vendeEnRedes: string; confianza: number },
 ): Promise<void> {
-  const actividad = actividadValida(datos.actividad) ?? "Otro";
+  const actividad = actividadValida(datos.actividad);
+  if (!actividad) return;
   await ensureTablas();
   await db.execute(
     `INSERT INTO bi_clasificacion_clientes (partner_id, actividad, detalle, vende_en_redes, confianza, origen, updated_by)

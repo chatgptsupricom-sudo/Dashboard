@@ -23,6 +23,7 @@ import { query } from "@/lib/db";
 import { marcasDeSede } from "@/lib/reportes-comerciales/reporteTrimestral";
 import { CORTE_ODOO, normalizarRif, RIF_SQL, SQL_SIN_INTERCOMPANIA } from "@/lib/smartbit";
 import { esICExcluido, terminosSinIC } from "@/lib/intercompania";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 
 export const COMPANY_NAME: Record<number, string> = {
   9: "Valencia",
@@ -138,7 +139,7 @@ export async function vendedoresDeSede(
       ORDER BY name`,
     companyIds,
   );
-  return (rows as any[])
+  return sinRetirados(rows as any[])
     .map((r) => ({ userId: Number(r.user_id), nombre: String(r.name || "").trim() }))
     .filter((v) => v.userId && v.nombre);
 }

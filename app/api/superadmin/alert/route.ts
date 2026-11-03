@@ -306,6 +306,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 
 const COMPANY_MAP: Record<string, number> = {
   valencia: 9,
@@ -314,7 +315,8 @@ const COMPANY_MAP: Record<string, number> = {
 };
 
 const VENDEDOR_EXCLUSIONS: Record<number, string[]> = {
-  9: ["bladimir vasquez", "asistente de ventas"],
+  // Bladimir Vasquez salió de ventas: lib/vendedores/retirados.ts.
+  9: ["asistente de ventas"],
   10: ["antonella zampetti", "asistente de ventas"],
   7: ["hercilio camacho", "asistente de ventas"],
 };
@@ -888,7 +890,7 @@ export async function GET(request: NextRequest) {
         "SELECT id, name, user_id FROM sellers WHERE cids = ? AND activo = 1",
         [companyId],
       );
-      const sellers = resultSellers || [];
+      const sellers = sinRetirados<any>(resultSellers || []);
 
       const [resultCuotas]: any = await db.query(`
         SELECT c.seller_id, c.cuota FROM cuota c
@@ -1036,7 +1038,7 @@ export async function GET(request: NextRequest) {
         `SELECT id, name, user_id, cids FROM sellers WHERE activo = 1 AND cids IN (${placeholders})`,
         COMPANY_IDS,
       );
-      const allSellers = resultSellers || [];
+      const allSellers = sinRetirados<any>(resultSellers || []);
 
       if (!isWeekend) {
         vendedoresInactivos = allSellers
@@ -1139,7 +1141,7 @@ export async function GET(request: NextRequest) {
         `SELECT id, name, user_id, cids FROM sellers WHERE activo = 1 AND cids IN (${placeholders})`,
         COMPANY_IDS,
       );
-      const allSellers = resultSellers || [];
+      const allSellers = sinRetirados<any>(resultSellers || []);
 
       const [resultCuotas]: any = await db.query(`
         SELECT c.seller_id, c.cuota FROM cuota c

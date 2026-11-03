@@ -1,0 +1,379 @@
+// Tienda SUPRICOM (propuesta A, nov-2026).
+// Colores y medidas en un solo lugar; el resto del archivo solo los usa.
+
+$sup-noche: #060B1F;
+$sup-noche-2: #0D1633;
+$sup-borde-noche: #2A3A6E;
+$sup-azul: #1D4ED8;
+$sup-azul-claro: #60A5FA;
+$sup-tinta: #0E1726;
+$sup-gris: #4A5568;
+$sup-linea: #E2E7EF;
+$sup-fondo: #F4F6FA;
+$sup-verde: #047857;
+$sup-apagado: #64748B;
+$sup-curva: cubic-bezier(.2, .8, .2, 1);
+
+@keyframes sup-piso { to { background-position: 0 56px; } }
+@keyframes sup-cinta { to { transform: translateX(-50%); } }
+@keyframes sup-avance { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+@mixin sup-piso($paso: 56px) {
+    background-image:
+        linear-gradient(rgba(96, 165, 250, .28) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(96, 165, 250, .28) 1px, transparent 1px);
+    background-size: $paso $paso;
+    animation: sup-piso 2.4s linear infinite;
+    -webkit-mask-image: linear-gradient(to top, #000 20%, transparent 80%);
+    mask-image: linear-gradient(to top, #000 20%, transparent 80%);
+}
+
+// ---------------------------------------------------------------------------
+// Encabezado: la franja de arriba en oscuro; el resto queda claro para que el
+// logo (negro con "CO" azul) se siga viendo igual.
+// ---------------------------------------------------------------------------
+header#top {
+    .o_header_sales_two_top {
+        background-color: $sup-noche !important;
+        color: #C9D4EA;
+        a, span, p, div { color: inherit; }
+        a:hover { color: #FFFFFF; }
+    }
+    .navbar-nav .nav-link {
+        font-weight: 700;
+        color: $sup-tinta;
+        &:hover, &.active { color: $sup-azul; }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tienda: tarjetas de producto.
+// ---------------------------------------------------------------------------
+.oe_website_sale {
+    .oe_product .o_wsale_product_grid_wrapper {
+        // El form de adentro trae su propio borde y no deja aire al texto.
+        --o-wsale-card-border-width: 0;
+        --o-wsale-card-info-padding: .75rem 1rem .5rem;
+        border: 1px solid $sup-linea;
+        border-radius: 20px;
+        background: #FFFFFF;
+        overflow: hidden;
+        transition: transform .35s $sup-curva, box-shadow .35s, border-color .35s;
+
+        .oe_product_image {
+            background: #F1F5FD;
+            img { transition: transform .5s $sup-curva; }
+        }
+        &:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 26px 40px -24px rgba(29, 78, 216, .55);
+            border-color: #BFD0FF;
+            .oe_product_image img { transform: scale(1.06); }
+        }
+    }
+    .o_wsale_products_item_title a:not(.btn) {
+        color: $sup-tinta !important;
+        font-weight: 700;
+        line-height: 1.35;
+        &:hover { color: $sup-azul !important; }
+    }
+    // #add_to_cart_wrap toma también el "Iniciar Sesión" / "Solicitar Cotización" de supricom_web.
+    .o_wsale_product_btn .btn,
+    #add_to_cart_wrap .btn,
+    .o_wsale_product_btn .a-submit {
+        border-radius: 12px;
+        font-weight: 800 !important;
+    }
+}
+
+// "Disponible" / "Agotado" (views/templates.xml).
+.s_sup_disp {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    &::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+}
+.s_sup_disp_si { color: $sup-verde; }
+.s_sup_disp_no { color: $sup-apagado; }
+
+// ---------------------------------------------------------------------------
+// Bloque: Banners 3D.
+// Sin la clase --3d (sin JS o en el editor) es una fila que se desliza de lado.
+// ---------------------------------------------------------------------------
+.s_supricom_banners {
+    position: relative;
+    overflow: hidden;
+    background: $sup-noche;
+    color: #FFFFFF;
+
+    &::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 4%;
+        width: 900px;
+        height: 520px;
+        margin-left: -450px;
+        border-radius: 50%;
+        background: radial-gradient(closest-side, rgba(29, 78, 216, .5), rgba(29, 78, 216, 0));
+        pointer-events: none;
+    }
+}
+.s_supricom_banners_escena {
+    position: relative;
+    padding: 36px 0 28px;
+    perspective: 1600px;
+}
+.s_supricom_banners_piso {
+    position: absolute;
+    left: -25%;
+    right: -25%;
+    bottom: -150px;
+    height: 420px;
+    transform: perspective(600px) rotateX(64deg);
+    transform-origin: 50% 100%;
+    pointer-events: none;
+    @include sup-piso;
+}
+.s_supricom_banners_pista {
+    position: relative;
+    display: flex;
+    gap: 16px;
+    padding: 0 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+}
+.s_supricom_banner {
+    // Odoo compila con libsass: un min() de CSS va interpolado o lo toma como el de Sass.
+    flex: 0 0 #{"min(88%, 1020px)"};
+    display: block;
+    aspect-ratio: 1920 / 638;
+    border-radius: 18px;
+    overflow: hidden;
+    background: $sup-noche-2;
+    scroll-snap-align: center;
+    img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+}
+.s_supricom_banners--3d {
+    .s_supricom_banners_pista {
+        display: block;
+        padding: 0;
+        overflow: visible;
+        // Alto = alto del banner (72 % del ancho, tope 1020 px) + márgenes.
+        height: calc(72vw * 638 / 1920 + 48px);
+        max-height: calc(1020px * 638 / 1920 + 48px);
+        transform-style: preserve-3d;
+        transition: transform .25s ease-out;
+    }
+    .s_supricom_banner {
+        position: absolute;
+        left: 50%;
+        top: 24px;
+        width: 72%;
+        max-width: 1020px;
+        transition: transform .9s cubic-bezier(.22, .8, .2, 1), opacity .9s, box-shadow .9s, filter .9s;
+        &.is-frente { box-shadow: 0 40px 80px -30px rgba(96, 165, 250, .7); }
+        &:not(.is-frente) { filter: saturate(.7) brightness(.8); cursor: pointer; }
+    }
+}
+.s_supricom_banners_controles {
+    position: relative;
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+.s_supricom_banners_puntos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    button {
+        position: relative;
+        overflow: hidden;
+        height: 40px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid $sup-borde-noche;
+        background: $sup-noche-2;
+        color: #DCE4F5;
+        font-size: 14px;
+        font-weight: 700;
+        transition: background .3s, color .3s;
+        &[aria-selected="true"] {
+            background: #FFFFFF;
+            border-color: #FFFFFF;
+            color: #0B1F4D;
+        }
+        .s_supricom_banners_avance {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            height: 3px;
+            background: $sup-azul;
+            transform-origin: 0 50%;
+            animation: sup-avance var(--sup-intervalo, 5.5s) linear both;
+        }
+    }
+}
+.s_supricom_banners.is-pausado .s_supricom_banners_avance { animation-play-state: paused; }
+.s_supricom_banners_flechas {
+    display: flex;
+    gap: 10px;
+    button {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 1px solid #3B4F8C;
+        background: $sup-noche-2;
+        color: #FFFFFF;
+        &:hover { background: $sup-borde-noche; }
+    }
+}
+// Sin JS no hay puntos que mostrar ni flechas que funcionen.
+.s_supricom_banners:not(.s_supricom_banners--3d) .s_supricom_banners_controles { display: none; }
+
+// ---------------------------------------------------------------------------
+// Bloque: Cinta de marcas.
+// ---------------------------------------------------------------------------
+.s_supricom_marcas {
+    background: #0B1F4D;
+    border-top: 1px solid #16214A;
+    overflow: hidden;
+}
+.s_supricom_marcas_ventana { overflow-x: auto; }
+.s_supricom_marcas--activa .s_supricom_marcas_ventana { overflow: hidden; }
+.s_supricom_marcas_pista {
+    display: flex;
+    width: max-content;
+    gap: 16px;
+    padding: 16px 8px;
+}
+.s_supricom_marcas--activa .s_supricom_marcas_pista { animation: sup-cinta 38s linear infinite; }
+.s_supricom_marcas--activa:hover .s_supricom_marcas_pista { animation-play-state: paused; }
+.s_supricom_marca {
+    flex: 0 0 auto;
+    width: 168px;
+    height: 68px;
+    box-sizing: border-box;
+    padding: 10px 20px;
+    border-radius: 14px;
+    background: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    img {
+        display: block;
+        max-width: 100%;
+        height: 30px;
+        object-fit: contain;
+    }
+}
+.s_supricom_marca_oscura { background: #111418; }
+.s_supricom_marca_texto {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    color: #0B1F4D !important;
+    white-space: nowrap;
+}
+
+// ---------------------------------------------------------------------------
+// Bloque: Categorías.
+// ---------------------------------------------------------------------------
+.s_supricom_categorias_cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px 24px;
+    margin-bottom: 24px;
+    h2 {
+        margin: 0;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+    }
+    a { font-weight: 700; text-decoration: none; }
+}
+.s_supricom_categorias_grilla {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 18px;
+}
+.s_supricom_categoria {
+    position: relative;
+    height: 200px;
+    padding: 20px;
+    box-sizing: border-box;
+    border: 1px solid $sup-linea;
+    border-radius: 22px;
+    background: $sup-fondo;
+    color: $sup-tinta;
+    text-decoration: none;
+    display: flex;
+    transform-style: preserve-3d;
+    transition: transform .45s $sup-curva, box-shadow .45s;
+    &:nth-child(4n+1), &:nth-child(4n+4) { background: #EEF3FF; }
+    &:hover {
+        color: $sup-tinta;
+        transform: perspective(900px) rotateX(9deg) rotateY(-9deg) translateY(-6px);
+        box-shadow: 0 28px 40px -22px rgba(11, 31, 77, .45);
+        .s_supricom_categoria_img { transform: translateZ(46px) scale(1.1); }
+    }
+}
+.s_supricom_categoria_texto {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    max-width: 58%;
+}
+.s_supricom_categoria_nombre {
+    font-size: 19px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+.s_supricom_categoria_ir {
+    font-size: 14px;
+    font-weight: 800;
+    color: $sup-azul;
+}
+.s_supricom_categoria_img {
+    position: absolute;
+    right: 12px;
+    bottom: 14px;
+    width: 130px;
+    height: 130px;
+    object-fit: contain;
+    mix-blend-mode: multiply;
+    transition: transform .45s $sup-curva;
+}
+
+// ---------------------------------------------------------------------------
+// Quien pide menos movimiento no ve animaciones de adorno.
+// ---------------------------------------------------------------------------
+@media (prefers-reduced-motion: reduce) {
+    .s_supricom_banners_piso,
+    .s_supricom_marcas--activa .s_supricom_marcas_pista,
+    .s_supricom_banners_avance { animation: none !important; }
+    .s_supricom_banner,
+    .s_supricom_categoria,
+    .s_supricom_categoria_img,
+    .oe_website_sale .oe_product .o_wsale_product_grid_wrapper { transition: none !important; }
+}

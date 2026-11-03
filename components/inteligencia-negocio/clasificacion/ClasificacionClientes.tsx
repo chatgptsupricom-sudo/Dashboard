@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ACTIVIDADES,
+  CRITERIOS_ACTIVIDAD,
   instagramValido,
   normalizarInstagram,
   type ClienteClasificado,
@@ -26,10 +27,9 @@ type Datos = {
   data: { empresa: string; meses: string[]; clientes: ClienteClasificado[]; estado: EstadoTrabajo; hayIA: boolean };
 };
 
-type Fila = Omit<ClienteClasificado, "actividad" | "nivel" | "confianza"> & {
+type Fila = Omit<ClienteClasificado, "actividad" | "nivel"> & {
   actividad: string;
   nivel: Nivel | "Sin clasificar";
-  confianza: number | null;
   compra: string;
   tipos: string;
 };
@@ -40,12 +40,14 @@ const aFila = (c: ClienteClasificado): Fila => ({
   ...c,
   actividad: c.actividad ?? "Sin clasificar",
   nivel: c.nivel ?? "Sin clasificar",
-  confianza: c.confianza === null || !c.actividad ? null : Math.round(c.confianza * 100),
   compra: texto(c.categorias),
   tipos: texto(c.subcategorias),
 });
 
-/** Clasificación de clientes por actividad comercial (lib/inteligencia-negocio/clasificacion/clientes.ts). */
+/**
+ * Clasificación de clientes por actividad comercial (lib/inteligencia-negocio/clasificacion/clientes.ts).
+ * La misma pantalla en Inteligencia de Negocio y en Compras.
+ */
 export function ClasificacionClientes() {
   const [empresa, setEmpresa] = useState("venezuela");
   const [meses, setMeses] = useState<string[]>(() => mesesDisponibles().slice(0, 3).map((m) => m.value).sort());
@@ -101,10 +103,9 @@ export function ClasificacionClientes() {
     { clave: "actividad", titulo: "Actividad comercial", ancho: "min-w-[200px]" },
     { clave: "detalle", titulo: "Por qué", ancho: "min-w-[260px]" },
     { clave: "vendeEnRedes", titulo: "Lo que vende en redes", ancho: "min-w-[260px]" },
-    { clave: "confianza", titulo: "Grado de confianza", tipo: "porcentaje" },
     {
       clave: "nivel",
-      titulo: "Nivel",
+      titulo: "Confianza",
       mostrar: (f) => <EtiquetaNivel nivel={f.nivel === "Sin clasificar" ? null : f.nivel} manual={f.origen === "manual"} />,
     },
     {
@@ -139,7 +140,7 @@ export function ClasificacionClientes() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <Tarjeta titulo="Clientes que compraron" valor={filas.length.toLocaleString("en-US")} />
             <Tarjeta titulo="Clasificados" valor={resumen.clasificados.toLocaleString("en-US")} tono="verde" detalle={`${pendientes.length.toLocaleString("en-US")} sin clasificar`} />
-            <Tarjeta titulo="Con Instagram anotado" valor={resumen.conInstagram.toLocaleString("en-US")} detalle="Lo anota BI: Odoo no lo tiene" />
+            <Tarjeta titulo="Con Instagram anotado" valor={resumen.conInstagram.toLocaleString("en-US")} detalle="Se anota con el lápiz: Odoo no lo tiene" />
             <Tarjeta titulo="Actividad que más compra" valor={<span className="text-base">{resumen.principal}</span>} tono="azul" />
           </div>
 
@@ -148,9 +149,10 @@ export function ClasificacionClientes() {
             hayIA={datos.data.hayIA}
             texto={
               <>
-                La IA mira lo que el cliente compró en los últimos 6 meses (por categoría y nombre corto de la Clasificación de
-                productos) y, si tiene Instagram anotado, su perfil y sus últimas publicaciones. Anota el Instagram con el lápiz
-                antes de clasificar.
+                La IA usa el prompt de Compras: nombre, RIF y dirección del cliente en Odoo, lo que compró en los últimos 6 meses
+                (por categoría y nombre corto de la Clasificación de productos) y, si tiene Instagram anotado, su perfil y sus
+                últimas publicaciones. Confianza Alta = el nombre o su Instagram lo dicen; Media = el nombre o la dirección lo
+                sugieren; Baja = solo por lo que compra. Anota el Instagram con el lápiz antes de clasificar.
               </>
             }
           >
@@ -177,7 +179,7 @@ export function ClasificacionClientes() {
             filtros={[
               { clave: "actividad", titulo: "Actividad" },
               { clave: "zona", titulo: "Zona" },
-              { clave: "nivel", titulo: "Nivel" },
+              { clave: "nivel", titulo: "Confianza" },
             ]}
             archivo={`clasificacion-clientes-${empresa}-${meses.join("_")}`}
             ordenInicial={{ clave: "ventas", desc: true }}
@@ -186,7 +188,7 @@ export function ClasificacionClientes() {
           <Aviso tono="azul">
             Ventas: facturas menos notas de crédito de los meses elegidos, en USD sin IVA, sin servicios ni empresas del grupo.
             La clasificación es del cliente, no del período: se ve igual en cualquier mes. Lo corregido a mano queda con
-            confianza 100 % y la IA no lo cambia. El Instagram se lee con la API de Meta: solo funciona con cuentas de
+            confianza Alta y la IA no lo cambia. El Instagram se lee con la API de Meta: solo funciona con cuentas de
             empresa o de creador.
           </Aviso>
         </>
@@ -283,7 +285,11 @@ function EditarCliente({
                 </option>
               ))}
             </select>
-            <span className="block text-[11px] text-slate-500">Si la eliges a mano, queda con confianza 100 % y la IA no la cambia.</span>
+            <span className="block text-[11px] text-slate-500">
+              {actividad
+                ? CRITERIOS_ACTIVIDAD[actividad as keyof typeof CRITERIOS_ACTIVIDAD]
+                : "Si la eliges a mano, queda con confianza Alta y la IA no la cambia."}
+            </span>
           </label>
           {actividad && (
             <label className="block space-y-1">

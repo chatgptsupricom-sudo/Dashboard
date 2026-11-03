@@ -88,6 +88,7 @@ export const rolePermissions: RolePermissions = {
       "reportes_comerciales", // Sección Reportes Comerciales (trimestral Panamá por marca)
       "reporte_diario", // Reporte Diario de Ventas
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
+      "semaforo_clientes", // Semáforo de clientes: cartera en verde/amarillo/rojo (lib/semaforo-clientes)
       "metas_marca", // Metas de venta por marca y cumplimiento (Ventas > Metas por Marca)
       "stock_marca", // Stock vs vendido por marca, % vendido (Ventas > Stock por Marca)
       "sorteo_caracas", // Ruleta del sorteo de clientes, sede configurable (Ventas > Sorteo de clientes)
@@ -176,6 +177,7 @@ export const rolePermissions: RolePermissions = {
       "catalogo",
       "actividad",
       "top_clientes",
+      "semaforo_clientes", // Semáforo de su cartera (lib/semaforo-clientes)
       "spiff",
       "planificacion_visitas",
       "banco_imagenes_seller",
@@ -217,7 +219,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "semaforo_clientes", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -352,6 +354,7 @@ export const rolePermissions: RolePermissions = {
       "tendencia",
       "stoplight_reports",
       "pareto_80_20",
+      "clasificacion_clientes_compras", // Clasificación de clientes por actividad comercial (lib/inteligencia-negocio/clasificacion)
       "ordenes_compra", // Órdenes de compra: crear/editar/enviar a aprobación
       "recepcion_packing", // Packing lists: Compras los carga, Almacén los recibe
     ],
@@ -512,6 +515,7 @@ export const rolePermissions: RolePermissions = {
       "stoplight_reports",
       "inventory",
       "bi_dias_promedio", // Días promedio de cobro, inventario y pago
+      "bi_por_llegar", // Productos en camino y si ya se vendieron (lib/inteligencia-negocio/porLlegar.ts)
       "bi_reportes", // Desplegable Reportes: Facturación, Productos, Clientes (lib/inteligencia-negocio/reportes.ts)
       "bi_clasificacion", // Desplegable Clasificación: productos, clientes y por marca (lib/inteligencia-negocio/clasificacion)
       "catalogo", // El de los vendedores, de Valencia (lib/catalogo/sede.ts)
@@ -530,6 +534,7 @@ export const rolePermissions: RolePermissions = {
       "metas_marca",
       "stock_marca",
       "reportes_comerciales",
+      "semaforo_clientes", // Semáforo de clientes, las tres sedes (lib/semaforo-clientes)
       "seller_map",
       "spiff",
       // Desplegable Marketing
@@ -588,6 +593,7 @@ export const rolePermissions: RolePermissions = {
       "metas_marca",
       "stock_marca",
       "reportes_comerciales",
+      "semaforo_clientes", // Semáforo de clientes, como BI (lib/semaforo-clientes)
       "seller_map",
       "spiff",
       // Desplegable Marketing

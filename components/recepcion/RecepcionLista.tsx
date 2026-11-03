@@ -5,12 +5,16 @@ import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   CheckCircle2,
+  CheckSquare,
   ChevronRight,
   Container,
   FileText,
   PackageOpen,
   Plus,
+  RotateCcw,
+  Square,
   Timer,
   Truck,
   X,
@@ -52,9 +56,17 @@ type Fila = {
   origen?: "packing_list" | "factura";
   /** Como quedo la carga en Odoo al cerrar. */
   odoo_estado?: "cargando" | "cargado" | "acumulado" | "error" | "sin_oc" | null;
+  /** El SuperAdmin lo saco de la lista (se recibio por fuera del panel). Solo le llega a el. */
+  descartado_at?: string | null;
+  descartado_por?: string | null;
+  descartado_motivo?: string | null;
 };
 
-type Filtro = Etapa | "todos";
+type Filtro = Etapa | "todos" | "descartados";
+
+/** Se descarta solo lo abierto y sin nada cargado en Odoo (lo mismo que mira la API). */
+const sePuedeDescartar = (f: Fila) =>
+  !f.descartado_at && f.etapa !== "cerrado" && !["cargando", "cargado", "acumulado"].includes(f.odoo_estado || "");
 
 export default function RecepcionLista({ base }: { base: string }) {
   const t = useTranslations("recepcion");
@@ -62,6 +74,7 @@ export default function RecepcionLista({ base }: { base: string }) {
   const rol = (user?.role || "").toLowerCase().trim();
   const esCompras = rol === "compras" || rol === "superadmin";
   const esAlmacen = rol === "almacen" || rol === "superadmin";
+  const esSuperadmin = rol === "superadmin";
   // La recepcion con factura vive en la seccion de Almacen.
   const locale = base.split("/")[1] || "es";
 
@@ -117,16 +130,74 @@ export default function RecepcionLista({ base }: { base: string }) {
     timers.current.push(setTimeout(() => setAvisos((p) => p.filter((x) => x.clave !== clave)), 10_000));
   });
 
+  // Los descartados solo llegan al SuperAdmin y van aparte.
+  const activas = filas.filter((f) => !f.descartado_at);
+  const descartadas = filas.filter((f) => f.descartado_at);
   const cuenta: Record<Filtro, number> = {
-    por_llegar: filas.filter((f) => f.etapa === "por_llegar").length,
-    descargando: filas.filter((f) => f.etapa === "descargando").length,
-    cerrado: filas.filter((f) => f.etapa === "cerrado").length,
-    todos: filas.length,
+    por_llegar: activas.filter((f) => f.etapa === "por_llegar").length,
+    descargando: activas.filter((f) => f.etapa === "descargando").length,
+    cerrado: activas.filter((f) => f.etapa === "cerrado").length,
+    todos: activas.length,
+    descartados: descartadas.length,
   };
   // Se arranca donde hay trabajo: descargando, si no por llegar.
   const activo: Filtro =
     filtro ?? (cuenta.descargando > 0 ? "descargando" : cuenta.por_llegar > 0 ? "por_llegar" : "todos");
-  const visibles = activo === "todos" ? filas : filas.filter((f) => f.etapa === activo);
+  const visibles =
+    activo === "descartados" ? descartadas : activo === "todos" ? activas : activas.filter((f) => f.etapa === activo);
+
+  // SuperAdmin: elegir varios para sacarlos de la lista (o, en Descartados,
+  // para restaurarlos).
+  const [seleccionando, setSeleccionando] = useState(false);
+  const [elegidos, setElegidos] = useState<Set<number>>(new Set());
+  const [motivo, setMotivo] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [mensaje, setMensaje] = useState<{ texto: string; detalle?: string; malo: boolean } | null>(null);
+  const restaurando = activo === "descartados";
+  const elegible = (f: Fila) => (restaurando ? !!f.descartado_at : sePuedeDescartar(f));
+  const elegiblesVisibles = visibles.filter(elegible);
+  const marcados = elegiblesVisibles.filter((f) => elegidos.has(f.id));
+  const todosMarcados = elegiblesVisibles.length > 0 && marcados.length === elegiblesVisibles.length;
+  const salirDeSeleccion = () => {
+    setSeleccionando(false);
+    setElegidos(new Set());
+    setMotivo("");
+  };
+  const alternar = (id: number) =>
+    setElegidos((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const aplicar = async () => {
+    const ids = marcados.map((f) => f.id);
+    if (!ids.length || guardando) return;
+    if (!restaurando && !window.confirm(t("descartar.confirmar", { count: ids.length }))) return;
+    setGuardando(true);
+    setMensaje(null);
+    try {
+      const res = await fetch("/api/recepcion/descartar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(restaurando ? { ids, restaurar: true } : { ids, motivo }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || t("descartar.error"));
+      const omitidos: Array<{ referencia: string; motivo: string }> = data.omitidos || [];
+      setMensaje({
+        texto: t(restaurando ? "descartar.restaurados" : "descartar.hechos", { count: (data.hechos || []).length }),
+        detalle: omitidos.length ? omitidos.map((o) => `${o.referencia}: ${o.motivo}`).join(" · ") : undefined,
+        malo: omitidos.length > 0,
+      });
+      salirDeSeleccion();
+      await cargar();
+    } catch (e: any) {
+      setMensaje({ texto: e?.message || t("descartar.error"), malo: true });
+    } finally {
+      setGuardando(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
@@ -157,16 +228,27 @@ export default function RecepcionLista({ base }: { base: string }) {
         }
       />
 
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className={`max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 ${seleccionando ? "pb-32" : ""}`}>
         <div className="flex flex-wrap items-center gap-2 mb-5">
           <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-1" role="tablist">
-            {(["por_llegar", "descargando", "cerrado", "todos"] as Filtro[]).map((f) => (
+            {(
+              [
+                "por_llegar",
+                "descargando",
+                "cerrado",
+                "todos",
+                ...(esSuperadmin && cuenta.descartados > 0 ? ["descartados"] : []),
+              ] as Filtro[]
+            ).map((f) => (
               <button
                 key={f}
                 type="button"
                 role="tab"
                 aria-selected={activo === f}
-                onClick={() => setFiltro(f)}
+                onClick={() => {
+                  setFiltro(f);
+                  setElegidos(new Set());
+                }}
                 className={`shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-[13px] font-semibold transition-colors ${
                   activo === f
                     ? "bg-[color:var(--portal-primary,#741DFE)] text-white"
@@ -180,12 +262,28 @@ export default function RecepcionLista({ base }: { base: string }) {
               </button>
             ))}
           </div>
+          {/* SuperAdmin: sacar de la lista los que se recibieron por fuera del panel. */}
+          {esSuperadmin && activo !== "cerrado" && (
+            <button
+              type="button"
+              onClick={() => (seleccionando ? salirDeSeleccion() : setSeleccionando(true))}
+              title={t("descartar.ayuda")}
+              className={`ml-auto shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-[13px] font-semibold border transition-colors ${
+                seleccionando
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {seleccionando ? <X className="w-4 h-4" /> : <CheckSquare className="w-4 h-4" />}
+              {t(seleccionando ? "descartar.cancelar" : "descartar.seleccionar")}
+            </button>
+          )}
           {/* Compras carga para las tres sucursales; Almacen ya viene filtrado a la suya. */}
           {esCompras && (
             <select
               value={sucursal}
               onChange={(e) => setSucursal(e.target.value ? Number(e.target.value) : "")}
-              className="ml-auto h-9 px-3 rounded-full border border-slate-200 bg-white text-[13px] text-slate-600"
+              className={`${esSuperadmin && activo !== "cerrado" ? "" : "ml-auto "}h-9 px-3 rounded-full border border-slate-200 bg-white text-[13px] text-slate-600`}
               aria-label={t("sucursal")}
             >
               <option value="">{t("todas")}</option>
@@ -197,6 +295,23 @@ export default function RecepcionLista({ base }: { base: string }) {
             </select>
           )}
         </div>
+
+        {mensaje && (
+          <div
+            role="status"
+            className={`mb-4 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm ${
+              mensaje.malo ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"
+            }`}
+          >
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold">{mensaje.texto}</p>
+              {mensaje.detalle && <p className="text-xs mt-0.5">{mensaje.detalle}</p>}
+            </div>
+            <button type="button" onClick={() => setMensaje(null)} aria-label={t("cerrar_aviso")} className="p-1 -m-1">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {cargando ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -210,15 +325,38 @@ export default function RecepcionLista({ base }: { base: string }) {
           <EmptyState icon={Container} texto={t("vacio_filtro")} />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {visibles.map((f) => (
-              <Link
-                key={f.id}
-                href={`${base}/${f.id}`}
-                className={`group flex items-start gap-3 rounded-2xl border bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-violet-200 hover:-translate-y-0.5 transition-all ${
-                  !esCompras && f.etapa !== "cerrado" ? "border-violet-200" : "border-slate-200/80"
-                }`}
-              >
-                <Icono fila={f} />
+            {visibles.map((f) => {
+              const enSeleccion = seleccionando && esSuperadmin && activo !== "cerrado";
+              const puede = enSeleccion && elegible(f);
+              const marcado = puede && elegidos.has(f.id);
+              const clase = `group flex items-start gap-3 rounded-2xl border p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-all ${
+                f.descartado_at ? "bg-slate-50" : "bg-white"
+              } ${
+                marcado
+                  ? "border-[color:var(--portal-primary,#741DFE)] ring-2 ring-violet-200"
+                  : !esCompras && f.etapa !== "cerrado"
+                    ? "border-violet-200"
+                    : "border-slate-200/80"
+              } ${
+                !enSeleccion
+                  ? "hover:border-violet-200 hover:-translate-y-0.5"
+                  : puede
+                    ? "cursor-pointer hover:border-violet-300"
+                    : "opacity-50 cursor-not-allowed"
+              }`;
+              const contenido = (
+              <>
+                {enSeleccion ? (
+                  <span className="w-9 h-9 flex items-center justify-center shrink-0">
+                    {marcado ? (
+                      <CheckSquare className="w-5 h-5 text-[color:var(--portal-primary,#741DFE)]" />
+                    ) : (
+                      <Square className="w-5 h-5 text-slate-300" />
+                    )}
+                  </span>
+                ) : (
+                  <Icono fila={f} />
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900 truncate">{f.referencia}</p>
                   <p className="text-xs text-slate-500 truncate mt-0.5">{f.proveedor}</p>
@@ -231,7 +369,18 @@ export default function RecepcionLista({ base }: { base: string }) {
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
+                  {f.descartado_at && (
+                    <p className="text-[11px] text-slate-500 mt-1.5">
+                      {t("descartar.por", { nombre: f.descartado_por || "—", fecha: fechaCorta(f.descartado_at) })}
+                      {f.descartado_motivo ? ` · ${f.descartado_motivo}` : ""}
+                    </p>
+                  )}
                   <div className="flex items-center gap-2 mt-2">
+                    {f.descartado_at && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-200 text-slate-600">
+                        {t("descartar.etiqueta")}
+                      </span>
+                    )}
                     <span
                       className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
                         f.etapa === "cerrado"
@@ -292,14 +441,71 @@ export default function RecepcionLista({ base }: { base: string }) {
                     <span className="text-[11px] text-slate-400 tabular-nums ml-auto">
                       {t("renglones_n", { count: Number(f.total_items) })}
                     </span>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-400 shrink-0" />
+                    {!enSeleccion && (
+                      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-400 shrink-0" />
+                    )}
                   </div>
                 </div>
-              </Link>
-            ))}
+              </>
+              );
+              return enSeleccion ? (
+                <button
+                  key={f.id}
+                  type="button"
+                  disabled={!puede}
+                  aria-pressed={marcado}
+                  onClick={() => alternar(f.id)}
+                  className={clase}
+                >
+                  {contenido}
+                </button>
+              ) : (
+                <Link key={f.id} href={`${base}/${f.id}`} className={clase}>
+                  {contenido}
+                </Link>
+              );
+            })}
           </div>
         )}
       </main>
+
+      {seleccionando && esSuperadmin && activo !== "cerrado" && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 w-[min(44rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white shadow-lg px-4 py-3 flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-slate-900 tabular-nums">
+            {t("descartar.n_elegidos", { count: marcados.length })}
+          </span>
+          {elegiblesVisibles.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setElegidos(todosMarcados ? new Set() : new Set(elegiblesVisibles.map((f) => f.id)))}
+              className="text-xs font-semibold text-[color:var(--portal-primary,#741DFE)] hover:underline"
+            >
+              {t(todosMarcados ? "descartar.ninguno" : "descartar.todos")}
+            </button>
+          )}
+          {!restaurando && (
+            <input
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              maxLength={500}
+              placeholder={t("descartar.motivo_ph")}
+              aria-label={t("descartar.motivo_ph")}
+              className="flex-1 min-w-[12rem] h-9 px-3 rounded-full border border-slate-200 text-[13px]"
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => void aplicar()}
+            disabled={guardando || marcados.length === 0}
+            className={`${restaurando ? "ml-auto " : ""}inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-[13px] font-semibold text-white disabled:opacity-40 ${
+              restaurando ? "bg-[color:var(--portal-primary,#741DFE)]" : "bg-red-600 hover:bg-red-700"
+            }`}
+          >
+            {restaurando ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+            {t(restaurando ? "descartar.restaurar" : "descartar.quitar")}
+          </button>
+        </div>
+      )}
 
       {avisos.length > 0 && (
         <div

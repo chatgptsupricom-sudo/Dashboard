@@ -35,8 +35,9 @@ export async function GET(request: Request) {
     const userName = user.name;
     const userCompanyId = user.company_id[0];
 
+    // Con las notas de crédito: restan monto y unidades (signo más abajo).
     const domain: any[] = [
-      ["move_type", "=", "out_invoice"],
+      ["move_type", "in", ["out_invoice", "out_refund"]],
       ["state", "=", "posted"],
       ["company_id", "=", userCompanyId],
     ];
@@ -51,6 +52,7 @@ export async function GET(request: Request) {
         fields: [
           "id",
           "name",
+          "move_type",
           "amount_total_signed",
           "partner_id",
           "invoice_date",
@@ -237,6 +239,9 @@ export async function GET(request: Request) {
       const tipoPago = esCredito ? "Crédito" : "Contado";
       const lineas = lineasPorFactura[f.id] || [];
       const clienteNombre = f.partner_id?.[1] || "Sin Cliente";
+      // amount_total_signed ya viene negativo en una NC; cantidad y subtotal no.
+      const esNC = f.move_type === "out_refund";
+      const signo = esNC ? -1 : 1;
 
       const diasMatch = ptName.match(/(\d+)/);
       const diasCredito = diasMatch ? parseInt(diasMatch[1]) : 0;
@@ -251,14 +256,15 @@ export async function GET(request: Request) {
         monto: f.amount_total_signed || 0,
         cliente: clienteNombre,
         fecha: f.invoice_date,
+        esNC,
         zona,
         tipoPago,
         diasPago: ptName,
         productos: lineas.map((l) => ({
           id: l.product_id?.[0],
           nombre: productMap[l.product_id?.[0]]?.name || "Desconocido",
-          cantidad: l.quantity || 0,
-          subtotal: l.price_subtotal || 0,
+          cantidad: signo * (l.quantity || 0),
+          subtotal: signo * (l.price_subtotal || 0),
         })),
       };
       allFilteredFacturas.push(enriched);
@@ -279,14 +285,17 @@ export async function GET(request: Request) {
       }
       const c = clientesMap[clienteNombre];
       c.monto += enriched.monto;
-      c.facturas += 1;
-      c.zona = zona;
-      c.tipoPago = tipoPago;
-      c.diasPago = ptName;
-      c.creditLimit = creditLimit;
-      c.creditUsed = creditUsed;
-      c.creditRemaining = creditRemaining;
-      c.diasCredito = diasCredito;
+      // La NC resta monto, pero no es una factura ni cambia el plazo del cliente.
+      if (!esNC) {
+        c.facturas += 1;
+        c.zona = zona;
+        c.tipoPago = tipoPago;
+        c.diasPago = ptName;
+        c.creditLimit = creditLimit;
+        c.creditUsed = creditUsed;
+        c.creditRemaining = creditRemaining;
+        c.diasCredito = diasCredito;
+      }
 
       enriched.productos.forEach((p) => {
         if (!c.productos[p.nombre])
@@ -325,7 +334,8 @@ export async function GET(request: Request) {
       .sort((a, b) => b[1].monto - a[1].monto)
       .slice(0, 20)
       .map(([nombre, data]) => {
-        const prodsEntries = Object.entries(data.productos);
+        // Un producto devuelto entero (o más de lo comprado en el rango) no cuenta.
+        const prodsEntries = Object.entries(data.productos).filter(([, v]) => v.cantidad > 0);
         const totalCantProds = prodsEntries.reduce(
           (acc, [, v]) => acc + v.cantidad,
           0,
@@ -405,12 +415,13 @@ export async function GET(request: Request) {
       });
     });
 
-    const totalCantGlobal = Object.values(prodMapGlobal).reduce(
-      (acc, p) => acc + p.cantidad,
+    const prodsGlobal = Object.entries(prodMapGlobal).filter(([, p]) => p.cantidad > 0);
+    const totalCantGlobal = prodsGlobal.reduce(
+      (acc, [, p]) => acc + p.cantidad,
       0,
     );
 
-    const topMasVendidos = Object.entries(prodMapGlobal)
+    const topMasVendidos = [...prodsGlobal]
       .sort((a, b) => b[1].cantidad - a[1].cantidad)
       .slice(0, 10)
       .map(([nombre, data]) => ({
@@ -423,7 +434,7 @@ export async function GET(request: Request) {
             : 0,
       }));
 
-    const topMenosVendidos = Object.entries(prodMapGlobal)
+    const topMenosVendidos = [...prodsGlobal]
       .sort((a, b) => a[1].cantidad - b[1].cantidad)
       .slice(0, 10)
       .map(([nombre, data]) => ({
@@ -444,11 +455,13 @@ export async function GET(request: Request) {
     ].sort();
 
     const totalMonto = filtradas.reduce((acc, f) => acc + f.monto, 0);
-    const totalFacturas = filtradas.length;
-    const totalContado = filtradas.filter(
+    // Los conteos son de facturas: las NC solo restan en el monto.
+    const soloFacturas = filtradas.filter((f) => !f.esNC);
+    const totalFacturas = soloFacturas.length;
+    const totalContado = soloFacturas.filter(
       (f) => f.tipoPago === "Contado",
     ).length;
-    const totalCredito = filtradas.filter(
+    const totalCredito = soloFacturas.filter(
       (f) => f.tipoPago === "Crédito",
     ).length;
 
@@ -464,7 +477,7 @@ export async function GET(request: Request) {
         totalContado,
         totalCredito,
         totalClientes: Object.keys(clientesMap).length,
-        totalProductos: Object.keys(prodMapGlobal).length,
+        totalProductos: prodsGlobal.length,
       },
     });
   } catch (e: any) {

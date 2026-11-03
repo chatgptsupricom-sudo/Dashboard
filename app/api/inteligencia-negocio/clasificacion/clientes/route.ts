@@ -16,10 +16,13 @@ export const dynamic = "force-dynamic";
  *     (?estado=1: solo el avance de la IA).
  * POST {ids}: clasifica con IA en segundo plano.
  * PATCH {id, instagram?, actividad?, detalle?}: Instagram del cliente o corrección manual.
- * Inteligencia de Negocio escribe aquí: la clasificación es suya (`escribeBI`).
+ * Inteligencia de Negocio y Compras (`/compras/clasificacion-clientes`) la
+ * ven y la corrigen; BI escribe aquí porque la clasificación es suya (`escribeBI`).
  */
+const ROLES = [ROL_BI, "compras"];
+
 async function leerGET(request: NextRequest) {
-  const auth = await requireRoles(request, [ROL_BI]);
+  const auth = await requireRoles(request, ROLES);
   if (auth.error) return auth.error;
 
   const sp = request.nextUrl.searchParams;
@@ -46,7 +49,7 @@ async function leerGET(request: NextRequest) {
 export const GET = conSinIntercompaniaParaBI(leerGET);
 
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, [ROL_BI], { escribeBI: true });
+  const auth = await requireRoles(request, ROLES, { escribeBI: true });
   if (auth.error) return auth.error;
   if (!hayIA()) return NextResponse.json({ error: "No hay IA configurada en el servidor" }, { status: 503 });
   const body = await request.json().catch(() => ({}));
@@ -63,7 +66,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireRoles(request, [ROL_BI], { escribeBI: true });
+  const auth = await requireRoles(request, ROLES, { escribeBI: true });
   if (auth.error) return auth.error;
   const body = await request.json().catch(() => ({}));
   const id = Number(body?.id);

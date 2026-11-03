@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/roles";
 import { query } from "@/lib/db";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 
 /**
  * Acceso a la planificación de visitas:
@@ -45,5 +46,5 @@ export async function asesoresDeSede(companyId: number): Promise<{ userId: numbe
     "SELECT name, user_id FROM sellers WHERE cids = ? AND activo = 1 AND user_id IS NOT NULL ORDER BY name",
     [companyId],
   );
-  return (r.rows as any[]).map((s) => ({ userId: Number(s.user_id), nombre: s.name }));
+  return sinRetirados(r.rows as any[]).map((s) => ({ userId: Number(s.user_id), nombre: s.name }));
 }

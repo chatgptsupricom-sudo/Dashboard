@@ -4,6 +4,7 @@ import { query } from "@/lib/db";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { productoPorRenglon, productosDeLaOc } from "@/lib/recepcion/odoo";
 import { cargarRecepcion } from "@/lib/recepcion/servidor";
+import { esFacturaEspecial } from "@/lib/recepcion/flujo";
 
 /**
  * Renglones de un packing list que no se pudieron cruzar con un producto de
@@ -114,8 +115,8 @@ async function contexto(recepcionId: number) {
   if (rec.etapa !== "cerrado") throw new ErrorCruce("Se cruza con Odoo despues de cerrar la recepcion", 409);
   const poId = Number(rec.odoo_purchase_order_id) || 0;
   if (!poId) throw new ErrorCruce("La recepcion no tiene OC de Odoo: elige la OC primero", 409);
-  // Lo de otra factura (factura_aparte) no se cruza: no se carga en esta sede.
-  const propios = (datos.items as any[]).filter((i) => !i.factura_aparte);
+  // La Factura Especial de Caracas (compra directa) no se cruza: no se carga en esta sede.
+  const propios = (datos.items as any[]).filter((i) => !esFacturaEspecial(i));
   const productoDe = await productoPorRenglon(propios, await productosDeLaOc(poId));
   const sin: RenglonSinProducto[] = propios
     .filter((i) => !productoDe.has(Number(i.id)))
@@ -128,7 +129,7 @@ async function contexto(recepcionId: number) {
       seriales: (i.seriales || []).length,
     }));
   const apartados: RenglonApartado[] = (datos.items as any[])
-    .filter((i) => i.factura_aparte)
+    .filter((i) => esFacturaEspecial(i))
     .map((i) => ({
       item_id: Number(i.id),
       producto: String(i.producto || ""),

@@ -15,6 +15,8 @@ import { coberturaTerritorial } from "@/lib/visitas/planificacion";
 import type { ValorReal } from "@/lib/stoplight/types";
 import { metaVisitasMes, metaVisitasSemana } from "@/lib/stoplight/visitas";
 import { sinIntercompania } from "@/lib/intercompania";
+import { sinRetirados } from "@/lib/vendedores/retirados";
+import { metaClientesNuevosDe } from "@/lib/vendedores/metaClientesNuevos";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -127,7 +129,8 @@ export async function GET(request: NextRequest) {
          WHERE s.cids = ?`,
         [companyId]
       );
-      sellers = cuotaResult.rows as any[];
+      // Sin los que dejaron de vender (lib/vendedores/retirados.ts).
+      sellers = sinRetirados(cuotaResult.rows as any[]);
       totalCuotaMensual = sellers.reduce((sum, s) => sum + Number(s.cuota || 0), 0);
     } catch (e: any) {
       console.error("Error cuota:", e.message);
@@ -384,9 +387,14 @@ export async function GET(request: NextRequest) {
     const numSellers = sellers.length || 1;
 
     const metaClientesNuevos = metasMap["clientes_nuevos"] || 0; // goal per seller
+    // Meta del equipo = la de cada vendedor (algunos tienen una propia,
+    // lib/vendedores/metaClientesNuevos.ts).
+    const metaClientesNuevosEquipo = sellers.length
+      ? sellers.reduce((sum, s) => sum + metaClientesNuevosDe(s, metaClientesNuevos), 0)
+      : metaClientesNuevos * numSellers;
 
     // Calculate weekly % for clientes nuevos:
-    // Goal per week for the whole team = meta_per_seller * num_sellers * (diasUtilesSemana / diasUtilesMes)
+    // Goal per week for the whole team = meta del equipo * (diasUtilesSemana / diasUtilesMes)
     const semanaClientes = semanas.map((semana, i) => {
       const esFuturo = semana.inicio > now;
       if (esFuturo) return null;
@@ -395,11 +403,11 @@ export async function GET(request: NextRequest) {
         (sum, semanaMap) => sum + (semanaMap[i] || 0), 0
       );
 
-      if (metaClientesNuevos <= 0) {
+      if (metaClientesNuevosEquipo <= 0) {
         return newClientsThisWeek > 0 ? String(newClientsThisWeek) : null;
       }
 
-      const goalThisWeek = metaClientesNuevos * numSellers * (semana.diasUtiles / totalDiasUtilesMes);
+      const goalThisWeek = metaClientesNuevosEquipo * (semana.diasUtiles / totalDiasUtilesMes);
       if (goalThisWeek <= 0) return null;
 
       const pct = Math.round((newClientsThisWeek / goalThisWeek) * 100);
@@ -838,7 +846,7 @@ export async function GET(request: NextRequest) {
       reales.activacion_cartera = { valor: tasaActivacionMes, meta: metaONull(metaActivacion), unidad: "%" };
     }
     if (!hayManual("clientes_nuevos")) {
-      reales.clientes_nuevos = { valor: totalClientesNuevos, meta: metaONull(metaClientesNuevos * numSellers), unidad: "", acumulado: true };
+      reales.clientes_nuevos = { valor: totalClientesNuevos, meta: metaONull(metaClientesNuevosEquipo), unidad: "", acumulado: true };
     }
     if (coberturaTerr) {
       reales.visitas_semanales = { valor: coberturaTerr.realizadas, meta: metaONull(coberturaTerr.planificadas), unidad: "" };

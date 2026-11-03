@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { esDiaUtil, contarDiasUtiles, esFeriado } from "@/lib/feriados";
 import { accesoStoplight } from "@/lib/stoplight/acceso";
 import { sinIntercompania } from "@/lib/intercompania";
+import { sinRetirados } from "@/lib/vendedores/retirados";
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
        WHERE s.cids = ?`,
       [companyId]
     );
-    const sellers = cuotaResult.rows as any[];
+    const sellers = sinRetirados(cuotaResult.rows as any[]);
 
     // 2. Fetch invoices (including credit notes)
     const invoices = await callOdooRPC<any[]>(

@@ -244,6 +244,35 @@ const nombreNorm = (s: string) =>
   (s || "").replace(/\(v\)/gi, "").replace(/\s+/g, " ").trim().toUpperCase();
 
 /**
+ * Venta por producto de Odoo (read_group de account.move.line por product_id)
+ * con las notas de credito restando. En una NC `price_subtotal` y `quantity`
+ * tambien vienen positivos, asi que se leen aparte y se descuentan.
+ * `dominio` va sin `move_id.move_type`. Devuelve ordenado por venta.
+ */
+export async function lineasProductoOdoo(dominio: any[]): Promise<any[]> {
+  const grupo = (tipo: string) =>
+    callOdooRPCEstricto<any[]>("account.move.line", "read_group", [
+      [["move_id.move_type", "=", tipo], ...dominio],
+      ["price_subtotal", "quantity", "product_id"],
+      ["product_id"],
+      0,
+      0,
+    ]);
+  const [facturas, notas] = await Promise.all([grupo("out_invoice"), grupo("out_refund")]);
+  const porProducto = new Map<number, any>();
+  for (const l of facturas || []) {
+    porProducto.set(l.product_id[0], { product_id: l.product_id, price_subtotal: l.price_subtotal || 0, quantity: l.quantity || 0 });
+  }
+  for (const l of notas || []) {
+    const p = porProducto.get(l.product_id[0]) ?? { product_id: l.product_id, price_subtotal: 0, quantity: 0 };
+    p.price_subtotal -= l.price_subtotal || 0;
+    p.quantity -= l.quantity || 0;
+    porProducto.set(l.product_id[0], p);
+  }
+  return [...porProducto.values()].sort((a, b) => b.price_subtotal - a.price_subtotal);
+}
+
+/**
  * Suma los productos de Smartbit a un read_group de account.move.line por
  * product_id. Empata por codigo ("[CODIGO] Nombre" en Odoo); lo que no empata
  * entra con id "sb:<codigo>" (sin stock en Odoo). Devuelve ordenado por venta.

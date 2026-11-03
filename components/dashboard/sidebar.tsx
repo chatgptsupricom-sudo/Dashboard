@@ -69,6 +69,7 @@ import {
   Package,
   Palette,
   PieChart,
+  Store,
   Search,
   Settings2,
   Shield,
@@ -80,6 +81,7 @@ import {
   ShieldCheck,
   Target,
   Timer,
+  TrafficCone,
   TrendingDown,
   TrendingUp,
   Trophy,
@@ -152,6 +154,7 @@ export function Sidebar({
   const [isITOpen, setIsITOpen] = useState(false);
   const [isRRHHOpen, setIsRRHHOpen] = useState(false);
   const [isBIOpen, setIsBIOpen] = useState(false);
+  const [isGMOpen, setIsGMOpen] = useState(false);
   const [isRmaAlmacenOpen, setIsRmaAlmacenOpen] = useState(false);
   const [isSeguridadOpen, setIsSeguridadOpen] = useState(false);
   const [isMercanciaOpen, setIsMercanciaOpen] = useState(false);
@@ -304,6 +307,8 @@ export function Sidebar({
     { id: "inventory", label: t("inventario"), icon: Package, slug: "/inventory" },
     // Inteligencia de Negocio: días promedio de cobro, inventario y pago.
     { id: "bi_dias_promedio", label: "Días promedio", icon: Timer, slug: "/dias-promedio" },
+    // Productos en camino y si ya se vendieron en la sede (lib/inteligencia-negocio/porLlegar.ts).
+    { id: "bi_por_llegar", label: "Por llegar", icon: Truck, slug: "/por-llegar" },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
     // Organigrama con las actividades de cada cargo (SuperAdmin, Procesos y RRHH).
@@ -354,6 +359,8 @@ export function Sidebar({
     { id: "planificacion_visitas", label: "Planificación de visitas", icon: MapPin, slug: "/planificacion" },
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
+    // Semáforo de clientes: cartera en verde/amarillo/rojo contra su historial (lib/semaforo-clientes).
+    { id: "semaforo_clientes", label: "Semáforo de clientes", icon: TrafficCone, slug: "/semaforo-clientes", absoluteHref: true },
     { id: "metas_marca", label: t("metas_marca"), icon: Target, slug: "/metas-marca" },
     { id: "stock_marca", label: t("stock_marca"), icon: Boxes, slug: "/stock-marca" },
     { id: "sorteo_caracas", label: t("sorteo_caracas"), icon: Trophy, slug: "/sorteo" },
@@ -367,6 +374,8 @@ export function Sidebar({
     { id: "menor_rotacion", label: t("menor_rotacion"), icon: TrendingDown, slug: "/menor_rotacion" },
     { id: "mayor_rotacion", label: t("mayor_rotacion"), icon: TrendingUp, slug: "/mayor_rotacion" },
     { id: "pareto_80_20", label: t("pareto_80_20"), icon: PieChart, slug: "/pareto-80-20" },
+    // La misma clasificación de clientes de Inteligencia de Negocio, con el prompt de Compras.
+    { id: "clasificacion_clientes_compras", label: "Clasificación de clientes", icon: Store, slug: "/clasificacion-clientes" },
     { id: "moq", label: t("moq"), icon: Settings2, slug: "/moq" },
     { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
@@ -556,6 +565,8 @@ export function Sidebar({
   const itSuperAdminIds = ["notas_credito"];
   // En el SuperAdmin van dentro del desplegable "Recursos Humanos".
   const rrhhSuperAdminIds = ["seleccion_personal", "solicitudes_personal", "asistencia", "organigrama", "flujogramas"];
+  // En el SuperAdmin, las pantallas del Gerente de Marca van en su desplegable.
+  const gerenteMarcaSuperAdminIds = ["gerencia_marca"];
   const administracionDropdownIds = [
     "salud_financiera",
     "gastos_presupuesto",
@@ -569,7 +580,7 @@ export function Sidebar({
   // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
   // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
   const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
-  const ventasSuperAdminIds = ["reportes_comerciales"];
+  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -604,7 +615,7 @@ export function Sidebar({
         (item.id !== "catalogo_adminleads" || Number(userCids) === 9) &&
         (item.id !== "catalogo_disenador" || Number(userCids) === 9) &&
         !(isSuperAdminRole &&
-          [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+          [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...gerenteMarcaSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") &&
@@ -1435,6 +1446,13 @@ export function Sidebar({
                               permission: "reportes_comerciales",
                             }]
                           : []),
+                        ...((isSuperAdminRole || isBIRole) && allowedSections.includes("semaforo_clientes")
+                          ? [{
+                              label: "Semáforo de clientes",
+                              href: `/${locale}/semaforo-clientes`,
+                              permission: "semaforo_clientes",
+                            }]
+                          : []),
                         {
                           label: t("mapa_de_clientes"),
                           // Fuera de /superadmin no puede ser ".../vendedores": el middleware lo
@@ -2040,7 +2058,13 @@ export function Sidebar({
                       className="pl-9 space-y-1 overflow-hidden"
                     >
                       {[
-                        { grupo: "", items: [{ label: "Días promedio", slug: "dias-promedio" }] },
+                        {
+                          grupo: "",
+                          items: [
+                            { label: "Días promedio", slug: "dias-promedio" },
+                            { label: "Por llegar", slug: "por-llegar" },
+                          ],
+                        },
                         {
                           grupo: "Reportes",
                           items: [
@@ -2083,6 +2107,63 @@ export function Sidebar({
                           })}
                         </div>
                       ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Submenú Desplegable de GERENTE DE MARCA (solo superadmin): las pantallas del rol, que
+                viven en /gerente_marca (sin ?gerente= se ven las marcas de todos juntas), y la asignación. */}
+            {userRole === "superAdmin" && allowedSections.includes("gerencia_marca") && (
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsGMOpen(!isGMOpen)}
+                  className="w-full group flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800/50 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <Award size={20} className="text-slate-400" />
+                    <span className="text-sm">Gerente de Marca</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isGMOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isGMOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="pl-9 space-y-1 overflow-hidden"
+                    >
+                      {[
+                        { label: "Dashboard", href: `/${locale}/gerente_marca` },
+                        { label: "Inventario por marca", href: `/${locale}/gerente_marca/inventario` },
+                        { label: "Antigüedad de inventario", href: `/${locale}/gerente_marca/antiguedad` },
+                        { label: "Ventas por marca", href: `/${locale}/gerente_marca/ventas` },
+                        { label: "Banco de Flyers", href: `/${locale}/gerente_marca/banco-imagenes` },
+                        { label: "Configuración de marcas", href: `/${locale}/gerente_marca/configuracion` },
+                      ].map((subItem, index) => {
+                        const isSubActive = pathname === subItem.href;
+                        return (
+                          <Link
+                            key={index}
+                            href={subItem.href}
+                            onClick={() => {
+                              if (window.matchMedia("(max-width: 767px)").matches) onToggle();
+                            }}
+                          >
+                            <div
+                              className={`px-4 py-2 text-sm rounded-lg transition-colors ${isSubActive ? `${accentColor} font-medium bg-white/5` : "text-slate-400 hover:text-white hover:bg-slate-800/30"}`}
+                            >
+                              {subItem.label}
+                            </div>
+                          </Link>
+                        );
+                      })}
                     </motion.div>
                   )}
                 </AnimatePresence>

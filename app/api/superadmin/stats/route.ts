@@ -224,6 +224,7 @@ import {
   crecimientoVsMesAnterior,
   desdeOdoo,
   HISTORIA_DESDE,
+  lineasProductoOdoo,
   mensualSmartbit,
   mezclarClientes,
   mezclarLineasProducto,
@@ -233,6 +234,7 @@ import {
 import { requireRoles } from "@/lib/auth/roles";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { NextRequest, NextResponse } from "next/server";
+import { esVendedorRetirado } from "@/lib/vendedores/retirados";
 
 // Fuerza a que la ruta sea dinámica y no se guarde en caché
 export const dynamic = "force-dynamic";
@@ -298,9 +300,8 @@ async function estadisticas(request: NextRequest) {
     const icLineas = terminosSinIC("move_id.commercial_partner_id");
     const icFacturas = terminosSinIC();
 
-    // FILTROS BASE
+    // FILTROS BASE (facturas y notas de crédito: lineasProductoOdoo las resta)
     const baseFilters = [
-      ["move_id.move_type", "=", "out_invoice"],
       ["parent_state", "=", "posted"],
       ["display_type", "=", "product"],
       ["product_id", "!=", false],
@@ -322,19 +323,11 @@ async function estadisticas(request: NextRequest) {
     };
 
     const [odooLines, sbResumen, sbMensual] = await Promise.all([
-      callOdooRPC<any[]>("account.move.line", "read_group", [
-        currentMonthFilters,
-        // 👇 CAMBIO 1: Agregamos "quantity" para obtener las unidades
-        ["price_subtotal", "quantity", "product_id"],
-        ["product_id"],
-        0,
-        0,
-        "price_subtotal desc",
-      ]),
+      lineasProductoOdoo(currentMonthFilters),
       resumenSmartbit(cids, firstDayOfMonth, lastDayOfMonth),
       mensualSmartbit(cids, historiaDesde, today, sellerExclusions),
     ]);
-    const linesData = mezclarLineasProducto(odooLines || [], sbResumen.productos);
+    const linesData = mezclarLineasProducto(odooLines, sbResumen.productos);
 
     // 4. OBTENER STOCK (Opcional: Si quieres que el stock sea global, no filtres aquí)
     // Los productos que solo vienen de Smartbit ("sb:...") no tienen stock en Odoo.
@@ -431,11 +424,12 @@ async function estadisticas(request: NextRequest) {
           companyFilter,
           ...icFacturas,
         ],
-        ["amount_untaxed", "partner_id"],
+        // _signed: en una NC amount_untaxed viene positivo y sumaba en vez de restar.
+        ["amount_untaxed_signed", "partner_id"],
         ["partner_id"],
         0,
         0,
-        "amount_untaxed desc",
+        "amount_untaxed_signed desc",
       ]),
       callOdooRPC<any[]>("account.move", "read_group", [
         [
@@ -517,7 +511,10 @@ async function estadisticas(request: NextRequest) {
 
     const currentMonthTotal = sellersDataFiltered.reduce((acc, s) => acc + (s.total || 0), 0);
 
+    // Los retirados (lib/vendedores/retirados.ts) siguen en el total del mes,
+    // pero no salen en el ranking de vendedores.
     const sellersData = sellersDataFiltered
+      .filter((s) => !esVendedorRetirado([s.id, s.name]))
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
       .map((s) => ({ name: s.name, total: s.total }));
@@ -544,7 +541,10 @@ async function estadisticas(request: NextRequest) {
           .slice(0, 5),
       },
       salesByUser: sellersData,
-      topClients: mezclarClientes(clientsRanking || [], sbResumen.clientes)
+      topClients: mezclarClientes(
+        (clientsRanking || []).map((c) => ({ ...c, amount_untaxed: c.amount_untaxed_signed || 0 })),
+        sbResumen.clientes,
+      )
         .filter((c: any) => {
           const name = (c.partner_id?.[1] || "").toLowerCase();
           return !name.includes("supricom");
