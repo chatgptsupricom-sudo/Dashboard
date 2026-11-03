@@ -489,7 +489,7 @@ export async function POST(request: NextRequest) {
       resultados,
     });
   } catch (error: any) {
-    if (conn) await conn.rollback();
+    if (conn) await conn.rollback().catch(() => {});
     if (error instanceof ErrorMovimiento) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

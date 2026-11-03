@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BrandClientDetailDialog } from "./BrandClientDetailDialog";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 type ClienteMarca = {
   partnerId: number;
@@ -64,7 +65,7 @@ export function BrandClientsTab() {
       const params = new URLSearchParams({ desde, hasta });
       if (marca) params.set("marca", marca);
       const res = await fetch(`/api/adminleads/material-pop/brand-clients?${params}`);
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) throw new Error(json?.error || "No se pudo cargar");
       setClientes(json.clientes || []);
       setMarcasPop(json.marcasPop || []);

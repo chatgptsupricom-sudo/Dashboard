@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 function StockBadge({
   label,
@@ -73,7 +74,7 @@ export function ProductCard({
         { method: "DELETE" },
       );
       if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
+        const json = await leerJson(res).catch((e) => ({ error: e.message }));
         alert(json?.error || "No se pudo desactivar el producto");
         return;
       }

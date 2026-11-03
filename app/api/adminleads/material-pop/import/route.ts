@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
       detalle: { creados, actualizados, errores },
     });
   } catch (error: any) {
-    if (conn) await conn.rollback();
+    if (conn) await conn.rollback().catch(() => {});
     console.error("Error importando material POP:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   } finally {
