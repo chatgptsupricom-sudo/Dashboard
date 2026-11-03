@@ -12,10 +12,12 @@ const ROLES_VEN_FACTURAS_DE_OTROS = [...ROLES_ELIGEN_SEDE, "asistente de ventas"
 
 const rolDe = (payload: any) => String(payload?.role || "").toLowerCase().trim();
 
+export const eligeSedeSpiff = (payload: any) => ROLES_ELIGEN_SEDE.includes(rolDe(payload));
+
 /** Sede del Spiff: la de `?company_id=` si el rol puede elegirla; si no, la suya. */
 export function sedeDelSpiff(payload: any, sp: URLSearchParams): number {
   const param = parseInt(sp.get("company_id") || "", 10);
-  return ROLES_ELIGEN_SEDE.includes(rolDe(payload)) && Number.isFinite(param) ? param : Number(payload?.cids) || 9;
+  return eligeSedeSpiff(payload) && Number.isFinite(param) ? param : Number(payload?.cids) || 9;
 }
 
 export const veFacturasDeOtros = (payload: any) => ROLES_VEN_FACTURAS_DE_OTROS.includes(rolDe(payload));
