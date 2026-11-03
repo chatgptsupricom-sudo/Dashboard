@@ -4,8 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light dark">
 <title>SUPRICOM · Tecnología al mayor</title>
 <meta name="description" content="Mayorista de tecnología: impresoras, cómputo, redes, audio, seguridad y energía. Precios para clientes con cuenta de distribuidor.">
+<script>
+    // Tema antes de pintar, para que no parpadee: lo elegido antes, si no el del sistema.
+    (function () {
+        var t = new URLSearchParams(location.search).get("tema");
+        if (t !== "claro" && t !== "oscuro") { try { t = localStorage.getItem("supricom-tema"); } catch (e) {} }
+        if (t !== "claro" && t !== "oscuro") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro";
+        document.documentElement.setAttribute("data-tema", t);
+    })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
@@ -17,20 +27,28 @@
 <header class="cabecera">
     <div class="contenedor cabecera-fila">
         <a class="marca" href="#inicio" aria-label="SUPRICOM, inicio">
-            <span class="marca-texto">SUPRI<b>CO</b>M</span>
-            <span class="marca-lema">¡Tu mayorista de confianza!</span>
+            <img class="logo logo-claro" src="img/logo-claro.png" alt="SUPRICOM" width="190" height="45">
+            <img class="logo logo-oscuro" src="img/logo-oscuro.png" alt="SUPRICOM" width="190" height="45">
         </a>
-        <button class="menu-boton" type="button" aria-expanded="false" aria-controls="menu" aria-label="Abrir menú">
-            <span></span><span></span>
-        </button>
-        <nav id="menu" class="menu" aria-label="Secciones">
-            <a href="#destacados">Destacados</a>
-            <a href="#categorias">Categorías</a>
-            <a href="#comprar">Cómo comprar</a>
-            <a href="#sedes">Sedes</a>
-            <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
-            <a class="boton boton-tinta" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
-        </nav>
+        <div class="cabecera-acciones">
+            <nav id="menu" class="menu" aria-label="Secciones">
+                <a href="#destacados">Destacados</a>
+                <a href="#categorias">Categorías</a>
+                <a href="#marcas">Marcas</a>
+                <a href="#comprar">Cómo comprar</a>
+                <a href="#preguntas">Preguntas</a>
+                <a href="#sedes">Sedes</a>
+                <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
+                <a class="boton boton-tinta" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+            </nav>
+            <button class="tema" type="button" aria-pressed="false" aria-label="Activar modo oscuro">
+                <svg class="tema-sol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/></svg>
+                <svg class="tema-luna" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+            </button>
+            <button class="menu-boton" type="button" aria-expanded="false" aria-controls="menu" aria-label="Abrir menú">
+                <span></span><span></span>
+            </button>
+        </div>
     </div>
 </header>
 
@@ -53,33 +71,47 @@
                 <button type="button" class="flecha" data-dir="1" aria-label="Banner siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
             </div>
         </div>
-    </section>
-
-    <!-- Marcas -->
-    <section id="marcas" class="marcas" aria-label="Marcas que distribuimos">
-        <div class="marcas-ventana">
-            <div class="marcas-pista"></div>
+        <div class="contenedor">
+            <dl class="cifras">
+                <div class="cifra aparece"><dt>Productos publicados</dt><dd>3.046</dd></div>
+                <div class="cifra aparece"><dt>Marcas</dt><dd>84</dd></div>
+                <div class="cifra aparece"><dt>Sedes</dt><dd>Valencia · Caracas · Panamá</dd></div>
+                <div class="cifra cifra-accion aparece">
+                    <a class="boton boton-tinta boton-grande" data-odoo="/shop">Ver el catálogo</a>
+                </div>
+            </dl>
         </div>
     </section>
 
-    <!-- Destacados: anillo 3D de productos reales; se gira arrastrando, con las flechas del teclado y con el scroll -->
+    <!-- Destacados: anillo 3D + ficha del producto que está al frente -->
     <section id="destacados" class="vitrina" data-seccion>
-        <div class="contenedor vitrina-fila">
-            <div class="vitrina-texto aparece">
+        <div class="contenedor">
+            <div class="cabeza-seccion aparece">
                 <h2 class="titulo">Destacados</h2>
-                <p class="titulo-nota">Un producto de cada categoría. Entra con tu cuenta para ver precio y disponibilidad.</p>
-                <div class="acciones">
-                    <a class="boton boton-blanco boton-grande" data-odoo="/shop">Ver el catálogo</a>
-                    <a class="boton boton-claro-oscuro boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
-                </div>
+                <p class="titulo-nota">Un producto de cada categoría. Gíralo arrastrando o con las flechas del teclado.</p>
             </div>
-            <div class="orbita aparece" role="group" aria-roledescription="carrusel" aria-label="Productos destacados. Usa las flechas izquierda y derecha para girar.">
-                <div class="orbita-escena">
-                    <div class="anillo"></div>
+            <div class="vitrina-fila">
+                <div class="orbita aparece" role="group" aria-roledescription="carrusel" aria-label="Productos destacados. Usa las flechas izquierda y derecha para girar.">
+                    <div class="orbita-escena">
+                        <div class="anillo"></div>
+                    </div>
+                    <div class="orbita-sombra" aria-hidden="true"></div>
+                    <p class="orbita-ayuda" aria-hidden="true">Arrastra para girar</p>
                 </div>
-                <div class="orbita-sombra" aria-hidden="true"></div>
-                <p class="orbita-frente"></p>
-                <p class="orbita-ayuda" aria-hidden="true">Arrastra para girar</p>
+                <article class="ficha aparece" aria-live="off">
+                    <p class="ficha-cat"></p>
+                    <h3 class="ficha-nombre"></h3>
+                    <dl class="ficha-datos">
+                        <div><dt>Marca</dt><dd class="ficha-marca"></dd></div>
+                        <div><dt>Código</dt><dd class="ficha-codigo"></dd></div>
+                        <div><dt>Precio</dt><dd>Con tu cuenta de distribuidor</dd></div>
+                    </dl>
+                    <div class="acciones">
+                        <a class="boton boton-tinta ficha-ver">Ver ficha</a>
+                        <a class="boton boton-claro ficha-cotizar" target="_blank" rel="noopener">Cotizar por WhatsApp</a>
+                    </div>
+                    <div class="ficha-mini" aria-label="Elegir producto"></div>
+                </article>
             </div>
         </div>
     </section>
@@ -88,16 +120,54 @@
     <section id="categorias" class="categorias" data-seccion>
         <div class="categorias-fija">
             <div class="contenedor">
-                <h2 class="titulo aparece">Compra por categoría</h2>
+                <div class="cabeza-seccion aparece">
+                    <h2 class="titulo">Compra por categoría</h2>
+                    <p class="titulo-nota">Sigue bajando para recorrerlas.</p>
+                </div>
             </div>
             <div class="categorias-pista"></div>
+            <div class="contenedor"><div class="categorias-barra" aria-hidden="true"><span></span></div></div>
+        </div>
+    </section>
+
+    <!-- Marcas: dos filas que van en sentidos contrarios -->
+    <section id="marcas" class="marcas" data-seccion>
+        <div class="contenedor">
+            <div class="cabeza-seccion aparece">
+                <h2 class="titulo">Marcas que distribuimos</h2>
+                <p class="titulo-nota">Algunas de las 84 marcas del catálogo.</p>
+            </div>
+        </div>
+        <div class="marcas-ventana"><div class="marcas-pista"></div></div>
+        <div class="marcas-ventana"><div class="marcas-pista marcas-pista-inversa"></div></div>
+    </section>
+
+    <!-- Servicios -->
+    <section class="servicios" data-seccion aria-label="Servicios">
+        <div class="contenedor servicios-grilla">
+            <article class="servicio aparece">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>
+                <h3>Retiro o despacho</h3>
+                <p>Retiras en la sucursal o lo despachamos por nuestra ruta, por encomienda o con tu transporte.</p>
+            </article>
+            <article class="servicio aparece">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/></svg>
+                <h3>Servicio técnico</h3>
+                <p>Reportas la falla con tu factura en el portal y sigues el estado del equipo en línea.</p>
+                <a class="servicio-ir" href="https://servicio.supricom.com.ve/es/servicio-tecnico">Ir al portal →</a>
+            </article>
+            <article class="servicio aparece">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+                <h3>Tu vendedor de siempre</h3>
+                <p>Cada cuenta tiene su vendedor: él confirma tus cotizaciones y te atiende por WhatsApp.</p>
+            </article>
         </div>
     </section>
 
     <!-- Cómo comprar -->
     <section id="comprar" class="comprar" data-seccion>
         <div class="contenedor">
-            <h2 class="titulo aparece">Así compras</h2>
+            <div class="cabeza-seccion aparece"><h2 class="titulo">Así compras</h2></div>
             <ol class="pasos">
                 <li class="paso aparece">
                     <span class="paso-num">1</span>
@@ -135,10 +205,42 @@ KB260GCM 40</textarea>
         </div>
     </section>
 
+    <!-- Preguntas -->
+    <section id="preguntas" class="preguntas" data-seccion>
+        <div class="contenedor preguntas-fila">
+            <div class="cabeza-seccion aparece">
+                <h2 class="titulo">Preguntas frecuentes</h2>
+                <p class="titulo-nota">Lo que más nos preguntan antes de abrir la cuenta.</p>
+            </div>
+            <div class="acordeon">
+                <details class="aparece">
+                    <summary>¿Por qué no veo los precios?</summary>
+                    <p>Somos mayoristas: los precios son los de la lista de tu sede y se ven al entrar con tu cuenta de distribuidor.</p>
+                </details>
+                <details class="aparece">
+                    <summary>¿Cómo pido mi cuenta?</summary>
+                    <p>Con «Solicitar cuenta» llenas los datos de tu empresa y su RIF (RUC en Panamá). Tu vendedor la revisa y te la activa.</p>
+                </details>
+                <details class="aparece">
+                    <summary>¿Puedo pagar en la web?</summary>
+                    <p>No. En la web armas tu cotización y tu vendedor la confirma como pedido; el pago se coordina con él.</p>
+                </details>
+                <details class="aparece">
+                    <summary>¿Cómo recibo la mercancía?</summary>
+                    <p>La retiras en la sucursal o te la despachamos por nuestra ruta, por encomienda o con el transporte que tú elijas.</p>
+                </details>
+                <details class="aparece">
+                    <summary>¿Qué hago si un equipo falla?</summary>
+                    <p>Lo reportas con tu factura en el <a href="https://servicio.supricom.com.ve/es/servicio-tecnico">portal de servicio técnico</a> y sigues el caso en línea.</p>
+                </details>
+            </div>
+        </div>
+    </section>
+
     <!-- Sedes -->
     <section id="sedes" class="sedes" data-seccion>
         <div class="contenedor">
-            <h2 class="titulo aparece">Tres sedes</h2>
+            <div class="cabeza-seccion aparece"><h2 class="titulo">Tres sedes</h2></div>
             <div class="sedes-grilla">
                 <article class="sede aparece">
                     <p class="sede-pais">Venezuela</p>
@@ -164,8 +266,10 @@ KB260GCM 40</textarea>
     <section class="cierre">
         <div class="contenedor">
             <div class="cierre-caja aparece">
-                <h2>Pide tu cuenta de distribuidor</h2>
-                <p>Con el RIF de tu empresa. Al aprobarla ves los precios de tu sede y cotizas en la web.</p>
+                <div>
+                    <h2>Pide tu cuenta de distribuidor</h2>
+                    <p>Con el RIF de tu empresa. Al aprobarla ves los precios de tu sede y cotizas en la web.</p>
+                </div>
                 <a class="boton boton-blanco boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
             </div>
         </div>
@@ -173,14 +277,32 @@ KB260GCM 40</textarea>
 </main>
 
 <footer class="pie">
-    <div class="contenedor pie-fila">
-        <span class="marca-texto">SUPRI<b>CO</b>M</span>
-        <nav aria-label="Pie">
+    <div class="contenedor pie-grilla">
+        <div class="pie-marca">
+            <img class="logo logo-claro" src="img/logo-claro.png" alt="SUPRICOM" width="170" height="40">
+            <img class="logo logo-oscuro" src="img/logo-oscuro.png" alt="SUPRICOM" width="170" height="40">
+            <p>¡Tu mayorista de confianza!</p>
+        </div>
+        <nav aria-label="Tienda">
+            <h3>Tienda</h3>
             <a data-odoo="/shop">Catálogo</a>
-            <a data-odoo="/quienes-somos">Quiénes somos</a>
-            <a data-odoo="/contactenos">Contacto</a>
             <a data-odoo="/web/login">Mi cuenta</a>
+            <a data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
         </nav>
+        <nav aria-label="Ayuda">
+            <h3>Ayuda</h3>
+            <a href="https://servicio.supricom.com.ve/es/servicio-tecnico">Servicio técnico</a>
+            <a href="#preguntas">Preguntas frecuentes</a>
+            <a data-odoo="/contactenos">Contacto</a>
+        </nav>
+        <nav aria-label="SUPRICOM">
+            <h3>SUPRICOM</h3>
+            <a data-odoo="/quienes-somos">Quiénes somos</a>
+            <a href="#sedes">Sedes</a>
+            <a href="https://www.facebook.com/supricomvenezuela/" target="_blank" rel="noopener">Facebook</a>
+        </nav>
+    </div>
+    <div class="contenedor pie-legal">
         <p>© 2026 SUPRICOM. Precios solo para clientes registrados.</p>
     </div>
 </footer>

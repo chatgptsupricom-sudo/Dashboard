@@ -10,7 +10,7 @@ y abrir http://localhost:8765/vista-previa/ (la portada enlaza las tres páginas
 
 ## Página de inicio nueva (`odoo/landing/`)
 
-Aparte de esta vista previa hay una página de inicio hecha desde cero, de una sola pieza: portada con los banners en abanico 3D, cinta de logos, destacados en un anillo 3D que se gira arrastrando, categorías que se recorren de lado con el scroll, cómo comprar, lista de códigos que se manda por WhatsApp a ventas, sedes y cierre. No usa el HTML de Odoo: solo enlaza a la tienda real (`supricom2.odoo.com`) y toma de ahí las fotos de los productos. Los datos (productos, marcas, totales) están en `odoo/landing/datos.js`, sacados de Odoo el 3-nov-2026. Se ve en http://localhost:8765/landing/ con el mismo servidor.
+Aparte de esta vista previa hay una página de inicio hecha desde cero, de una sola pieza, con el logo oficial y modo claro y oscuro (botón en la cabecera; la primera vez sigue al equipo, después recuerda lo elegido; `?tema=claro|oscuro` lo fuerza): portada con los banners en abanico 3D y las cifras del catálogo, destacados en un anillo 3D que se gira arrastrando, categorías que se recorren de lado con el scroll, dos cintas de logos, servicios, cómo comprar, lista de códigos que se manda por WhatsApp a ventas, preguntas frecuentes, sedes y cierre. Capturas: `capturas/landing-claro.jpg` y `capturas/landing-oscuro.jpg`. No usa el HTML de Odoo: solo enlaza a la tienda real (`supricom2.odoo.com`) y toma de ahí las fotos de los productos. Los datos (productos, marcas, totales) están en `odoo/landing/datos.js`, sacados de Odoo el 3-nov-2026. Se ve en http://localhost:8765/landing/ con el mismo servidor.
 
 ## En EasyPanel, como entorno de prueba
 

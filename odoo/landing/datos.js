@@ -65,6 +65,6 @@ window.SUPRICOM = {
         { nombre: "Kingston", logo: "kingston.svg", alto: 28 },
         { nombre: "Nexxt", logo: "nexxt.svg", alto: 48 },
         { nombre: "Targus", logo: "targus.svg", alto: 20 },
-        { nombre: "EZVIZ", logo: "ezviz.svg", alto: 30 }
+        { nombre: "EZVIZ", logo: "ezviz.svg", alto: 30, oscura: true }
     ]
 };

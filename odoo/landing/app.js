@@ -27,6 +27,24 @@
 
     // Enlaces a la tienda real de Odoo.
     for (const a of $$("[data-odoo]")) a.href = D.odoo + a.dataset.odoo;
+    const whatsapp = (texto) => `https://wa.me/${D.whatsapp}?text=${encodeURIComponent(texto)}`;
+    const nombreCategoria = Object.fromEntries(D.categorias.map((c) => [c.id, c.nombre]));
+
+    /* ---------------------------------------------------------------- Modo claro / oscuro */
+    const raiz = document.documentElement;
+    const botonTema = $(".tema");
+    const sistemaOscuro = window.matchMedia("(prefers-color-scheme: dark)");
+    const guardado = () => { try { return localStorage.getItem("supricom-tema"); } catch (e) { return null; } };
+    const ponerTema = (t, guardar) => {
+        raiz.setAttribute("data-tema", t);
+        const oscuro = t === "oscuro";
+        botonTema.setAttribute("aria-pressed", String(oscuro));
+        botonTema.setAttribute("aria-label", oscuro ? "Activar modo claro" : "Activar modo oscuro");
+        if (guardar) { try { localStorage.setItem("supricom-tema", t); } catch (e) { /* sin almacenamiento: dura hasta recargar */ } }
+    };
+    ponerTema(raiz.getAttribute("data-tema") === "oscuro" ? "oscuro" : "claro", false);
+    botonTema.addEventListener("click", () => ponerTema(raiz.getAttribute("data-tema") === "oscuro" ? "claro" : "oscuro", true));
+    sistemaOscuro.addEventListener("change", (e) => { if (!guardado()) ponerTema(e.matches ? "oscuro" : "claro", false); });
 
     /* ---------------------------------------------------------------- Encabezado y menú */
     const cabecera = $(".cabecera");
@@ -74,8 +92,28 @@
     const orbita = $(".orbita");
     const escena = $(".orbita-escena");
     const anillo = $(".anillo");
-    const etiquetaFrente = $(".orbita-frente");
     const enAnillo = D.categorias.map((c) => destacadoDe(c.id)).filter(Boolean);
+    // Ficha del producto que está al frente, con miniaturas para elegir otro.
+    const ficha_ = {
+        cat: $(".ficha-cat"), nombre: $(".ficha-nombre"), marca: $(".ficha-marca"), codigo: $(".ficha-codigo"),
+        ver: $(".ficha-ver"), cotizar: $(".ficha-cotizar"), mini: $(".ficha-mini"),
+    };
+    const minis = enAnillo.map((p, i) => {
+        const b = crear("button", { type: "button", "aria-label": `Ver ${p.marca} ${p.nombre}` }, [crear("img", { src: foto(p.id), alt: "" })]);
+        b.addEventListener("click", () => { destino = anguloMasCercano(i); if (QUIETO) { angulo = destino; destino = null; pintarAnillo(); } arrancar(); });
+        ficha_.mini.append(b);
+        return b;
+    });
+    const pintarFicha = (i) => {
+        const p = enAnillo[i];
+        ficha_.cat.textContent = nombreCategoria[p.cat] || "";
+        ficha_.nombre.textContent = p.nombre;
+        ficha_.marca.textContent = p.marca;
+        ficha_.codigo.textContent = p.codigo;
+        ficha_.ver.href = ficha(p.id);
+        ficha_.cotizar.href = whatsapp(`Hola, quiero cotizar: ${p.codigo} (${p.marca} ${p.nombre})`);
+        minis.forEach((b, k) => b.setAttribute("aria-current", String(k === i)));
+    };
     const paso = 360 / enAnillo.length;
     const items = enAnillo.map((p, i) => {
         const a = crear("a", { class: "orbita-item", href: ficha(p.id), draggable: false, "aria-label": `${p.marca} ${p.nombre}` }, [
@@ -122,8 +160,7 @@
         if (mejor !== frenteActual) {
             frenteActual = mejor;
             items.forEach((el, i) => { el.tabIndex = i === mejor ? 0 : -1; });
-            const p = enAnillo[mejor];
-            etiquetaFrente.replaceChildren(document.createTextNode(p.nombre), crear("small", { text: `${p.marca} · ${p.codigo}` }));
+            pintarFicha(mejor);
         }
     };
     const anguloMasCercano = (i) => {
@@ -319,11 +356,14 @@
         if (copia) { a.setAttribute("aria-hidden", "true"); a.tabIndex = -1; }
         return a;
     };
-    // Las dos mitades de la cinta tienen que ser iguales y cubrir pantallas anchas.
-    const unJuego = D.marcas.length * 186;
+    // Dos filas en sentidos contrarios. Las dos mitades de cada cinta tienen que ser iguales y cubrir pantallas anchas.
+    const unJuego = D.marcas.length * 194;
     const juegos = Math.max(1, Math.ceil(window.screen.width / unJuego));
-    for (let k = 0; k < juegos * 2; k++) for (const m of D.marcas) pistaMarcas.append(tarjetaMarca(m, k > 0));
-    pistaMarcas.style.setProperty("--duracion-cinta", `${44 * juegos}s`);
+    const filas = [[pistaMarcas, D.marcas], [$(".marcas-pista-inversa"), [...D.marcas].reverse()]];
+    filas.forEach(([pista, lista], f) => {
+        for (let k = 0; k < juegos * 2; k++) for (const m of lista) pista.append(tarjetaMarca(m, f > 0 || k > 0));
+        pista.style.setProperty("--duracion-cinta", `${(44 + f * 8) * juegos}s`);
+    });
 
     /* ---------------------------------------------------------------- Categorías */
     const seccionCats = $(".categorias");
@@ -332,7 +372,7 @@
     for (const c of D.categorias) {
         pistaCats.append(crear("a", { class: "cat", href: buscar(c.buscar) }, [
             crear("h3", { text: c.nombre }),
-            crear("img", { src: foto(c.foto), alt: "", loading: "lazy" }),
+            crear("div", { class: "cat-foto" }, [crear("img", { src: foto(c.foto), alt: "", loading: "lazy" })]),
             crear("span", { class: "cat-ir", text: "Ver productos →" }),
         ]));
     }
@@ -357,9 +397,9 @@
         window.scrollTo({ top: seccionCats.offsetTop + x, behavior: "instant" });
     });
 
-    // Inclinación 3D de las tarjetas de categoría siguiendo el mouse.
+    // Inclinación 3D de las tarjetas de categoría y de servicio siguiendo el mouse.
     if (!QUIETO) {
-        for (const el of $$(".cat")) {
+        for (const el of $$(".cat, .servicio")) {
             el.addEventListener("mousemove", (ev) => {
                 const r = el.getBoundingClientRect();
                 const x = (ev.clientX - r.left) / r.width - 0.5;
@@ -381,6 +421,7 @@
         if (sobranteCats > 0) {
             const k = Math.min(1, Math.max(0, (y - seccionCats.offsetTop) / sobranteCats));
             pistaCats.style.transform = `translateX(${-k * sobranteCats}px)`;
+            seccionCats.style.setProperty("--avance-cats", String(k));
         }
         const k = Math.min(1, Math.max(0, (window.innerHeight * 0.75 - rComprar.top) / (rComprar.height * 0.6)));
         seccionComprar.style.setProperty("--avance-pasos", String(k));
@@ -443,7 +484,7 @@
             }
         }
         yaMostrados = new Set(pedido.keys());
-        enviar.href = `https://wa.me/${D.whatsapp}?text=${encodeURIComponent(texto.join("\n"))}`;
+        enviar.href = whatsapp(texto.join("\n"));
         enviar.toggleAttribute("aria-disabled", !filas.length);
         if (!filas.length) {
             resumen.textContent = "";
