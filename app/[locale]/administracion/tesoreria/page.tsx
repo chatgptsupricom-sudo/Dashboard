@@ -25,14 +25,17 @@ type Respuesta = DatosTesoreriaAdmin & { success: true; hoy: string };
 const DIAS_ATRASADO = 7;
 
 const TITULO_CLASE: Record<ClaseCuenta, { titulo: string; nota: string }> = {
-  disponible: { titulo: "Bancos y cajas", nota: "Suman al disponible." },
+  disponible: {
+    titulo: "Bancos y cajas",
+    nota: "Saldo en libros: lo conciliado con el banco más los cobros y pagos registrados que faltan por conciliar. Suman al disponible.",
+  },
   retencion: {
     titulo: "Retenciones",
-    nota: "IVA, ISLR, ITBMS e IGTF que retuvieron los clientes o que se retienen para pagar al fisco. No es dinero disponible.",
+    nota: "IVA, ISLR e ITBMS que retuvieron los clientes, por recuperar del fisco. No es dinero disponible.",
   },
   puente: {
     titulo: "Cuentas puente",
-    nota: "Transitorias, depósitos por identificar y descuentos. Deberían quedar en cero al conciliar; no suman al disponible.",
+    nota: "Transitorias y depósitos por identificar. Deberían quedar en cero al conciliar; no suman al disponible.",
   },
 };
 
@@ -66,9 +69,11 @@ export default function TesoreriaPage() {
                     Diarios: c.diarios.join(", "),
                     Moneda: c.moneda,
                     "Saldo USD": c.saldo,
+                    "Conciliado con el banco": c.saldoBanco,
+                    "Pendiente de conciliar": c.pendiente,
                     "Saldo moneda diario": c.saldoMonedaDiario ?? "",
-                    "Entradas del mes": c.entradasMes,
-                    "Salidas del mes": c.salidasMes,
+                    "Cobros del mes": c.entradasMes,
+                    "Pagos del mes": c.salidasMes,
                     "Último extracto": c.extracto.ultimo ?? "",
                     "Líneas sin conciliar": c.extracto.sinConciliar,
                     "Monto sin conciliar": c.extracto.montoSinConciliar,
@@ -79,8 +84,8 @@ export default function TesoreriaPage() {
                   filas: datos.flujo.semanas.map((s) => ({
                     Desde: s.desde,
                     Hasta: s.hasta,
-                    Entradas: s.entradas,
-                    Salidas: s.salidas,
+                    "Por cobrar que vence": s.entradas,
+                    "Por pagar que vence": s.salidas,
                     "Saldo final": s.saldoFinal,
                   })),
                 },
@@ -98,11 +103,11 @@ export default function TesoreriaPage() {
             <Tarjeta
               titulo="Disponible"
               valor={money(datos.resumen.disponible)}
-              detalle={`Bancos ${money(datos.resumen.disponibleBancos)} · Cajas ${money(datos.resumen.disponibleCajas)}`}
+              detalle={`Bancos ${money(datos.resumen.disponibleBancos)} · Cajas ${money(datos.resumen.disponibleCajas)} · sin conciliar ${money(datos.resumen.pendiente)}`}
               tono="azul"
             />
-            <Tarjeta titulo="Entradas del mes" valor={money(datos.resumen.entradasMes)} tono="verde" />
-            <Tarjeta titulo="Salidas del mes" valor={money(datos.resumen.salidasMes)} />
+            <Tarjeta titulo="Cobros del mes" valor={money(datos.resumen.entradasMes)} detalle="Sin transferencias entre cuentas propias" tono="verde" />
+            <Tarjeta titulo="Pagos del mes" valor={money(datos.resumen.salidasMes)} detalle="Sin transferencias entre cuentas propias" />
             <Tarjeta
               titulo="Líneas sin conciliar"
               valor={datos.resumen.lineasSinConciliar.toLocaleString("es-VE")}
@@ -136,6 +141,19 @@ export default function TesoreriaPage() {
             </Aviso>
           )}
 
+          {datos.bolivaresComoDolares.length > 0 && (
+            <Aviso>
+              Hay asientos en bolívares registrados a tasa 1 (los Bs quedaron como si fueran dólares) y el disponible
+              sale inflado o desinflado por eso:{" "}
+              {datos.bolivaresComoDolares
+                .slice(0, 6)
+                .map((l) => `${l.asiento} (${fechaCorta(l.fecha)}, ${l.cuenta}, ${money(l.monto)})`)
+                .join(" · ")}
+              {datos.bolivaresComoDolares.length > 6 && ` y ${datos.bolivaresComoDolares.length - 6} más`}. Hay que
+              corregirlos en Odoo con la tasa del día.
+            </Aviso>
+          )}
+
           {datos.resumen.diariosSinExtractoReciente > 0 && (
             <Aviso>
               <b>{datos.resumen.diariosSinExtractoReciente}</b> bancos no tienen extracto cargado en los últimos{" "}
@@ -147,9 +165,10 @@ export default function TesoreriaPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Flujo proyectado (4 semanas)</CardTitle>
               <p className="text-sm text-gray-500">
-                Disponible de hoy + facturas de clientes que vencen − facturas de proveedores que vencen. Sin
-                intercompañía. No incluye lo ya vencido: por cobrar {money(datos.flujo.porCobrarVencido)} y por pagar{" "}
-                {money(datos.flujo.porPagarVencido)}.
+                Proyección, no lo registrado: disponible de hoy + facturas de clientes que vencen − facturas de
+                proveedores que vencen. Sin intercompañía. Lo ya vencido por pagar ({money(datos.flujo.porPagarVencido)})
+                va en la primera semana; lo vencido por cobrar ({money(datos.flujo.porCobrarVencido)}) no se cuenta,
+                porque no es seguro que entre.
               </p>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
@@ -157,8 +176,8 @@ export default function TesoreriaPage() {
                 <TableHeader className="bg-slate-50">
                   <TableRow>
                     <TableHead className="px-2 sm:px-4">Semana</TableHead>
-                    <TableHead className="text-right">Entradas</TableHead>
-                    <TableHead className="text-right">Salidas</TableHead>
+                    <TableHead className="text-right">Por cobrar que vence</TableHead>
+                    <TableHead className="text-right">Por pagar que vence</TableHead>
                     <TableHead className="text-right pr-4">Saldo al final</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -231,8 +250,8 @@ function TablaCuentas({
         <TableRow>
           <TableHead className="px-2 sm:px-4">Cuenta</TableHead>
           <TableHead className="text-right">Saldo</TableHead>
-          <TableHead className="text-right hidden md:table-cell">Entradas mes</TableHead>
-          <TableHead className="text-right hidden md:table-cell">Salidas mes</TableHead>
+          <TableHead className="text-right hidden md:table-cell">Cobros mes</TableHead>
+          <TableHead className="text-right hidden md:table-cell">Pagos mes</TableHead>
           {conExtracto && <TableHead className="text-center hidden sm:table-cell pr-4">Extracto</TableHead>}
         </TableRow>
       </TableHeader>
@@ -256,6 +275,11 @@ function TablaCuentas({
                 </TableCell>
                 <TableCell className="text-right">
                   <div className={`font-semibold ${c.saldo < 0 ? "text-red-600" : ""}`}>{money(c.saldo, 2)}</div>
+                  {Math.abs(c.pendiente) > 0.005 && (
+                    <div className="text-[11px] text-gray-400">
+                      Banco {money(c.saldoBanco, 2)} · sin conciliar {money(c.pendiente, 2)}
+                    </div>
+                  )}
                   {c.saldoMonedaDiario !== null && (
                     <div className="text-[11px] text-gray-400">
                       {c.moneda} {c.saldoMonedaDiario.toLocaleString("es-VE", { maximumFractionDigits: 2 })}

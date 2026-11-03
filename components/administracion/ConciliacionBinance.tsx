@@ -195,6 +195,8 @@ export default function ConciliacionBinance({
   const [ignorados, setIgnorados] = useState(0);
   const [paginaComprobantes, setPaginaComprobantes] = useState(0);
   const [paginaPagos, setPaginaPagos] = useState(0);
+  // Conciliados que se desmarcaron para no imprimirlos (los demas van).
+  const [noImprimir, setNoImprimir] = useState<Set<number>>(new Set());
   const input = useRef<HTMLInputElement>(null);
   const inputEstado = useRef<HTMLInputElement>(null);
   const carpeta = useRef<HTMLInputElement>(null);
@@ -248,6 +250,7 @@ export default function ConciliacionBinance({
   useEffect(() => {
     setPaginaComprobantes(0);
     setPaginaPagos(0);
+    setNoImprimir(new Set());
   }, [semana]);
 
   const subirUno = async (elegido: Elegido, tipo: TipoArchivo): Promise<Subida> => {
@@ -415,17 +418,26 @@ export default function ConciliacionBinance({
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
   const COMPROBANTES_LISTA = { comprobantes, conciliados, problema: conProblema };
+  // Solo Administracion imprime, y solo desde la lista de conciliados.
+  const imprime = !cxc && lista === "conciliados" && conciliados.length > 0;
+  const aImprimir = conciliados.filter((c) => !noImprimir.has(c.id));
+  const marcarImprimir = (ids: number[], marcar: boolean) =>
+    setNoImprimir((previo) => {
+      const nuevo = new Set(previo);
+      ids.forEach((id) => (marcar ? nuevo.delete(id) : nuevo.add(id)));
+      return nuevo;
+    });
 
   /**
-   * Hoja para imprimir los conciliados: cada comprobante con el cliente arriba,
-   * sus datos y la firma, uno por hoja. Se imprime desde un iframe oculto: su
-   * `load` espera a que bajen todas las imagenes.
+   * Hoja para imprimir los conciliados marcados: cada comprobante con el cliente
+   * arriba, sus datos y la firma, uno por hoja. Se imprime desde un iframe oculto:
+   * su `load` espera a que bajen todas las imagenes.
    */
   const imprimirConciliados = () => {
     const esc = (s: string) =>
       s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
     const semanaTexto = opciones.find((o) => o.value === semana)?.label || semana;
-    const tarjetas = conciliados
+    const tarjetas = aImprimir
       .map((c) => {
         const imagen = /\.pdf$/i.test(c.archivoNombre || "")
           ? `<div class="pdf">Comprobante en PDF<br>(ver en el panel)</div>`
@@ -703,16 +715,33 @@ export default function ConciliacionBinance({
                 ) : (
                   lista && (
                     <>
-                      {!cxc && lista === "conciliados" && conciliados.length > 0 && (
-                        <Button size="sm" className="h-9 w-fit" onClick={imprimirConciliados}>
-                          <Printer className="h-4 w-4 mr-2" />
-                          Imprimir conciliados
-                        </Button>
+                      {imprime && (
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Button size="sm" className="h-9 w-fit" disabled={!aImprimir.length} onClick={imprimirConciliados}>
+                            <Printer className="h-4 w-4 mr-2" />
+                            Imprimir {aImprimir.length === conciliados.length ? "conciliados" : "seleccionados"} ({aImprimir.length})
+                          </Button>
+                          <span className="text-xs text-gray-500">Desmarca los que no quieras imprimir.</span>
+                        </div>
                       )}
                       <p className="text-xs text-gray-500">Haz clic en un comprobante para ver su imagen.</p>
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            {imprime && (
+                              <TableHead className="w-8">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 cursor-pointer align-middle"
+                                  aria-label="Marcar todos para imprimir"
+                                  checked={aImprimir.length === conciliados.length}
+                                  ref={(el) => {
+                                    if (el) el.indeterminate = aImprimir.length > 0 && aImprimir.length < conciliados.length;
+                                  }}
+                                  onChange={(e) => marcarImprimir(conciliados.map((c) => c.id), e.target.checked)}
+                                />
+                              </TableHead>
+                            )}
                             <TableHead>Fecha</TableHead>
                             <TableHead>ID de orden</TableHead>
                             <TableHead className="text-right">Monto</TableHead>
@@ -722,10 +751,21 @@ export default function ConciliacionBinance({
                         </TableHeader>
                         <TableBody>
                           {COMPROBANTES_LISTA[lista].length === 0 && (
-                            <FilaVacia columnas={5} texto="No hay comprobantes aquí." />
+                            <FilaVacia columnas={imprime ? 6 : 5} texto="No hay comprobantes aquí." />
                           )}
                           {COMPROBANTES_LISTA[lista].map((c) => (
                             <TableRow key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setVerImagen(c)}>
+                              {imprime && (
+                                <TableCell onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    className="h-4 w-4 cursor-pointer align-middle"
+                                    aria-label={`Imprimir ${c.orderId}`}
+                                    checked={!noImprimir.has(c.id)}
+                                    onChange={(e) => marcarImprimir([c.id], e.target.checked)}
+                                  />
+                                </TableCell>
+                              )}
                               <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
                               <TableCell className="font-mono text-xs text-blue-600">{c.orderId}</TableCell>
                               <TableCell className="text-right whitespace-nowrap">

@@ -21,6 +21,7 @@ import {
 } from "@/lib/administracion/alertas";
 import { companyIdsDeEmpresa, empresaDeCompanyId } from "@/lib/administracion/empresas";
 import { esIntercompania } from "@/lib/administracion/intercompania";
+import { hoyCaracas, sumarDias } from "@/lib/administracion/lectura";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { calcularEfectividad } from "@/lib/cxc/efectividad";
 
@@ -53,19 +54,19 @@ export async function GET(request: NextRequest) {
     const metas = await cargarMetas(companyIds[0]);
 
     const hoyDate = new Date();
-    const hoy = fmtFecha(hoyDate);
-    const mes =
-      searchParams.get("mes") ||
-      `${hoyDate.getFullYear()}-${String(hoyDate.getMonth() + 1).padStart(2, "0")}`;
+    // Hoy y el mes en hora de Caracas: el servidor corre en UTC y de 20:00 a
+    // medianoche ya era "mañana" (y el 1.º, el mes siguiente).
+    const hoy = hoyCaracas();
+    const mes = searchParams.get("mes") || hoy.slice(0, 7);
     const [anio, mesNum] = mes.split("-").map(Number);
     const desde = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
     const hasta = fmtFecha(new Date(anio, mesNum, 0));
-    const hasta30 = fmtFecha(new Date(hoyDate.getTime() + 30 * 86400000));
+    const hasta30 = sumarDias(hoy, 30);
 
     const [cxc, cxp, tes, sinProcesar, clientesConLimiteRaw] = await Promise.all([
       fetchCxC(companyIds),
       fetchCxP(companyIds, desde, hasta, hoy, hasta30),
-      fetchTesoreria(companyIds),
+      fetchTesoreria(companyIds, hoy, desde, hasta),
       // El plazo interno (24h = 1 dia) ya lo definio Administracion para
       // "documentos procesados a tiempo"; se reusa el mismo parametro en vez
       // de inventar uno nuevo para lo mismo.
@@ -76,19 +77,31 @@ export async function GET(request: NextRequest) {
       // no en 0) — solo faltaba conectarlo a este KPI. "credit" es el saldo
       // por cobrar que Odoo ya calcula solo (mismo campo que se ve como
       // "Total por cobrar" en la ficha del contacto).
-      callOdooRPC<any[]>(
-        "res.partner",
-        "search_read",
-        [
-          [
-            ["company_id", "in", companyIds],
-            ["customer_rank", ">", 0],
-            ["credit_limit", ">", 0],
-            ["active", "=", true],
-          ],
-        ],
-        { fields: ["credit_limit", "credit", "display_name"], limit: 0 },
-      ),
+      // Los dos dependen de la empresa activa (credit_limit es ir_property por
+      // sede y credit suma lo de env.company): sin allowed_company_ids se leian
+      // con la de Valencia, Caracas y Panama daban "sin datos" y "todas" solo
+      // medía Valencia. Se lee sede por sede.
+      Promise.all(
+        companyIds.map((cid) =>
+          callOdooRPC<any[]>(
+            "res.partner",
+            "search_read",
+            [
+              [
+                ["company_id", "=", cid],
+                ["customer_rank", ">", 0],
+                ["credit_limit", ">", 0],
+                ["active", "=", true],
+              ],
+            ],
+            {
+              fields: ["credit_limit", "credit", "display_name"],
+              limit: 0,
+              context: { allowed_company_ids: [cid] },
+            },
+          ),
+        ),
+      ).then((porSede) => porSede.flatMap((filas) => filas || [])),
     ]);
     // Las empresas del grupo tienen limite cargado (SUPRICOM, LLC 2 M en
     // Panama, SUPRICOM CCS 21 400 mil en Valencia) y lo pasan de largo: no son
@@ -349,11 +362,27 @@ export async function GET(request: NextRequest) {
     ];
 
     // ───────────────────────────────── Cuentas por pagar (15 pts)
-    const conFechaPago = cxp.facturas.filter((f) => f.fechaPago);
-    const puntuales = conFechaPago.filter(
+    // De las facturas que vencian en el periodo: pagadas (paid/in_payment) con
+    // su fecha de pago, mas las que no se pagaron y ya vencieron, que cuentan
+    // como tarde. Antes solo entraban las que tenian alguna conciliacion
+    // (tambien parciales, donde la ultima puede ser una retencion), y una
+    // factura sin pagar no bajaba el indicador (Valencia sep-2026: 96,4% → 88,8%).
+    const pagadas = cxp.facturas.filter(
+      (f) => (f.estadoPago === "paid" || f.estadoPago === "in_payment") && f.fechaPago,
+    );
+    const impagasVencidas = cxp.facturas.filter(
+      (f) =>
+        f.estadoPago !== "paid" &&
+        f.estadoPago !== "in_payment" &&
+        f.estadoPago !== "reversed" &&
+        f.residual > 0.01 &&
+        f.fechaVencimiento < hoy,
+    );
+    const evaluadas = pagadas.length + impagasVencidas.length;
+    const puntuales = pagadas.filter(
       (f) => f.fechaVencimiento && f.fechaPago! <= f.fechaVencimiento,
     );
-    const pctPuntualidad = pct(puntuales.length, conFechaPago.length);
+    const pctPuntualidad = pct(puntuales.length, evaluadas);
     const coberturaPagos30 = cxp.montoProximas30 > 0
       ? Math.round(((tes.disponible + cobrosProbables) / cxp.montoProximas30) * 100) / 100
       : null;
@@ -365,8 +394,9 @@ export async function GET(request: NextRequest) {
           formula: "Pagos puntuales / pagos del período × 100", peso: 4,
           metaTexto: `≥${metas.pagos_a_tiempo}%`, valor: pctPuntualidad,
           unidad: "%", frecuencia: "Semanal", responsable: "Cuentas por Pagar", fuente: "ERP / CxP",
-          detalle: conFechaPago.length > 0
-            ? `${puntuales.length} de ${conFechaPago.length} facturas pagadas en o antes de su vencimiento`
+          detalle: evaluadas > 0
+            ? `${puntuales.length} de ${evaluadas} facturas pagadas en o antes de su vencimiento` +
+              (impagasVencidas.length > 0 ? ` (${impagasVencidas.length} vencidas sin pagar cuentan como tarde)` : "")
             : "Sin facturas con vencimiento y pago en el período",
         },
         { modo: "higher_better", verde: metas.pagos_a_tiempo ?? 98, amarillo: 90 },
@@ -377,7 +407,11 @@ export async function GET(request: NextRequest) {
           formula: "Saldo vencido / total CxP × 100", peso: 4,
           metaTexto: `≤${metas.obligaciones_vencidas}%`, valor: pct(cxp.saldoVencido, cxp.totalCxP),
           unidad: "%", frecuencia: "Diaria", responsable: "Cuentas por Pagar", fuente: "Aging CxP",
-          detalle: `${money(cxp.saldoVencido)} vencidos en ${cxp.vencidas.length} facturas.${avisoCondiciones}`,
+          detalle: `${money(cxp.saldoVencido)} vencidos en ${cxp.vencidas.length} facturas.` +
+            (cxp.pagosSinAplicar > 0.01
+              ? ` Hay ${money(cxp.pagosSinAplicar)} pagados a proveedores sin aplicar a una factura: la deuda neta es ${money(cxp.deudaNeta)}.`
+              : "") +
+            avisoCondiciones,
         },
         { modo: "lower_better", verde: metas.obligaciones_vencidas ?? 3, amarillo: 7 },
       ),
@@ -509,7 +543,10 @@ export async function GET(request: NextRequest) {
           porCuenta: tes.porCuenta,
         },
         cxp: {
-          totalCxP: cxp.totalCxP,
+          // Deuda neta: facturas − NC − pagos/anticipos sin aplicar.
+          totalCxP: cxp.deudaNeta,
+          totalFacturas: cxp.totalCxP,
+          pagosSinAplicar: cxp.pagosSinAplicar,
           saldoVencido: cxp.saldoVencido,
           montoProximas30: cxp.montoProximas30,
           vencidas: cxp.vencidas

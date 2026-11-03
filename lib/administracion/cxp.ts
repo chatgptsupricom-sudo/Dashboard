@@ -86,7 +86,12 @@ export interface PagoProveedor {
 
 export interface DatosCxPAdmin {
   resumen: {
+    /** Facturas menos NC abiertas (base de la antiguedad). */
     saldo: number;
+    /** Pagos/anticipos a proveedores sin aplicar a una factura. */
+    pagosSinAplicar: number;
+    /** saldo − pagosSinAplicar: lo que de verdad se debe. */
+    saldoNeto: number;
     vencido: number;
     porVencer7: number;
     porVencer30: number;
@@ -128,6 +133,35 @@ function lunesDe(fecha: string): string {
   return sumarDias(fecha, 1 - dia);
 }
 
+/**
+ * Pagos y anticipos a proveedores que todavia no se aplicaron a una factura:
+ * lineas por pagar con saldo deudor de asientos que no son facturas (pagos,
+ * y algun comprobante de retencion o ajuste suelto). La antiguedad de abajo
+ * sale de las facturas y no los ve, asi que el saldo de facturas quedaba
+ * inflado (oct-2026 Valencia: $301.703 pagados sin aplicar, sin intercompania).
+ */
+export async function sumarPagosSinAplicar(companyIds: number[], sinIntercompania: boolean): Promise<number> {
+  const lineas = await leerTodo(
+    "account.move.line",
+    [
+      ["company_id", "in", companyIds],
+      ["account_id.account_type", "=", "liability_payable"],
+      ["parent_state", "=", "posted"],
+      ["reconciled", "=", false],
+      ["amount_residual", ">", 0],
+      // Las NC de proveedor ya restan en los documentos.
+      ["move_id.move_type", "=", "entry"],
+    ],
+    ["partner_id", "amount_residual"],
+    companyIds,
+  );
+  return redondear(
+    lineas
+      .filter((l: any) => !(sinIntercompania && RE_INTERCOMPANIA.test(nombreM2o(l.partner_id))))
+      .reduce((s: number, l: any) => s + (Number(l.amount_residual) || 0), 0),
+  );
+}
+
 export async function fetchCxPAdmin(
   companyIds: number[],
   hoy: string,
@@ -135,7 +169,7 @@ export async function fetchCxPAdmin(
   hasta: string,
   sinIntercompania = false,
 ): Promise<DatosCxPAdmin> {
-  const [abiertos, borradoresRaw, pagosRaw] = await Promise.all([
+  const [abiertos, borradoresRaw, pagosRaw, pagosSinAplicar] = await Promise.all([
     leerTodo(
       "account.move",
       [
@@ -185,6 +219,7 @@ export async function fetchCxPAdmin(
       companyIds,
       "date desc, id desc",
     ),
+    sumarPagosSinAplicar(companyIds, sinIntercompania),
   ]);
 
   const documentos: DocumentoCxP[] = abiertos
@@ -307,6 +342,8 @@ export async function fetchCxPAdmin(
   return {
     resumen: {
       saldo: suma(documentos),
+      pagosSinAplicar,
+      saldoNeto: redondear(suma(documentos) - pagosSinAplicar),
       vencido: suma(documentos.filter((d) => d.diasVencido > 0)),
       porVencer7: suma(documentos.filter((d) => d.vence >= hoy && d.vence <= en7)),
       porVencer30: suma(documentos.filter((d) => d.vence >= hoy && d.vence <= en30)),

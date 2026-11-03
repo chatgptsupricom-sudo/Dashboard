@@ -1,5 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { esIntercompania } from "@/lib/administracion/intercompania";
+import { sumarPagosSinAplicar } from "@/lib/administracion/cxp";
+import { fetchTesoreriaAdmin } from "@/lib/administracion/tesoreria";
 
 /**
  * Fuentes de datos de las 3 areas financieras del Indice de Salud Administrativa.
@@ -35,12 +37,20 @@ export interface FacturaCxP {
   montoTotal: number;
   residual: number;
   pagada: boolean;
+  /** payment_state de Odoo: solo paid/in_payment es "pagada" para puntualidad
+   *  (una parcial puede tener como ultima conciliacion una retencion). */
+  estadoPago: string;
   fechaPago: string | null;
 }
 
 export interface DatosCxP {
   facturas: FacturaCxP[];
+  /** Facturas menos NC pendientes (base de la antiguedad y del % vencido). */
   totalCxP: number;
+  /** Pagos/anticipos a proveedores sin aplicar a una factura (ver fetchCxPAdmin). */
+  pagosSinAplicar: number;
+  /** Lo que de verdad se debe: totalCxP − pagosSinAplicar. */
+  deudaNeta: number;
   saldoVencido: number;
   vencidas: FacturaCxP[];
   proximas30: FacturaCxP[];
@@ -90,11 +100,14 @@ async function rpcPaginado(
 export async function fetchCxC(companyIds: number[]): Promise<AgingCxC> {
   // Sin intercompania: el Dashboard de CxC ya saca "supricom" del nombre; aqui
   // se usa el criterio completo (tambien "Office Solutions Center").
+  // Tambien las filas negativas (anticipos, pagos sin aplicar, NC): antes solo
+  // se leia amount_residual > 0 y la cartera salia bruta (oct-2026 Caracas:
+  // -$192 mil de saldos a favor fuera de $1,55 M).
   const filas = (await rpcPaginado(
     "digiflex.cxc.report",
     [
       ["company_id", "in", companyIds],
-      ["amount_residual", ">", 0],
+      ["amount_residual", "!=", 0],
     ],
     [
       "amount_residual",
@@ -104,48 +117,87 @@ export async function fetchCxC(companyIds: number[]): Promise<AgingCxC> {
       "amount_61_90",
       "amount_91_plus",
       "days_overdue",
+      "partner_id",
       "partner_name",
+      "company_id",
     ],
   )).filter((r) => !esIntercompania(r.partner_name));
 
-  const abs = (v: any) => Math.abs(Number(v) || 0);
-  const sum = (k: string) => filas.reduce((s, r) => s + abs(r[k]), 0);
+  // Neto por cliente (y sede): lo que tiene a favor se aplica primero a su
+  // deuda mas vieja, como lo aplicaria Cobranza; un cliente con saldo neto a
+  // favor no suma a la cartera. Las filas de la vista ya vienen por empresa
+  // (commercial partner) salvo contadas excepciones.
+  const BANDAS_VIEJO_A_NUEVO = [
+    "amount_91_plus",
+    "amount_61_90",
+    "amount_31_60",
+    "amount_1_30",
+    "amount_current",
+  ] as const;
+  type Bandas = Record<(typeof BANDAS_VIEJO_A_NUEVO)[number], number>;
+  const porCliente = new Map<
+    string,
+    { nombre: string; bandas: Bandas; aFavor: number; dias: number }
+  >();
+  filas.forEach((r) => {
+    const clave = `${r.company_id?.[0] ?? ""}:${r.partner_id?.[0] ?? r.partner_name}`;
+    let c = porCliente.get(clave);
+    if (!c) {
+      c = {
+        nombre: r.partner_name || "Sin nombre",
+        bandas: { amount_91_plus: 0, amount_61_90: 0, amount_31_60: 0, amount_1_30: 0, amount_current: 0 },
+        aFavor: 0,
+        dias: 0,
+      };
+      porCliente.set(clave, c);
+    }
+    if (Number(r.amount_residual) < 0) {
+      c.aFavor += -Number(r.amount_residual);
+      return;
+    }
+    BANDAS_VIEJO_A_NUEVO.forEach((b) => (c!.bandas[b] += Math.max(0, Number(r[b]) || 0)));
+    c.dias = Math.max(c.dias, Number(r.days_overdue) || 0);
+  });
 
+  const clientes = Array.from(porCliente.values()).map((c) => {
+    let resto = c.aFavor;
+    const b = { ...c.bandas };
+    BANDAS_VIEJO_A_NUEVO.forEach((k) => {
+      const aplicado = Math.min(resto, b[k]);
+      b[k] -= aplicado;
+      resto -= aplicado;
+    });
+    const vencido = b.amount_1_30 + b.amount_31_60 + b.amount_61_90 + b.amount_91_plus;
+    return {
+      nombre: c.nombre,
+      b,
+      monto: vencido + b.amount_current,
+      dias: vencido > 0.01 ? c.dias : 0,
+    };
+  }).filter((c) => c.monto > 0.01);
+
+  const sum = (k: keyof Bandas) => clientes.reduce((s, c) => s + c.b[k], 0);
   const b1_30 = sum("amount_1_30");
   const b31_60 = sum("amount_31_60");
   const b61_90 = sum("amount_61_90");
   const b91mas = sum("amount_91_plus");
-
-  const porCliente: Record<string, { monto: number; dias: number }> = {};
-  filas.forEach((r) => {
-    const nombre = r.partner_name || "Sin nombre";
-    if (!porCliente[nombre]) porCliente[nombre] = { monto: 0, dias: 0 };
-    porCliente[nombre].monto += abs(r.amount_residual);
-    porCliente[nombre].dias = Math.max(
-      porCliente[nombre].dias,
-      Number(r.days_overdue) || 0,
-    );
-  });
-
-  const clientesVencidos = Object.values(porCliente).filter(
-    (c) => c.dias > 0,
-  ).length;
+  const corriente = sum("amount_current");
 
   return {
-    totalCartera: sum("amount_residual"),
-    corriente: sum("amount_current"),
+    totalCartera: b1_30 + b31_60 + b61_90 + b91mas + corriente,
+    corriente,
     vencido: b1_30 + b31_60 + b61_90 + b91mas,
     b1_30,
     b31_60,
     b61_90,
     b91mas,
-    clientes: Object.keys(porCliente).length,
-    clientesVencidos,
-    topDeudores: Object.entries(porCliente)
-      .map(([cliente, v]) => ({
-        cliente,
-        monto: Math.round(v.monto * 100) / 100,
-        diasVencido: v.dias,
+    clientes: clientes.length,
+    clientesVencidos: clientes.filter((c) => c.dias > 0).length,
+    topDeudores: clientes
+      .map((c) => ({
+        cliente: c.nombre,
+        monto: Math.round(c.monto * 100) / 100,
+        diasVencido: c.dias,
       }))
       .sort((a, b) => b.monto - a.monto)
       .slice(0, 20),
@@ -223,15 +275,17 @@ export async function fetchCxP(
   // Valencia, Valencia a SUPRICOM LLC): oct-2026 eran $3,68 M de los $3,69 M que debia Caracas y
   // $3,69 M de los $4,38 M de Valencia, y hacian ver vencida/sin cobertura
   // una deuda que se compensa dentro del grupo. Mismo criterio que el modulo
-  // de Cuentas por Pagar.
-  const facturasRaw = (await rpcPaginado(
+  // de Cuentas por Pagar. Las NC de proveedor (in_refund) restan, igual que en
+  // ese modulo (oct-2026 Caracas: $11.724 aqui contra $2.361 alla).
+  const [facturasTodas, pagosSinAplicar] = await Promise.all([rpcPaginado(
     "account.move",
     [
       ["company_id", "in", companyIds],
-      ["move_type", "=", "in_invoice"],
+      ["move_type", "in", ["in_invoice", "in_refund"]],
       ["state", "=", "posted"],
     ],
     [
+      "move_type",
       "invoice_date_due",
       "invoice_date",
       "invoice_payment_term_id",
@@ -245,28 +299,32 @@ export async function fetchCxP(
       "partner_id",
       "name",
     ],
-  )).filter((f: any) => !esIntercompania(f.partner_id?.[1]));
+  ), sumarPagosSinAplicar(companyIds, true)]);
+  const facturasRaw = facturasTodas.filter((f: any) => !esIntercompania(f.partner_id?.[1]));
   const sinCondicionPorId: Record<number, boolean> = {};
   facturasRaw.forEach((f: any) => {
     sinCondicionPorId[f.id] = !f.invoice_payment_term_id;
   });
 
-  // Para puntualidad solo interesan las que vencieron dentro del periodo.
+  // Para puntualidad solo interesan las facturas que vencieron dentro del periodo.
   const delPeriodo = facturasRaw.filter(
     (f: any) =>
+      f.move_type === "in_invoice" &&
       f.invoice_date_due && f.invoice_date_due >= desde && f.invoice_date_due <= hasta,
   );
   const fechasPago = await fetchFechasDePago(delPeriodo.map((f: any) => f.id));
 
   const mapear = (f: any): FacturaCxP => {
-    const residual = Math.abs(Number(f.amount_residual_signed) || 0);
+    // in_invoice: residual_signed negativo (se debe); in_refund: positivo, resta.
+    const residual = -(Number(f.amount_residual_signed) || 0);
     return {
       id: f.id,
       proveedor: f.partner_id?.[1] || "Sin proveedor",
       fechaVencimiento: f.invoice_date_due || "",
       montoTotal: Math.abs(Number(f.amount_total_signed) || 0),
       residual,
-      pagada: f.payment_state === "paid" || residual <= 0.01,
+      pagada: f.payment_state === "paid" || Math.abs(residual) <= 0.01,
+      estadoPago: f.payment_state || "",
       fechaPago: fechasPago[f.id] || null,
     };
   };
@@ -286,10 +344,13 @@ export async function fetchCxP(
   );
 
   const sinCondicion = pendientes.filter((f) => sinCondicionPorId[f.id]);
+  const totalCxP = pendientes.reduce((s, f) => s + f.residual, 0);
 
   return {
     facturas,
-    totalCxP: pendientes.reduce((s, f) => s + f.residual, 0),
+    totalCxP,
+    pagosSinAplicar,
+    deudaNeta: Math.round((totalCxP - pagosSinAplicar) * 100) / 100,
     saldoVencido: vencidas.reduce((s, f) => s + f.residual, 0),
     vencidas,
     proximas30,
@@ -390,84 +451,22 @@ export async function fetchFacturasSinProcesar(
 
 // ─────────────────────────────────────────────── Tesoreria
 
-const RE_RETENCION = /retenid|retenci/i;
-
 export async function fetchTesoreria(
   companyIds: number[],
+  hoy: string,
+  desde: string,
+  hasta: string,
 ): Promise<DatosTesoreria> {
-  const diarios =
-    (await callOdooRPC<any[]>(
-      "account.journal",
-      "search_read",
-      [
-        [
-          ["type", "in", ["bank", "cash"]],
-          ["company_id", "in", companyIds],
-        ],
-      ],
-      { fields: ["name", "default_account_id"], limit: 0 },
-    )) || [];
-
-  // Varios diarios apuntan a la MISMA cuenta contable (ej. "Banesco Panama" y
-  // "Regions Bank"). Sumar por diario duplicaria el saldo — hasta 3.7x en
-  // Panama —, asi que se deduplica por cuenta.
-  const cuentaInfo: Record<number, { nombre: string; retencion: boolean }> = {};
-  diarios.forEach((j: any) => {
-    const accId = j.default_account_id?.[0];
-    if (!accId) return;
-    const nombre = typeof j.name === "string" ? j.name : String(j.name ?? "");
-    const esRet = RE_RETENCION.test(nombre);
-    if (!cuentaInfo[accId]) {
-      cuentaInfo[accId] = { nombre, retencion: esRet };
-    } else if (!esRet) {
-      // Se prefiere el nombre del diario "real" sobre el de retencion.
-      cuentaInfo[accId].nombre = nombre;
-      cuentaInfo[accId].retencion = false;
-    }
-  });
-
-  const accountIds = Object.keys(cuentaInfo).map(Number);
-  if (accountIds.length === 0) {
-    return {
-      disponible: 0,
-      porCuenta: [],
-      retenciones: 0,
-      conciliadas: 0,
-      totalExtractos: 0,
-      ultimaConciliacion: null,
-    };
-  }
-
-  const saldos =
-    (await callOdooRPC<any[]>(
-      "account.move.line",
-      "read_group",
-      [
-        [
-          ["account_id", "in", accountIds],
-          ["parent_state", "=", "posted"],
-        ],
-        ["balance:sum"],
-        ["account_id"],
-      ],
-      {},
-    )) || [];
-
-  let disponible = 0;
-  let retenciones = 0;
-  const porCuenta: { nombre: string; saldo: number }[] = [];
-  saldos.forEach((g: any) => {
-    const accId = g.account_id?.[0];
-    const info = cuentaInfo[accId];
-    if (!info) return;
-    const saldo = Math.round((Number(g.balance) || 0) * 100) / 100;
-    if (info.retencion) {
-      retenciones += saldo;
-    } else {
-      disponible += saldo;
-      if (Math.abs(saldo) > 0.01) porCuenta.push({ nombre: info.nombre, saldo });
-    }
-  });
+  // Disponible, cuentas y retenciones = los de la pantalla de Tesoreria
+  // (lib/administracion/tesoreria.ts). Antes solo se sacaban los diarios con
+  // "retenid/retenci" en el nombre y sumaban al disponible la cuenta de
+  // ingresos "DESCUENTO" de Panama (-$82.790) y las transitorias de Caracas.
+  const tes = await fetchTesoreriaAdmin(companyIds, hoy, desde, hasta);
+  const disponible = tes.resumen.disponible;
+  const retenciones = tes.resumen.retenciones;
+  const porCuenta = tes.cuentas
+    .filter((c) => c.clase === "disponible" && Math.abs(c.saldo) > 0.01)
+    .map((c) => ({ nombre: c.nombre, saldo: c.saldo }));
 
   // La conciliacion se consulta aparte y de forma tolerante: en esta base
   // account.bank.statement.line no tiene company_id almacenado, asi que si el
@@ -475,12 +474,15 @@ export async function fetchTesoreria(
   let conciliadas = 0;
   let totalExtractos = 0;
   let ultimaConciliacion: string | null = null;
-  const inicioAnio = `${new Date().getFullYear()}-01-01`;
+  const inicioAnio = `${hoy.slice(0, 4)}-01-01`;
   try {
-    const base: any[] = [
-      ["date", ">=", inicioAnio],
+    // Solo publicadas: la linea de extracto hereda el estado de su asiento y
+    // las anuladas contaban como "sin conciliar" (Panama 2026: 376 anuladas).
+    const publicadas: any[] = [
       ["company_id", "in", companyIds],
+      ["state", "=", "posted"],
     ];
+    const base: any[] = [["date", ">=", inicioAnio], ...publicadas];
     totalExtractos =
       (await callOdooRPC<number>(
         "account.bank.statement.line",
@@ -499,7 +501,7 @@ export async function fetchTesoreria(
       (await callOdooRPC<any[]>(
         "account.bank.statement.line",
         "search_read",
-        [[["company_id", "in", companyIds]]],
+        [publicadas],
         { fields: ["date"], limit: 1, order: "date desc" },
       )) || [];
     ultimaConciliacion = ultima[0]?.date || null;

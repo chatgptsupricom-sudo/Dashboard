@@ -19,6 +19,7 @@ import {
   companyIdsDeEmpresa,
   empresaDeCompanyId,
 } from "@/lib/administracion/empresas";
+import { hoyCaracas } from "@/lib/administracion/lectura";
 
 const CATEGORIA = "Gastos y Presupuesto";
 const PUNTOS_CATEGORIA = 15;
@@ -31,10 +32,10 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(request.url);
-    const now = new Date();
-    const mes =
-      url.searchParams.get("mes") ||
-      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    // Hora de Caracas: el servidor corre en UTC y el 1.º a las 20:00 ya
+    // tomaba el mes siguiente.
+    const hoy = hoyCaracas();
+    const mes = url.searchParams.get("mes") || hoy.slice(0, 7);
     // Dos formas de filtrar la sede, porque hay dos consumidores: la pagina de
     // Gastos trabaja siempre sobre una sede (`company_id`, porque el
     // presupuesto se carga por empresa) y el indice general usa el mismo
@@ -311,7 +312,7 @@ export async function GET(request: NextRequest) {
             : k.id === "variacion_mensual_gasto" && totalRealPrev > 0
               ? Math.round((totalReal - totalRealPrev) * 100) / 100
               : null,
-        fechaDeteccion: new Date().toISOString().split("T")[0],
+        fechaDeteccion: hoy,
         accion: "Revisar ejecución del gasto contra presupuesto",
         fechaCompromiso: null,
         estatus: "abierta",
@@ -330,7 +331,7 @@ export async function GET(request: NextRequest) {
           titulo: `${d.cuentaNombre} ${d.variacionPct}% sobre presupuesto`,
           responsable: "Administración",
           montoAfectado: d.variacionMonto,
-          fechaDeteccion: new Date().toISOString().split("T")[0],
+          fechaDeteccion: hoy,
           accion: `Revisar gasto de la cuenta ${d.cuentaCodigo}`,
           fechaCompromiso: null,
           estatus: "abierta",
