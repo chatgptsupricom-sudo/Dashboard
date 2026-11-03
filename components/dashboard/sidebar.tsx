@@ -349,6 +349,8 @@ export function Sidebar({
     { id: "cxc_tiempo_cobro", label: "Tiempo de Cobro", icon: Hourglass, slug: "/cuentas-por-cobrar/tiempo-cobro", absoluteHref: true },
     { id: "cxc_incobrables", label: "Incobrables", icon: Ban, slug: "/cuentas-por-cobrar/incobrables", absoluteHref: true },
     { id: "cxc_sobregiro", label: "Sobregiro", icon: Gauge, slug: "/cuentas-por-cobrar/sobregiro", absoluteHref: true },
+    // El "Facturación de Productos" de Odoo de cualquier mes (lib/cxc/facturadoDetallado.ts).
+    { id: "cxc_facturado_detallado", label: "Facturado detallado", icon: FileText, slug: "/cuentas-por-cobrar/facturado-detallado", absoluteHref: true },
     // Conciliación Binance de solo lectura para el rol CxC (la de Administración es admin_binance).
     { id: "cxc_binance", label: "Conciliación Binance", icon: Bitcoin, slug: "/cuentas-por-cobrar/binance", absoluteHref: true },
     { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
@@ -549,7 +551,7 @@ export function Sidebar({
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas", "metas_marca", "stock_marca"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
-  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables", "cxc_sobregiro"];
+  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables", "cxc_sobregiro", "cxc_facturado_detallado"];
   const showVentasDropdown = isSuperAdminRole || isBIRole || (isGerenteOperaciones && hasVentasPermission);
   const isAdministracionRole = ["administración", "administracion"].includes(normalizedUserRole || "");
   // Administracion tambien: sus items de CxC tienen slugs relativos al basePath
@@ -1558,6 +1560,11 @@ export function Sidebar({
                           label: "Sobregiro",
                           href: `/${locale}/cuentas-por-cobrar/sobregiro`,
                           permission: "cxc_sobregiro",
+                        },
+                        {
+                          label: "Facturado detallado",
+                          href: `/${locale}/cuentas-por-cobrar/facturado-detallado`,
+                          permission: "cxc_facturado_detallado",
                         },
                         {
                           label: "Stoplight Report",
