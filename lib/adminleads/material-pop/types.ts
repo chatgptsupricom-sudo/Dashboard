@@ -7,6 +7,10 @@ export const POP_LOCATION_LABELS: Record<PopLocation, string> = {
   warehouse: "Almacén",
 };
 
+/** El vendedor solo pide para uso interno material de la marca Supricom. */
+export const esMarcaUsoInterno = (brand: string | null | undefined): boolean =>
+  String(brand || "").trim().toLowerCase() === "supricom";
+
 export const POP_MOVEMENT_LABELS: Record<PopMovementType, string> = {
   entry: "Entrada",
   exit: "Salida",
