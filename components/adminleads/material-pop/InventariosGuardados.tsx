@@ -6,6 +6,7 @@ import { POP_LOCATION_LABELS, type PopLocation } from "@/lib/adminleads/material
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 interface Inventario {
   id: number;
@@ -50,7 +51,7 @@ function fecha(s: string): string {
 
 async function leerLineas(id: number): Promise<Linea[]> {
   const res = await fetch(`${API}?id=${id}`);
-  const json = await res.json();
+  const json = await leerJson(res);
   if (!res.ok) throw new Error(json?.error || "No se pudo leer el inventario");
   return json.lineas || [];
 }
@@ -101,7 +102,7 @@ export function InventariosGuardados({
     setError(null);
     try {
       const res = await fetch(API);
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) throw new Error(json?.error || "No se pudieron cargar los inventarios");
       setInventarios(json.inventarios || []);
     } catch (e: any) {
@@ -148,7 +149,7 @@ export function InventariosGuardados({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: inv.id, accion: que }),
       });
-      const json = await res.json().catch(() => ({}));
+      const json = await leerJson(res);
       if (!res.ok) throw new Error(json?.error || "No se pudo completar");
       toast({ title: que === "aplicar" ? `Inventario #${inv.id} aplicado al stock` : `Inventario #${inv.id} descartado` });
       if (que === "aplicar") await onAplicado();

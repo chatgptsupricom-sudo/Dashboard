@@ -182,6 +182,43 @@ function conFila<T extends Item>(item: T, contenedorId: number, enContenedor: nu
 
 const fmt = (n: number) => n.toLocaleString("es-VE");
 
+/** Una fila del Excel de observaciones; `fotos` va como imagenes al lado, no como columna. */
+type FilaObservacion = {
+  tipo: string;
+  contenedor: string;
+  codigo: string;
+  producto: string;
+  esperado: number | "";
+  recibido: number | "";
+  diferencia: number | "";
+  detalle: string;
+  por: string;
+  fecha: string;
+  fotos: ArchivoRecepcion[];
+};
+
+/** Lado mayor de una foto dentro del Excel, en px. */
+const FOTO_PX = 160;
+
+/** La foto achicada para el Excel (al doble de resolucion, para que no se vea borrosa). null si no se pudo leer. */
+async function miniatura(url: string): Promise<{ base64: string; ancho: number; alto: number } | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const bitmap = await createImageBitmap(await r.blob());
+    const escala = FOTO_PX / Math.max(bitmap.width, bitmap.height);
+    const ancho = Math.round(bitmap.width * escala);
+    const alto = Math.round(bitmap.height * escala);
+    const canvas = document.createElement("canvas");
+    canvas.width = ancho * 2;
+    canvas.height = alto * 2;
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return { base64: canvas.toDataURL("image/jpeg", 0.85).split(",")[1], ancho, alto };
+  } catch {
+    return null;
+  }
+}
+
 /** Cada dano marcado con la cantidad tal como se escribe en el campo. */
 type DanoForm = { tipo: TipoDano; cantidad: string };
 type Conteo = { recibida: string; motivo: string; danos: DanoForm[]; nota: string };
@@ -552,6 +589,114 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), "Seriales");
     XLSX.writeFile(wb, `Seriales_${rec.referencia}.xlsx`);
   };
+
+  // Todo lo anotado como novedad (lo guardado en el servidor): notas, precintos, diferencias y cajas en mal estado.
+  const observacionesExcel = () => {
+    const fecha = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("es-VE") : "");
+    const fila = (tipo: string, detalle: string, extra: Partial<Omit<FilaObservacion, "tipo" | "detalle">> = {}): FilaObservacion => ({
+      tipo, contenedor: "", codigo: "", producto: "", esperado: "", recibido: "", diferencia: "", detalle, por: "", fecha: "", fotos: [], ...extra,
+    });
+    const fotosDe = (tipo: string, f: { itemId?: number; contenedorId?: number }) =>
+      archivos.filter(
+        (a) =>
+          a.tipo === tipo &&
+          a.mime.startsWith("image/") &&
+          (f.itemId === undefined || Number(a.item_id) === f.itemId) &&
+          (f.contenedorId === undefined || Number(a.contenedor_id) === f.contenedorId),
+      );
+    if (!rec) return [];
+    const filas: FilaObservacion[] = [];
+    if (rec.observaciones) filas.push(fila("Observaciones del packing list", rec.observaciones, { por: rec.creado_por, fecha: fecha(rec.created_at) }));
+    for (const c of contenedores) {
+      if (c.precinto_coincide === 0)
+        filas.push(fila("Precinto distinto", `Esperado: ${c.precintos_esperados.join(", ")} · Recibido: ${c.precintos_recibidos.join(", ")}`, {
+          contenedor: c.numero, por: c.llegada_por || "", fecha: fecha(c.llegada_at), fotos: fotosDe("foto_precinto", { contenedorId: c.id }),
+        }));
+      for (const k of c.precintos_correcciones || [])
+        filas.push(fila("Corrección de precintos", `${k.antes.join(", ")} → ${k.despues.join(", ")}: ${k.motivo}`, { contenedor: c.numero, por: k.por, fecha: fecha(k.at) }));
+      if (c.notas_cierre)
+        filas.push(fila("Nota del contenedor", c.notas_cierre, {
+          contenedor: c.numero, por: c.cerrado_por || "", fecha: fecha(c.cerrado_at), fotos: fotosDe("foto_cierre", { contenedorId: c.id }),
+        }));
+    }
+    for (const i of items) {
+      const esperado = Number(i.cantidad_esperada);
+      const recibido = i.cantidad_recibida === null || i.cantidad_recibida === undefined ? null : Number(i.cantidad_recibida);
+      // En que contenedor(es) vino y cuanto en cada uno (contra lo esperado ahi, si el packing list lo dice).
+      const contenedor = (i.conteo || [])
+        .filter((f) => f.cantidad_recibida !== null || f.cantidad_esperada !== null)
+        .map((f) => {
+          const numero = contenedores.find((c) => c.id === Number(f.contenedor_id))?.numero;
+          if (!numero) return "";
+          const esp = f.cantidad_esperada === null ? "" : ` de ${Number(f.cantidad_esperada)}`;
+          return `${numero}: ${f.cantidad_recibida === null ? 0 : Number(f.cantidad_recibida)}${esp}`;
+        })
+        .filter(Boolean)
+        .join("\n");
+      const producto = { contenedor, codigo: i.codigo || "", producto: i.producto, esperado, recibido: recibido ?? ("" as const) };
+      if (i.motivo_diferencia)
+        filas.push(fila("Diferencia", i.motivo_diferencia, { ...producto, diferencia: recibido === null ? "" : recibido - esperado }));
+      if (i.danos?.length) {
+        const danos = i.danos.map((d) => `${t(`dano_${d.tipo}`)}${d.cantidad ? ` (${d.cantidad})` : ""}`).join(", ");
+        filas.push(fila("Caja en mal estado", i.golpeado_nota ? `${danos}: ${i.golpeado_nota}` : danos, { ...producto, fotos: fotosDe("foto_golpe", { itemId: i.id }) }));
+      }
+    }
+    if (rec.notas_cierre) filas.push(fila("Nota de cierre", rec.notas_cierre, { por: rec.cerrado_por || "", fecha: fecha(rec.cerrado_at) }));
+    return filas;
+  };
+  const [bajandoObservaciones, setBajandoObservaciones] = useState(false);
+  // ExcelJS (no SheetJS): lleva el encabezado con color y las fotos dentro de la hoja.
+  const descargarObservaciones = async () => {
+    if (!rec) return;
+    setBajandoObservaciones(true);
+    try {
+      const [{ default: ExcelJS }, { saveAs }] = await Promise.all([import("exceljs"), import("file-saver")]);
+      const filas = observacionesExcel();
+      const maxFotos = Math.max(0, ...filas.map((f) => f.fotos.length));
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Observaciones", { views: [{ state: "frozen", ySplit: 1 }] });
+      ws.columns = [
+        { header: "Tipo", key: "tipo", width: 26 },
+        { header: "Contenedor", key: "contenedor", width: 22 },
+        { header: "Código", key: "codigo", width: 16 },
+        { header: "Producto", key: "producto", width: 40 },
+        { header: "Esperado", key: "esperado", width: 10 },
+        { header: "Recibido", key: "recibido", width: 10 },
+        { header: "Diferencia", key: "diferencia", width: 11 },
+        { header: "Detalle", key: "detalle", width: 60 },
+        { header: "Por", key: "por", width: 22 },
+        { header: "Fecha", key: "fecha", width: 21 },
+        ...Array.from({ length: maxFotos }, (_, n) => ({ header: `Foto ${n + 1}`, width: 24 })),
+      ];
+      const encabezado = ws.getRow(1);
+      encabezado.height = 24;
+      encabezado.eachCell((c) => {
+        c.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF6D28D9" } };
+        c.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      });
+      for (const f of filas) {
+        const fila = ws.addRow(f);
+        fila.alignment = { vertical: "top", wrapText: true };
+        if (f.fotos.length) fila.height = FOTO_PX * 0.75 + 8; // alto en puntos
+        for (const [n, foto] of f.fotos.entries()) {
+          const img = await miniatura(`/api/recepcion/${rec.id}/archivos/${foto.id}`);
+          if (!img) continue;
+          ws.addImage(wb.addImage({ base64: img.base64, extension: "jpeg" }), {
+            tl: { col: 10 + n + 0.05, row: fila.number - 1 + 0.05 },
+            ext: { width: img.ancho, height: img.alto },
+          });
+        }
+      }
+      const buffer = await wb.xlsx.writeBuffer();
+      saveAs(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `Observaciones_${rec.referencia}.xlsx`);
+    } catch (e: any) {
+      setError(e?.message || "No se pudo armar el Excel de observaciones.");
+    } finally {
+      setBajandoObservaciones(false);
+    }
+  };
+  const nObservaciones = observacionesExcel().length;
 
   const corregirPrecintos = async (contenedorId: number) => {
     setError(null);
@@ -1281,16 +1426,29 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                   onTerminar={() => setSeleccionado(null)}
                 />
               )}
-              {items.some((i) => (i.seriales || []).length > 0) && (
-                <div className="mb-3 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={descargarSeriales}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    {t("descargar_seriales", { count: items.reduce((n, i) => n + (i.seriales || []).length, 0) })}
-                  </button>
+              {(items.some((i) => (i.seriales || []).length > 0) || nObservaciones > 0) && (
+                <div className="mb-3 flex flex-wrap justify-end gap-4">
+                  {nObservaciones > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => void descargarObservaciones()}
+                      disabled={bajandoObservaciones}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline disabled:opacity-60"
+                    >
+                      {bajandoObservaciones ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+                      {t("descargar_observaciones", { count: nObservaciones })}
+                    </button>
+                  )}
+                  {items.some((i) => (i.seriales || []).length > 0) && (
+                    <button
+                      type="button"
+                      onClick={descargarSeriales}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {t("descargar_seriales", { count: items.reduce((n, i) => n + (i.seriales || []).length, 0) })}
+                    </button>
+                  )}
                 </div>
               )}
 

@@ -22,6 +22,7 @@ import { RequestsTab } from "./RequestsTab";
 import { InventoryTab } from "./InventoryTab";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import type { PopCategory, PopProduct, PopUom } from "@/lib/adminleads/material-pop/types";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 const TABS = ["catalog", "inventory", "entries", "exits", "history", "requests", "brand-clients", "alerts"];
 
@@ -49,9 +50,9 @@ export function MaterialPopPage() {
         fetch("/api/adminleads/material-pop/uoms"),
       ]);
 
-      const prodJson = await prodRes.json();
-      const catJson = await catRes.json();
-      const uomJson = await uomRes.json();
+      const prodJson = await leerJson(prodRes);
+      const catJson = await leerJson(catRes);
+      const uomJson = await leerJson(uomRes);
 
       if (!prodRes.ok) throw new Error(prodJson?.error || "Error cargando productos");
       if (!catRes.ok) throw new Error(catJson?.error || "Error cargando categorías");

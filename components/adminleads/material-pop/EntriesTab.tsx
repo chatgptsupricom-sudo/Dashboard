@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 type Mode = "entry" | "transfer" | "adjustment";
 
@@ -108,7 +109,7 @@ export function EntriesTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) {
         setError(json?.error || "No se pudo registrar");
         return;
