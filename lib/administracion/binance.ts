@@ -46,6 +46,8 @@ const MARGEN_POR_HORA_MS = 15 * 60_000;
 const MARGEN_ESTADO_MS = 2 * 60_000;
 // La captura con el reloj del telefono se saca hasta esto despues de pagar.
 const MARGEN_TELEFONO_MS = 20 * 60_000;
+// Con la hora en otra zona (UTC, Panamá, UTC+8) el mismo pago puede estar hasta esto corrido.
+const MARGEN_OTRA_ZONA_MS = 13 * 3600_000;
 // Mediodia del lunes: donde queda un comprobante sin fecha que Binance no encontro.
 const MEDIODIA_MS = 12 * 3600_000;
 
@@ -363,6 +365,7 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     }
     const libres = pagos.filter((p) => !usados.has(p.id) && mismoMonto(p, base));
     let pago: PagoBinance | null = null;
+    let otraZona = false;
     if (base.horaTelefono) {
       // La captura se saca despues de pagar: el pago mas cercano antes de la
       // hora del reloj. Sin a. m./p. m. ("5:57") tambien vale 12 h despues.
@@ -383,6 +386,18 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
       const t = Date.parse(base.fecha);
       const dt = (p: PagoBinance) => Math.abs(Date.parse(p.fecha) - t);
       pago = libres.filter((p) => dt(p) <= margen).sort((a, b) => dt(a) - dt(b))[0] || null;
+      // La hora del comprobante y la del estado de cuenta pueden venir en zonas
+      // distintas (captura sacada en Panamá, UTC-5, o un comprobante que dice UTC
+      // y la IA lo tomó como Caracas: nov-2026, 40.000 USDT a las 10:56 y en el
+      // estado 9:56). Si el monto sale una sola vez en la semana y está a menos
+      // de 13 h, es ese pago, pero lo confirma una persona.
+      if (!pago && origen === "estado") {
+        const iguales = pagos.filter((p) => mismoMonto(p, base));
+        if (iguales.length === 1 && !usados.has(iguales[0].id) && dt(iguales[0]) <= MARGEN_OTRA_ZONA_MS) {
+          pago = iguales[0];
+          otraZona = true;
+        }
+      }
     }
     if (!pago) {
       salida[i] = { ...base, estado: "no_encontrado", binance: null };
@@ -398,7 +413,7 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     const horaYMontoUnico =
       (!base.fechaEstimada || base.horaTelefono) && pagos.filter((p) => mismoMonto(p, base)).length === 1;
     const estado =
-      origen !== "estado"
+      origen !== "estado" || otraZona
         ? "por_monto_hora"
         : horaYMontoUnico || nombreParecido(base.cliente, pago.pagador)
           ? "conciliado"
