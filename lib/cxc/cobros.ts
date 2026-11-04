@@ -10,8 +10,8 @@ import { esICExcluido } from "@/lib/intercompania";
  * banco/caja real, fechada por la CONFIRMACIÓN del pago. Es la lógica de
  * "Cobrado" de Contado/Crédito, que se validó centavo a centavo contra el
  * export real de cobranza, llevada a un solo lugar para que Contado/Crédito,
- * Integración de Pagos, Clasificación de clientes, Efectividad y Recuperación
- * sumen exactamente lo mismo:
+ * Clasificación de clientes, Efectividad y Recuperación sumen exactamente lo
+ * mismo (Integración de Pagos no: copia el reporte de Odoo, lib/cxc/integracionPagos.ts):
  *
  *   Cobrado del período = vencidas al inicio   (numerador de Recuperación)
  *                       + vencen en el período (Efectividad, parte del mes)
