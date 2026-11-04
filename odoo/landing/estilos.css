@@ -17,6 +17,9 @@
     --sombra: rgba(11, 13, 18, .28);
     --cierre: #0B0D12;
     --cierre-texto: #C3C7D1;
+    --ok: #15803D;
+    --aviso: #B45309;
+    --error: #B91C1C;
     color-scheme: light;
 }
 :root[data-tema="oscuro"] {
@@ -35,6 +38,9 @@
     --sombra: rgba(0, 0, 0, .65);
     --cierre: #1A3FB4;
     --cierre-texto: #DCE4FF;
+    --ok: #4ADE80;
+    --aviso: #FBBF24;
+    --error: #F87171;
     color-scheme: dark;
 }
 :root {
@@ -78,7 +84,7 @@ button { font: inherit; color: inherit; }
 .saltar:focus { top: 12px; }
 
 /* Logo oficial: una versión para cada modo */
-.logo { height: 34px; width: auto; }
+.logo { height: 34px; width: auto; object-fit: contain; }
 .logo-oscuro { display: none; }
 :root[data-tema="oscuro"] .logo-claro { display: none; }
 :root[data-tema="oscuro"] .logo-oscuro { display: block; }
@@ -94,9 +100,43 @@ button { font: inherit; color: inherit; }
 }
 .cabecera.con-scroll { border-bottom-color: var(--linea); background: var(--cabecera-firme); }
 .cabecera-fila { height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.marca { display: flex; align-items: center; min-height: 44px; }
+.marca { display: flex; align-items: center; min-height: 44px; flex: 0 0 auto; }
 .cabecera-acciones { display: flex; align-items: center; gap: 8px; }
-.menu { display: flex; align-items: center; gap: 2px; }
+
+/* Selector de sede: cambia productos, categorías y contacto; con un botón para usar la ubicación. */
+.sede-selector { position: relative; display: flex; align-items: center; height: 44px; border: 1px solid var(--borde-boton); border-radius: 999px; transition: border-color .2s; }
+.sede-selector:hover, .sede-selector:focus-within { border-color: var(--tinta); }
+.sede-pin { position: absolute; left: 12px; width: 16px; height: 16px; fill: none; stroke: var(--acento); stroke-width: 2.2; pointer-events: none; }
+.sede-selector select {
+    height: 42px; padding: 0 30px 0 34px; border: 0; border-radius: 999px 0 0 999px; background: transparent; color: var(--tinta);
+    font: 700 15px Manrope, system-ui, sans-serif; cursor: pointer; -webkit-appearance: none; appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%; background-size: 5px 5px; background-repeat: no-repeat;
+}
+.sede-selector select:focus-visible { outline: 3px solid var(--acento); outline-offset: 2px; }
+.sede-selector option { color: #0B0D12; background: #fff; }
+.sede-ubicar {
+    width: 42px; height: 42px; border: 0; border-left: 1px solid var(--linea); border-radius: 0 999px 999px 0; background: none;
+    display: grid; place-items: center; cursor: pointer; color: var(--tinta);
+}
+.sede-ubicar:hover { color: var(--acento); }
+.sede-ubicar svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.sede-ubicar.buscando svg { animation: girar 1.2s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+.sede-aviso {
+    position: absolute; top: calc(100% + 10px); right: 0; z-index: 60; width: min(340px, calc(100vw - 32px));
+    padding: 18px; border-radius: var(--r-2); background: var(--superficie); border: 1px solid var(--linea);
+    box-shadow: 0 30px 60px -28px var(--sombra); display: grid; gap: 14px;
+}
+.sede-aviso[hidden] { display: none; }
+.sede-aviso::before {
+    content: ""; position: absolute; top: -7px; right: 56px; width: 12px; height: 12px; transform: rotate(45deg);
+    background: var(--superficie); border-left: 1px solid var(--linea); border-top: 1px solid var(--linea);
+}
+.sede-aviso-texto { font-size: 15px; line-height: 1.45; }
+.sede-aviso-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.sede-aviso-acciones .boton { min-height: 40px; padding: 0 14px; font-size: 14px; }
+.menu { display: flex; align-items: center; gap: 2px; white-space: nowrap; }
 .menu > a:not(.boton) {
     display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 999px;
     font-size: 15px; font-weight: 600; text-decoration: none; color: var(--gris); transition: color .2s, background .2s;
@@ -104,6 +144,7 @@ button { font: inherit; color: inherit; }
 .menu > a:not(.boton):hover, .menu > a.activo { color: var(--tinta); background: var(--superficie-2); }
 .menu .boton { margin-left: 6px; }
 .menu-boton { display: none; }
+.menu-ubicar { display: none; }
 .tema {
     width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--borde-boton); background: transparent;
     display: grid; place-items: center; cursor: pointer; transition: border-color .2s, transform .3s var(--curva);
@@ -152,6 +193,7 @@ button { font: inherit; color: inherit; }
 .banner img { width: 100%; height: 100%; object-fit: cover; }
 .banner.frente { box-shadow: 0 40px 70px -40px var(--sombra); }
 .banner:not(.frente) { filter: saturate(.6) brightness(.8); cursor: pointer; }
+.banners-controles[hidden] { display: none; }
 .banners-controles { margin-top: 28px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
 .banners-pestanas { display: flex; flex-wrap: wrap; gap: 8px; }
 .banners-pestanas button {
@@ -317,32 +359,178 @@ button { font: inherit; color: inherit; }
 
 /* ------------------------------------------------------------------ Lista de códigos */
 .pedido { padding: var(--seccion) 0; }
-.pedido-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
-.pedido-texto { display: grid; gap: 16px; }
-.pedido-texto > p:not(.pedido-resumen) { color: var(--gris); font-size: 17px; max-width: 460px; }
-.campo { font-size: 14px; font-weight: 700; margin-top: 8px; }
-.pedido textarea {
-    width: 100%; resize: vertical; padding: 18px 20px; border-radius: var(--r-2); border: 1px solid var(--linea);
-    background: var(--superficie); color: var(--tinta); font: 500 16px/1.7 "JetBrains Mono", monospace;
+.pedido-cabeza { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 40px; margin-bottom: 32px; }
+.pedido-cabeza .cabeza-seccion { margin-bottom: 0; }
+.pedido-pasos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.pedido-pasos li {
+    display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 6px; border-radius: 999px;
+    background: var(--superficie); border: 1px solid var(--linea); font-size: 14px; font-weight: 700;
 }
-.pedido-texto .boton { justify-self: start; }
-.pedido-lista {
-    display: grid; gap: 10px; padding: 18px; border-radius: var(--r-3); background: var(--superficie);
-    border: 1px solid var(--linea); min-height: 320px; align-content: start;
+.pedido-pasos span { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--tinta); color: var(--fondo); font-size: 13px; }
+
+/* La mesa: el editor a la izquierda y, a la derecha, la solicitud tal como le llega a ventas. */
+.mesa {
+    display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 28px; align-items: start;
+    padding: 28px; border-radius: var(--r-3); background: var(--banda); border: 1px solid var(--banda-linea);
+    perspective: 1600px;
 }
+.editor { display: grid; gap: 14px; min-width: 0; }
+.editor-barra { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.editor-titulo { font-size: 15px; font-weight: 700; }
+.editor-acciones { display: flex; gap: 6px; }
+.chip {
+    min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--borde-boton); background: transparent;
+    font-size: 14px; font-weight: 600; cursor: pointer; transition: border-color .2s, background .2s;
+}
+.chip:hover { border-color: var(--tinta); background: var(--superficie); }
+.chip-acento { border-color: var(--acento); color: var(--acento); }
+
+/* Editor con número y estado de cada renglón. Sin ajuste de línea para que el margen calce. */
+.editor-cuerpo {
+    position: relative; display: grid; grid-template-columns: 52px minmax(0, 1fr); border-radius: var(--r-2); overflow: hidden;
+    background: var(--superficie); border: 1px solid var(--linea); transition: border-color .2s, box-shadow .2s;
+}
+.editor-cuerpo:focus-within { border-color: var(--acento); box-shadow: 0 0 0 4px color-mix(in srgb, var(--acento) 18%, transparent); }
+.editor-margen, .editor-cuerpo textarea { font: 500 15px/28px "JetBrains Mono", ui-monospace, monospace; padding-block: 14px; }
+.editor-margen {
+    position: absolute; inset: 0 auto 0 0; width: 52px; /* fuera del flujo: no le da alto a la fila */
+    overflow: hidden; text-align: right; color: var(--gris); background: var(--superficie-2);
+    border-right: 1px solid var(--linea); user-select: none;
+}
+.editor-margen span { display: flex; align-items: center; justify-content: flex-end; gap: 6px; height: 28px; padding-right: 10px; font-size: 12px; }
+.editor-margen span::before { content: ""; width: 7px; height: 7px; border-radius: 50%; }
+.editor-leyenda .est-ok, .editor-margen .est-ok::before { background: var(--ok); }
+.editor-leyenda .est-nuevo, .editor-margen .est-nuevo::before { background: var(--aviso); }
+.editor-leyenda .est-error, .editor-margen .est-error::before { background: var(--error); }
+.editor-margen .est-error { color: var(--error); font-weight: 700; }
+/* El error no depende solo del color: lleva un signo. */
+.editor-margen .est-error::before, .editor-leyenda .est-error::before { content: "!"; }
+.editor-margen .est-error::before { width: auto; height: auto; background: none; font-size: 13px; }
+.editor-leyenda .est-error { display: grid; place-items: center; width: 14px; height: 14px; color: #fff; font: 800 10px/1 Manrope, system-ui, sans-serif; font-style: normal; }
+.editor-leyenda .est-ignorada, .editor-margen .est-ignorada::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--gris); }
+.editor-errores { color: var(--error); font-size: 13px; font-weight: 600; }
+.editor-errores[hidden] { display: none; }
+.editor-cuerpo textarea {
+    grid-column: 2; width: 100%; min-height: calc(28px * 8 + 28px); max-height: calc(28px * 14 + 28px); resize: vertical; border: 0; outline: 0; margin: 0;
+    padding-inline: 14px; background: transparent; color: var(--tinta); white-space: pre; overflow: auto;
+}
+.editor-cuerpo textarea:focus-visible { outline: 0; }
+.editor-ayuda { color: var(--gris); font-size: 14px; }
+.editor-ayuda code { font: 500 13px "JetBrains Mono", monospace; color: var(--tinta); background: var(--superficie); padding: 2px 6px; border-radius: 6px; }
+.editor-leyenda { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--gris); font-size: 13px; }
+.editor-leyenda li { display: inline-flex; align-items: center; gap: 7px; }
+.editor-leyenda i { width: 8px; height: 8px; border-radius: 50%; }
+
+/* Buscador entre los productos más pedidos */
+.buscador { position: relative; display: grid; gap: 8px; margin-top: 8px; padding-top: 18px; border-top: 1px solid var(--banda-linea); }
+.buscador-caja { position: relative; }
+.buscador-caja svg {
+    position: absolute; left: 16px; top: 50%; width: 18px; height: 18px; margin-top: -9px;
+    fill: none; stroke: var(--gris); stroke-width: 2; stroke-linecap: round;
+}
+.buscador input {
+    width: 100%; min-height: 50px; padding: 0 16px 0 44px; border-radius: 999px; border: 1px solid var(--linea);
+    background: var(--superficie); color: var(--tinta); font: 500 16px Manrope, system-ui, sans-serif;
+}
+.buscador input:focus { outline: 0; border-color: var(--acento); box-shadow: 0 0 0 4px color-mix(in srgb, var(--acento) 18%, transparent); }
+.buscador-panel {
+    position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 5; padding: 8px; border-radius: var(--r-2);
+    background: var(--superficie); border: 1px solid var(--linea); box-shadow: 0 30px 60px -30px var(--sombra);
+}
+.buscador-panel[hidden] { display: none; }
+.buscador-opciones { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 300px; overflow-y: auto; }
+.buscador-opciones li {
+    display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    padding: 6px 10px 6px 6px; border-radius: var(--r-1); cursor: pointer;
+}
+.buscador-opciones li[aria-selected="true"], .buscador-opciones li:hover { background: var(--superficie-2); }
+.buscador-opciones img { width: 44px; height: 44px; object-fit: contain; background: #fff; border-radius: 8px; }
+.buscador-opciones strong { display: block; font-size: 14px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.buscador-opciones small { font: 500 12px "JetBrains Mono", monospace; color: var(--gris); }
+.opcion-mas { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--linea); font-weight: 700; }
+.buscador-opciones[hidden], .opcion-nada[hidden] { display: none; }
+.opcion-nada { color: var(--gris); font-size: 14px; padding: 10px; }
+.buscador-catalogo { display: flex; align-items: center; min-height: 44px; padding: 0 10px; color: var(--acento); font-size: 14px; font-weight: 700; text-decoration: none; border-top: 1px solid var(--linea); margin-top: 6px; }
+.buscador-catalogo:hover { text-decoration: underline; }
+
+/* La solicitud: un ticket con el borde de arriba troquelado, apenas girado en 3D hasta que se usa. */
+.ticket-marco {
+    min-width: 0; transform: rotateY(-7deg) rotateX(3deg);
+    transition: transform .8s var(--curva); filter: drop-shadow(0 34px 40px var(--sombra));
+}
+.mesa:hover .ticket-marco, .ticket-marco:focus-within { transform: none; }
+.ticket {
+    position: relative; display: grid; gap: 18px; padding: 34px 26px 26px; background: var(--superficie);
+    border-radius: 0 0 var(--r-2) var(--r-2);
+}
+/* Troquelado: medios círculos del color de la mesa sobre el borde (una máscara dejaba el ticket sin pintar en Chrome). */
+.ticket::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 8px; pointer-events: none;
+    background: radial-gradient(circle 7px at 11px 0, var(--banda) 96%, transparent 100%) 0 0 / 22px 8px repeat-x;
+}
+.ticket-cabeza { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 2px dashed var(--linea); }
+.ticket-titulo { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+.ticket-fecha { margin-top: 4px; color: var(--gris); font-size: 14px; }
+.ticket .logo { height: 24px; flex: 0 0 auto; }
+.ticket-sede { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.ticket-sede p { flex-basis: 100%; font-size: 13px; font-weight: 700; color: var(--gris); }
+.ticket-sede strong { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+
+.ticket-lineas { display: grid; max-height: 384px; overflow-y: auto; margin-right: -8px; padding-right: 8px; container-type: inline-size; }
+.ticket-lineas:empty { display: none; }
 .linea-pedido {
-    display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 14px;
-    padding: 10px; border-radius: var(--r-1); background: var(--superficie-2); animation: entra .45s var(--curva) both;
+    display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--linea); transform-origin: 50% 0;
 }
-.linea-pedido.sin-entrada { animation: none; }
-.linea-pedido > div { min-width: 0; }
-.linea-pedido img { width: 56px; height: 56px; object-fit: contain; background: #fff; border-radius: 10px; }
-.linea-pedido strong { display: block; font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; }
-.linea-pedido small { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--gris); }
-.linea-pedido .cantidad { font-weight: 800; font-size: 18px; }
-.linea-pedido.desconocido { grid-template-columns: 1fr auto; color: var(--gris); }
-.pedido-vacio, .pedido-resumen { color: var(--gris); font-size: 14px; }
-@keyframes entra { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.linea-pedido:last-child { border-bottom: 0; }
+.linea-pedido.entra { animation: imprime .55s var(--curva) both; }
+@keyframes imprime { from { opacity: 0; transform: perspective(600px) rotateX(-75deg) translateY(-6px); } to { opacity: 1; transform: perspective(600px); } }
+.linea-pedido img, .linea-icono { width: 52px; height: 52px; border-radius: 10px; }
+.linea-pedido img { object-fit: contain; background: #fff; border: 1px solid var(--linea); }
+.linea-icono { display: grid; place-items: center; font-size: 22px; font-weight: 800; color: var(--aviso); border: 1px dashed var(--aviso); }
+.linea-texto { min-width: 0; }
+.linea-texto strong { display: block; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+.linea-texto small { display: block; margin-top: 2px; font: 500 12px "JetBrains Mono", monospace; color: var(--gris); }
+.desconocido .linea-texto small { font-family: Manrope, system-ui, sans-serif; color: var(--aviso); font-weight: 600; }
+.contador { display: inline-flex; align-items: center; border: 1px solid var(--linea); border-radius: 999px; background: var(--fondo); }
+.contador button { width: 36px; height: 36px; border: 0; background: none; border-radius: 50%; font-size: 18px; font-weight: 700; cursor: pointer; }
+.contador button:hover { background: var(--superficie-2); }
+.contador button[aria-disabled="true"] { opacity: .35; cursor: default; }
+.contador button[aria-disabled="true"]:hover { background: none; }
+.contador input {
+    width: 54px; height: 36px; border: 0; background: none; color: var(--tinta); text-align: center;
+    font: 800 15px Manrope, system-ui, sans-serif; -moz-appearance: textfield; appearance: textfield;
+}
+.contador input::-webkit-inner-spin-button, .contador input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.linea-quitar {
+    width: 36px; height: 36px; border-radius: 50%; border: 0; background: none; color: var(--gris);
+    display: grid; place-items: center; cursor: pointer; transition: background .2s, color .2s;
+}
+.linea-quitar:hover { background: color-mix(in srgb, var(--error) 14%, transparent); color: var(--error); }
+.linea-quitar svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+/* Ticket angosto (pantallas medianas o celular): la cantidad pasa a su propio renglón. */
+@container (max-width: 460px) {
+    .linea-pedido { grid-template-columns: 44px minmax(0, 1fr) auto; grid-template-areas: "foto texto quitar" "foto contador contador"; row-gap: 8px; }
+    .linea-pedido > img, .linea-icono { grid-area: foto; width: 44px; height: 44px; align-self: start; }
+    .linea-texto { grid-area: texto; }
+    .contador { grid-area: contador; justify-self: start; }
+    .linea-quitar { grid-area: quitar; align-self: start; }
+}
+.ticket-vacio { display: grid; justify-items: center; gap: 12px; padding: 40px 0; color: var(--gris); text-align: center; }
+.ticket-vacio[hidden] { display: none; }
+
+.ticket-pie { display: grid; gap: 14px; padding-top: 18px; border-top: 2px dashed var(--linea); }
+.ticket-totales { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ticket-totales div { padding: 12px 16px; border-radius: var(--r-1); background: var(--superficie-2); }
+.ticket-totales dt { font-size: 13px; color: var(--gris); font-weight: 600; }
+.ticket-totales dd { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.pedido-resumen { color: var(--gris); font-size: 14px; min-height: 21px; }
+.boton-whatsapp { gap: 10px; background: #25D366; color: #0B0D12; width: 100%; }
+.boton-whatsapp:hover { background: #1EBE5A; }
+.boton-whatsapp svg { width: 22px; height: 22px; fill: currentColor; }
+.ticket-nota { color: var(--gris); font-size: 13px; text-align: center; }
+.ticket-largo { padding: 10px 14px; border-radius: var(--r-1); background: color-mix(in srgb, var(--aviso) 14%, transparent); color: var(--tinta); font-size: 13px; }
+.ticket-largo[hidden] { display: none; }
 
 /* ------------------------------------------------------------------ Preguntas */
 .preguntas { padding: 0 0 var(--seccion); }
@@ -377,6 +565,13 @@ button { font: inherit; color: inherit; }
 }
 .sede.visible:hover { transform: translateY(-6px); box-shadow: 0 30px 50px -36px var(--sombra); }
 .sede-pais { font-size: 13px; font-weight: 700; color: var(--acento); }
+.sede-actual { border-color: var(--tinta); box-shadow: 0 0 0 1px var(--tinta); }
+.sede-marca {
+    justify-self: start; margin-bottom: 10px; padding: 4px 10px; border-radius: 999px;
+    background: var(--tinta); color: var(--fondo); font-size: 12px; font-weight: 800;
+}
+.sede a.sede-ir { margin-top: 6px; color: var(--acento); font-weight: 700; }
+.sede a.sede-ir:hover { text-decoration: underline; }
 .sede h3 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
 .sede a { display: inline-block; padding: 10px 0; color: var(--gris); text-decoration: none; overflow-wrap: anywhere; }
 .sede a:hover { color: var(--acento); }
@@ -399,9 +594,8 @@ button { font: inherit; color: inherit; }
 .pie-legal { margin-top: 40px; padding-top: 20px; padding-bottom: 28px; border-top: 1px solid var(--linea); }
 .pie-legal p { color: var(--gris); font-size: 14px; }
 
-/* ------------------------------------------------------------------ Celular y tableta */
-@media (max-width: 960px) {
-    :root { --lado: 16px; --seccion: 72px; }
+/* ------------------------------------------------------------------ Menú desplegable (con el selector de sede no cabe en una fila) */
+@media (max-width: 1200px) {
     .menu-boton {
         display: grid; gap: 6px; place-content: center; width: 44px; height: 44px; border: 0; background: transparent; cursor: pointer;
     }
@@ -417,7 +611,20 @@ button { font: inherit; color: inherit; }
     .menu.abierto { transform: none; opacity: 1; visibility: visible; }
     .menu > a:not(.boton) { min-height: 50px; font-size: 17px; }
     .menu .boton { margin: 6px 0 0; min-height: 50px; }
+}
+
+/* ------------------------------------------------------------------ Celular y tableta */
+@media (max-width: 960px) {
+    :root { --lado: 16px; --seccion: 72px; }
     .logo { height: 28px; }
+    .cabecera-fila { gap: 10px; }
+    .cabecera-acciones { gap: 6px; }
+    .sede-selector select { padding: 0 24px 0 30px; font-size: 14px; max-width: 128px; }
+    .sede-pin { left: 10px; }
+    /* Debajo de la cabecera. Es `fixed` dentro de ella (el backdrop-filter la vuelve su contenedor), así que
+       `top` se mide desde la cabecera, que ocupa todo el ancho arriba. Se cierra al abrir el menú o al tocar afuera. */
+    .sede-aviso { position: fixed; top: 80px; left: 16px; right: 16px; width: auto; }
+    .sede-aviso::before { display: none; }
     .portada { padding-top: 88px; }
     .banners { height: calc(88vw * 638 / 1920 + 40px); }
     .banner { width: 88%; }
@@ -440,7 +647,14 @@ button { font: inherit; color: inherit; }
     .servicios-grilla, .sedes-grilla { grid-template-columns: 1fr; }
     .pasos { grid-template-columns: 1fr; }
     .pasos::before, .pasos::after { display: none; }
-    .pedido-fila, .preguntas-fila { grid-template-columns: 1fr; gap: 24px; }
+    .preguntas-fila { grid-template-columns: 1fr; gap: 24px; }
+    .mesa { grid-template-columns: 1fr; padding: 16px; gap: 24px; }
+    .ticket-marco { transform: none; }
+    .ticket { padding: 30px 18px 20px; }
+    .ticket-lineas { max-height: none; overflow: visible; margin-right: 0; padding-right: 0; }
+    .contador button, .linea-quitar { width: 44px; height: 44px; }
+    /* 16 px para que iOS no acerque la página al tocar; el alto de línea sigue en 28 px. */
+    .editor-margen, .editor-cuerpo textarea, .contador input { font-size: 16px; }
     .cierre-caja { padding: 36px 24px; }
     .pie-grilla { grid-template-columns: 1fr 1fr; }
     .pie-marca { grid-column: 1 / -1; }
@@ -456,6 +670,20 @@ button { font: inherit; color: inherit; }
     .categorias-pista { transform: none !important; width: auto; overflow-x: auto; scroll-padding-inline: var(--lado); }
     .categorias-barra { display: none; }
     .marcas-ventana { overflow-x: auto; }
+    .ticket-marco { transform: none; }
     .marcas-pista { padding-inline: var(--lado); }
     .marca-logo[aria-hidden="true"] { display: none; }
+}
+
+/* Celulares angostos (320-420 px): el logo no se aplasta; la ubicación se pide desde el aviso o el menú. */
+@media (max-width: 420px) {
+    .cabecera-fila { gap: 8px; }
+    .cabecera-acciones { gap: 4px; }
+    .logo { height: 22px; }
+    .tema, .menu-boton { width: 40px; height: 40px; }
+    .sede-selector { height: 40px; }
+    .sede-ubicar { display: none; }
+    .menu .menu-ubicar { display: flex; align-items: center; min-height: 50px; padding: 0 12px; border: 0; background: none; color: var(--acento); font-size: 17px; font-weight: 700; text-align: left; cursor: pointer; }
+    .sede-selector select { height: 38px; max-width: 108px; padding: 0 22px 0 28px; font-size: 13px; border-radius: 999px; background-position: calc(100% - 13px) 52%, calc(100% - 8px) 52%; }
+    .sede-pin { left: 9px; }
 }
