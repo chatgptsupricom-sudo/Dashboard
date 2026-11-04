@@ -215,7 +215,7 @@ export async function fetchCxC(companyIds: number[]): Promise<AgingCxC> {
  * Sin esto, "pagos a tiempo" contaria como puntual cualquier factura pagada
  * aunque se hubiera pagado con meses de retraso.
  */
-async function fetchFechasDePago(
+export async function fetchFechasDePago(
   moveIds: number[],
 ): Promise<Record<number, string>> {
   if (moveIds.length === 0) return {};

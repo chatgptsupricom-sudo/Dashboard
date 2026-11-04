@@ -24,6 +24,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { SelectorSede } from "@/components/administracion/comunes";
+import DetalleAlerta from "@/components/administracion/DetalleAlerta";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
@@ -195,6 +196,7 @@ function FilaAlerta({
   alerta,
   guardando,
   onCambio,
+  onAbrir,
 }: {
   alerta: AlertaAdmin;
   guardando: boolean;
@@ -202,6 +204,8 @@ function FilaAlerta({
     estatus?: EstatusAlerta;
     fechaCompromiso?: string | null;
   }) => void;
+  /** Abre de donde sale la alerta en Odoo y sus registros. */
+  onAbrir: () => void;
 }) {
   const vencido =
     alerta.fechaCompromiso !== null &&
@@ -214,7 +218,14 @@ function FilaAlerta({
           que sin esto el texto largo de la alerta no envuelve. */}
       <TableCell className="px-4 whitespace-normal align-top">
         <div className="max-w-[220px] sm:max-w-[380px] lg:max-w-none">
-          <div className="font-medium text-sm break-words">{alerta.titulo}</div>
+          <button
+            type="button"
+            onClick={onAbrir}
+            className="font-medium text-sm break-words text-left text-blue-700 hover:underline"
+            title="Ver de dónde sale en Odoo"
+          >
+            {alerta.titulo}
+          </button>
           <div className="text-xs text-gray-500 break-words">{alerta.accion}</div>
           {/* En pantallas chicas estas columnas se ocultan; se repiten aca
               para no perder los campos que la propuesta exige mostrar. */}
@@ -382,18 +393,42 @@ export default function SaludAdministrativaPage() {
   }, [categorias]);
 
   // ── Top 10 de alertas de TODAS las areas, ya cruzado con su seguimiento
+  const calculadas = useMemo(
+    () => [
+      ...(data?.alertas ?? []),
+      ...(gastos?.alertas ?? []),
+      ...(gestionCumplimiento?.alertas ?? []),
+    ],
+    [data, gastos, gestionCumplimiento],
+  );
+  // Cuando se vio abierta cada alerta por primera vez (id -> fecha). Solo el mes
+  // en curso: un mes pasado se recalcula con el Odoo de hoy.
+  const [detectadas, setDetectadas] = useState<Record<string, string>>({});
+  const idsAbiertas = calculadas.map((a) => a.id).join(",");
+  useEffect(() => {
+    const mesEnCurso = new Date(Date.now() - 4 * 3600_000).toISOString().slice(0, 7);
+    if (!idsAbiertas || mes !== mesEnCurso) {
+      setDetectadas({});
+      return;
+    }
+    fetch("/api/administracion/alertas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ empresa, ids: idsAbiertas.split(",") }),
+    })
+      .then((r) => r.json())
+      .then((j) => setDetectadas(j.success ? j.detectadas : {}))
+      .catch(() => setDetectadas({}));
+  }, [idsAbiertas, empresa, mes]);
   const alertas = useMemo(
     () =>
       aplicarSeguimiento(
-        [
-          ...(data?.alertas ?? []),
-          ...(gastos?.alertas ?? []),
-          ...(gestionCumplimiento?.alertas ?? []),
-        ],
+        calculadas.map((a) => (detectadas[a.id] ? { ...a, fechaDeteccion: detectadas[a.id] } : a)),
         seguimientos,
       ),
-    [data, gastos, gestionCumplimiento, seguimientos],
+    [calculadas, detectadas, seguimientos],
   );
+  const [alertaAbierta, setAlertaAbierta] = useState<AlertaAdmin | null>(null);
   const topAlertas = useMemo(
     () => construirTopAlertas([alertas], 10),
     [alertas],
@@ -578,8 +613,15 @@ export default function SaludAdministrativaPage() {
               <p className="text-xs text-gray-500">
                 Ordenadas por severidad. La fecha compromiso y el estatus se
                 guardan por sede y mes; al cerrar una alerta sale del Top y su
-                lugar lo toma la siguiente.
+                lugar lo toma la siguiente. Haz clic en una alerta para ver de
+                dónde sale en Odoo y los registros que la componen.
               </p>
+              <DetalleAlerta
+                alerta={alertaAbierta}
+                empresa={empresa}
+                mes={mes}
+                cerrar={() => setAlertaAbierta(null)}
+              />
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
               {topAlertas.length === 0 ? (
@@ -610,6 +652,7 @@ export default function SaludAdministrativaPage() {
                         alerta={a}
                         guardando={guardando === a.id}
                         onCambio={(cambios) => guardarSeguimiento(a, cambios)}
+                        onAbrir={() => setAlertaAbierta(a)}
                       />
                     ))}
                   </TableBody>
@@ -641,6 +684,7 @@ export default function SaludAdministrativaPage() {
                             alerta={a}
                             guardando={guardando === a.id}
                             onCambio={(cambios) => guardarSeguimiento(a, cambios)}
+                            onAbrir={() => setAlertaAbierta(a)}
                           />
                         ))}
                       </TableBody>
