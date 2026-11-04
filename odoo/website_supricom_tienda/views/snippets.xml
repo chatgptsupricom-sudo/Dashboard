@@ -75,7 +75,7 @@
                     <a class="s_supricom_marca" href="/shop?search=Targus" title="Targus">
                         <img src="/website_supricom_tienda/static/src/img/marcas/targus.svg" alt="Targus" style="height: 22px;"/>
                     </a>
-                    <a class="s_supricom_marca" href="/shop?search=Ezviz" title="EZVIZ">
+                    <a class="s_supricom_marca s_supricom_marca_oscura" href="/shop?search=Ezviz" title="EZVIZ">
                         <img src="/website_supricom_tienda/static/src/img/marcas/ezviz.svg" alt="EZVIZ" style="height: 32px;"/>
                     </a>
                 </div>

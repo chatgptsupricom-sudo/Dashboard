@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light dark">
+<title>SUPRICOM · Tecnología al mayor</title>
+<meta name="description" content="Mayorista de tecnología: impresoras, cómputo, redes, audio, seguridad y energía. Precios para clientes con cuenta de distribuidor.">
+<script>
+    // Tema antes de pintar, para que no parpadee: lo elegido antes, si no el del sistema.
+    (function () {
+        var t = new URLSearchParams(location.search).get("tema");
+        if (t !== "claro" && t !== "oscuro") { try { t = localStorage.getItem("supricom-tema"); } catch (e) {} }
+        if (t !== "claro" && t !== "oscuro") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro";
+        document.documentElement.setAttribute("data-tema", t);
+    })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="estilos.css?v=20261104g">
+</head>
+<body>
+<a class="saltar" href="#contenido">Saltar al contenido</a>
+
+<header class="cabecera">
+    <div class="contenedor cabecera-fila">
+        <a class="marca" href="#inicio" aria-label="SUPRICOM, inicio">
+            <img class="logo logo-claro" src="img/logo-claro.png" alt="SUPRICOM" width="190" height="45">
+            <img class="logo logo-oscuro" src="img/logo-oscuro.png" alt="SUPRICOM" width="190" height="45">
+        </a>
+        <div class="cabecera-acciones">
+            <nav id="menu" class="menu" aria-label="Secciones">
+                <a href="#destacados">Destacados</a>
+                <a href="#categorias">Categorías</a>
+                <a href="#marcas">Marcas</a>
+                <a href="#comprar">Cómo comprar</a>
+                <a href="#sedes">Sedes</a>
+                <button type="button" class="menu-ubicar">Usar mi ubicación para elegir la sede</button>
+                <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
+                <a class="boton boton-tinta" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+            </nav>
+            <div class="sede-selector">
+                <svg class="sede-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+                <label class="solo-lectores" for="sede">Sede</label>
+                <select id="sede" aria-describedby="sede-ayuda"></select>
+                <p id="sede-ayuda" class="solo-lectores">Cambia los productos, las categorías y el contacto de la página.</p>
+                <button class="sede-ubicar" type="button" aria-label="Usar mi ubicación para elegir la sede más cercana" title="Usar mi ubicación">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>
+                </button>
+                <div class="sede-aviso" role="region" aria-label="Elegir sede" hidden>
+                    <p class="sede-aviso-texto" role="status"></p>
+                    <div class="sede-aviso-acciones">
+                        <button type="button" class="boton boton-tinta sede-aviso-cambiar" hidden></button>
+                        <button type="button" class="boton boton-tinta sede-aviso-ubicar">Usar mi ubicación</button>
+                        <button type="button" class="boton boton-claro sede-aviso-listo">Así está bien</button>
+                    </div>
+                </div>
+            </div>
+            <button class="tema" type="button" aria-pressed="false" aria-label="Activar modo oscuro">
+                <svg class="tema-sol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/></svg>
+                <svg class="tema-luna" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+            </button>
+            <button class="menu-boton" type="button" aria-expanded="false" aria-controls="menu" aria-label="Abrir menú">
+                <span></span><span></span>
+            </button>
+        </div>
+    </div>
+</header>
+
+<main id="contenido">
+
+    <!-- Portada: los banners reales del sitio en abanico 3D -->
+    <section id="inicio" class="portada" data-seccion>
+        <h1 class="solo-lectores">SUPRICOM, mayorista de tecnología</h1>
+        <!-- Los controles van sobre el banner del frente: puntos con el avance, pausa y, con el mouse, flechas a los lados. -->
+        <div class="banners" role="region" aria-roledescription="carrusel" aria-label="Promociones">
+            <div class="banners-pista"></div>
+            <button type="button" class="flecha-lado flecha-izq" data-dir="-1" aria-label="Banner anterior"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+            <button type="button" class="flecha-lado flecha-der" data-dir="1" aria-label="Banner siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            <div class="banners-controles">
+                <div class="banners-pestanas" role="group" aria-label="Elegir banner"></div>
+                <button type="button" class="banners-pausa" data-pausa aria-pressed="false" aria-label="Pausar banners">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="icono-pausa"><path d="M9 6v12M15 6v12"/></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="icono-seguir"><path d="m8 5 11 7-11 7z"/></svg>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Destacados: anillo 3D + ficha del producto que está al frente -->
+    <section id="destacados" class="vitrina" data-seccion>
+        <div class="contenedor">
+            <div class="cabeza-seccion aparece">
+                <h2 class="titulo">Destacados</h2>
+                <p class="titulo-nota">Un producto de cada categoría. Gíralo arrastrando o con las flechas del teclado.</p>
+            </div>
+            <div class="vitrina-fila">
+                <div class="orbita aparece" role="group" aria-roledescription="carrusel" aria-label="Productos destacados. Usa las flechas izquierda y derecha para girar.">
+                    <div class="orbita-escena">
+                        <div class="anillo"></div>
+                    </div>
+                    <div class="orbita-sombra" aria-hidden="true"></div>
+                    <p class="orbita-ayuda" aria-hidden="true">Arrastra para girar</p>
+                </div>
+                <article class="ficha aparece" aria-live="off">
+                    <p class="ficha-cat"></p>
+                    <h3 class="ficha-nombre"></h3>
+                    <dl class="ficha-datos">
+                        <div><dt>Marca</dt><dd class="ficha-marca"></dd></div>
+                        <div><dt>Código</dt><dd class="ficha-codigo"></dd></div>
+                        <div><dt>Precio</dt><dd>Con tu cuenta de distribuidor</dd></div>
+                    </dl>
+                    <div class="acciones">
+                        <a class="boton boton-tinta ficha-ver">Ver ficha</a>
+                        <a class="boton boton-claro ficha-cotizar" target="_blank" rel="noopener">Cotizar por <span data-sede="medio">WhatsApp</span></a>
+                    </div>
+                    <div class="ficha-mini" aria-label="Elegir producto"></div>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- Categorías: en escritorio el scroll vertical mueve la fila de lado; en el celular se desliza -->
+    <section id="categorias" class="categorias" data-seccion>
+        <div class="categorias-fija">
+            <div class="contenedor">
+                <div class="cabeza-seccion aparece">
+                    <h2 class="titulo">Compra por categoría</h2>
+                    <p class="titulo-nota">Sigue bajando para recorrerlas.</p>
+                </div>
+            </div>
+            <div class="categorias-pista"></div>
+            <div class="contenedor"><div class="categorias-barra" aria-hidden="true"><span></span></div></div>
+        </div>
+    </section>
+
+    <!-- Marcas: dos filas que van en sentidos contrarios -->
+    <section id="marcas" class="marcas" data-seccion>
+        <div class="contenedor">
+            <div class="cabeza-seccion aparece">
+                <h2 class="titulo">Marcas que distribuimos</h2>
+                <p class="titulo-nota">Algunas de las <span data-sede="marcas">41</span> marcas que hay en <span data-sede="nombre">Valencia</span>.</p>
+            </div>
+        </div>
+        <div class="marcas-ventana"><div class="marcas-pista"></div></div>
+        <div class="marcas-ventana"><div class="marcas-pista marcas-pista-inversa"></div></div>
+    </section>
+
+    <!-- Servicios -->
+    <section class="servicios" data-seccion aria-label="Servicios">
+        <div class="contenedor servicios-grilla">
+            <article class="servicio aparece">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>
+                <h3>Retiro o despacho</h3>
+                <p>Retiras en la sucursal o lo despachamos por nuestra ruta, por encomienda o con tu transporte.</p>
+            </article>
+            <article class="servicio aparece">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/></svg>
+                <h3>Servicio técnico</h3>
+                <p>Reportas la falla con tu factura en el portal y sigues el estado del equipo en línea.</p>
+                <a class="servicio-ir" href="https://servicio.supricom.com.ve/es/servicio-tecnico">Ir al portal →</a>
+            </article>
+            <article class="servicio aparece">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+                <h3>Tu vendedor de siempre</h3>
+                <p>Cada cuenta tiene su vendedor: él confirma tus cotizaciones y te atiende por <span data-sede="medio">WhatsApp</span>.</p>
+            </article>
+        </div>
+    </section>
+
+    <!-- Cómo comprar -->
+    <section id="comprar" class="comprar" data-seccion>
+        <div class="contenedor">
+            <div class="cabeza-seccion aparece"><h2 class="titulo">Así compras</h2></div>
+            <ol class="pasos">
+                <li class="paso aparece">
+                    <span class="paso-num">1</span>
+                    <h3>Pide tu cuenta</h3>
+                    <p>Con el <span data-sede="documento">RIF</span> de tu empresa. Al aprobarla ves los precios de tu sede.</p>
+                </li>
+                <li class="paso aparece">
+                    <span class="paso-num">2</span>
+                    <h3>Arma tu cotización</h3>
+                    <p>Agrega productos desde el catálogo o mándale tu lista de códigos a tu vendedor.</p>
+                </li>
+                <li class="paso aparece">
+                    <span class="paso-num">3</span>
+                    <h3>Tu vendedor la confirma</h3>
+                    <p>La pasa a pedido y coordina contigo el pago y la entrega o el retiro. En la web no se paga.</p>
+                </li>
+            </ol>
+        </div>
+    </section>
+
+    <!-- Lista de códigos: se revisa aquí y se manda por WhatsApp a ventas -->
+    <section id="pedido" class="pedido" data-seccion>
+        <div class="contenedor">
+            <div class="pedido-cabeza aparece">
+                <div class="cabeza-seccion">
+                    <h2 class="titulo">¿Ya tienes tu lista de códigos?</h2>
+                    <p class="titulo-nota">Pégala tal como sale de tu sistema o de Excel. Revisamos cada código, ajustas las cantidades y se la mandas a ventas de <span data-sede="nombre">Valencia</span> por <span data-sede="medio">WhatsApp</span>.</p>
+                </div>
+                <ol class="pedido-pasos" aria-label="Cómo funciona">
+                    <li><span aria-hidden="true">1</span>Pega</li>
+                    <li><span aria-hidden="true">2</span>Ajusta</li>
+                    <li><span aria-hidden="true">3</span>Envía</li>
+                </ol>
+            </div>
+
+            <div class="mesa aparece">
+                <!-- Lo que escribe el cliente -->
+                <div class="editor">
+                    <div class="editor-barra">
+                        <label class="editor-titulo" for="codigos">Tu lista</label>
+                        <div class="editor-acciones">
+                            <button type="button" class="chip" data-accion="ejemplo">Usar un ejemplo</button>
+                            <button type="button" class="chip" data-accion="limpiar">Limpiar</button>
+                            <button type="button" class="chip chip-acento" data-accion="deshacer" hidden>Deshacer</button>
+                        </div>
+                    </div>
+                    <div class="editor-cuerpo">
+                        <div class="editor-margen" aria-hidden="true"></div>
+                        <textarea id="codigos" rows="8" wrap="off" spellcheck="false" autocapitalize="characters" autocomplete="off" autocorrect="off" aria-describedby="codigos-ayuda codigos-errores"></textarea>
+                    </div>
+                    <p id="codigos-ayuda" class="editor-ayuda">Un código por línea y su cantidad: <code>5807C004AB 12</code>. También sirve <code>5807C004AB x12</code>, <code>5807C004AB;12</code> o las filas copiadas de Excel.</p>
+                    <p id="codigos-errores" class="editor-errores" hidden></p>
+                    <ul class="editor-leyenda" aria-label="Qué significa cada color">
+                        <li><i class="est-ok"></i>Lo tenemos</li>
+                        <li><i class="est-nuevo"></i>Lo revisa tu vendedor</li>
+                        <li><i class="est-error"></i>No se entiende la línea</li>
+                        <li><i class="est-ignorada"></i>Encabezado o total, no se envía</li>
+                    </ul>
+
+                    <div class="buscador">
+                        <label class="editor-titulo" for="buscar-codigo">¿No tienes el código? Búscalo</label>
+                        <div class="buscador-caja">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                            <input id="buscar-codigo" type="search" role="combobox" aria-expanded="false" aria-controls="buscar-opciones" aria-autocomplete="list" aria-describedby="buscar-estado" autocomplete="off" spellcheck="false" placeholder="Marca, producto o código">
+                        </div>
+                        <p id="buscar-estado" class="solo-lectores" role="status"></p>
+                        <div class="buscador-panel" hidden>
+                            <ul id="buscar-opciones" class="buscador-opciones" role="listbox" aria-label="Productos más pedidos"></ul>
+                            <p class="opcion-nada" hidden>No está entre los más pedidos de esta página.</p>
+                            <a class="buscador-catalogo" target="_blank" rel="noopener"></a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cómo le llega a ventas -->
+                <div class="ticket-marco">
+                    <div class="ticket" role="region" aria-labelledby="ticket-titulo">
+                        <div class="ticket-cabeza">
+                            <div>
+                                <h3 id="ticket-titulo" class="ticket-titulo">Solicitud de cotización</h3>
+                                <p class="ticket-fecha"></p>
+                            </div>
+                            <img class="logo logo-claro" src="img/logo-claro.png" alt="" width="190" height="45">
+                            <img class="logo logo-oscuro" src="img/logo-oscuro.png" alt="" width="190" height="45">
+                        </div>
+
+                        <div class="ticket-sede">
+                            <p>Sede que te atiende</p>
+                            <strong data-sede="nombre">Valencia</strong>
+                            <button type="button" class="chip" data-accion="cambiar-sede">Cambiar de sede</button>
+                        </div>
+
+                        <div class="ticket-lineas" role="list" aria-label="Productos de la solicitud"></div>
+                        <div class="ticket-vacio" hidden>
+                            <p>Tu lista aparece aquí.</p>
+                            <button type="button" class="chip" data-accion="ejemplo">Usar un ejemplo</button>
+                        </div>
+
+                        <div class="ticket-pie">
+                            <dl class="ticket-totales">
+                                <div><dt>Productos</dt><dd data-total="lineas">0</dd></div>
+                                <div><dt>Unidades</dt><dd data-total="unidades">0</dd></div>
+                            </dl>
+                            <p id="pedido-resumen" class="pedido-resumen"></p>
+                            <p id="pedido-anuncio" class="solo-lectores" role="status"></p>
+                            <a class="boton boton-grande boton-whatsapp pedido-enviar" target="_blank" rel="noopener">
+                                <span data-solo-whatsapp><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.8-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z"/></svg></span>
+                                <span data-solo-correo hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg></span>
+                                Enviar a ventas por <span data-sede="medio">WhatsApp</span><span class="solo-lectores" data-solo-whatsapp> (abre WhatsApp en otra pestaña)</span><span class="solo-lectores" data-solo-correo hidden> (abre tu programa de correo)</span>
+                            </a>
+                            <p id="enviar-ayuda" class="solo-lectores">Agrega al menos un producto para enviar.</p>
+                            <p class="ticket-largo" hidden>Tu lista es larga para un correo: al enviar la copiamos y solo tienes que pegarla.</p>
+                            <p class="ticket-nota">Sin precios aquí: tu vendedor te responde con la cotización.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Preguntas -->
+    <section id="preguntas" class="preguntas" data-seccion>
+        <div class="contenedor preguntas-fila">
+            <div class="cabeza-seccion aparece">
+                <h2 class="titulo">Preguntas frecuentes</h2>
+                <p class="titulo-nota">Lo que más nos preguntan antes de abrir la cuenta.</p>
+            </div>
+            <div class="acordeon">
+                <details class="aparece">
+                    <summary>¿Por qué no veo los precios?</summary>
+                    <p>Somos mayoristas: los precios son los de la lista de tu sede y se ven al entrar con tu cuenta de distribuidor.</p>
+                </details>
+                <details class="aparece">
+                    <summary>¿Cómo pido mi cuenta?</summary>
+                    <p>Con «Solicitar cuenta» llenas los datos de tu empresa y su <span data-sede="documento">RIF</span>. Tu vendedor la revisa y te la activa.</p>
+                </details>
+                <details class="aparece">
+                    <summary>¿Puedo pagar en la web?</summary>
+                    <p>No. En la web armas tu cotización y tu vendedor la confirma como pedido; el pago se coordina con él.</p>
+                </details>
+                <details class="aparece">
+                    <summary>¿Cómo recibo la mercancía?</summary>
+                    <p>La retiras en la sucursal o te la despachamos por nuestra ruta, por encomienda o con el transporte que tú elijas.</p>
+                </details>
+                <details class="aparece">
+                    <summary>¿Qué hago si un equipo falla?</summary>
+                    <p>Lo reportas con tu factura en el <a href="https://servicio.supricom.com.ve/es/servicio-tecnico">portal de servicio técnico</a> y sigues el caso en línea.</p>
+                </details>
+            </div>
+        </div>
+    </section>
+
+    <!-- Sedes -->
+    <section id="sedes" class="sedes" data-seccion>
+        <div class="contenedor">
+            <div class="cabeza-seccion aparece"><h2 class="titulo">Tres sedes</h2></div>
+            <div class="sedes-grilla">
+                <!-- Las arma app.js desde datos.js: la sede elegida va primero y marcada. -->
+            </div>
+        </div>
+    </section>
+
+    <!-- Cierre -->
+    <section class="cierre">
+        <div class="contenedor">
+            <div class="cierre-caja aparece">
+                <div>
+                    <h2>Pide tu cuenta de distribuidor</h2>
+                    <p>Con el <span data-sede="documento">RIF</span> de tu empresa. Al aprobarla ves los precios de tu sede y cotizas en la web.</p>
+                </div>
+                <a class="boton boton-blanco boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="pie">
+    <div class="contenedor pie-grilla">
+        <div class="pie-marca">
+            <img class="logo logo-claro" src="img/logo-claro.png" alt="SUPRICOM" width="170" height="40">
+            <img class="logo logo-oscuro" src="img/logo-oscuro.png" alt="SUPRICOM" width="170" height="40">
+            <p>¡Tu mayorista de confianza!</p>
+        </div>
+        <nav aria-label="Tienda">
+            <h3>Tienda</h3>
+            <a data-odoo="/shop">Catálogo</a>
+            <a data-odoo="/web/login">Mi cuenta</a>
+            <a data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+        </nav>
+        <nav aria-label="Ayuda">
+            <h3>Ayuda</h3>
+            <a href="https://servicio.supricom.com.ve/es/servicio-tecnico">Servicio técnico</a>
+            <a href="#preguntas">Preguntas frecuentes</a>
+            <a data-odoo="/contactenos">Contacto</a>
+        </nav>
+        <nav aria-label="SUPRICOM">
+            <h3>SUPRICOM</h3>
+            <a data-odoo="/quienes-somos">Quiénes somos</a>
+            <a href="#sedes">Sedes</a>
+            <a href="https://www.facebook.com/supricomvenezuela/" target="_blank" rel="noopener">Facebook</a>
+        </nav>
+    </div>
+    <div class="contenedor pie-legal">
+        <p>© 2026 SUPRICOM. Precios solo para clientes registrados.</p>
+    </div>
+</footer>
+
+<script src="datos.js?v=20261104g"></script>
+<script src="app.js?v=20261104g"></script>
+</body>
+</html>

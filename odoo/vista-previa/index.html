@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Vista previa: tienda SUPRICOM</title>
+<style>
+:root { --tinta: #0E1726; --gris: #4A5568; --linea: #E2E7EF; --fondo: #F4F6FA; --azul: #1D4ED8; --noche: #060B1F; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--tinta); background: var(--fondo); }
+header { background: var(--noche); color: #fff; padding: 32px 16px; }
+main, header > div { max-width: 960px; margin: 0 auto; }
+h1 { margin: 0 0 8px; font-size: 28px; }
+header p { margin: 0; color: #C9D4EA; line-height: 1.5; }
+main { padding: 24px 16px 48px; }
+.paginas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+a.pagina { display: flex; flex-direction: column; background: #fff; border: 1px solid var(--linea); border-radius: 16px; overflow: hidden; color: var(--tinta); text-decoration: none; }
+a.pagina:hover { border-color: var(--azul); }
+a.pagina img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top; border-bottom: 1px solid var(--linea); }
+a.pagina span { padding: 14px 16px; font-weight: 700; }
+a.pagina small { display: block; margin-top: 4px; font-weight: 400; color: var(--gris); }
+.nota { margin-top: 24px; padding: 16px; border-radius: 12px; background: #fff; border: 1px solid var(--linea); color: var(--gris); line-height: 1.5; font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Vista previa de la tienda SUPRICOM</h1>
+    <p>El módulo <code>website_supricom_tienda</code> aplicado sobre las páginas reales de supricom2.odoo.com (guardadas el 3 de noviembre de 2026).</p>
+  </div>
+</header>
+<main>
+  <div class="paginas">
+    <a class="pagina" href="inicio.html"><img src="capturas/1-inicio-banners.jpg" alt=""><span>Inicio<small>Banners 3D, cinta de marcas y categorías</small></span></a>
+    <a class="pagina" href="tienda.html"><img src="capturas/3-tienda.jpg" alt=""><span>Tienda<small>Tarjetas nuevas y «Disponible» / «Agotado»</small></span></a>
+    <a class="pagina" href="ficha.html"><img src="capturas/4-ficha.jpg" alt=""><span>Ficha de producto<small>Canon PIXMA G4170</small></span></a>
+  </div>
+  <p class="nota">Esto no es la tienda en vivo: los scripts de Odoo están quitados, los botones no compran ni cotizan y los íconos de las flechas no cargan fuera del dominio de Odoo. «Agotado» en la tienda es la existencia real del almacén de Valencia de esos productos ese día.</p>
+</main>
+</body>
+</html>
