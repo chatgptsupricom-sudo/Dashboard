@@ -53,4 +53,14 @@ assert.deepStrictEqual(
   [["conciliado", "e1"], ["no_encontrado", null]],
 );
 
+// Fecha de conciliacion: el ultimo que se subio de los dos; a mano, cuando se amarro.
+const { conciliadoEl } = m.exports;
+const pagoSubido = { ...pago(1, "2026-11-02T14:56:00Z", 5), subidoEl: "2026-11-04T12:00:00.000Z" };
+const conc = (extra) => ({ ...base(1, "2026-11-02T14:56:21Z", 5), subidoEl: "2026-11-03T10:00:00.000Z", amarradoEl: null, estado: "conciliado", binance: pagoSubido, ...extra });
+assert.strictEqual(conciliadoEl(conc({})), "2026-11-04T12:00:00.000Z");
+assert.strictEqual(conciliadoEl(conc({ subidoEl: "2026-11-05T09:00:00.000Z" })), "2026-11-05T09:00:00.000Z");
+assert.strictEqual(conciliadoEl(conc({ estado: "manual", amarradoEl: "2026-11-06T15:00:00Z" })), "2026-11-06T15:00:00Z");
+assert.strictEqual(conciliadoEl(conc({ estado: "no_encontrado", binance: null })), null);
+assert.strictEqual(conciliadoEl(conc({ estado: "por_monto_hora" })), null);
+
 console.log("check-binance: OK");

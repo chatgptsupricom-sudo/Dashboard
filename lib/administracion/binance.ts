@@ -64,6 +64,8 @@ export type PagoBinance = {
   moneda: string;
   tipo: string;
   pagador: string;
+  /** Cuando se subio el estado de cuenta con este pago (no viene con la API). */
+  subidoEl?: string;
 };
 
 export type EstadoComprobante =
@@ -106,10 +108,20 @@ export type Comprobante = {
   archivoNombre: string;
   subidoPor: string;
   subidoEl: string;
+  /** Cuando Administracion lo amarro a mano o le dio Aprobar (null = no, o antes de guardarlo). */
+  amarradoEl: string | null;
+  /** Cuando se imprimio su hoja de conciliado y quien (null = sin imprimir). */
+  impresoEl: string | null;
+  impresoPor: string;
   estado: EstadoComprobante;
   binance: PagoBinance | null;
   /** Su monto sale mas de una vez en los pagos de la semana: se puede amarrar a mano. */
   montoRepetido?: boolean;
+  /**
+   * Cuando quedo conciliado: a mano, al amarrarlo; si no, cuando ya estaban los
+   * dos, el comprobante y el pago del estado de cuenta (el que se subio de ultimo).
+   */
+  conciliadoEl?: string | null;
 };
 
 // ---------- Binance ----------
@@ -293,6 +305,10 @@ async function ensureTabla() {
   await agregarColumna("binance_comprobantes", "archivo_sha CHAR(64) NULL");
   await agregarIndice("binance_comprobantes", "idx_sha", "archivo_sha");
   await agregarColumna("binance_comprobantes", "cliente VARCHAR(200) NOT NULL DEFAULT ''");
+  // Cuando se amarro a mano (o se aprobo) y cuando se imprimio su hoja de conciliado, en UTC.
+  await agregarColumna("binance_comprobantes", "amarrado_el DATETIME NULL");
+  await agregarColumna("binance_comprobantes", "impreso_el DATETIME NULL");
+  await agregarColumna("binance_comprobantes", "impreso_por VARCHAR(190) NOT NULL DEFAULT ''");
   tablaLista = true;
 }
 
@@ -447,6 +463,14 @@ function ajustarZona(bases: BaseComprobante[], pagos: PagoBinance[]) {
  * El cruce se hace con los de todas: un pago que ya tomo el comprobante de otra
  * sede no sale como "sin comprobante" ni se le ofrece a esta.
  */
+/** Ver `Comprobante.conciliadoEl`. Los amarrados a mano antes de guardar `amarrado_el` van como los automaticos. */
+export function conciliadoEl(c: Comprobante): string | null {
+  if (!c.binance || (c.estado !== "conciliado" && c.estado !== "manual")) return null;
+  if (c.estado === "manual" && c.amarradoEl) return c.amarradoEl;
+  const pago = c.binance.subidoEl;
+  return pago && pago > c.subidoEl ? pago : c.subidoEl;
+}
+
 export async function conciliacionSemana(lunes: string, sede: number | null) {
   const rango = rangoSemana(lunes);
   if (!rango) throw new Error("Semana inválida");
@@ -454,7 +478,9 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
   const { rows } = await query(
     // DATE_FORMAT: la columna guarda UTC y asi no depende de la zona del proceso.
     `SELECT id, order_id, monto, moneda, DATE_FORMAT(fecha_pago, '%Y-%m-%dT%H:%i:%sZ') AS fecha,
-            fecha_estimada, movimiento_id, archivo_nombre, cliente, subido_por, created_at, company_id
+            fecha_estimada, movimiento_id, archivo_nombre, cliente, subido_por, created_at, company_id,
+            DATE_FORMAT(amarrado_el, '%Y-%m-%dT%H:%i:%sZ') AS amarrado_el,
+            DATE_FORMAT(impreso_el, '%Y-%m-%dT%H:%i:%sZ') AS impreso_el, impreso_por
        FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? ORDER BY fecha_pago`,
     [aMysql(rango.desde), aMysql(rango.hasta)],
   );
@@ -474,6 +500,9 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
     archivoNombre: r.archivo_nombre,
     subidoPor: r.subido_por,
     subidoEl: new Date(r.created_at).toISOString(),
+    amarradoEl: r.amarrado_el ?? null,
+    impresoEl: r.impreso_el ?? null,
+    impresoPor: r.impreso_por || "",
   }));
   const propios = new Set<number>(
     rows.filter((r: any) => sede === null || Number(r.company_id) === sede).map((r: any) => r.id),
@@ -513,6 +542,7 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
   const visibles = comprobantes.filter(deLaSede).map((c) => ({
     ...c,
     montoRepetido: deLaSemana.filter((p) => mismoMonto(p, c)).length > 1,
+    conciliadoEl: conciliadoEl(c),
   }));
   // Todos los pagos de la semana con el comprobante que los tomo. De otra sede
   // solo se dice que lo tiene, sin el cliente.
@@ -574,7 +604,7 @@ async function ensureTablaMovimientos() {
 async function movimientosEnRango(desde: number, hasta: number): Promise<PagoBinance[]> {
   await ensureTablaMovimientos();
   const { rows } = await query(
-    `SELECT id, DATE_FORMAT(fecha, '%Y-%m-%dT%H:%i:%sZ') AS fecha, contraparte, monto, moneda
+    `SELECT id, DATE_FORMAT(fecha, '%Y-%m-%dT%H:%i:%sZ') AS fecha, contraparte, monto, moneda, created_at
        FROM binance_movimientos WHERE fecha BETWEEN ? AND ? ORDER BY fecha`,
     [aMysql(desde), aMysql(hasta)],
   );
@@ -585,6 +615,7 @@ async function movimientosEnRango(desde: number, hasta: number): Promise<PagoBin
     moneda: String(r.moneda),
     tipo: "Estado de cuenta",
     pagador: r.contraparte,
+    subidoEl: new Date(r.created_at).toISOString(),
   }));
 }
 
@@ -879,7 +910,22 @@ export async function asignarMovimiento(id: number, movimientoId: number | null,
       throw new ArchivoIlegible("Solo se puede amarrar a otro pago del mismo monto cuando ese monto se repite en el estado de cuenta");
     }
   }
-  await query("UPDATE binance_comprobantes SET movimiento_id = ? WHERE id = ?", [movimientoId, id]);
+  await query("UPDATE binance_comprobantes SET movimiento_id = ?, amarrado_el = ? WHERE id = ?", [
+    movimientoId,
+    movimientoId === null ? null : aMysql(Date.now()),
+    id,
+  ]);
+}
+
+/** Marca como impresas las hojas de conciliado de esos comprobantes (de la sede). */
+export async function marcarImpresos(ids: number[], sede: number | null, quien: string) {
+  if (!ids.length) return;
+  await ensureTabla();
+  await query(
+    `UPDATE binance_comprobantes SET impreso_el = ?, impreso_por = ?
+      WHERE id IN (${ids.map(() => "?").join(",")}) AND ${DE_LA_SEDE}`,
+    [aMysql(Date.now()), quien.slice(0, 190), ...ids, sede, sede],
+  );
 }
 
 export async function eliminarComprobante(id: number, sede: number | null) {

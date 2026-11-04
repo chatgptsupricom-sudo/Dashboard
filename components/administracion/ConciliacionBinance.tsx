@@ -103,6 +103,9 @@ const fechaHora = (iso: string) =>
 const soloFecha = (iso: string) =>
   new Date(iso).toLocaleDateString("es-VE", { timeZone: "America/Caracas", dateStyle: "short" });
 
+/** Dia (YYYY-MM-DD) en hora de Caracas. */
+const diaCaracas = (iso: string) => new Date(Date.parse(iso) - 4 * 3600_000).toISOString().slice(0, 10);
+
 const cifra = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 
 /** Un comprobante por subir: un archivo elegido o uno de la carpeta de Google Drive. */
@@ -195,8 +198,13 @@ export default function ConciliacionBinance({
   const [ignorados, setIgnorados] = useState(0);
   const [paginaComprobantes, setPaginaComprobantes] = useState(0);
   const [paginaPagos, setPaginaPagos] = useState(0);
-  // Conciliados que se desmarcaron para no imprimirlos (los demas van).
+  // Impresion de conciliados: los sin imprimir van todos salvo los desmarcados;
+  // los ya impresos, solo los que se marquen para volver a imprimirlos.
+  const [pestanaImpresion, setPestanaImpresion] = useState<"pendientes" | "impresos">("pendientes");
   const [noImprimir, setNoImprimir] = useState<Set<number>>(new Set());
+  const [reimprimir, setReimprimir] = useState<Set<number>>(new Set());
+  // Dia de conciliacion (YYYY-MM-DD, Caracas) para filtrar los conciliados; "" = todos.
+  const [diaConciliado, setDiaConciliado] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const inputEstado = useRef<HTMLInputElement>(null);
   const carpeta = useRef<HTMLInputElement>(null);
@@ -251,6 +259,9 @@ export default function ConciliacionBinance({
     setPaginaComprobantes(0);
     setPaginaPagos(0);
     setNoImprimir(new Set());
+    setReimprimir(new Set());
+    setDiaConciliado("");
+    setPestanaImpresion("pendientes");
   }, [semana]);
 
   const subirUno = async (elegido: Elegido, tipo: TipoArchivo): Promise<Subida> => {
@@ -418,15 +429,56 @@ export default function ConciliacionBinance({
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
   const COMPROBANTES_LISTA = { comprobantes, conciliados, problema: conProblema };
+  // Dias en que se concilio algo esta semana, el mas nuevo primero.
+  const hoy = diaCaracas(new Date().toISOString());
+  const ayer = diaCaracas(new Date(Date.now() - 86400_000).toISOString());
+  const diaDeConciliado = (c: Comprobante) => (c.conciliadoEl ? diaCaracas(c.conciliadoEl) : "");
+  const diasConciliado = [...new Set(conciliados.map(diaDeConciliado).filter(Boolean))].sort().reverse();
+  const etiquetaDia = (dia: string) =>
+    dia === hoy ? "Hoy" : dia === ayer ? "Ayer" : dia.split("-").reverse().join("/");
+  const conciliadosVista = diaConciliado ? conciliados.filter((c) => diaDeConciliado(c) === diaConciliado) : conciliados;
   // Solo Administracion imprime, y solo desde la lista de conciliados.
   const imprime = !cxc && lista === "conciliados" && conciliados.length > 0;
-  const aImprimir = conciliados.filter((c) => !noImprimir.has(c.id));
-  const marcarImprimir = (ids: number[], marcar: boolean) =>
-    setNoImprimir((previo) => {
+  const sinImprimir = conciliadosVista.filter((c) => !c.impresoEl);
+  const yaImpresos = conciliadosVista.filter((c) => c.impresoEl);
+  const enPestana = pestanaImpresion === "impresos" ? yaImpresos : sinImprimir;
+  const marcadoImprimir = (c: Comprobante) =>
+    pestanaImpresion === "impresos" ? reimprimir.has(c.id) : !noImprimir.has(c.id);
+  const aImprimir = imprime ? enPestana.filter(marcadoImprimir) : [];
+  const marcarImprimir = (ids: number[], marcar: boolean) => {
+    const cambiar = (agregar: boolean) => (previo: Set<number>) => {
       const nuevo = new Set(previo);
-      ids.forEach((id) => (marcar ? nuevo.delete(id) : nuevo.add(id)));
+      ids.forEach((id) => (agregar ? nuevo.add(id) : nuevo.delete(id)));
       return nuevo;
-    });
+    };
+    if (pestanaImpresion === "impresos") setReimprimir(cambiar(marcar));
+    else setNoImprimir(cambiar(!marcar));
+  };
+  const filasLista: Comprobante[] =
+    lista === "conciliados"
+      ? imprime
+        ? enPestana
+        : conciliadosVista
+      : lista && lista !== "sinComprobante"
+        ? COMPROBANTES_LISTA[lista]
+        : [];
+  const columnasLista =
+    5 + (imprime ? 1 : 0) + (lista === "conciliados" ? 1 : 0) + (imprime && pestanaImpresion === "impresos" ? 1 : 0);
+
+  // Al cerrar el dialogo de impresion se pregunta si salieron bien: el navegador
+  // no avisa si se cancelo. Con "Si" quedan como impresos.
+  const anotarImpresos = async (ids: number[]) => {
+    const cuantos = ids.length === 1 ? "el comprobante" : `los ${ids.length} comprobantes`;
+    if (!confirm(`¿Se imprimieron bien ${cuantos}? Quedarán como impresos.`)) return;
+    const r = await fetch("/api/administracion/binance", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ impresos: ids }),
+    }).catch(() => null);
+    if (!r?.ok) alert("No se pudo guardar que se imprimieron. Inténtalo de nuevo.");
+    setReimprimir(new Set());
+    cargar();
+  };
 
   /**
    * Hoja para imprimir los conciliados marcados: cada comprobante con el cliente
@@ -466,9 +518,11 @@ export default function ConciliacionBinance({
       .firma { height: 32mm; margin-top: auto; }
       .pie-firma { border-top: 1px solid #333; padding-top: 1.5mm; width: 70mm; font-size: 12px; }
     </style></head><body>${tarjetas}</body></html>`;
+    const ids = aImprimir.map((c) => c.id);
     const marco = document.createElement("iframe");
     marco.style.cssText = "position:fixed;width:0;height:0;border:0;visibility:hidden";
     marco.onload = () => {
+      marco.contentWindow?.addEventListener("afterprint", () => setTimeout(() => anotarImpresos(ids), 0), { once: true });
       marco.contentWindow?.focus();
       marco.contentWindow?.print();
       setTimeout(() => marco.remove(), 60_000);
@@ -715,13 +769,55 @@ export default function ConciliacionBinance({
                 ) : (
                   lista && (
                     <>
+                      {lista === "conciliados" && diasConciliado.length > 0 && (
+                        <label className="flex items-center gap-2 text-sm text-gray-600">
+                          Conciliados el
+                          <select
+                            value={diaConciliado}
+                            onChange={(e) => setDiaConciliado(e.target.value)}
+                            className="border rounded-lg px-2 py-1 text-sm bg-white"
+                          >
+                            <option value="">Todos los días</option>
+                            {diasConciliado.map((d) => (
+                              <option key={d} value={d}>
+                                {etiquetaDia(d)} ({conciliados.filter((c) => diaDeConciliado(c) === d).length})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                       {imprime && (
                         <div className="flex flex-wrap items-center gap-3">
+                          <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist">
+                            {(
+                              [
+                                ["pendientes", "Sin imprimir", sinImprimir.length],
+                                ["impresos", "Ya impresos", yaImpresos.length],
+                              ] as const
+                            ).map(([clave, texto, n]) => (
+                              <button
+                                key={clave}
+                                type="button"
+                                role="tab"
+                                aria-selected={pestanaImpresion === clave}
+                                onClick={() => setPestanaImpresion(clave)}
+                                className={`px-3 py-1.5 text-sm rounded-md ${
+                                  pestanaImpresion === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"
+                                }`}
+                              >
+                                {texto} ({n})
+                              </button>
+                            ))}
+                          </div>
                           <Button size="sm" className="h-9 w-fit" disabled={!aImprimir.length} onClick={imprimirConciliados}>
                             <Printer className="h-4 w-4 mr-2" />
-                            Imprimir {aImprimir.length === conciliados.length ? "conciliados" : "seleccionados"} ({aImprimir.length})
+                            {pestanaImpresion === "impresos" ? "Volver a imprimir" : "Imprimir"} ({aImprimir.length})
                           </Button>
-                          <span className="text-xs text-gray-500">Desmarca los que no quieras imprimir.</span>
+                          <span className="text-xs text-gray-500">
+                            {pestanaImpresion === "impresos"
+                              ? "Marca los que quieras imprimir otra vez."
+                              : "Desmarca los que no quieras imprimir."}
+                          </span>
                         </div>
                       )}
                       <p className="text-xs text-gray-500">Haz clic en un comprobante para ver su imagen.</p>
@@ -734,11 +830,11 @@ export default function ConciliacionBinance({
                                   type="checkbox"
                                   className="h-4 w-4 cursor-pointer align-middle"
                                   aria-label="Marcar todos para imprimir"
-                                  checked={aImprimir.length === conciliados.length}
+                                  checked={enPestana.length > 0 && aImprimir.length === enPestana.length}
                                   ref={(el) => {
-                                    if (el) el.indeterminate = aImprimir.length > 0 && aImprimir.length < conciliados.length;
+                                    if (el) el.indeterminate = aImprimir.length > 0 && aImprimir.length < enPestana.length;
                                   }}
-                                  onChange={(e) => marcarImprimir(conciliados.map((c) => c.id), e.target.checked)}
+                                  onChange={(e) => marcarImprimir(enPestana.map((c) => c.id), e.target.checked)}
                                 />
                               </TableHead>
                             )}
@@ -747,13 +843,13 @@ export default function ConciliacionBinance({
                             <TableHead className="text-right">Monto</TableHead>
                             <TableHead>Pagador</TableHead>
                             <TableHead>Estado</TableHead>
+                            {lista === "conciliados" && <TableHead>Conciliado el</TableHead>}
+                            {imprime && pestanaImpresion === "impresos" && <TableHead>Impreso</TableHead>}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {COMPROBANTES_LISTA[lista].length === 0 && (
-                            <FilaVacia columnas={imprime ? 6 : 5} texto="No hay comprobantes aquí." />
-                          )}
-                          {COMPROBANTES_LISTA[lista].map((c) => (
+                          {filasLista.length === 0 && <FilaVacia columnas={columnasLista} texto="No hay comprobantes aquí." />}
+                          {filasLista.map((c) => (
                             <TableRow key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setVerImagen(c)}>
                               {imprime && (
                                 <TableCell onClick={(e) => e.stopPropagation()}>
@@ -761,7 +857,7 @@ export default function ConciliacionBinance({
                                     type="checkbox"
                                     className="h-4 w-4 cursor-pointer align-middle"
                                     aria-label={`Imprimir ${c.orderId}`}
-                                    checked={!noImprimir.has(c.id)}
+                                    checked={marcadoImprimir(c)}
                                     onChange={(e) => marcarImprimir([c.id], e.target.checked)}
                                   />
                                 </TableCell>
@@ -777,6 +873,15 @@ export default function ConciliacionBinance({
                                   {ETIQUETA_ESTADO[c.estado]}
                                 </Badge>
                               </TableCell>
+                              {lista === "conciliados" && (
+                                <TableCell className="whitespace-nowrap">{c.conciliadoEl ? fechaHora(c.conciliadoEl) : "—"}</TableCell>
+                              )}
+                              {imprime && pestanaImpresion === "impresos" && (
+                                <TableCell className="whitespace-nowrap text-xs text-gray-600">
+                                  {c.impresoEl && fechaHora(c.impresoEl)}
+                                  {c.impresoPor && <div>{c.impresoPor}</div>}
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))}
                         </TableBody>

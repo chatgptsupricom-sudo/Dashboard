@@ -4,6 +4,7 @@ import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
 import {
   ArchivoIlegible,
   asignarMovimiento,
+  marcarImpresos,
   borrarMovimientosSemana,
   capturaYaSubida,
   comprobantePorHuella,
@@ -220,10 +221,21 @@ export async function POST(request: NextRequest) {
 
 // PATCH /api/administracion/binance {id, movimiento_id} — amarrar a mano un
 // comprobante con un pago del estado de cuenta (movimiento_id null = soltarlo).
+// PATCH {impresos: [id...]} — se imprimieron las hojas de esos conciliados.
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
   const b = await request.json().catch(() => ({}));
+  if (Array.isArray(b?.impresos)) {
+    const ids = b.impresos.map(Number);
+    if (ids.length > 1000 || !ids.every((n: number) => Number.isInteger(n) && n > 0)) {
+      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+    }
+    const sede = sedeBinance(auth.payload);
+    if (sede === undefined) return respuestaSedeNoPermitida();
+    await marcarImpresos(ids, sede, String(auth.payload?.email || ""));
+    return NextResponse.json({ success: true });
+  }
   const id = Number(b?.id);
   const mov = b?.movimiento_id === null ? null : Number(b?.movimiento_id);
   if (!Number.isInteger(id) || id <= 0 || (mov !== null && (!Number.isInteger(mov) || mov <= 0))) {
