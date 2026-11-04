@@ -182,7 +182,7 @@ button { font: inherit; color: inherit; }
 .aparece.visible { opacity: 1; transform: none; }
 
 /* ------------------------------------------------------------------ Portada: banners en abanico */
-.portada { position: relative; background: var(--banda); padding: 104px 0 56px; overflow: hidden; transition: background .35s; }
+.portada { position: relative; background: var(--banda); padding: 104px 0 32px; overflow: hidden; transition: background .35s; }
 .banners { position: relative; perspective: 1800px; height: calc(74vw * 638 / 1920 + 60px); max-height: calc(1120px * 638 / 1920 + 60px); }
 .banners-pista { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .25s ease-out; }
 .banner {
@@ -193,44 +193,62 @@ button { font: inherit; color: inherit; }
 .banner img { width: 100%; height: 100%; object-fit: cover; }
 .banner.frente { box-shadow: 0 40px 70px -40px var(--sombra); }
 .banner:not(.frente) { filter: saturate(.6) brightness(.8); cursor: pointer; }
-.banners-controles[hidden] { display: none; }
-.banners-controles { margin-top: 28px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
-.banners-pestanas { display: flex; flex-wrap: wrap; gap: 8px; }
-.banners-pestanas button {
-    position: relative; overflow: hidden; min-height: 44px; padding: 0 16px; border-radius: 999px;
-    border: 1px solid var(--banda-linea); background: transparent; color: var(--gris); font-size: 14px; font-weight: 700; cursor: pointer;
-    transition: background .25s, color .25s, border-color .25s;
+/* Controles sobre el banner del frente: una cápsula de vidrio abajo al centro (puntos + pausa) y flechas a
+   los lados que aparecen con el mouse o el teclado. El banner va de `top: 20px` a `alto - --hueco`. */
+.banners { --hueco: 40px; --lado-banner: 13%; }
+.banners-controles[hidden], .flecha-lado[hidden] { display: none; }
+.banners-controles {
+    position: absolute; z-index: 20; left: 50%; bottom: calc(var(--hueco) + 14px); transform: translateX(-50%);
+    display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 10px; border-radius: 999px;
+    background: rgba(11, 13, 18, .42); color: #fff;
+    -webkit-backdrop-filter: blur(10px) saturate(1.4); backdrop-filter: blur(10px) saturate(1.4);
 }
-.banners-pestanas button:hover { color: var(--tinta); border-color: var(--tinta); }
-.banners-pestanas button[aria-current="true"] { background: var(--tinta); border-color: var(--tinta); color: var(--fondo); }
+.banners-pestanas { display: flex; align-items: center; }
+/* Cada punto es un botón de 28 × 28 (área táctil); lo que se ve es su ::before. */
+.banners-pestanas button {
+    position: relative; width: 22px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer;
+    display: grid; place-items: center; transition: width .45s var(--curva);
+}
+.banners-pestanas button::before {
+    content: ""; width: 7px; height: 7px; border-radius: 999px; background: rgba(255, 255, 255, .55);
+    transition: width .45s var(--curva), background .25s;
+}
+.banners-pestanas button:hover::before { background: #fff; }
+.banners-pestanas button[aria-current="true"] { width: 40px; }
+.banners-pestanas button[aria-current="true"]::before { width: 28px; background: rgba(255, 255, 255, .35); }
 .banners-pestanas .avance {
-    position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--azul);
+    position: absolute; left: 6px; top: calc(50% - 3.5px); width: 28px; height: 7px; border-radius: 999px; background: #fff;
     transform-origin: 0 50%; animation: avance var(--intervalo, 6s) linear both;
 }
+.banners-pestanas button:focus-visible, .banners-pausa:focus-visible, .flecha-lado:focus-visible { outline: 2px solid #fff; outline-offset: 1px; border-radius: 999px; }
 .portada.pausado .avance { animation-play-state: paused; }
 @keyframes avance { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-.banners-flechas { display: flex; gap: 10px; }
-.flecha {
-    width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--banda-linea); background: var(--superficie);
-    display: grid; place-items: center; cursor: pointer; transition: border-color .2s, transform .25s var(--curva);
+.banners-pausa {
+    width: 30px; height: 30px; margin-left: 4px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .16); color: #fff;
+    display: grid; place-items: center; cursor: pointer; transition: background .2s;
 }
-.flecha:hover { border-color: var(--tinta); transform: translateY(-2px); }
-.flecha svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.flecha .icono-seguir { display: none; }
-.flecha[aria-pressed="true"] .icono-pausa { display: none; }
-.flecha[aria-pressed="true"] .icono-seguir { display: block; }
-
-.cifras {
-    margin-top: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 20px;
-    padding-top: 28px; border-top: 1px solid var(--banda-linea);
+.banners-pausa:hover { background: rgba(255, 255, 255, .3); }
+.banners-pausa svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.banners-pausa .icono-seguir { display: none; fill: currentColor; }
+.banners-pausa[aria-pressed="true"] .icono-pausa { display: none; }
+.banners-pausa[aria-pressed="true"] .icono-seguir { display: block; }
+.flecha-lado {
+    position: absolute; z-index: 20; top: calc(20px + (100% - 20px - var(--hueco)) / 2); width: 46px; height: 46px; margin-top: -23px;
+    border: 0; border-radius: 50%; background: rgba(11, 13, 18, .42); color: #fff; cursor: pointer;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    display: grid; place-items: center; opacity: 0; transition: opacity .3s, transform .3s var(--curva), background .2s;
 }
-.cifra dt { font-size: 14px; font-weight: 600; color: var(--gris); }
-.cifra dd { margin-top: 4px; font-size: clamp(24px, 2.6vw, 34px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
-.cifra-accion { justify-self: end; }
+.flecha-izq { left: calc(var(--lado-banner) + 18px); transform: translateX(-8px); }
+.flecha-der { right: calc(var(--lado-banner) + 18px); transform: translateX(8px); }
+.banners:hover .flecha-lado, .flecha-lado:focus-visible { opacity: 1; transform: none; }
+.flecha-lado:hover { background: rgba(11, 13, 18, .62); }
+.flecha-lado svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+/* En pantallas táctiles se desliza con el dedo: sin flechas. */
+@media (hover: none) { .flecha-lado { display: none; } }
 
 /* ------------------------------------------------------------------ Destacados: anillo 3D + ficha */
 .vitrina { background: var(--banda); padding: 0 0 var(--seccion); overflow-x: clip; transition: background .35s; }
-.vitrina .cabeza-seccion { padding-top: var(--seccion); border-top: 1px solid var(--banda-linea); }
+.vitrina .cabeza-seccion { padding-top: clamp(40px, 6vw, 80px); }
 .vitrina-fila { display: grid; grid-template-columns: 1.25fr .75fr; align-items: center; gap: 40px; }
 .orbita { position: relative; height: 540px; touch-action: pan-y pinch-zoom; user-select: none; }
 .orbita:focus-visible { outline-offset: -3px; border-radius: var(--r-3); }
@@ -628,9 +646,19 @@ button { font: inherit; color: inherit; }
     .portada { padding-top: 88px; }
     .banners { height: calc(88vw * 638 / 1920 + 40px); }
     .banner { width: 88%; }
-    .cifras { grid-template-columns: 1fr 1fr; }
-    .cifra-accion { grid-column: 1 / -1; justify-self: stretch; }
-    .cifra-accion .boton { width: 100%; }
+    /* El banner es bajo: los controles van debajo, con los colores de la página, para no taparlo. */
+    .banners { --hueco: 52px; --lado-banner: 6%; height: calc(88vw * 638 / 1920 + 20px + var(--hueco)); }
+    .banners-controles {
+        bottom: 6px; padding: 2px 2px 2px 8px; background: var(--superficie); color: var(--tinta);
+        border: 1px solid var(--linea); -webkit-backdrop-filter: none; backdrop-filter: none;
+    }
+    .banners-pestanas button::before { background: color-mix(in srgb, var(--tinta) 35%, transparent); }
+    .banners-pestanas button:hover::before { background: var(--tinta); }
+    .banners-pestanas button[aria-current="true"]::before { background: color-mix(in srgb, var(--tinta) 18%, transparent); }
+    .banners-pestanas .avance { background: var(--tinta); }
+    .banners-pausa { background: var(--superficie-2); color: var(--tinta); }
+    .banners-pausa:hover { background: var(--linea); }
+    .banners-pestanas button:focus-visible, .banners-pausa:focus-visible { outline-color: var(--acento); }
     .vitrina-fila { grid-template-columns: 1fr; }
     .orbita { height: 380px; }
     .anillo { width: 150px; height: 190px; margin: -95px 0 0 -75px; }
@@ -673,6 +701,7 @@ button { font: inherit; color: inherit; }
     .ticket-marco { transform: none; }
     .marcas-pista { padding-inline: var(--lado); }
     .marca-logo[aria-hidden="true"] { display: none; }
+    .banners-pestanas button[aria-current="true"]::before { background: currentColor; } /* sin la barra de avance */
 }
 
 /* Celulares angostos (320-420 px): el logo no se aplasta; la ubicación se pide desde el aviso o el menú. */

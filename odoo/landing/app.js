@@ -83,11 +83,7 @@
     // Textos de la página que dependen de la sede.
     document.title = `SUPRICOM ${S.nombre} · Tecnología al mayor`;
     for (const el of $$("[data-sede]")) {
-        const v = {
-            nombre: S.nombre, documento: S.documento, marcas: miles(S.marcas), medio: MEDIO,
-            medioTitulo: MEDIO.charAt(0).toUpperCase() + MEDIO.slice(1),
-            lugar: S.nombre === S.pais ? S.nombre : `${S.nombre} · ${S.pais}`,
-        }[el.dataset.sede];
+        const v = { nombre: S.nombre, documento: S.documento, marcas: miles(S.marcas), medio: MEDIO }[el.dataset.sede];
         if (v !== undefined) el.textContent = v;
     }
     for (const el of $$("[data-solo-whatsapp]")) el.hidden = !POR_WHATSAPP;
@@ -463,6 +459,7 @@
     const nB = D.banners.length;
     // Con un solo banner no hay nada que pasar: sin flechas, pestañas ni avance.
     $(".banners-controles").hidden = nB < 2;
+    for (const f of $$(".flecha-lado", promos)) f.hidden = nB < 2;
     const banners = D.banners.map((b, i) => {
         const a = crear("a", { class: "banner", "aria-roledescription": "diapositiva", "aria-label": `${i + 1} de ${nB}: ${b.alt}` },
             [crear("img", { src: b.img, alt: "", draggable: false })]);
@@ -490,7 +487,7 @@
         reloj = setTimeout(() => irBanner(pasoBanner + 1), INTERVALO);
     };
     const botonesBanner = D.banners.map((b, i) => {
-        const btn = crear("button", { type: "button", text: b.nombre });
+        const btn = crear("button", { type: "button", "aria-label": b.nombre, title: b.nombre });
         btn.addEventListener("click", () => irBanner(pasoBanner + desfase(i)));
         pestanas.append(btn);
         return btn;

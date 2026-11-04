@@ -19,7 +19,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261104d">
+<link rel="stylesheet" href="estilos.css?v=20261104g">
 </head>
 <body>
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -74,29 +74,18 @@
     <!-- Portada: los banners reales del sitio en abanico 3D -->
     <section id="inicio" class="portada" data-seccion>
         <h1 class="solo-lectores">SUPRICOM, mayorista de tecnología</h1>
+        <!-- Los controles van sobre el banner del frente: puntos con el avance, pausa y, con el mouse, flechas a los lados. -->
         <div class="banners" role="region" aria-roledescription="carrusel" aria-label="Promociones">
             <div class="banners-pista"></div>
-        </div>
-        <div class="contenedor banners-controles">
-            <div class="banners-pestanas" aria-label="Elegir banner"></div>
-            <div class="banners-flechas">
-                <button type="button" class="flecha" data-pausa aria-pressed="false" aria-label="Pausar banners">
+            <button type="button" class="flecha-lado flecha-izq" data-dir="-1" aria-label="Banner anterior"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+            <button type="button" class="flecha-lado flecha-der" data-dir="1" aria-label="Banner siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            <div class="banners-controles">
+                <div class="banners-pestanas" role="group" aria-label="Elegir banner"></div>
+                <button type="button" class="banners-pausa" data-pausa aria-pressed="false" aria-label="Pausar banners">
                     <svg viewBox="0 0 24 24" aria-hidden="true" class="icono-pausa"><path d="M9 6v12M15 6v12"/></svg>
                     <svg viewBox="0 0 24 24" aria-hidden="true" class="icono-seguir"><path d="m8 5 11 7-11 7z"/></svg>
                 </button>
-                <button type="button" class="flecha" data-dir="-1" aria-label="Banner anterior"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
-                <button type="button" class="flecha" data-dir="1" aria-label="Banner siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
             </div>
-        </div>
-        <div class="contenedor">
-            <dl class="cifras">
-                <div class="cifra aparece"><dt>Tu sede</dt><dd data-sede="lugar">Valencia · Venezuela</dd></div>
-                <div class="cifra aparece"><dt>Marcas en existencia</dt><dd data-sede="marcas">41</dd></div>
-                <div class="cifra aparece"><dt>Cotizas por</dt><dd data-sede="medioTitulo">WhatsApp</dd></div>
-                <div class="cifra cifra-accion aparece">
-                    <a class="boton boton-tinta boton-grande" data-odoo="/shop">Ver el catálogo</a>
-                </div>
-            </dl>
         </div>
     </section>
 
@@ -392,7 +381,7 @@
     </div>
 </footer>
 
-<script src="datos.js?v=20261104d"></script>
-<script src="app.js?v=20261104d"></script>
+<script src="datos.js?v=20261104g"></script>
+<script src="app.js?v=20261104g"></script>
 </body>
 </html>
