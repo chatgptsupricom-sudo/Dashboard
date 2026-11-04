@@ -887,7 +887,9 @@ export default function ConciliacionBinance({
                           </a>
                           {c.estado === "por_monto_hora" && c.binance && (
                             <span className="block text-amber-700">
-                              {idBinance(c.binance.id) ? `Binance: ${c.binance.id}` : "Sin hora en el comprobante"}
+                              {idBinance(c.binance.id)
+                                ? `Binance: ${c.binance.id}`
+                                : `En el estado de cuenta: ${fechaHora(c.binance.fecha)}`}
                             </span>
                           )}
                         </TableCell>
@@ -902,13 +904,17 @@ export default function ConciliacionBinance({
                           <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
                             {ETIQUETA_ESTADO[c.estado]}
                           </Badge>
-                          {!cxc && c.estado === "nombre_distinto" && c.binance && /^e\d+$/.test(c.binance.id) && (
+                          {!cxc && (c.estado === "nombre_distinto" || c.estado === "por_monto_hora") && c.binance && /^e\d+$/.test(c.binance.id) && (
                             <Button
                               size="sm"
                               variant="outline"
                               className="mt-1 h-7 text-xs block"
                               onClick={() => {
-                                if (confirm(`¿El pago de ${c.binance!.pagador} es de ${c.cliente}? Queda conciliado.`))
+                                const pregunta =
+                                  c.estado === "por_monto_hora"
+                                    ? `¿El pago de ${cifra(c.binance!.monto)} ${c.binance!.moneda} del ${fechaHora(c.binance!.fecha)} (${c.binance!.pagador}) es este comprobante? Queda conciliado.`
+                                    : `¿El pago de ${c.binance!.pagador} es de ${c.cliente}? Queda conciliado.`;
+                                if (confirm(pregunta))
                                   asignar(c, c.binance!.id.slice(1), true);
                               }}
                             >
