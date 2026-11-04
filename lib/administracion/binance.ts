@@ -60,13 +60,21 @@ export class BinanceNoConfigurado extends Error {
 export type PagoBinance = {
   id: string;
   fecha: string; // ISO UTC
-  monto: number; // positivo = recibido
+  monto: number; // siempre positivo: el lado (entrada o salida) lo dice la pestaña
   moneda: string;
   tipo: string;
   pagador: string;
   /** Cuando se subio el estado de cuenta con este pago (no viene con la API). */
   subidoEl?: string;
 };
+
+/**
+ * Entradas = pagos que nos hacen los clientes (los comprobantes los sube CxC);
+ * salidas = pagos que hacemos nosotros (solo Administracion). El estado de
+ * cuenta es el mismo: en `binance_movimientos` una salida va con monto negativo.
+ */
+export type Lado = "entrada" | "salida";
+export const esLado = (v: unknown): v is Lado => v === "entrada" || v === "salida";
 
 export type EstadoComprobante =
   | "conciliado"
@@ -230,22 +238,23 @@ async function pagosEnRango(desde: number, hasta: number): Promise<any[]> {
 // semana de comprobantes la pantalla recarga varias veces seguidas.
 const cache = new Map<string, { hasta: number; pagos: PagoBinance[] }>();
 
-/** Pagos recibidos (monto positivo) en el rango, de mas viejo a mas nuevo. */
-export async function pagosRecibidos(desde: number, hasta: number): Promise<PagoBinance[]> {
-  const llave = `${desde}-${hasta}`;
+/** Pagos recibidos (o, con `lado` salida, enviados) en el rango, de mas viejo a mas nuevo. Monto en positivo. */
+export async function pagosRecibidos(desde: number, hasta: number, lado: Lado = "entrada"): Promise<PagoBinance[]> {
+  const llave = `${desde}-${hasta}-${lado}`;
   const guardado = cache.get(llave);
   if (guardado && guardado.hasta > Date.now()) return guardado.pagos;
   const vistos = new Map<string, PagoBinance>();
   for (const t of await pagosEnRango(desde, hasta)) {
-    const monto = Number(t?.amount);
+    const monto = (lado === "salida" ? -1 : 1) * Number(t?.amount);
     if (!(monto > 0) || !t?.transactionId) continue;
+    const otro = lado === "salida" ? t.receiverInfo : t.payerInfo;
     vistos.set(String(t.transactionId), {
       id: String(t.transactionId),
       fecha: new Date(Number(t.transactionTime)).toISOString(),
       monto,
       moneda: String(t.currency || "").toUpperCase(),
       tipo: String(t.orderType || ""),
-      pagador: String(t.payerInfo?.name || t.payerInfo?.binanceId || ""),
+      pagador: String(otro?.name || otro?.binanceId || ""),
     });
   }
   const pagos = [...vistos.values()].sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -309,6 +318,8 @@ async function ensureTabla() {
   await agregarColumna("binance_comprobantes", "amarrado_el DATETIME NULL");
   await agregarColumna("binance_comprobantes", "impreso_el DATETIME NULL");
   await agregarColumna("binance_comprobantes", "impreso_por VARCHAR(190) NOT NULL DEFAULT ''");
+  // Entrada (pago de un cliente) o salida (pago nuestro); lo de antes son entradas.
+  await agregarColumna("binance_comprobantes", "tipo VARCHAR(8) NOT NULL DEFAULT 'entrada'");
   tablaLista = true;
 }
 
@@ -452,17 +463,6 @@ function ajustarZona(bases: BaseComprobante[], pagos: PagoBinance[]) {
   return conciliados(comoUtc) > conciliados(pagos) ? comoUtc : pagos;
 }
 
-/**
- * Comprobantes de la semana cruzados con Binance, y los pagos que entraron en
- * la semana sin comprobante. Los pagos salen del estado de cuenta si la semana
- * tiene uno; si no, de la API. Si la API falla, los comprobantes salen
- * `sin_verificar` con el error.
- *
- * La tabla de comprobantes es una sola para las tres sedes (la cuenta de Binance
- * es una), pero cada sede solo ve los suyos (`sede`; null = todas, SuperAdmin).
- * El cruce se hace con los de todas: un pago que ya tomo el comprobante de otra
- * sede no sale como "sin comprobante" ni se le ofrece a esta.
- */
 /** Ver `Comprobante.conciliadoEl`. Los amarrados a mano antes de guardar `amarrado_el` van como los automaticos. */
 export function conciliadoEl(c: Comprobante): string | null {
   if (!c.binance || (c.estado !== "conciliado" && c.estado !== "manual")) return null;
@@ -471,7 +471,18 @@ export function conciliadoEl(c: Comprobante): string | null {
   return pago && pago > c.subidoEl ? pago : c.subidoEl;
 }
 
-export async function conciliacionSemana(lunes: string, sede: number | null) {
+/**
+ * Comprobantes de la semana cruzados con Binance, y los pagos que entraron en
+ * la semana sin comprobante (con `lado` salida: los pagos nuestros, que salieron). Los pagos salen del estado de cuenta si la semana
+ * tiene uno; si no, de la API. Si la API falla, los comprobantes salen
+ * `sin_verificar` con el error.
+ *
+ * La tabla de comprobantes es una sola para las tres sedes (la cuenta de Binance
+ * es una), pero cada sede solo ve los suyos (`sede`; null = todas, SuperAdmin).
+ * El cruce se hace con los de todas: un pago que ya tomo el comprobante de otra
+ * sede no sale como "sin comprobante" ni se le ofrece a esta.
+ */
+export async function conciliacionSemana(lunes: string, sede: number | null, lado: Lado = "entrada") {
   const rango = rangoSemana(lunes);
   if (!rango) throw new Error("Semana inválida");
   await ensureTabla();
@@ -481,8 +492,8 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
             fecha_estimada, movimiento_id, archivo_nombre, cliente, subido_por, created_at, company_id,
             DATE_FORMAT(amarrado_el, '%Y-%m-%dT%H:%i:%sZ') AS amarrado_el,
             DATE_FORMAT(impreso_el, '%Y-%m-%dT%H:%i:%sZ') AS impreso_el, impreso_por
-       FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? ORDER BY fecha_pago`,
-    [aMysql(rango.desde), aMysql(rango.hasta)],
+       FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? AND tipo = ? ORDER BY fecha_pago`,
+    [aMysql(rango.desde), aMysql(rango.hasta), lado],
   );
   const bases: BaseComprobante[] = rows.map((r: any) => ({
     id: r.id,
@@ -512,14 +523,22 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
   // Un dia de margen: la hora del comprobante puede no ser exacta.
   const desde = rango.desde - DIA_MS;
   const hasta = Math.min(rango.hasta + DIA_MS, Date.now());
-  let pagos = await movimientosEnRango(desde, hasta);
+  // El estado de cuenta trae las entradas (monto positivo) y las salidas (negativo).
+  const todos = await movimientosEnRango(desde, hasta);
+  const signo = lado === "salida" ? -1 : 1;
+  let pagos = todos.filter((p) => p.monto * signo > 0).map((p) => ({ ...p, monto: Math.abs(p.monto) }));
+  // Pagos del estado de cuenta en la semana, de los dos lados: lo que se puede borrar es de los dos.
+  const movimientos = todos.filter((p) => {
+    const t = Date.parse(p.fecha);
+    return t >= rango.desde && t <= rango.hasta;
+  }).length;
   let origen: OrigenPagos = "estado";
-  if (pagos.length) {
+  if (todos.length) {
     pagos = ajustarZona(bases, pagos);
   } else {
     origen = "api";
     try {
-      pagos = await pagosRecibidos(desde, hasta);
+      pagos = await pagosRecibidos(desde, hasta, lado);
     } catch (e: any) {
       return {
         comprobantes: bases.map((b): Comprobante => ({ ...b, estado: "sin_verificar", binance: null })).filter(deLaSede),
@@ -552,7 +571,7 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
     const comprobante = !c ? null : deLaSede(c) ? { estado: c.estado, cliente: c.cliente, orderId: c.orderId } : { otraSede: true as const };
     return { ...p, comprobante };
   });
-  return { comprobantes: visibles, sinComprobante, pagos: pagosSemana, errorBinance: null, origen, movimientos: deLaSemana.length };
+  return { comprobantes: visibles, sinComprobante, pagos: pagosSemana, errorBinance: null, origen, movimientos };
 }
 
 // ---------- Estado de cuenta ----------
@@ -598,6 +617,9 @@ async function ensureTablaMovimientos() {
   // Huella del archivo subido: la misma captura no se vuelve a leer con la IA.
   await agregarColumna("binance_estados", "archivo_sha CHAR(64) NULL");
   await agregarIndice("binance_estados", "idx_sha", "archivo_sha");
+  // 1 = se leyo guardando tambien los pagos enviados (las salidas). Uno de antes
+  // (0) se vuelve a leer si se sube otra vez, para sacarle las salidas.
+  await agregarColumna("binance_estados", "con_salidas TINYINT(1) NOT NULL DEFAULT 0");
   tablaMovimientosLista = true;
 }
 
@@ -639,19 +661,27 @@ export async function guardarMovimientos(
   movs: Movimiento[],
   usuario: { email: string; sede: number | null },
   archivo: { datos: Buffer; nombre: string; sha: string; captura: Buffer | null },
+  /** El archivo ya estaba (leido antes de guardar las salidas): se reusa su fila. */
+  estadoExistente: number | null = null,
 ) {
   await ensureTablaMovimientos();
   // Siempre queda la fila de la captura (tambien de un PDF): su huella evita
   // leer otra vez el mismo archivo. El recorte sale de `captura`; un PDF guarda
   // el PDF y no tiene recorte.
-  // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
-  const [res]: any = await db.execute(
-    "INSERT INTO binance_estados (archivo_nombre, archivo, subido_por, archivo_sha) VALUES (?,?,?,?)",
-    [archivo.nombre.slice(0, 200), archivo.captura ?? archivo.datos, usuario.email, archivo.sha],
-  );
-  // estado_id va siempre (tambien en un PDF): es de que archivo salio cada pago,
-  // para borrar por archivo. El recorte solo existe con y0/y1.
-  const estadoId: number = res.insertId;
+  let estadoId: number;
+  if (estadoExistente !== null) {
+    await query("UPDATE binance_estados SET con_salidas = 1 WHERE id = ?", [estadoExistente]);
+    estadoId = estadoExistente;
+  } else {
+    // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
+    const [res]: any = await db.execute(
+      "INSERT INTO binance_estados (archivo_nombre, archivo, subido_por, archivo_sha, con_salidas) VALUES (?,?,?,?,1)",
+      [archivo.nombre.slice(0, 200), archivo.captura ?? archivo.datos, usuario.email, archivo.sha],
+    );
+    // estado_id va siempre (tambien en un PDF): es de que archivo salio cada pago,
+    // para borrar por archivo. El recorte solo existe con y0/y1.
+    estadoId = res.insertId;
+  }
   let nuevos = 0;
   for (const m of movs) {
     const conLinea = archivo.captura !== null && m.linea;
@@ -685,7 +715,8 @@ export async function guardarMovimientos(
     // 1 = fila nueva; 2 = ya estaba y tomo el recorte; 0 = ya estaba igual.
     if (Number((rows as any)?.affectedRows) === 1) nuevos++;
   }
-  return { nuevos, repetidos: movs.length - nuevos };
+  const enviados = movs.filter((m) => m.monto < 0).length;
+  return { nuevos, repetidos: movs.length - nuevos, recibidos: movs.length - enviados, enviados };
 }
 
 /** Recorte de la linea de cada movimiento en su captura, en JPEG, por id de movimiento. */
@@ -797,11 +828,18 @@ async function borrarArchivosSinPagos() {
   );
 }
 
-/** La captura del estado de cuenta ya se subio (misma huella): no se vuelve a leer. */
-export async function capturaYaSubida(sha: string) {
+/**
+ * La captura del estado de cuenta ya se subio (misma huella). `conSalidas` false:
+ * se leyo antes de guardar los pagos enviados y hay que leerla otra vez.
+ */
+export async function capturaPorHuella(sha: string) {
   await ensureTablaMovimientos();
-  const { rows } = await query("SELECT id FROM binance_estados WHERE archivo_sha = ? LIMIT 1", [sha]);
-  return rows.length > 0;
+  const { rows } = await query(
+    "SELECT id, con_salidas FROM binance_estados WHERE archivo_sha = ? ORDER BY con_salidas DESC, id LIMIT 1",
+    [sha],
+  );
+  const r: any = rows[0];
+  return r ? { id: Number(r.id), conSalidas: Number(r.con_salidas) === 1 } : null;
 }
 
 /** El comprobante con este mismo archivo (misma huella), si ya se subio. */
@@ -900,7 +938,7 @@ export async function asignarMovimiento(id: number, movimientoId: number | null,
     const { rows: iguales } = await query(
       `SELECT COUNT(*) AS n
          FROM binance_comprobantes c
-         JOIN binance_movimientos m ON m.id = ? AND m.monto = c.monto AND m.moneda = c.moneda
+         JOIN binance_movimientos m ON m.id = ? AND m.monto = IF(c.tipo = 'salida', -c.monto, c.monto) AND m.moneda = c.moneda
          JOIN binance_movimientos o ON o.monto = m.monto AND o.moneda = m.moneda
           AND YEARWEEK(o.fecha - INTERVAL 4 HOUR, 3) = YEARWEEK(m.fecha - INTERVAL 4 HOUR, 3)
         WHERE c.id = ?`,
@@ -928,9 +966,13 @@ export async function marcarImpresos(ids: number[], sede: number | null, quien: 
   );
 }
 
-export async function eliminarComprobante(id: number, sede: number | null) {
+/** `soloEntradas`: Cuentas por Cobrar no toca los comprobantes de las salidas. */
+export async function eliminarComprobante(id: number, sede: number | null, soloEntradas = false) {
   await ensureTabla();
-  await query(`DELETE FROM binance_comprobantes WHERE id = ? AND ${DE_LA_SEDE}`, [id, sede, sede]);
+  await query(
+    `DELETE FROM binance_comprobantes WHERE id = ? AND ${DE_LA_SEDE}${soloEntradas ? " AND tipo = 'entrada'" : ""}`,
+    [id, sede, sede],
+  );
 }
 
 // ---------- Lectura del comprobante ----------
@@ -1241,8 +1283,9 @@ const ESQUEMA_ESTADO = {
 } as const;
 
 /**
- * Lee el estado de cuenta: solo los pagos recibidos y completados. La hora se
- * toma como de Caracas (`ajustarZona` corrige si venia en UTC).
+ * Lee el estado de cuenta: los pagos completados, los recibidos con monto
+ * positivo y los enviados con monto negativo. La hora se toma como de Caracas
+ * (`ajustarZona` corrige si venia en UTC).
  */
 export async function leerEstadoDeCuenta(
   datos: Buffer,
@@ -1267,12 +1310,12 @@ export async function leerEstadoDeCuenta(
     const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(f?.fecha || ""));
     const monto = Math.abs(Number(f?.monto));
     const moneda = String(f?.moneda || "").trim().toUpperCase().slice(0, 12);
-    if (!m || !f?.recibido || !f?.completado || !(monto > 0) || !moneda) return;
+    if (!m || !f?.completado || !(monto > 0) || !moneda) return;
     const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
     movs.push({
       fechaMs: local + OFFSET_CARACAS_MS,
       contraparte: String(f?.contraparte || "").trim(),
-      monto,
+      monto: f?.recibido ? monto : -monto,
       moneda,
       linea: ubicadas[i] || null,
     });
@@ -1286,11 +1329,11 @@ export async function leerEstadoDeCuenta(
  * Fecha de un comprobante que no la trae: la del pago en Binance si esta en la
  * semana elegida; si no, el lunes de esa semana, marcada como estimada.
  */
-export async function fechaSinComprobante(orderId: string, lunes: string) {
+export async function fechaSinComprobante(orderId: string, lunes: string, lado: Lado = "entrada") {
   const rango = rangoSemana(lunes);
   if (!rango) return null;
   try {
-    const pagos = await pagosRecibidos(rango.desde - DIA_MS, Math.min(rango.hasta + DIA_MS, Date.now()));
+    const pagos = await pagosRecibidos(rango.desde - DIA_MS, Math.min(rango.hasta + DIA_MS, Date.now()), lado);
     const pago = pagos.find((p) => p.id === orderId);
     if (pago) return { fechaMs: Date.parse(pago.fecha), estimada: false };
   } catch {
@@ -1356,14 +1399,15 @@ export async function guardarComprobante(
   leido: Omit<Leido, "horaTelefono"> & { fechaMs: number; estimada: boolean; soloDia?: boolean; horaTelefono?: boolean },
   archivo: { nombre: string; mime: string; datos: Buffer },
   usuario: { email: string; cids: number | null },
+  lado: Lado = "entrada",
 ): Promise<{ id: number } | { repetido: { fecha: string; subidoPor: string; companyId: number | null } }> {
   await ensureTabla();
   try {
     // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
     const [res]: any = await db.execute(
       `INSERT INTO binance_comprobantes
-         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, cliente, archivo_mime, archivo, archivo_sha, subido_por, company_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, cliente, archivo_mime, archivo, archivo_sha, subido_por, company_id, tipo)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         leido.orderId,
         leido.monto,
@@ -1377,6 +1421,7 @@ export async function guardarComprobante(
         huella(archivo.datos),
         usuario.email,
         usuario.cids,
+        lado,
       ],
     );
     return { id: res.insertId };
