@@ -156,7 +156,7 @@ export async function fetchDocumentosATiempo(
  * (confirmado con movimientos reales: anticipo se debita, cada cuota pagada
  * se acredita, el saldo baja a cero solo).
  */
-const CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA: Record<number, string> = {
+export const CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA: Record<number, string> = {
   9: "1.01.05.008", // Valencia - Prestamos Empleados
   10: "1.01.05.103", // Caracas - Prestamos a Empleados
   7: "1.01.04.001", // Panama - CxC Empleados

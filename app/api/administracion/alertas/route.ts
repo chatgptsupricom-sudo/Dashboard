@@ -213,3 +213,71 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
   }
 }
+
+// Dias que una alerta puede no verse antes de contarla como nueva al volver.
+const DIAS_PARA_REAPARECER = 30;
+
+/**
+ * POST /api/administracion/alertas {empresa, ids: [...]} — anota que estas
+ * alertas estan abiertas hoy y devuelve cuando se vio cada una por primera vez
+ * (`detectadas`: id -> YYYY-MM-DD). Las alertas se recalculan en cada carga, asi
+ * que sin esto "Detectada" siempre decia hoy. Lo llama la pantalla con las del
+ * mes en curso.
+ *
+ * shortcut: "se vio" = alguien abrio la pantalla; si nadie la abre en
+ * DIAS_PARA_REAPARECER dias, una alerta que siguio abierta cuenta como nueva.
+ * Si hace falta exacto, anotarlas desde un cron diario.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const user = await getAdminUser(request);
+    if (!canViewAdministracion(user)) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    const body = await request.json().catch(() => ({}));
+    const empresaPedida = normalizarEmpresa(body.empresa);
+    const ids: string[] = Array.isArray(body.ids)
+      ? body.ids.map((x: unknown) => String(x).trim()).filter((x: string) => x && x.length <= 120)
+      : [];
+    if (empresaPedida === null || ids.length === 0 || ids.length > 200) {
+      return NextResponse.json({ error: "Parametros invalidos: empresa e ids" }, { status: 400 });
+    }
+    const empresa = empresaDelUsuario(user, empresaPedida);
+    if (empresa === null) return respuestaSedeNoPermitida();
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS alertas_admin_detectadas (
+        alerta_id VARCHAR(120) NOT NULL,
+        empresa VARCHAR(20) NOT NULL DEFAULT '',
+        primera DATE NOT NULL,
+        ultima DATE NOT NULL,
+        PRIMARY KEY (alerta_id, empresa)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    // Hoy en Caracas (el servidor corre en UTC).
+    const hoy = new Date(Date.now() - 4 * 3600_000).toISOString().slice(0, 10);
+    for (const id of ids) {
+      await query(
+        `INSERT INTO alertas_admin_detectadas (alerta_id, empresa, primera, ultima) VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           primera = IF(ultima < ? - INTERVAL ${DIAS_PARA_REAPARECER} DAY, VALUES(primera), primera),
+           ultima = VALUES(ultima)`,
+        [id, empresa, hoy, hoy, hoy],
+      );
+    }
+    const rows = await query(
+      `SELECT alerta_id, primera FROM alertas_admin_detectadas
+        WHERE empresa = ? AND alerta_id IN (${ids.map(() => "?").join(",")})`,
+      [empresa, ...ids],
+    );
+    const detectadas: Record<string, string> = {};
+    (rows.rows as any[]).forEach((r) => {
+      const f = aFecha(r.primera);
+      if (f) detectadas[r.alerta_id] = f;
+    });
+    return NextResponse.json({ success: true, detectadas });
+  } catch (error: any) {
+    console.error("Error anotando alertas detectadas:", error.message);
+    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+  }
+}
