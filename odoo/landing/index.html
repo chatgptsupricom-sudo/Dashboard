@@ -19,7 +19,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261104m">
+<link rel="stylesheet" href="estilos.css?v=20261104z">
 </head>
 <body>
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -38,6 +38,7 @@
                 <a href="#comprar">Cómo comprar</a>
                 <a href="#sedes">Sedes</a>
                 <button type="button" class="menu-ubicar">Usar mi ubicación para elegir la sede</button>
+                <button type="button" class="menu-tema">Cambiar a modo oscuro</button>
                 <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
                 <a class="boton boton-tinta" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
             </nav>
@@ -58,6 +59,10 @@
                     </div>
                 </div>
             </div>
+            <button class="carrito-boton" type="button" aria-haspopup="dialog" aria-controls="carrito" aria-label="Abrir el carrito">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 4h2.6l2.4 11h10.6l2.2-8H6.3"/><circle cx="9.5" cy="19.5" r="1.5"/><circle cx="17" cy="19.5" r="1.5"/></svg>
+                <span class="carrito-n" hidden>0</span>
+            </button>
             <button class="tema" type="button" aria-pressed="false" aria-label="Activar modo oscuro">
                 <svg class="tema-sol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/></svg>
                 <svg class="tema-luna" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
@@ -219,7 +224,7 @@
                 <li class="paso aparece">
                     <span class="paso-num">2</span>
                     <h3>Arma tu cotización</h3>
-                    <p>Agrega productos desde el catálogo o mándale tu lista de códigos a tu vendedor.</p>
+                    <p>Agrega productos al carrito con + o pega tu lista de códigos, y mándasela a ventas.</p>
                 </li>
                 <li class="paso aparece">
                     <span class="paso-num">3</span>
@@ -229,92 +234,6 @@
             </ol>
         </div>
     </section>
-
-    <!-- Cotización: los productos que se suman con + caen en una caja 3D; se manda a ventas de la sede -->
-    <section id="pedido" class="pedido" data-seccion>
-        <div class="contenedor">
-            <div class="cabeza-seccion aparece">
-                <h2 class="titulo">Tu cotización</h2>
-                <p class="titulo-nota">Suma productos con <strong>+</strong> desde cualquier parte de la página o búscalos aquí, y se la mandas a ventas de <span data-sede="nombre">Valencia</span> por <span data-sede="medio">WhatsApp</span>.</p>
-            </div>
-
-            <div class="cotizador aparece">
-                <!-- La caja: muestra lo que llevas -->
-                <div class="caja-escena" aria-hidden="true">
-                    <div class="caja">
-                        <div class="caja-cara caja-fondo"></div>
-                        <div class="caja-cara caja-atras"></div>
-                        <div class="caja-cara caja-izq"></div>
-                        <div class="caja-cara caja-der"></div>
-                        <div class="caja-items"></div>
-                        <div class="caja-cara caja-frente"><span class="caja-logo"></span></div>
-                    </div>
-                    <div class="caja-sombra"></div>
-                </div>
-
-                <div class="cotizacion" role="region" aria-labelledby="cotizacion-titulo">
-                    <div class="cotizacion-cabeza">
-                        <div>
-                            <h3 id="cotizacion-titulo" class="cotizacion-titulo">Solicitud para <span data-sede="nombre">Valencia</span></h3>
-                            <p class="cotizacion-fecha"></p>
-                        </div>
-                        <button type="button" class="enlace-chico" data-accion="cambiar-sede">Cambiar de sede</button>
-                    </div>
-
-                    <div class="buscador">
-                        <label class="solo-lectores" for="buscar-codigo">Agregar un producto por nombre, marca o código</label>
-                        <div class="buscador-caja">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-                            <input id="buscar-codigo" type="search" role="combobox" aria-expanded="false" aria-controls="buscar-opciones" aria-autocomplete="list" aria-describedby="buscar-ayuda buscar-estado" autocomplete="off" spellcheck="false" placeholder="Agrega por nombre, marca o código">
-                        </div>
-                        <p id="buscar-ayuda" class="buscador-ayuda">¿Tienes una lista de códigos? Pégala aquí y la sumamos completa.</p>
-                        <p id="buscar-estado" class="solo-lectores" role="status"></p>
-                        <div class="buscador-panel" hidden>
-                            <ul id="buscar-opciones" class="buscador-opciones" role="listbox" aria-label="Productos"></ul>
-                            <p class="opcion-nada" hidden></p>
-                            <a class="buscador-catalogo" target="_blank" rel="noopener"></a>
-                        </div>
-                    </div>
-
-                    <div class="ticket-lineas" role="list" aria-label="Productos de la cotización"></div>
-                    <div class="ticket-vacio">
-                        <p><strong>Tu caja está vacía.</strong> Toca + en cualquier producto o búscalo arriba.</p>
-                    </div>
-
-                    <div class="sugeridos" hidden>
-                        <p class="sugeridos-titulo">Suele pedirse con lo que llevas</p>
-                        <div class="sugeridos-lista"></div>
-                    </div>
-
-                    <div class="ticket-pie">
-                        <div class="ticket-totales">
-                            <span aria-hidden="true"><strong data-total="lineas">0</strong> productos</span>
-                            <span aria-hidden="true"><strong data-total="unidades">0</strong> unidades</span>
-                            <button type="button" class="enlace-chico" data-accion="vaciar">Vaciar</button>
-                            <button type="button" class="enlace-chico enlace-acento" data-accion="deshacer" hidden>Deshacer</button>
-                        </div>
-                        <p id="pedido-resumen" class="pedido-resumen"></p>
-                        <p id="pedido-anuncio" class="solo-lectores" role="status"></p>
-                        <a class="boton boton-grande pedido-enviar" target="_blank" rel="noopener">
-                            <span data-solo-whatsapp><svg class="icono-lleno" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.8-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z"/></svg></span>
-                            <span data-solo-correo hidden><svg class="icono-linea" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg></span>
-                            Enviar a ventas por <span data-sede="medio">WhatsApp</span><span class="solo-lectores" data-solo-whatsapp> (abre WhatsApp en otra pestaña)</span><span class="solo-lectores" data-solo-correo hidden> (abre tu programa de correo)</span>
-                        </a>
-                        <p id="enviar-ayuda" class="solo-lectores">Agrega al menos un producto para enviar.</p>
-                        <p class="ticket-largo" hidden>Tu lista es larga para un correo: al enviar la copiamos y solo tienes que pegarla.</p>
-                        <p class="ticket-nota">Sin precios aquí: tu vendedor te responde con la cotización.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Acceso a la cotización desde cualquier parte de la página -->
-    <a class="cotizacion-flotante" href="#pedido" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5M12 12v9"/></svg>
-        <span>Tu cotización</span>
-        <strong class="cotizacion-flotante-n">0</strong>
-    </a>
 
     <!-- Preguntas -->
     <section id="preguntas" class="preguntas" data-seccion>
@@ -403,7 +322,76 @@
     </div>
 </footer>
 
-<script src="datos.js?v=20261104m"></script>
-<script src="app.js?v=20261104m"></script>
+<!-- Carrito: panel lateral que se abre desde la cabecera. Es una cotización: se manda a ventas de la sede, no se cobra. -->
+<div class="carrito-fondo" aria-hidden="true"></div>
+<aside id="carrito" class="carrito" role="dialog" aria-modal="true" aria-labelledby="carrito-titulo" inert>
+    <div class="carrito-cabeza">
+        <div>
+            <h2 id="carrito-titulo" class="carrito-titulo">Tu carrito</h2>
+            <p class="carrito-sub">Cotización para <strong data-sede="nombre">Valencia</strong> · <button type="button" class="enlace-chico" data-accion="cambiar-sede">Cambiar de sede</button></p>
+        </div>
+        <button type="button" class="carrito-cerrar" aria-label="Cerrar el carrito">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+    </div>
+
+    <div class="carrito-cuerpo">
+        <div class="buscador">
+            <label class="solo-lectores" for="buscar-codigo">Agregar un producto por nombre, marca o código</label>
+            <div class="buscador-caja">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input id="buscar-codigo" type="search" role="combobox" aria-expanded="false" aria-controls="buscar-opciones" aria-autocomplete="list" aria-describedby="buscar-ayuda buscar-estado" autocomplete="off" spellcheck="false" placeholder="Agrega por nombre, marca o código">
+            </div>
+            <p id="buscar-ayuda" class="buscador-ayuda">¿Tienes una lista de códigos? Pégala aquí y la sumamos completa.</p>
+            <p id="buscar-estado" class="solo-lectores" role="status"></p>
+            <div class="buscador-panel" hidden>
+                <ul id="buscar-opciones" class="buscador-opciones" role="listbox" aria-label="Productos"></ul>
+                <p class="opcion-nada" hidden></p>
+                <a class="buscador-catalogo" target="_blank" rel="noopener"></a>
+            </div>
+        </div>
+
+        <div class="ticket-lineas" role="list" aria-label="Productos del carrito"></div>
+        <div class="ticket-vacio">
+            <p><strong>Tu carrito está vacío.</strong> Toca + en cualquier producto o búscalo arriba.</p>
+        </div>
+
+        <div class="sugeridos" hidden>
+            <p class="sugeridos-titulo">Suele pedirse con lo que llevas</p>
+            <div class="sugeridos-lista"></div>
+        </div>
+    </div>
+
+    <div class="carrito-pie">
+        <div class="ticket-totales">
+            <span aria-hidden="true"><strong data-total="lineas">0</strong> productos</span>
+            <span aria-hidden="true"><strong data-total="unidades">0</strong> unidades</span>
+            <button type="button" class="enlace-chico" data-accion="vaciar">Vaciar</button>
+            <button type="button" class="enlace-chico enlace-acento" data-accion="deshacer" hidden>Deshacer</button>
+        </div>
+        <p id="pedido-resumen" class="pedido-resumen"></p>
+        <a class="boton boton-grande pedido-enviar" target="_blank" rel="noopener">
+            <span data-solo-whatsapp><svg class="icono-lleno" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.8-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z"/></svg></span>
+            <span data-solo-correo hidden><svg class="icono-linea" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg></span>
+            <span class="enviar-texto">Pedir cotización por <span data-sede="medio">WhatsApp</span><span class="solo-lectores" data-solo-whatsapp> (abre WhatsApp en otra pestaña)</span><span class="solo-lectores" data-solo-correo hidden> (abre tu programa de correo)</span></span>
+        </a>
+        <p id="enviar-ayuda" class="solo-lectores">Agrega al menos un producto para enviar.</p>
+        <p class="ticket-largo" hidden>Tu lista es larga para un correo: al enviar la copiamos y solo tienes que pegarla.</p>
+        <p class="ticket-nota">Sin precios ni pago aquí: tu vendedor te responde con la cotización.</p>
+    </div>
+</aside>
+
+<!-- Anuncios para lectores de pantalla: fuera del panel, que está inert cuando se cierra -->
+<p id="pedido-anuncio" class="solo-lectores" role="status"></p>
+
+<!-- Aviso al sumar un producto -->
+<div class="carrito-aviso" hidden>
+    <img class="carrito-aviso-foto" alt="">
+    <p><strong>Agregado al carrito</strong><span class="carrito-aviso-nombre"></span></p>
+    <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver carrito</button>
+</div>
+
+<script src="datos.js?v=20261104z"></script>
+<script src="app.js?v=20261104z"></script>
 </body>
 </html>

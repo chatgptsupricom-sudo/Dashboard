@@ -146,7 +146,7 @@ button { font: inherit; color: inherit; }
 .menu > a:not(.boton):hover, .menu > a.activo { color: var(--tinta); background: var(--superficie-2); }
 .menu .boton { margin-left: 6px; }
 .menu-boton { display: none; }
-.menu-ubicar { display: none; }
+.menu-ubicar, .menu-tema { display: none; }
 .tema {
     width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--borde-boton); background: transparent;
     display: grid; place-items: center; cursor: pointer; transition: border-color .2s, transform .3s var(--curva);
@@ -479,58 +479,37 @@ button { font: inherit; color: inherit; }
 .combo-lista li:first-child::before { content: "•"; }
 .combo .agregar { justify-self: start; }
 
-/* ------------------------------------------------------------------ Tu cotización: caja 3D + lista */
-.pedido { padding: var(--seccion) 0; background: var(--banda); transition: background .35s; }
-.cotizador { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 40px; align-items: center; }
+/* ------------------------------------------------------------------ Carrito: panel lateral */
+.carrito-fondo {
+    position: fixed; inset: 0; z-index: 80; background: rgba(5, 7, 13, .45);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+    opacity: 0; visibility: hidden; transition: opacity .35s, visibility .35s;
+}
+.carrito {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 81; width: min(460px, 100vw);
+    display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+    background: var(--superficie); color: var(--tinta); border-left: 1px solid var(--linea);
+    box-shadow: -40px 0 80px -40px rgba(0, 0, 0, .45);
+    transform: translateX(104%); visibility: hidden; transition: transform .5s var(--curva), visibility .5s;
+}
+/* El scroll se bloquea en html: con overflow-x: clip en html, el overflow del body no llega a la ventana. */
+html.carrito-abierto { overflow: hidden; }
+body.carrito-abierto .carrito-fondo { opacity: 1; visibility: visible; }
+/* Al abrir se hace visible enseguida (si no, no recibe el foco); al cerrar se oculta al terminar de salir. */
+body.carrito-abierto .carrito { transform: none; visibility: visible; transition: transform .5s var(--curva), visibility 0s; }
+.carrito-cabeza { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 20px 14px 24px; border-bottom: 1px solid var(--linea); }
+.carrito-titulo { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+.carrito-sub { margin-top: 2px; color: var(--gris); font-size: 14px; }
+.carrito-sub strong { color: var(--tinta); }
+.carrito-cerrar {
+    width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--linea); background: none; color: var(--tinta);
+    display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; transition: border-color .2s, transform .3s var(--curva);
+}
+.carrito-cerrar:hover { border-color: var(--tinta); transform: rotate(90deg); }
+.carrito-cerrar svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.carrito-cuerpo { display: grid; align-content: start; gap: 14px; padding: 16px 24px 16px; overflow-y: auto; overscroll-behavior: contain; }
+.carrito-pie { display: grid; gap: 12px; padding: 16px 24px 22px; border-top: 1px solid var(--linea); background: var(--superficie); }
 
-/* La caja: un cubo abierto en CSS 3D; lo que se suma cae adentro (app.js pone --rx/--ry con el mouse). */
-.caja-escena { position: relative; height: 420px; perspective: 1100px; display: grid; place-items: center; }
-.caja {
-    --an: 260px; --al: 96px; --fo: 250px;
-    position: relative; width: var(--an); height: var(--al); transform-style: preserve-3d;
-    transform: rotateX(calc(-24deg + var(--rx, 0deg))) rotateY(calc(-34deg + var(--ry, 0deg)));
-    transition: transform .8s var(--curva); margin-top: 90px;
-}
-.caja-cara { position: absolute; left: 0; top: 0; border: 1px solid var(--borde-boton); }
-.caja-fondo, .caja-atras, .caja-izq, .caja-der { background: color-mix(in srgb, var(--superficie) 88%, var(--tinta)); }
-.caja-fondo { width: var(--an); height: var(--fo); top: calc((var(--al) - var(--fo)) / 2); transform: translateY(calc(var(--al) / 2)) rotateX(90deg); }
-.caja-atras { width: var(--an); height: var(--al); transform: translateZ(calc(var(--fo) / -2)); }
-.caja-izq, .caja-der { width: var(--fo); height: var(--al); left: calc((var(--an) - var(--fo)) / 2); }
-.caja-izq { transform: rotateY(-90deg) translateZ(calc(var(--an) / 2)); background: color-mix(in srgb, var(--superficie) 80%, var(--tinta)); }
-.caja-der { transform: rotateY(90deg) translateZ(calc(var(--an) / 2)); }
-/* El frente es de vidrio: se ve lo que hay adentro. */
-.caja-frente {
-    width: var(--an); height: var(--al); transform: translateZ(calc(var(--fo) / 2));
-    background: color-mix(in srgb, var(--acento) 14%, transparent); border-color: color-mix(in srgb, var(--acento) 45%, transparent);
-    display: grid; place-items: end start; padding: 12px 14px;
-}
-.caja-logo { font-size: 11px; font-weight: 800; letter-spacing: .14em; color: color-mix(in srgb, var(--tinta) 65%, transparent); }
-.caja-items { position: absolute; inset: 0; transform-style: preserve-3d; }
-/* Cada producto es una tarjeta parada dentro de la caja; sobresale por arriba. */
-.caja-item {
-    position: absolute; left: calc(50% - 50px); bottom: 0; width: 100px; height: 128px;
-    border-radius: 14px; background: #fff; border: 1px solid rgba(11, 13, 18, .1); box-shadow: 0 10px 24px -14px rgba(0, 0, 0, .5);
-    display: grid; place-items: center; transform: translate3d(var(--x), 0, var(--z)) rotateY(34deg) rotateZ(var(--r));
-    transform-origin: 50% 100%; animation: cae .7s cubic-bezier(.3, 1.4, .5, 1) both;
-}
-.caja-item img { width: 86px; height: 86px; object-fit: contain; }
-.caja-item b {
-    position: absolute; top: -8px; right: -8px; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 999px;
-    background: var(--tinta); color: var(--fondo); font-size: 12px; font-weight: 800; display: grid; place-items: center;
-}
-@keyframes cae { from { opacity: 0; translate: 0 -220px; } 60% { opacity: 1; } to { opacity: 1; translate: 0 0; } }
-.caja-sombra {
-    position: absolute; left: 50%; bottom: 46px; width: 340px; height: 60px; margin-left: -170px; border-radius: 50%;
-    background: radial-gradient(closest-side, var(--sombra), transparent); opacity: .55; pointer-events: none;
-}
-
-.cotizacion {
-    display: grid; gap: 16px; padding: 24px; border-radius: var(--r-3); background: var(--superficie); border: 1px solid var(--banda-linea);
-    box-shadow: 0 40px 80px -60px var(--sombra);
-}
-.cotizacion-cabeza { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.cotizacion-titulo { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
-.cotizacion-fecha { margin-top: 2px; color: var(--gris); font-size: 13px; }
 .enlace-chico {
     min-height: 32px; padding: 0 4px; border: 0; background: none; color: var(--gris); font-size: 13px; font-weight: 700;
     text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
@@ -567,7 +546,7 @@ button { font: inherit; color: inherit; }
 .buscador-catalogo { display: flex; align-items: center; min-height: 44px; padding: 0 10px; color: var(--acento); font-size: 14px; font-weight: 700; text-decoration: none; border-top: 1px solid var(--linea); margin-top: 6px; }
 .buscador-catalogo:hover { text-decoration: underline; }
 
-.ticket-lineas { display: grid; max-height: 330px; overflow-y: auto; margin-right: -8px; padding-right: 8px; container-type: inline-size; }
+.ticket-lineas { display: grid; container-type: inline-size; }
 .ticket-lineas:empty { display: none; }
 .linea-pedido {
     display: grid; grid-template-columns: 48px minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
@@ -633,6 +612,7 @@ button { font: inherit; color: inherit; }
 .pedido-resumen { color: var(--gris); font-size: 13px; }
 .pedido-resumen:empty { display: none; }
 .pedido-enviar { gap: 10px; width: 100%; background: var(--tinta); color: var(--fondo); }
+.enviar-texto { text-align: center; }
 .pedido-enviar:hover { background: var(--azul); color: #fff; }
 .pedido-enviar.por-whatsapp { background: #25D366; color: #0B0D12; }
 .pedido-enviar.por-whatsapp:hover { background: #1EBE5A; color: #0B0D12; }
@@ -643,19 +623,35 @@ button { font: inherit; color: inherit; }
 .ticket-largo { padding: 10px 14px; border-radius: var(--r-1); background: color-mix(in srgb, var(--aviso) 14%, transparent); color: var(--tinta); font-size: 13px; }
 .ticket-largo[hidden] { display: none; }
 
-/* Acceso flotante a la cotización */
-.cotizacion-flotante {
-    position: fixed; right: 20px; bottom: 20px; z-index: 45; display: inline-flex; align-items: center; gap: 10px;
-    min-height: 52px; padding: 0 8px 0 18px; border-radius: 999px; background: var(--tinta); color: var(--fondo);
-    font-weight: 700; font-size: 15px; text-decoration: none; box-shadow: 0 20px 40px -18px rgba(0, 0, 0, .55);
-    transition: transform .35s var(--curva), opacity .35s;
+/* Botón del carrito en la cabecera, con las unidades que llevas */
+.carrito-boton {
+    position: relative; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--borde-boton); background: transparent;
+    color: var(--tinta); display: grid; place-items: center; cursor: pointer; transition: border-color .2s, transform .3s var(--curva);
 }
-.cotizacion-flotante[hidden] { display: none; }
-body.con-flotante .pie-legal { padding-bottom: 96px; } /* que el botón no tape el aviso legal */
-.cotizacion-flotante svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
-.cotizacion-flotante-n { min-width: 36px; height: 36px; padding: 0 8px; border-radius: 999px; background: var(--azul); color: #fff; display: grid; place-items: center; }
-.cotizacion-flotante.salta { animation: salta .5s var(--curva); }
-@keyframes salta { 30% { transform: scale(1.12); } 100% { transform: none; } }
+.carrito-boton:hover { border-color: var(--tinta); }
+.carrito-boton svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.carrito-n {
+    position: absolute; top: -5px; right: -6px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px;
+    background: var(--azul); color: #fff; font-size: 12px; font-weight: 800; display: grid; place-items: center;
+    border: 2px solid var(--fondo);
+}
+.carrito-boton.salta { animation: salta .5s var(--curva); }
+@keyframes salta { 30% { transform: scale(1.18); } 100% { transform: none; } }
+
+/* Aviso al sumar un producto (sale debajo del carrito, se va solo) */
+.carrito-aviso {
+    position: fixed; top: 84px; right: max(16px, calc((100vw - var(--ancho)) / 2 + var(--lado))); z-index: 60;
+    display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    width: min(380px, calc(100vw - 32px)); padding: 10px 10px 10px 10px; border-radius: var(--r-2);
+    background: var(--superficie); border: 1px solid var(--linea); box-shadow: 0 30px 60px -28px var(--sombra);
+    animation: entra-aviso .35s var(--curva) both;
+}
+@keyframes entra-aviso { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+.carrito-aviso-foto { width: 52px; height: 52px; object-fit: contain; padding: 4px; border-radius: 10px; background: #fff; border: 1px solid var(--linea); }
+.carrito-aviso p { min-width: 0; font-size: 14px; line-height: 1.3; }
+.carrito-aviso p strong { display: block; }
+.carrito-aviso-nombre { display: block; color: var(--gris); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.carrito-aviso .boton { min-height: 40px; padding: 0 14px; font-size: 14px; }
 
 /* ------------------------------------------------------------------ Preguntas */
 .preguntas { padding: 0 0 var(--seccion); }
@@ -720,7 +716,7 @@ body.con-flotante .pie-legal { padding-bottom: 96px; } /* que el botón no tape 
 .pie-legal p { color: var(--gris); font-size: 14px; }
 
 /* ------------------------------------------------------------------ Menú desplegable (con el selector de sede no cabe en una fila) */
-@media (max-width: 1200px) {
+@media (max-width: 1260px) {
     .menu-boton {
         display: grid; gap: 6px; place-content: center; width: 44px; height: 44px; border: 0; background: transparent; cursor: pointer;
     }
@@ -790,22 +786,22 @@ body.con-flotante .pie-legal { padding-bottom: 96px; } /* que el botón no tape 
     .prod { flex-basis: 72vw; }
     .estante-flechas { display: none; }
     .combos { grid-template-columns: 1fr; }
-    .cotizador { grid-template-columns: 1fr; gap: 8px; }
-    .caja-escena { height: 300px; }
-    .caja { --an: 200px; --al: 76px; --fo: 190px; margin-top: 70px; }
-    .caja-item { width: 80px; height: 102px; left: calc(50% - 40px); }
-    .caja-item img { width: 68px; height: 68px; }
-    .caja-sombra { width: 260px; margin-left: -130px; bottom: 30px; }
-    .cotizacion { padding: 18px; }
-    .ticket-lineas { max-height: none; overflow: visible; margin-right: 0; padding-right: 0; }
+    .carrito-cabeza { padding: 16px 16px 4px 18px; }
+    .carrito-cuerpo { padding: 4px 18px 14px; }
+    .carrito-pie { padding: 14px 18px 18px; }
+    .carrito .buscador-panel { position: static; }
     .contador button, .linea-quitar { width: 44px; height: 44px; }
-    .contador input { font-size: 16px; } /* 16 px: iOS no acerca la página al tocar */
-    .cotizacion-flotante { right: 16px; bottom: 16px; }
+    .contador input, .buscador input { font-size: 16px; } /* 16 px: iOS no acerca la página al tocar */
+    .carrito-aviso { top: 80px; right: 16px; }
     .cierre-caja { padding: 36px 24px; }
     .pie-grilla { grid-template-columns: 1fr 1fr; }
     .pie-marca { grid-column: 1 / -1; }
 }
 
+/* Pantallas bajas (celular, laptop chica): más lugar para la lista. */
+@media (max-height: 760px) {
+    .buscador-ayuda { display: none; }
+}
 /* Quien pide menos movimiento ve todo quieto, sin desplazamientos raros y con todo alcanzable. */
 @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
@@ -827,7 +823,9 @@ body.con-flotante .pie-legal { padding-bottom: 96px; } /* que el botón no tape 
     .cabecera-fila { gap: 8px; }
     .cabecera-acciones { gap: 4px; }
     .logo { height: 22px; }
-    .tema, .menu-boton { width: 40px; height: 40px; }
+    .menu-boton, .carrito-boton { width: 40px; height: 40px; }
+    .tema { display: none; } /* va dentro del menú */
+    .menu .menu-tema { display: flex; align-items: center; min-height: 50px; padding: 0 12px; border: 0; background: none; color: var(--tinta); font-size: 17px; font-weight: 700; text-align: left; cursor: pointer; }
     .sede-selector { height: 40px; }
     .sede-ubicar { display: none; }
     .menu .menu-ubicar { display: flex; align-items: center; min-height: 50px; padding: 0 12px; border: 0; background: none; color: var(--acento); font-size: 17px; font-weight: 700; text-align: left; cursor: pointer; }

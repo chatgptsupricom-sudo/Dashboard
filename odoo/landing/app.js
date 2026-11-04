@@ -68,7 +68,7 @@
     // Enlace a una búsqueda: en la tienda si la sede tiene la suya; si no, en el buscador de la lista.
     const enlazarBusqueda = (a, q) => {
         if (FICHAS) { a.href = buscar(q); return; }
-        a.href = "#pedido";
+        a.href = "#carrito";
         a.addEventListener("click", (ev) => { ev.preventDefault(); enLaSede.buscar(q); });
     };
 
@@ -121,6 +121,8 @@
         const oscuro = t === "oscuro";
         botonTema.setAttribute("aria-pressed", String(oscuro));
         botonTema.setAttribute("aria-label", oscuro ? "Activar modo claro" : "Activar modo oscuro");
+        const temaMenu = $(".menu-tema");
+        if (temaMenu) temaMenu.textContent = oscuro ? "Cambiar a modo claro" : "Cambiar a modo oscuro";
         if (guardar) { try { localStorage.setItem("supricom-tema", t); } catch (e) { /* sin almacenamiento: dura hasta recargar */ } }
     };
     ponerTema(raiz.getAttribute("data-tema") === "oscuro" ? "oscuro" : "claro", false);
@@ -228,8 +230,9 @@
     $(".sede-aviso-ubicar").addEventListener("click", () => ubicar(true));
     $(".sede-aviso-listo").addEventListener("click", () => aceptarSede(true));
     botonCambiarAviso.addEventListener("click", () => irASede(botonCambiarAviso.dataset.destino));
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !avisoSede.hidden) aceptarSede(false); });
-    document.addEventListener("click", (e) => { if (!avisoSede.hidden && !e.target.closest(".sede-selector")) aceptarSede(false); });
+    // El Escape o el clic que usa el carrito (o que ocurre dentro de él) no cuenta como respuesta al aviso de sede.
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && !avisoSede.hidden) aceptarSede(false); });
+    document.addEventListener("click", (e) => { if (!avisoSede.hidden && !e.target.closest(".sede-selector, #carrito")) aceptarSede(false); });
     // Primera visita sin sede conocida: si ya dio permiso de ubicación se usa sin preguntar; si no, se le ofrece.
     if (SEDE.origen === "supuesta") {
         const ofrecer = () => mostrarAviso(avisoSupuesta);
@@ -252,12 +255,13 @@
     };
     menuBoton.addEventListener("click", () => {
         const abierto = menu.classList.toggle("abierto");
-        if (abierto) cerrarAviso(); // el aviso de sede taparía los primeros enlaces
+        if (abierto) { cerrarAviso(); cerrarAvisoCarrito(); } // los avisos taparían los primeros enlaces
         menuBoton.setAttribute("aria-expanded", String(abierto));
         menuBoton.setAttribute("aria-label", abierto ? "Cerrar menú" : "Abrir menú");
     });
     for (const a of $$("a", menu)) a.addEventListener("click", () => cerrarMenu(false));
     $(".menu-ubicar").addEventListener("click", (ev) => { ev.stopPropagation(); cerrarMenu(false); ubicar(true); });
+    $(".menu-tema").addEventListener("click", () => botonTema.click());
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menu.classList.contains("abierto")) cerrarMenu(true); });
     document.addEventListener("click", (e) => { if (menu.classList.contains("abierto") && !cabecera.contains(e.target)) cerrarMenu(false); });
 
@@ -306,14 +310,14 @@
         ficha_.nombre.textContent = p.nombre;
         ficha_.marca.textContent = p.marca;
         ficha_.codigo.textContent = p.codigo;
-        ficha_.ver.href = FICHAS ? ficha(p.id) : "#pedido";
+        ficha_.ver.href = FICHAS ? ficha(p.id) : "#carrito";
         ficha_.cotizar.dataset.agregar = p.codigo.toUpperCase();
         enLaSede.marcar();
         minis.forEach((b, k) => b.setAttribute("aria-current", String(k === i)));
     };
     const paso = 360 / enAnillo.length;
     const items = enAnillo.map((p, i) => {
-        const a = crear("a", { class: "orbita-item", href: FICHAS ? ficha(p.id) : "#pedido", draggable: false, "aria-label": FICHAS ? `${p.marca} ${p.nombre}` : `Agregar ${p.marca} ${p.nombre} a mi lista` }, [
+        const a = crear("a", { class: "orbita-item", href: FICHAS ? ficha(p.id) : "#carrito", draggable: false, "aria-label": FICHAS ? `${p.marca} ${p.nombre}` : `Agregar ${p.marca} ${p.nombre} al carrito` }, [
             crear("img", { src: foto(p.id), alt: "", draggable: false }),
             crear("span", { text: p.marca }),
         ]);
@@ -739,44 +743,83 @@
         return cant > 0 ? { codigo: codigo.toUpperCase(), cant } : null;
     };
 
-    /* ---- La caja 3D: lo último que sumaste, parado adentro (hasta 6) */
-    const caja = $(".caja");
-    const cajaItems = $(".caja-items");
-    $(".caja-logo").textContent = `SUPRICOM · ${S.nombre.toUpperCase()}`;
-    // Lugar de cada tarjeta dentro de la caja: x, z (px) y un giro leve, de atrás hacia adelante.
-    const LUGARES = [[-58, -60, -4], [58, -60, 5], [0, -30, 1], [-62, 30, 3], [62, 30, -3], [0, 64, -1]];
-    const tarjetasCaja = new Map();
-    const pintarCaja = () => {
-        const ultimos = [...cotizacion.keys()].slice(-LUGARES.length);
-        for (const [c, el] of tarjetasCaja) if (!ultimos.includes(c)) { el.remove(); tarjetasCaja.delete(c); }
-        ultimos.forEach((c, i) => {
-            let el = tarjetasCaja.get(c);
-            if (!el) {
-                const p = porCodigo.get(c);
-                el = crear("div", { class: "caja-item" }, [p ? crear("img", { src: foto(p.id), alt: "" }) : crear("span", { class: "linea-icono", text: "?" }), crear("b")]);
-                tarjetasCaja.set(c, el);
-                cajaItems.append(el);
-            }
-            const [x, z, r] = LUGARES[i];
-            el.style.setProperty("--x", `${x}px`);
-            el.style.setProperty("--z", `${z}px`);
-            el.style.setProperty("--r", `${r}deg`);
-            el.style.zIndex = String(i);
-            $("b", el).textContent = miles(cotizacion.get(c));
-        });
+    /* ---- El carrito: panel lateral que se abre desde la cabecera */
+    const carrito = $("#carrito");
+    const botonCarrito = $(".carrito-boton");
+    const numeroCarrito = $(".carrito-n");
+    const avisoCarrito = $(".carrito-aviso");
+    let carritoAbierto = false;
+    let focoAntes = null;
+    let relojAviso = 0;
+    const cerrarAvisoCarrito = () => { clearTimeout(relojAviso); avisoCarrito.hidden = true; };
+    const abrirCarrito = (enfocar) => {
+        cerrarAvisoCarrito();
+        if (!carritoAbierto) {
+            if (menu.classList.contains("abierto")) cerrarMenu(false); // si no, queda abierto detrás del panel
+            carritoAbierto = true;
+            focoAntes = document.activeElement;
+            carrito.inert = false;
+            document.body.classList.add("carrito-abierto");
+            document.documentElement.classList.add("carrito-abierto"); // bloquea el scroll de la página
+            botonCarrito.setAttribute("aria-expanded", "true");
+        }
+        (enfocar || $(".carrito-cerrar")).focus({ preventScroll: true });
     };
-    // La caja se inclina un poco siguiendo el mouse.
-    const escenaCaja = $(".caja-escena");
-    if (!QUIETO) {
-        $(".cotizador").addEventListener("mousemove", (ev) => {
-            const r = escenaCaja.getBoundingClientRect();
-            const x = Math.max(-1, Math.min(1, (ev.clientX - r.left) / r.width * 2 - 1));
-            const y = Math.max(-1, Math.min(1, (ev.clientY - r.top) / r.height * 2 - 1));
-            caja.style.setProperty("--ry", `${x * 14}deg`);
-            caja.style.setProperty("--rx", `${-y * 8}deg`);
-        });
-        $(".cotizador").addEventListener("mouseleave", () => { caja.style.setProperty("--ry", "0deg"); caja.style.setProperty("--rx", "0deg"); });
-    }
+    const cerrarCarrito = (devolverFoco = true) => {
+        if (!carritoAbierto) return;
+        carritoAbierto = false;
+        document.body.classList.remove("carrito-abierto");
+        document.documentElement.classList.remove("carrito-abierto");
+        botonCarrito.setAttribute("aria-expanded", "false");
+        carrito.inert = true;
+        // El foco vuelve a donde estaba; si eso ya no se ve (el aviso que se cerró), al botón del carrito.
+        if (devolverFoco) (focoAntes && focoAntes.isConnected && focoAntes.offsetParent !== null ? focoAntes : botonCarrito).focus({ preventScroll: true });
+    };
+    botonCarrito.setAttribute("aria-expanded", "false");
+    botonCarrito.addEventListener("click", () => abrirCarrito());
+    $(".carrito-cerrar").addEventListener("click", () => cerrarCarrito());
+    $(".carrito-fondo").addEventListener("click", () => cerrarCarrito());
+    // Es un diálogo: el foco da la vuelta adentro (aunque se haya hecho clic en una parte sin controles) y Escape lo
+    // cierra, salvo que el buscador lo haya usado para cerrar su lista. No sigue a los otros Escape de la página.
+    document.addEventListener("keydown", (ev) => {
+        if (!carritoAbierto) return;
+        if (ev.key === "Escape") {
+            if (!ev.defaultPrevented) { ev.preventDefault(); ev.stopImmediatePropagation(); cerrarCarrito(); }
+            return;
+        }
+        if (ev.key !== "Tab") return;
+        const enfocables = $$("button, a[href], input, [tabindex='0']", carrito).filter((e) => !e.disabled && e.offsetParent !== null);
+        if (!enfocables.length) return;
+        const primero = enfocables[0];
+        const ultimo = enfocables[enfocables.length - 1];
+        const dentro = carrito.contains(document.activeElement);
+        if (ev.shiftKey && (!dentro || document.activeElement === primero)) { ev.preventDefault(); ultimo.focus(); }
+        else if (!ev.shiftKey && (!dentro || document.activeElement === ultimo)) { ev.preventDefault(); primero.focus(); }
+    }, true);
+
+    // Aviso al sumar con el carrito cerrado: qué se agregó y un botón para verlo. Se va solo, salvo que se haya
+    // sumado con el teclado (así se alcanza «Ver carrito» con Tab); Escape lo cierra.
+    const mostrarAvisoCarrito = (fotoId, nombre) => {
+        if (carritoAbierto || menu.classList.contains("abierto")) return;
+        const conTeclado = document.activeElement && document.activeElement !== document.body && document.activeElement.matches(":focus-visible");
+        clearTimeout(relojAviso);
+        $(".carrito-aviso-foto").src = foto(fotoId);
+        $(".carrito-aviso-nombre").textContent = nombre;
+        avisoCarrito.hidden = true;
+        void avisoCarrito.offsetWidth; // vuelve a correr la animación de entrada
+        avisoCarrito.hidden = false;
+        if (!conTeclado) relojAviso = setTimeout(cerrarAvisoCarrito, 4500);
+    };
+    const rearmarAviso = () => {
+        clearTimeout(relojAviso);
+        if (!avisoCarrito.hidden && !avisoCarrito.contains(document.activeElement)) relojAviso = setTimeout(cerrarAvisoCarrito, 2500);
+    };
+    avisoCarrito.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") clearTimeout(relojAviso); });
+    avisoCarrito.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") rearmarAviso(); });
+    avisoCarrito.addEventListener("focusin", () => clearTimeout(relojAviso));
+    avisoCarrito.addEventListener("focusout", (e) => { if (!avisoCarrito.contains(e.relatedTarget)) { clearTimeout(relojAviso); relojAviso = setTimeout(cerrarAvisoCarrito, 2500); } });
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !avisoCarrito.hidden && !carritoAbierto) cerrarAvisoCarrito(); });
+    $(".carrito-aviso-ver").addEventListener("click", () => abrirCarrito());
 
     /* ---- La lista de la cotización */
     const lineasTicket = $(".ticket-lineas");
@@ -786,15 +829,12 @@
     const avisoLargo = $(".ticket-largo");
     const botonDeshacer = $('[data-accion="deshacer"]');
     const botonVaciar = $('[data-accion="vaciar"]');
-    const totalLineas = $('[data-total="lineas"]');
-    const totalUnidades = $('[data-total="unidades"]');
+    const totalLineas = $$('[data-total="lineas"]'); // en el dibujo y en el pie
+    const totalUnidades = $$('[data-total="unidades"]');
     const sugeridos = $(".sugeridos");
     const listaSugeridos = $(".sugeridos-lista");
-    const flotante = $(".cotizacion-flotante");
-    const numeroFlotante = $(".cotizacion-flotante-n");
     let listaParaCopiar = null;
     enviar.classList.toggle("por-whatsapp", POR_WHATSAPP);
-    $(".cotizacion-fecha").textContent = new Date().toLocaleDateString("es-VE", { day: "numeric", month: "long", year: "numeric" });
 
     const filasTicket = new Map();
     const nuevaFila = (codigo) => {
@@ -842,19 +882,20 @@
             // El nombre empieza por lo que se ve (para quien usa la voz) y dice el producto y el estado.
             const p = porCodigo.get(b.dataset.agregar);
             const prod = p ? `${p.marca} ${p.nombre}` : b.dataset.agregar;
-            b.setAttribute("aria-label", n ? `${visible} de ${prod} en tu cotización. Sumar otra unidad` : `${visible} ${prod}`);
+            b.setAttribute("aria-label", n ? `${visible} de ${prod} en el carrito. Sumar otra unidad` : `${visible} ${prod}`);
         }
     };
     enLaSede.marcar = marcarBotones;
 
-    let seccionVisible = false;
-    const pintarFlotante = () => {
-        flotante.hidden = !cotizacion.size || seccionVisible;
-        document.body.classList.toggle("con-flotante", !flotante.hidden); // deja lugar al pie para que no lo tape
-        numeroFlotante.textContent = miles([...cotizacion.values()].reduce((a, b) => a + b, 0));
-        flotante.setAttribute("aria-label", `Ver tu cotización: ${cotizacion.size} ${cotizacion.size === 1 ? "producto" : "productos"}`);
+    // El número del carrito en la cabecera: las unidades que llevas.
+    const pintarBotonCarrito = () => {
+        const u = [...cotizacion.values()].reduce((a, b) => a + b, 0);
+        numeroCarrito.hidden = !u;
+        numeroCarrito.textContent = u > 999 ? "999+" : miles(u);
+        botonCarrito.setAttribute("aria-label", u
+            ? `Abrir el carrito: ${cotizacion.size} ${cotizacion.size === 1 ? "producto" : "productos"}, ${unidadesTxt(u)}`
+            : "Abrir el carrito (vacío)");
     };
-    new IntersectionObserver(([e]) => { seccionVisible = e.isIntersecting; pintarFlotante(); }, { threshold: 0.2 }).observe($(".cotizador"));
 
     let primeraVez = true;
     const pintar = () => {
@@ -886,8 +927,8 @@
         const n = cotizacion.size;
         vacioTicket.hidden = n > 0;
         botonVaciar.hidden = !n;
-        totalLineas.textContent = miles(n);
-        totalUnidades.textContent = miles(unidades);
+        for (const e of totalLineas) e.textContent = miles(n);
+        for (const e of totalUnidades) e.textContent = miles(unidades);
         listaParaCopiar = null;
         if (n) {
             texto.push("", `Total: ${n} ${n === 1 ? "producto" : "productos"}, ${unidadesTxt(unidades)}.`);
@@ -914,10 +955,9 @@
         }
         avisoLargo.hidden = !listaParaCopiar;
         resumen.textContent = porRevisar ? `${porRevisar} ${porRevisar === 1 ? "código" : "códigos"} por revisar: tu vendedor los confirma.` : "";
-        pintarCaja();
         pintarSugeridos();
         marcarBotones();
-        pintarFlotante();
+        pintarBotonCarrito();
         primeraVez = false;
     };
 
@@ -932,7 +972,7 @@
         else cotizacion.delete(codigo);
     };
 
-    // La foto del producto vuela hasta la cotización (la caja si se ve; si no, el botón flotante). El origen se
+    // La foto del producto vuela hasta el botón del carrito de la cabecera (con el panel abierto no hace falta). El origen se
     // mide antes de cambiar nada, porque al repintar la tarjeta de origen puede desaparecer (las sugerencias).
     const prepararVuelo = (img) => {
         if (QUIETO || !img || !img.isConnected) return null;
@@ -942,8 +982,8 @@
     const volar = (vuelo0) => {
         if (!vuelo0) return;
         const { o } = vuelo0;
-        const destino = seccionVisible ? caja : flotante;
-        if (destino.hidden) return;
+        if (carritoAbierto) return;
+        const destino = botonCarrito;
         const d = destino.getBoundingClientRect();
         const g = crear("img", { class: "vuela", src: vuelo0.src, alt: "" });
         g.style.left = `${o.left + o.width / 2 - 32}px`;
@@ -958,7 +998,7 @@
         ], { duration: 780, easing: "cubic-bezier(.45, 0, .25, 1)" });
         vuelo.onfinish = () => {
             g.remove();
-            if (destino === flotante) { flotante.classList.remove("salta"); void flotante.offsetWidth; flotante.classList.add("salta"); }
+            botonCarrito.classList.remove("salta"); void botonCarrito.offsetWidth; botonCarrito.classList.add("salta");
         };
     };
     const agregarProducto = (p, img) => {
@@ -967,7 +1007,8 @@
         poner(codigo, (cotizacion.get(codigo) || 0) + 1);
         cambio();
         volar(vuelo);
-        anunciar(`Agregado: ${p.marca} ${p.nombre}. Llevas ${unidadesTxt(cotizacion.get(codigo))}.`);
+        mostrarAvisoCarrito(p.id, `${p.marca} ${p.nombre}`);
+        anunciar(`Agregado al carrito: ${p.marca} ${p.nombre}. Llevas ${unidadesTxt(cotizacion.get(codigo))}.`);
     };
     enLaSede.agregar = (p, img) => agregarProducto(p, img);
 
@@ -982,7 +1023,8 @@
             for (const p of lista) { const c = p.codigo.toUpperCase(); if (!cotizacion.has(c)) poner(c, 1); }
             cambio();
             volar(vuelo);
-            anunciar(`Agregado el combo ${combo ? combo.titulo : ""}: ${lista.length} productos.`);
+            if (lista.length) mostrarAvisoCarrito(lista[0].id, `Combo: ${combo.titulo} (${lista.length})`);
+            anunciar(`Agregado al carrito el combo ${combo ? combo.titulo : ""}: ${lista.length} productos.`);
             return;
         }
         const p = porCodigo.get(b.dataset.agregar);
@@ -1044,7 +1086,7 @@
         pintar();
         botonDeshacer.hidden = false;
         botonDeshacer.focus();
-        anunciar("Cotización vacía. Puedes deshacerlo.");
+        anunciar("Carrito vacío. Puedes deshacerlo.");
     });
     botonDeshacer.addEventListener("click", () => {
         if (!respaldo) return;
@@ -1054,15 +1096,16 @@
         guardarCotizacion();
         pintar();
         buscador.focus();
-        anunciar("Cotización recuperada.");
+        anunciar("Carrito recuperado.");
     });
     $('[data-accion="cambiar-sede"]').addEventListener("click", (ev) => {
         ev.stopPropagation(); // si no, el clic llega al documento y cierra el aviso que se abre aquí
+        cerrarCarrito(false); // el selector está en la cabecera, detrás del panel
         selectorSede.focus({ preventScroll: true });
         let abierto = false;
         if (typeof selectorSede.showPicker === "function") { try { selectorSede.showPicker(); abierto = true; } catch (e) { /* sin gesto válido */ } }
         // Safari no tiene showPicker: se indica dónde está la lista.
-        if (!abierto) mostrarAviso("Elige tu sede en la lista de arriba. Tu cotización se mantiene.");
+        if (!abierto) mostrarAviso("Elige tu sede en la lista de arriba. Tu carrito se mantiene.");
     });
     // Con una lista larga el correo se abre con un saludo: la lista se copia para pegarla.
     enviar.addEventListener("click", () => {
@@ -1233,9 +1276,8 @@
     // En las sedes sin tienda propia, las categorías, marcas y banners buscan aquí.
     enLaSede.buscar = (q) => {
         if (!q) { $("#estantes").scrollIntoView({ behavior: QUIETO ? "auto" : "smooth", block: "start" }); return; }
-        $(".buscador").scrollIntoView({ behavior: QUIETO ? "auto" : "smooth", block: "center" });
         buscador.value = q;
-        buscador.focus({ preventScroll: true });
+        abrirCarrito(buscador);
         sugerir();
     };
 
@@ -1366,4 +1408,6 @@
 
     cargarCotizacion();
     pintar();
+    // Un enlace que termina en #carrito abre la página con el carrito abierto.
+    if (location.hash === "#carrito") abrirCarrito();
 })();
