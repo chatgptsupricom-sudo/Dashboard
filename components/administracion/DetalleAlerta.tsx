@@ -6,14 +6,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ExternalLink, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { AlertaAdmin } from "@/lib/administracion/alertas";
 import type { DetalleAlerta as Detalle } from "@/lib/administracion/saludDetalle";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const fecha = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—");
 
 /**
- * Al hacer clic en una alerta del Top 10: de donde sale en Odoo y los registros
+ * Al hacer clic en una alerta del Top 10 o en un indicador: de donde sale en Odoo y los registros
  * que la componen, cada uno con su enlace a la ficha en Odoo.
  */
 export default function DetalleAlerta({
@@ -22,7 +21,8 @@ export default function DetalleAlerta({
   mes,
   cerrar,
 }: {
-  alerta: AlertaAdmin | null;
+  /** Una alerta del Top 10 o un indicador de las tablas (mismos ids: sf-, gastos-, admin-). */
+  alerta: { id: string; titulo: string } | null;
   empresa: string;
   mes: string;
   cerrar: () => void;

@@ -3,12 +3,14 @@ import { esIntercompania } from "@/lib/administracion/intercompania";
 import { fetchFechasDePago } from "@/lib/administracion/saludFinanciera";
 import { fetchTesoreriaAdmin } from "@/lib/administracion/tesoreria";
 import { CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA } from "@/lib/administracion/gestionAdministrativa";
-import { searchReadTodo } from "@/lib/administracion/odooRefs";
+import { cargarRefsAdminKpis, idsParaEmpresas, searchReadTodo } from "@/lib/administracion/odooRefs";
+import { fetchCuentasGasto, fetchGastoReal, mesAnterior, rangoDelMes } from "@/lib/administracion/gastos";
+import { query } from "@/lib/db";
 import { cargarMetas } from "@/lib/administracion/metas";
 import { hoyCaracas, sumarDias } from "@/lib/administracion/lectura";
 
 /**
- * Detalle de una alerta del Top 10 de Salud Administrativa: de donde sale en
+ * Detalle de una alerta del Top 10 (o de un indicador de las tablas) de Salud Administrativa: de donde sale en
  * Odoo y los registros que la componen, cada uno con su enlace a la ficha en
  * Odoo. Un enlace de Odoo no puede llevar un filtro armado (el dominio no va en
  * la URL), por eso el enlace util es el de cada registro; el del menu solo
@@ -147,15 +149,10 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
   const desde = `${mes}-01`;
   const hasta = `${mes}-${String(new Date(anio, m, 0).getDate()).padStart(2, "0")}`;
 
-  if (alertaId.startsWith("gastos-")) {
-    return {
-      origen:
-        "Sale de los apuntes contables de las cuentas de gasto del mes, comparados contra el presupuesto cargado en el panel. El detalle por cuenta está en Gastos y Presupuesto.",
-      odoo: null,
-      panel: { etiqueta: "Gastos y Presupuesto", ruta: "/administracion/gastos" },
-      filas: [],
-      total: 0,
-    };
+  if (alertaId.startsWith("gastos-")) return detalleGastos(alertaId.slice("gastos-".length), companyIds, mes);
+  if (alertaId.startsWith("admin-")) {
+    const d = await detalleGestion(alertaId.slice("admin-".length), companyIds, desde, hasta);
+    if (d) return d;
   }
 
   switch (alertaId) {
@@ -448,10 +445,9 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
     }
   }
 
-  if (alertaId.startsWith("admin-")) {
+  if (/^(sf|admin)-/.test(alertaId)) {
     return {
-      origen:
-        "Sale de las tareas y proyectos de Administración en Odoo (checklist de cierre, incidencias, auditoría y documentos). Este indicador no tiene detalle por registro en el panel.",
+      origen: "Este indicador no tiene detalle por registro: o todavía no tiene fuente de datos en Odoo, o se calcula con totales. La fórmula está en la tabla del índice.",
       odoo: null,
       panel: null,
       filas: [],
@@ -459,4 +455,259 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
     };
   }
   return null;
+}
+
+/**
+ * Gastos y Presupuesto: las cuentas de gasto del mes con su presupuesto (o, en
+ * la alerta de una cuenta, los apuntes de esa cuenta). Mismo criterio que
+ * /api/administracion/gastos.
+ */
+async function detalleGastos(kpi: string, companyIds: number[], mes: string): Promise<DetalleAlerta> {
+  const cuentas = await fetchCuentasGasto(companyIds);
+  const rango = rangoDelMes(mes);
+  const { porCuenta: real, detalles } = await fetchGastoReal(companyIds, rango.desde, rango.hasta, cuentas);
+  const panel = { etiqueta: "Gastos y Presupuesto", ruta: "/administracion/gastos" };
+  const odoo = { etiqueta: "Contabilidad › Apuntes contables", url: (await urlAccion("apuntes", "account.move.line", companyIds)) || "" };
+
+  // Alerta de una cuenta puntual: sus apuntes del mes.
+  if (kpi.startsWith("cuenta-")) {
+    const codigo = kpi.slice("cuenta-".length);
+    const lista = detalles
+      .filter((d) => d.cuentaCodigo === codigo)
+      .sort((a, b) => b.monto - a.monto)
+      .map((d) => ({
+        texto: `${d.proveedor} · ${d.factura}`,
+        sub: [d.concepto, d.referencia, d.diario].filter(Boolean).join(" · "),
+        fecha: d.fecha,
+        monto: redondo(d.monto),
+        url: d.moveId ? urlRegistro("account.move", d.moveId) : null,
+      }));
+    return {
+      origen: `Apuntes publicados del mes en la cuenta ${codigo} (${cuentas.find((c) => c.codigo === codigo)?.nombre || ""}).`,
+      odoo,
+      panel,
+      ...recortar(lista),
+    };
+  }
+
+  const presupuesto: Record<string, number> = {};
+  try {
+    const rows = await query(
+      `SELECT cuenta_codigo, SUM(monto) AS monto FROM presupuesto_gastos
+        WHERE company_id IN (${companyIds.map(() => "?").join(",")}) AND mes = ? GROUP BY cuenta_codigo`,
+      [...companyIds, mes],
+    );
+    (rows.rows as any[]).forEach((r) => {
+      if (Number(r.monto) > 0) presupuesto[r.cuenta_codigo] = Number(r.monto);
+    });
+  } catch {
+    // Sin la tabla todavia: todo sale sin presupuesto, como en el indicador.
+  }
+  const anterior = rangoDelMes(mesAnterior(mes, 1));
+  const { porCuenta: previo } = await fetchGastoReal(companyIds, anterior.desde, anterior.hasta, cuentas);
+  let antes3: Record<string, number> = {};
+  if (kpi === "gastos_extraordinarios") {
+    antes3 = (await fetchGastoReal(companyIds, rangoDelMes(mesAnterior(mes, 3)).desde, anterior.hasta, cuentas)).porCuenta;
+  }
+
+  const porCodigo = new Map(cuentas.map((c) => [c.codigo, c]));
+  const codigos = [...new Set([...Object.keys(real), ...Object.keys(presupuesto)])].filter((c) => {
+    if (kpi === "gastos_sin_presupuesto") return (real[c] || 0) !== 0 && !presupuesto[c];
+    if (kpi === "gastos_extraordinarios") return (real[c] || 0) !== 0 && !antes3[c];
+    if (kpi === "variacion_mensual_gasto") return (real[c] || 0) !== 0 || (previo[c] || 0) !== 0;
+    return true;
+  });
+  const lista = codigos
+    .map((c) => {
+      const r = real[c] || 0;
+      const pres = presupuesto[c] || 0;
+      const prev = previo[c] || 0;
+      const sub =
+        kpi === "variacion_mensual_gasto"
+          ? `Mes anterior ${redondo(prev).toLocaleString("en-US")} · diferencia ${redondo(r - prev).toLocaleString("en-US")}`
+          : kpi === "gastos_extraordinarios"
+            ? "Sin movimiento en los 3 meses anteriores"
+            : pres
+              ? `Presupuesto ${redondo(pres).toLocaleString("en-US")} · ${redondo((r / pres) * 100)}% ejecutado`
+              : "Sin presupuesto cargado";
+      const cuenta = porCodigo.get(c);
+      return {
+        texto: `${c} ${cuenta?.nombre || ""}`.trim(),
+        sub,
+        monto: redondo(kpi === "variacion_mensual_gasto" ? r - prev : r),
+        url: cuenta ? urlRegistro("account.account", cuenta.id) : null,
+        orden: kpi === "variacion_mensual_gasto" ? Math.abs(r - prev) : kpi === "desviacion_gastos" ? r - pres : r,
+      };
+    })
+    .sort((a, b) => b.orden - a.orden)
+    .map(({ orden: _orden, ...f }) => f);
+  const ORIGEN: Record<string, string> = {
+    ejecucion_presupuestaria: "Gasto real del mes por cuenta (apuntes publicados en cuentas de gasto, grupo 6) contra el presupuesto cargado en el panel.",
+    desviacion_gastos: "Gasto real del mes por cuenta contra su presupuesto; arriba las que más se pasan.",
+    gastos_sin_presupuesto: "Cuentas con gasto en el mes que no tienen presupuesto cargado en el panel.",
+    gastos_extraordinarios: "Cuentas con gasto este mes y sin movimiento en los 3 meses anteriores (gasto no recurrente; Odoo no marca qué es extraordinario).",
+    variacion_mensual_gasto: "Gasto por cuenta este mes contra el mes anterior; el monto es la diferencia.",
+  };
+  return {
+    origen: ORIGEN[kpi] || ORIGEN.ejecucion_presupuestaria,
+    odoo,
+    panel,
+    ...recortar(lista),
+  };
+}
+
+const ESTADO_SOLICITUD: Record<string, string> = {
+  new: "Nueva",
+  pending: "Pendiente",
+  approved: "Aprobada",
+  refused: "Rechazada",
+  cancel: "Cancelada",
+};
+const diasDesde = (a: string, b?: string) =>
+  Math.max(0, Math.round(((b ? Date.parse(b.replace(" ", "T") + "Z") : Date.now()) - Date.parse(a.replace(" ", "T") + "Z")) / 86400000));
+
+/**
+ * Gestion Administrativa y Cumplimiento y Control: solicitudes de aprobacion,
+ * tickets de incidencias y tareas de los proyectos de cierre y auditoria, con
+ * el mismo dominio que cada indicador (lib/administracion/gestionAdministrativa.ts
+ * y cumplimientoControl.ts). null = ese indicador no tiene registros que listar.
+ */
+async function detalleGestion(kpi: string, companyIds: number[], desdeDia: string, hastaDia: string): Promise<DetalleAlerta | null> {
+  const desde = `${desdeDia} 00:00:00`;
+  const hasta = `${hastaDia} 23:59:59`;
+  if (!["documentos_procesados_a_tiempo", "tiempo_promedio_procesamiento", "operaciones_fuera_politica", "incidencias_vencidas", "cumplimiento_cierre_mensual", "auditoria_cerrados", "reincidencias"].includes(kpi)) {
+    return null;
+  }
+  const refs = await cargarRefsAdminKpis();
+  const vacio = (origen: string): DetalleAlerta => ({ origen, odoo: null, panel: null, filas: [], total: 0 });
+
+  if (kpi === "documentos_procesados_a_tiempo" || kpi === "tiempo_promedio_procesamiento") {
+    const categorias = idsParaEmpresas(refs.categoriaSolicitudAdministrativaPorEmpresa, companyIds);
+    if (!categorias.length) return vacio("No se encontró la categoría de aprobación «Solicitud Administrativa» de esta sede en Odoo.");
+    const metas = await cargarMetas(companyIds[0]);
+    const plazo = metas.plazo_procesamiento_dias;
+    const [procesadas, pendientes] = await Promise.all([
+      searchReadTodo(
+        "approval.request",
+        [["category_id", "in", categorias], ["request_status", "in", ["approved", "refused"]], ["create_date", ">=", desde], ["create_date", "<=", hasta]],
+        ["name", "request_owner_id", "request_status", "create_date", "write_date", "company_id"],
+      ),
+      searchReadTodo(
+        "approval.request",
+        [["category_id", "in", categorias], ["request_status", "in", ["new", "pending"]]],
+        ["name", "request_owner_id", "request_status", "create_date", "company_id"],
+      ),
+    ]);
+    const lista: (FilaDetalle & { orden: number })[] = [
+      ...pendientes.map((r) => {
+        const dias = diasDesde(r.create_date);
+        return {
+          texto: `${r.name} · ${nombre(r.request_owner_id) || "—"}`,
+          sub: `${ESTADO_SOLICITUD[r.request_status] || r.request_status} hace ${dias} días` + (plazo !== null && dias > plazo ? " · fuera de plazo" : ""),
+          fecha: String(r.create_date).slice(0, 10),
+          url: urlRegistro("approval.request", r.id, cid(r)),
+          orden: 1e6 + dias,
+        };
+      }),
+      ...procesadas.map((r) => {
+        const dias = diasDesde(r.create_date, r.write_date);
+        return {
+          texto: `${r.name} · ${nombre(r.request_owner_id) || "—"}`,
+          sub: `${ESTADO_SOLICITUD[r.request_status] || r.request_status} en ${dias} días` + (plazo !== null && dias > plazo ? " · fuera de plazo" : ""),
+          fecha: String(r.create_date).slice(0, 10),
+          url: urlRegistro("approval.request", r.id, cid(r)),
+          orden: dias,
+        };
+      }),
+    ];
+    return {
+      origen: `Solicitudes de la categoría «Solicitud Administrativa» (Aprobaciones de Odoo): las creadas en el mes ya aprobadas o rechazadas, con cuánto tardaron (de la creación al último cambio), y arriba las pendientes.${plazo !== null ? ` Plazo interno: ${plazo} días.` : ""}`,
+      odoo: null,
+      panel: null,
+      ...recortar(lista.sort((a, b) => b.orden - a.orden).map(({ orden: _o, ...f }) => f)),
+    };
+  }
+
+  if (kpi === "operaciones_fuera_politica") {
+    const categorias = idsParaEmpresas(refs.categoriaOperacionesFueraPoliticaPorEmpresa, companyIds);
+    if (!categorias.length) return vacio("No se encontró la categoría de aprobación «Excepción de Política» de esta sede en Odoo.");
+    const filas = await searchReadTodo(
+      "approval.request",
+      [["category_id", "in", categorias], ["create_date", ">=", desde], ["create_date", "<=", hasta]],
+      ["name", "request_owner_id", "request_status", "create_date", "company_id"],
+    );
+    return {
+      origen: "Solicitudes de la categoría «Excepción de Política» (Aprobaciones de Odoo) creadas en el mes, en cualquier estado: que exista la solicitud ya es la excepción.",
+      odoo: null,
+      panel: null,
+      ...recortar(
+        filas.map((r) => ({
+          texto: `${r.name} · ${nombre(r.request_owner_id) || "—"}`,
+          sub: ESTADO_SOLICITUD[r.request_status] || r.request_status,
+          fecha: String(r.create_date).slice(0, 10),
+          url: urlRegistro("approval.request", r.id, cid(r)),
+        })),
+      ),
+    };
+  }
+
+  if (kpi === "incidencias_vencidas") {
+    const equipos = idsParaEmpresas(refs.equipoIncidenciasAdministrativasPorEmpresa, companyIds);
+    if (!equipos.length) return vacio("No se encontró el equipo de Soporte «Incidencias Administrativas» de esta sede en Odoo.");
+    const tickets = await searchReadTodo(
+      "helpdesk.ticket",
+      [["team_id", "in", equipos], ["close_date", "=", false]],
+      ["name", "stage_id", "user_id", "create_date", "sla_fail", "company_id"],
+    );
+    return {
+      origen: "Tickets abiertos del equipo «Incidencias Administrativas» (Soporte de Odoo); arriba los que ya pasaron su SLA.",
+      odoo: null,
+      panel: null,
+      ...recortar(
+        tickets
+          .sort((a, b) => Number(b.sla_fail) - Number(a.sla_fail) || String(a.create_date).localeCompare(String(b.create_date)))
+          .map((t) => ({
+            texto: t.name,
+            sub: `${nombre(t.stage_id)} · ${nombre(t.user_id) || "sin asignar"}${t.sla_fail ? " · SLA vencido" : ""}`,
+            fecha: String(t.create_date).slice(0, 10),
+            url: urlRegistro("helpdesk.ticket", t.id, cid(t)),
+          })),
+      ),
+    };
+  }
+
+  // Tareas de los proyectos de Cierre Mensual y Auditoria Interna (compartidos entre sedes: company_id puede venir vacio).
+  const cierre = kpi === "cumplimiento_cierre_mensual";
+  const proyecto = cierre ? refs.proyectoCierreMensual : refs.proyectoAuditoriaInterna;
+  if (proyecto === null) return vacio(`No se encontró el proyecto «${cierre ? "Cierre Mensual" : "Auditoría Interna"}» en Odoo.`);
+  const tareas = await searchReadTodo(
+    "project.task",
+    [
+      ["project_id", "=", proyecto],
+      "|",
+      ["company_id", "=", false],
+      ["company_id", "in", companyIds],
+      [cierre ? "date_deadline" : "create_date", ">=", desde],
+      [cierre ? "date_deadline" : "create_date", "<=", hasta],
+    ],
+    ["name", "stage_id", "date_deadline", "create_date", "tag_ids", "company_id"],
+  );
+  const lista = tareas
+    .filter((t) => kpi !== "reincidencias" || (refs.tagReincidencia !== null && (t.tag_ids || []).includes(refs.tagReincidencia)))
+    .map((t) => ({
+      texto: t.name,
+      sub: nombre(t.stage_id) + (cierre && t.date_deadline ? ` · fecha límite ${fechaLatina(t.date_deadline)}` : ""),
+      fecha: String(cierre ? t.date_deadline : t.create_date).slice(0, 10),
+      url: urlRegistro("project.task", t.id, cid(t) ?? companyIds[0]),
+    }));
+  return {
+    origen: cierre
+      ? "Tareas del proyecto «Cierre Mensual» (Proyecto de Odoo) con fecha límite en el mes: a tiempo = llegaron a «Cerrado» antes de su fecha límite."
+      : kpi === "reincidencias"
+        ? "Hallazgos del proyecto «Auditoría Interna» creados en el mes con la etiqueta «Reincidencia»."
+        : "Hallazgos del proyecto «Auditoría Interna» (Proyecto de Odoo) creados en el mes y su etapa.",
+    odoo: null,
+    panel: null,
+    ...recortar(lista),
+  };
 }

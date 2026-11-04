@@ -38,6 +38,17 @@ import {
 
 type Semaforo = "verde" | "amarillo" | "rojo" | "sin_datos";
 
+// Prefijo del id del detalle por categoria: el mismo que llevan sus alertas
+// (salud-financiera = sf-, gastos = gastos-, gestion-cumplimiento = admin-).
+const PREFIJO_DETALLE: Record<string, string> = {
+  "Cuentas por Cobrar": "sf-",
+  "Tesorería y Liquidez": "sf-",
+  "Cuentas por Pagar": "sf-",
+  "Gastos y Presupuesto": "gastos-",
+  "Gestión Administrativa": "admin-",
+  "Cumplimiento y Control": "admin-",
+};
+
 interface Kpi {
   id: string;
   numero: number;
@@ -428,7 +439,8 @@ export default function SaludAdministrativaPage() {
       ),
     [calculadas, detectadas, seguimientos],
   );
-  const [alertaAbierta, setAlertaAbierta] = useState<AlertaAdmin | null>(null);
+  // Alerta o indicador abierto en el detalle (de donde sale en Odoo).
+  const [alertaAbierta, setAlertaAbierta] = useState<{ id: string; titulo: string } | null>(null);
   const topAlertas = useMemo(
     () => construirTopAlertas([alertas], 10),
     [alertas],
@@ -745,7 +757,16 @@ export default function SaludAdministrativaPage() {
                             </TableCell>
                             <TableCell className="whitespace-normal">
                               <div className="max-w-[200px] sm:max-w-[360px] lg:max-w-none break-words">
-                              <div className="font-medium text-sm">{k.nombre}</div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setAlertaAbierta({ id: `${PREFIJO_DETALLE[cat.categoria] || "sf-"}${k.id}`, titulo: k.nombre })
+                                }
+                                className="font-medium text-sm text-left text-blue-700 hover:underline"
+                                title="Ver de dónde sale en Odoo"
+                              >
+                                {k.nombre}
+                              </button>
                               <div className="text-xs text-gray-500">{k.formula}</div>
                               {/* En movil la meta y el semaforo se ocultan como
                                   columnas, asi que se muestran aca. */}
