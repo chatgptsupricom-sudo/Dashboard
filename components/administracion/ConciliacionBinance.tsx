@@ -158,12 +158,13 @@ const fechaComprobante = (c: Comprobante) =>
 
 // Lo que muestra cada tarjeta al hacerle clic.
 type Lista = "comprobantes" | "conciliados" | "problema" | "sinComprobante";
-const TITULO_LISTA: Record<Lista, string> = {
-  comprobantes: "Comprobantes",
-  conciliados: "Conciliados",
-  problema: "Con diferencia o no encontrados",
-  sinComprobante: "Recibido sin comprobante",
-};
+const tituloLista = (lista: Lista, salida: boolean) =>
+  ({
+    comprobantes: "Comprobantes",
+    conciliados: "Conciliados",
+    problema: "Con diferencia o no encontrados",
+    sinComprobante: salida ? "Pagado sin comprobante" : "Recibido sin comprobante",
+  })[lista];
 
 /** Suma por moneda: Binance recibe USDT, USDC, BTC... y no se mezclan. */
 function porMoneda(items: { monto: number; moneda: string }[]) {
@@ -185,6 +186,11 @@ export default function ConciliacionBinance({
   semana?: string;
 }) {
   const cxc = modo === "cxc";
+  // Entradas = pagos de los clientes; salidas = pagos que hacemos nosotros (solo Administración).
+  const [lado, setLado] = useState<"entrada" | "salida">("entrada");
+  const salida = lado === "salida";
+  const QUIEN = salida ? "Beneficiario" : "Cliente";
+  const CONTRAPARTE = salida ? "Destinatario" : "Pagador";
   const opciones = semanas();
   const [semanaPropia, setSemana] = useState(opciones[0].value);
   const semana = semanaFija ?? semanaPropia;
@@ -224,14 +230,16 @@ export default function ConciliacionBinance({
     setCargando(true);
     setError(null);
     try {
-      const json = await (await fetch(`/api/administracion/binance?semana=${semana}${cxc ? "&vista=comprobantes" : ""}`)).json();
+      const json = await (
+        await fetch(`/api/administracion/binance?semana=${semana}${cxc ? "&vista=comprobantes" : ""}${salida ? "&lado=salida" : ""}`)
+      ).json();
       if (json.success) setDatos(json);
       else setError(json.error || "No se pudo cargar");
     } catch {
       setError("No se pudo cargar");
     }
     setCargando(false);
-  }, [semana]);
+  }, [semana, salida]);
 
   useEffect(() => {
     cargar();
@@ -262,7 +270,8 @@ export default function ConciliacionBinance({
     setReimprimir(new Set());
     setDiaConciliado("");
     setPestanaImpresion("pendientes");
-  }, [semana]);
+    setLista(null);
+  }, [semana, lado]);
 
   const subirUno = async (elegido: Elegido, tipo: TipoArchivo): Promise<Subida> => {
     const { archivo, driveId, carpeta } = elegido;
@@ -275,6 +284,7 @@ export default function ConciliacionBinance({
     // La carpeta de los comprobantes se llama como el dia de los pagos ("02-10-2026").
     if (carpeta) form.append("carpeta", carpeta);
     if (tipo === "estado") form.append("tipo", "estado");
+    else if (salida) form.append("lado", "salida");
     try {
       let res = await fetch("/api/administracion/binance", { method: "POST", body: form });
       // IA saturada (429): se espera y se reintenta, cada vez un poco mas.
@@ -287,7 +297,11 @@ export default function ConciliacionBinance({
       if (json.success && json.estado) {
         return json.yaEstaba
           ? { nombre, ok: true, texto: "Esta captura ya estaba cargada (no se volvió a leer)" }
-          : { nombre, ok: true, texto: `${json.recibidos} pagos recibidos (${json.nuevos} nuevos, ${json.repetidos} ya estaban)` };
+          : {
+              nombre,
+              ok: true,
+              texto: `${json.recibidos} recibidos y ${json.enviados} enviados (${json.nuevos} nuevos, ${json.repetidos} ya estaban)`,
+            };
       }
       if (json.success) {
         const fecha = json.horaTelefono
@@ -300,7 +314,7 @@ export default function ConciliacionBinance({
         return {
           nombre,
           ok: true,
-          texto: `${json.cliente || "sin cliente"} · ${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fecha}`,
+          texto: `${json.cliente || (salida ? "sin beneficiario" : "sin cliente")} · ${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fecha}`,
         };
       }
       return { nombre, ok: false, texto: json.error || "Error" };
@@ -495,8 +509,8 @@ export default function ConciliacionBinance({
           ? `<div class="pdf">Comprobante en PDF<br>(ver en el panel)</div>`
           : `<img class="comprobante" src="/api/administracion/binance/imagen?id=${c.id}" alt="">`;
         return `<div class="tarjeta">
-          <div class="semana">Conciliación Binance · Semana ${esc(semanaTexto)}</div>
-          <div class="cliente">${esc(c.cliente || "Sin cliente")}</div>
+          <div class="semana">Conciliación Binance${salida ? " · Salidas" : ""} · Semana ${esc(semanaTexto)}</div>
+          <div class="cliente">${esc(c.cliente || (salida ? "Sin beneficiario" : "Sin cliente"))}</div>
           ${imagen}
           <div class="datos">${esc(fechaComprobante(c))}<br>${esc(cifra(c.monto))} ${esc(c.moneda)} · ${esc(c.orderId)}</div>
           <img class="firma" src="/api/administracion/binance/firma" alt="">
@@ -576,7 +590,7 @@ export default function ConciliacionBinance({
           {/* Lo arma el servidor: el Excel lleva la imagen de cada comprobante y su línea del estado de cuenta. */}
           {datos && (
             <Button asChild variant="outline" size="sm" className="h-9">
-              <a href={`/api/administracion/binance/excel?semana=${semana}`}>
+              <a href={`/api/administracion/binance/excel?semana=${semana}${salida ? "&lado=salida" : ""}`}>
                 <Download className="h-4 w-4 mr-2" />
                 Excel
               </a>
@@ -584,6 +598,30 @@ export default function ConciliacionBinance({
           )}
         </div>
       </div>
+      )}
+
+      {!cxc && (
+        <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Entradas o salidas">
+          {(
+            [
+              ["entrada", "Entradas", "Pagos de los clientes"],
+              ["salida", "Salidas", "Pagos que hacemos nosotros"],
+            ] as const
+          ).map(([clave, texto, ayuda]) => (
+            <button
+              key={clave}
+              type="button"
+              role="tab"
+              aria-selected={lado === clave}
+              disabled={!!subiendo}
+              title={ayuda}
+              onClick={() => setLado(clave)}
+              className={`px-4 py-2 text-sm rounded-md ${lado === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"}`}
+            >
+              {texto}
+            </button>
+          ))}
+        </div>
       )}
 
       {(subidas.length > 0 || ignorados > 0) && (
@@ -701,7 +739,7 @@ export default function ConciliacionBinance({
                   onClick={() => setLista(clave)}
                   className="text-left rounded-xl transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 >
-                  <Tarjeta tono={tono} titulo={TITULO_LISTA[clave]} valor={items.length} detalle={porMoneda(items)} />
+                  <Tarjeta tono={tono} titulo={tituloLista(clave, salida)} valor={items.length} detalle={porMoneda(items)} />
                 </button>
               ))}
             </div>
@@ -717,7 +755,7 @@ export default function ConciliacionBinance({
             >
               <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>{verImagen ? `Comprobante ${verImagen.orderId}` : lista && TITULO_LISTA[lista]}</DialogTitle>
+                  <DialogTitle>{verImagen ? `Comprobante ${verImagen.orderId}` : lista && tituloLista(lista, salida)}</DialogTitle>
                 </DialogHeader>
                 {verImagen ? (
                   <div className="space-y-3">
@@ -750,11 +788,11 @@ export default function ConciliacionBinance({
                       <TableRow>
                         <TableHead>Fecha</TableHead>
                         <TableHead className="text-right">Monto</TableHead>
-                        <TableHead>Pagador</TableHead>
+                        <TableHead>{CONTRAPARTE}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sinComprobante.length === 0 && <FilaVacia columnas={3} texto="Todo lo recibido tiene comprobante." />}
+                      {sinComprobante.length === 0 && <FilaVacia columnas={3} texto={salida ? "Todo lo pagado tiene comprobante." : "Todo lo recibido tiene comprobante."} />}
                       {sinComprobante.map((p) => (
                         <TableRow key={p.id}>
                           <TableCell className="whitespace-nowrap">{fechaHora(p.fecha)}</TableCell>
@@ -841,7 +879,7 @@ export default function ConciliacionBinance({
                             <TableHead>Fecha</TableHead>
                             <TableHead>ID de orden</TableHead>
                             <TableHead className="text-right">Monto</TableHead>
-                            <TableHead>Pagador</TableHead>
+                            <TableHead>{CONTRAPARTE}</TableHead>
                             <TableHead>Estado</TableHead>
                             {lista === "conciliados" && <TableHead>Conciliado el</TableHead>}
                             {imprime && pestanaImpresion === "impresos" && <TableHead>Impreso</TableHead>}
@@ -966,11 +1004,11 @@ export default function ConciliacionBinance({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Fecha</TableHead>
-                      <TableHead>Cliente</TableHead>
+                      <TableHead>{QUIEN}</TableHead>
                       <TableHead>ID de orden</TableHead>
                       <TableHead className="text-right">Comprobante</TableHead>
                       <TableHead className="text-right">Binance</TableHead>
-                      <TableHead>Pagador</TableHead>
+                      <TableHead>{CONTRAPARTE}</TableHead>
                       <TableHead>Estado</TableHead>
                       <TableHead />
                     </TableRow>
@@ -1018,7 +1056,9 @@ export default function ConciliacionBinance({
                                 const pregunta =
                                   c.estado === "por_monto_hora"
                                     ? `¿El pago de ${cifra(c.binance!.monto)} ${c.binance!.moneda} del ${fechaHora(c.binance!.fecha)} (${c.binance!.pagador}) es este comprobante? Queda conciliado.`
-                                    : `¿El pago de ${c.binance!.pagador} es de ${c.cliente}? Queda conciliado.`;
+                                    : salida
+                                      ? `¿El pago a ${c.binance!.pagador} es el de ${c.cliente}? Queda conciliado.`
+                                      : `¿El pago de ${c.binance!.pagador} es de ${c.cliente}? Queda conciliado.`;
                                 if (confirm(pregunta))
                                   asignar(c, c.binance!.id.slice(1), true);
                               }}
@@ -1064,7 +1104,7 @@ export default function ConciliacionBinance({
                   <CardTitle className="text-base">Estado de cuenta</CardTitle>
                   <p className="text-xs text-gray-500 mt-1">
                     {datos.origen === "estado"
-                      ? `Estado de cuenta cargado: ${datos.movimientos} pagos recibidos en la semana.`
+                      ? `Estado de cuenta cargado: ${pagosSemana.length} pagos ${salida ? "enviados" : "recibidos"} en la semana.`
                       : "Esta semana todavía no tiene estado de cuenta."}
                   </p>
                 </div>
@@ -1125,12 +1165,12 @@ export default function ConciliacionBinance({
                       <TableHead>Fecha</TableHead>
                       <TableHead>ID de orden</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
-                      <TableHead>Pagador</TableHead>
+                      <TableHead>{CONTRAPARTE}</TableHead>
                       <TableHead>Comprobante</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pagosSemana.length === 0 && <FilaVacia columnas={5} texto="No hay pagos recibidos en esta semana." />}
+                    {pagosSemana.length === 0 && <FilaVacia columnas={5} texto={`No hay pagos ${salida ? "enviados" : "recibidos"} en esta semana.`} />}
                     {deLaPagina(pagosSemana, paginaPagos).map((p) => {
                       const c = p.comprobante;
                       return (
@@ -1156,7 +1196,7 @@ export default function ConciliacionBinance({
                                   {ETIQUETA_ESTADO[c.estado]}
                                 </Badge>
                                 <span className="block text-xs text-gray-500 mt-0.5">
-                                  {c.cliente || "sin cliente"} · {c.orderId}
+                                  {c.cliente || (salida ? "sin beneficiario" : "sin cliente")} · {c.orderId}
                                 </span>
                               </>
                             )}

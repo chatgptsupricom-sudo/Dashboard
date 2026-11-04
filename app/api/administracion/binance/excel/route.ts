@@ -13,7 +13,7 @@ import {
 import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 
-// GET /api/administracion/binance/excel?semana=YYYY-MM-DD
+// GET /api/administracion/binance/excel?semana=YYYY-MM-DD[&lado=salida]
 // La conciliacion de la semana con la imagen de cada comprobante y el recorte
 // de su linea en el estado de cuenta. Se arma aca porque el Excel del navegador
 // (xlsx) no puede llevar imagenes.
@@ -56,7 +56,11 @@ export async function GET(request: NextRequest) {
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
   try {
-    const { comprobantes, sinComprobante } = await conciliacionSemana(semana, sede);
+    const salida = request.nextUrl.searchParams.get("lado") === "salida";
+    // En las salidas el "cliente" del archivo es a quien le pagamos y la contraparte, quien recibio.
+    const quien = salida ? "Beneficiario" : "Cliente";
+    const contraparte = salida ? "Destinatario" : "Pagador";
+    const { comprobantes, sinComprobante } = await conciliacionSemana(semana, sede, salida ? "salida" : "entrada");
     const miniaturas = await miniaturasDeComprobantes(comprobantes.map((c) => c.id));
     const idsMov = [...comprobantes.map((c) => idMovimiento(c.binance)), ...sinComprobante.map(idMovimiento)];
     const recortes = await recortesDeMovimientos(idsMov.filter((n): n is number => n !== null));
@@ -67,12 +71,12 @@ export async function GET(request: NextRequest) {
     const ws = wb.addWorksheet("Conciliación");
     ws.columns = [
       { header: "Fecha comprobante", key: "fecha", width: 18 },
-      { header: "Cliente", key: "cliente", width: 28 },
+      { header: quien, key: "cliente", width: 28 },
       { header: "ID de orden", key: "orden", width: 22 },
       { header: "Monto", key: "monto", width: 12 },
       { header: "Moneda", key: "moneda", width: 9 },
       { header: "Estado", key: "estado", width: 30 },
-      { header: "Pagador", key: "pagador", width: 22 },
+      { header: contraparte, key: "pagador", width: 22 },
       { header: "Fecha en Binance", key: "fechaBinance", width: 18 },
       { header: "Comprobante", key: "imagen", width: anchoPara(220) },
       { header: "Línea del estado de cuenta", key: "linea", width: anchoPara(anchoRecorte) },
@@ -112,7 +116,7 @@ export async function GET(request: NextRequest) {
       { header: "Fecha", key: "fecha", width: 18 },
       { header: "Monto", key: "monto", width: 12 },
       { header: "Moneda", key: "moneda", width: 9 },
-      { header: "Pagador", key: "pagador", width: 22 },
+      { header: contraparte, key: "pagador", width: 22 },
       { header: "Línea del estado de cuenta", key: "linea", width: anchoPara(anchoRecorte) },
     ];
     cabecera(ws2);
@@ -150,7 +154,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(buffer as any, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="Conciliacion_Binance_${semana}.xlsx"`,
+        "Content-Disposition": `attachment; filename="Conciliacion_Binance_${salida ? "Salidas_" : ""}${semana}.xlsx"`,
         "Cache-Control": "no-store",
       },
     });
