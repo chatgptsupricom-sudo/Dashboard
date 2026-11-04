@@ -88,7 +88,11 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
         if (!vigente) return;
         if (j.error) return setError(j.error);
         setDatos(j);
-        if (j.companies) setCompanies(j.companies);
+        if (j.companies) {
+          setCompanies(j.companies);
+          // La API solo devuelve las sedes que el usuario puede ver: si pidió otra, queda en la suya.
+          if (j.companies.length && !j.companies.some((c: { cid: string }) => c.cid === cid)) setCid(j.companies[0].cid);
+        }
         if (j.vendedores) setVendedores(j.vendedores);
       })
       .catch(() => vigente && setError("No se pudo cargar el reporte"))
@@ -144,7 +148,7 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
           <select
             className="bg-slate-50 border-none rounded-xl text-[10px] font-bold p-3 outline-none"
             value={cid}
-            disabled={!!sedeFija}
+            disabled={!!sedeFija || companies.length <= 1}
             onChange={(e) => cambiar(setCid)(e.target.value)}
             aria-label="Sede"
           >
