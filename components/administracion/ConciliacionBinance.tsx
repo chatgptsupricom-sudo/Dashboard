@@ -189,6 +189,8 @@ export default function ConciliacionBinance({
   // Entradas = pagos de los clientes; salidas = pagos que hacemos nosotros (solo Administración).
   const [lado, setLado] = useState<"entrada" | "salida">("entrada");
   const salida = lado === "salida";
+  // Comprobantes y estado de cuenta van en pestañas, no uno debajo del otro (CxC solo ve comprobantes).
+  const [tabla, setTabla] = useState<"comprobantes" | "estado">("comprobantes");
   const QUIEN = salida ? "Beneficiario" : "Cliente";
   const CONTRAPARTE = salida ? "Destinatario" : "Pagador";
   const opciones = semanas();
@@ -930,6 +932,29 @@ export default function ConciliacionBinance({
               </DialogContent>
             </Dialog>
 
+            {!cxc && (
+              <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Tabla">
+                {(
+                  [
+                    ["comprobantes", `Comprobantes (${comprobantes.length})`],
+                    ["estado", `Estado de cuenta (${pagosSemana.length})`],
+                  ] as const
+                ).map(([clave, texto]) => (
+                  <button
+                    key={clave}
+                    type="button"
+                    role="tab"
+                    aria-selected={tabla === clave}
+                    onClick={() => setTabla(clave)}
+                    className={`px-4 py-2 text-sm rounded-md ${tabla === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"}`}
+                  >
+                    {texto}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {(cxc || tabla === "comprobantes") && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
@@ -1096,8 +1121,9 @@ export default function ConciliacionBinance({
                 <Paginacion pagina={paginaComprobantes} total={comprobantes.length} cambiar={setPaginaComprobantes} />
               </CardContent>
             </Card>
+            )}
 
-            {!cxc && (
+            {!cxc && tabla === "estado" && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <div>
