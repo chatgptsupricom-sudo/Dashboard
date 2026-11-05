@@ -57,6 +57,8 @@ export interface CuentaTesoreria {
   saldoBanco: number;
   /** Cobros (+) y pagos (-) registrados que todavia no se conciliaron (R/P). */
   pendiente: number;
+  /** Cuentas de Recibos/Pagos Pendientes de sus diarios (de donde sale `pendiente`). */
+  cuentasPendientes: number[];
   /** Saldo en libros en la moneda del diario (Bs), si no es USD. */
   saldoMonedaDiario: number | null;
   /** Cobros y pagos del mes (sin transferencias entre cuentas propias). */
@@ -190,6 +192,7 @@ export async function fetchTesoreriaAdmin(
         saldo: 0,
         saldoBanco: 0,
         pendiente: 0,
+        cuentasPendientes: [],
         saldoMonedaDiario: null,
         entradasMes: 0,
         salidasMes: 0,
@@ -231,6 +234,7 @@ export async function fetchTesoreriaAdmin(
   });
   Array.from(cuentaDePendiente.entries()).forEach(([p, c]) => {
     if (!porCuenta.has(c)) cuentaDePendiente.delete(p);
+    else porCuenta.get(c)!.cuentasPendientes.push(p);
   });
 
   const cuentaIds = Array.from(porCuenta.keys());

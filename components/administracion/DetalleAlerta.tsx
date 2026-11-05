@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ExternalLink, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { DetalleAlerta as Detalle } from "@/lib/administracion/saludDetalle";
+import type { DetalleAlerta as Detalle, FilaDetalle } from "@/lib/administracion/saludDetalle";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const fecha = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—");
@@ -121,6 +121,13 @@ export default function DetalleAlerta({
                           )}
                           {f.sub && <div className="text-xs text-gray-500">{f.sub}</div>}
                           {f.barra && <BarraLimite {...f.barra} grave={!!f.grave} />}
+                          {f.explicacion && (
+                            <div className="mt-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                              <span className="font-medium">Por qué: </span>
+                              {f.explicacion}
+                            </div>
+                          )}
+                          {f.hijos && f.hijos.length > 0 && <Hijos hijos={f.hijos} total={f.totalHijos ?? f.hijos.length} />}
                         </TableCell>
                         {conFecha && <TableCell className="whitespace-nowrap text-sm">{fecha(f.fecha)}</TableCell>}
                         {conMonto && (
@@ -164,5 +171,40 @@ function BarraLimite({ usado, limite, grave }: { usado: number; limite: number; 
         <span>Debe {money(usado)}</span>
       </div>
     </div>
+  );
+}
+
+
+/** Los registros que componen una fila (asientos de una cuenta, facturas de un total), plegados. */
+function Hijos({ hijos, total }: { hijos: FilaDetalle[]; total: number }) {
+  return (
+    <details className="mt-1.5">
+      <summary className="cursor-pointer text-xs text-blue-700">
+        Ver {total > hijos.length ? `los ${hijos.length} más grandes de ${total}` : `los ${total}`}
+      </summary>
+      <ul className="mt-1 divide-y rounded-md border text-xs">
+        {hijos.map((h, i) => (
+          <li key={i} className="flex items-start justify-between gap-3 px-2 py-1.5">
+            <div className="min-w-0">
+              {h.url ? (
+                <a href={h.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-700 hover:underline">
+                  {h.texto} <ExternalLink className="inline h-3 w-3" />
+                </a>
+              ) : (
+                <span className="font-medium">{h.texto}</span>
+              )}
+              {(h.sub || h.fecha) && (
+                <div className={h.grave ? "text-red-600" : "text-gray-500"}>
+                  {[h.fecha && fecha(h.fecha), h.sub].filter(Boolean).join(" · ")}
+                </div>
+              )}
+            </div>
+            {typeof h.monto === "number" && (
+              <span className={`whitespace-nowrap font-medium ${h.grave ? "text-red-600" : ""}`}>{money(h.monto)}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
