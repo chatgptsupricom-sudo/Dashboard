@@ -323,6 +323,57 @@ async function ensureTabla() {
   tablaLista = true;
 }
 
+/** Valor de la semana para ver todas juntas (en vez de un lunes). */
+export const TODAS_LAS_SEMANAS = "todas";
+export const semanaValida = (s: string) => s === TODAS_LAS_SEMANAS || rangoSemana(s) !== null;
+
+/** Lunes (YYYY-MM-DD) de la semana, hora de Caracas, de un instante en ms UTC. */
+function lunesDe(ms: number) {
+  const local = new Date(ms - OFFSET_CARACAS_MS);
+  const dia = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate());
+  return new Date(dia - ((local.getUTCDay() + 6) % 7) * DIA_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * Todas las semanas juntas: semana por semana (cada una cruza contra su
+ * estado de cuenta, igual que al verla sola; cruzar todo junto cambiaria que
+ * monto "se repite") desde el primer comprobante o pago hasta la semana actual.
+ * Sin consultar la API de Binance en las semanas sin estado de cuenta.
+ */
+export async function conciliacionTodas(sede: number | null, lado: Lado = "entrada") {
+  await Promise.all([ensureTabla(), ensureTablaMovimientos()]);
+  const [{ rows: c }, { rows: m }] = await Promise.all([
+    query(`SELECT DATE_FORMAT(MIN(fecha_pago), '%Y-%m-%dT%H:%i:%sZ') AS f FROM binance_comprobantes WHERE tipo = ?`, [lado]),
+    query(`SELECT DATE_FORMAT(MIN(fecha), '%Y-%m-%dT%H:%i:%sZ') AS f FROM binance_movimientos`),
+  ]);
+  const primeras = [c[0]?.f, m[0]?.f].filter(Boolean).map((f: string) => Date.parse(f));
+  const semanas: string[] = [];
+  if (primeras.length) {
+    const fin = lunesDe(Date.now());
+    for (let lunes = lunesDe(Math.min(...primeras)); lunes <= fin; ) {
+      semanas.push(lunes);
+      lunes = new Date(Date.parse(`${lunes}T00:00:00Z`) + 7 * DIA_MS).toISOString().slice(0, 10);
+    }
+  }
+  const partes: Awaited<ReturnType<typeof conciliacionSemana>>[] = [];
+  // De a 4 semanas a la vez: cada una son dos consultas a la base.
+  for (let i = 0; i < semanas.length; i += 4) {
+    partes.push(...(await Promise.all(semanas.slice(i, i + 4).map((l) => conciliacionSemana(l, sede, lado, false)))));
+  }
+  return {
+    comprobantes: partes.flatMap((p) => p.comprobantes),
+    sinComprobante: partes.flatMap((p) => p.sinComprobante),
+    pagos: partes.flatMap((p) => p.pagos),
+    errorBinance: null as string | null,
+    origen: (partes.some((p) => p.origen === "estado") ? "estado" : "api") as OrigenPagos,
+    movimientos: partes.reduce((t, p) => t + p.movimientos, 0),
+  };
+}
+
+/** La conciliacion de una semana (lunes YYYY-MM-DD) o de todas (`TODAS_LAS_SEMANAS`). */
+export const conciliacion = (semana: string, sede: number | null, lado: Lado = "entrada") =>
+  semana === TODAS_LAS_SEMANAS ? conciliacionTodas(sede, lado) : conciliacionSemana(semana, sede, lado);
+
 /** Lunes 00:00 (Caracas) de la semana `lunes` (YYYY-MM-DD), en ms UTC. */
 export function rangoSemana(lunes: string): { desde: number; hasta: number } | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(lunes);
@@ -482,7 +533,13 @@ export function conciliadoEl(c: Comprobante): string | null {
  * El cruce se hace con los de todas: un pago que ya tomo el comprobante de otra
  * sede no sale como "sin comprobante" ni se le ofrece a esta.
  */
-export async function conciliacionSemana(lunes: string, sede: number | null, lado: Lado = "entrada") {
+export async function conciliacionSemana(
+  lunes: string,
+  sede: number | null,
+  lado: Lado = "entrada",
+  /** false: una semana sin estado de cuenta no consulta la API (en "todas" serian decenas de llamadas que fallan). */
+  usarApi = true,
+) {
   const rango = rangoSemana(lunes);
   if (!rango) throw new Error("Semana inválida");
   await ensureTabla();
@@ -538,13 +595,14 @@ export async function conciliacionSemana(lunes: string, sede: number | null, lad
   } else {
     origen = "api";
     try {
+      if (!usarApi) throw new Error("");
       pagos = await pagosRecibidos(desde, hasta, lado);
     } catch (e: any) {
       return {
         comprobantes: bases.map((b): Comprobante => ({ ...b, estado: "sin_verificar", binance: null })).filter(deLaSede),
         sinComprobante: [] as PagoBinance[],
         pagos: [] as PagoConComprobante[],
-        errorBinance: (e?.message as string) || "No se pudo consultar Binance",
+        errorBinance: usarApi ? (e?.message as string) || "No se pudo consultar Binance" : null,
         origen,
         movimientos: 0,
       };

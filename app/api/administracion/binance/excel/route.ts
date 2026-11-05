@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
 import {
-  conciliacionSemana,
+  conciliacion,
+  semanaValida,
   miniaturasDeComprobantes,
-  rangoSemana,
   recortesDeMovimientos,
   sedeBinance,
   type PagoBinance,
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
   const semana = request.nextUrl.searchParams.get("semana") || "";
-  if (!rangoSemana(semana)) {
+  if (!semanaValida(semana)) {
     return NextResponse.json({ error: "La semana debe ser un lunes (YYYY-MM-DD)" }, { status: 400 });
   }
   const sede = sedeBinance(auth.payload);
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     // En las salidas el "cliente" del archivo es a quien le pagamos y la contraparte, quien recibio.
     const quien = salida ? "Beneficiario" : "Cliente";
     const contraparte = salida ? "Destinatario" : "Pagador";
-    const { comprobantes, sinComprobante } = await conciliacionSemana(semana, sede, salida ? "salida" : "entrada");
+    const { comprobantes, sinComprobante } = await conciliacion(semana, sede, salida ? "salida" : "entrada");
     const miniaturas = await miniaturasDeComprobantes(comprobantes.map((c) => c.id));
     const idsMov = [...comprobantes.map((c) => idMovimiento(c.binance)), ...sinComprobante.map(idMovimiento)];
     const recortes = await recortesDeMovimientos(idsMov.filter((n): n is number => n !== null));
@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
       { header: "Monto", key: "m", width: 30 },
     ];
     cabecera(ws3);
-    ws3.addRow({ c: `Semana del ${semana}` });
+    ws3.addRow({ c: semana === "todas" ? "Todas las semanas" : `Semana del ${semana}` });
     ws3.addRow({ c: "Comprobantes subidos", n: comprobantes.length, m: suma(comprobantes) });
     ws3.addRow({ c: "Conciliados", n: conciliados.length, m: suma(conciliados) });
     ws3.addRow({ c: "Con diferencia, por revisar o no encontrados", n: pendientes.length, m: suma(pendientes) });

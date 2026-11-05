@@ -14,7 +14,7 @@ import type {
 } from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Link2, Loader2, Printer, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Link2, Loader2, Printer, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
@@ -105,6 +105,48 @@ const soloFecha = (iso: string) =>
 
 /** Dia (YYYY-MM-DD) en hora de Caracas. */
 const diaCaracas = (iso: string) => new Date(Date.parse(iso) - 4 * 3600_000).toISOString().slice(0, 10);
+
+/** Valor del selector para ver todas las semanas juntas (TODAS_LAS_SEMANAS de lib/administracion/binance.ts). */
+const TODAS = "todas";
+
+/**
+ * Comprobantes que coinciden con lo buscado: cliente (nombre del archivo),
+ * pagador, ID de orden (o un pedazo de 5 dígitos o más) o monto ("1500", "1,500.50").
+ */
+function filtrarComprobantes(lista: Comprobante[], buscar: string) {
+  const texto = buscar.trim().toLowerCase();
+  if (!texto) return lista;
+  const numero = Number(texto.replace(/[\s,$]/g, ""));
+  // Un ID de orden tiene 18 dígitos: con menos de 5 es un monto, no un pedazo del ID.
+  const digitos = texto.replace(/\D/g, "");
+  return lista.filter(
+    (c) =>
+      c.cliente.toLowerCase().includes(texto) ||
+      (c.binance?.pagador || "").toLowerCase().includes(texto) ||
+      (digitos.length >= 5 && c.orderId.includes(digitos)) ||
+      (Number.isFinite(numero) && numero > 0 && Math.abs(c.monto - numero) < 0.005),
+  );
+}
+
+/**
+ * Pagos del estado de cuenta que coinciden con lo buscado: pagador, monto
+ * exacto, o el cliente / ID de orden del comprobante que tomó el pago.
+ */
+function filtrarPagos(lista: PagoConComprobante[], buscar: string) {
+  const texto = buscar.trim().toLowerCase();
+  if (!texto) return lista;
+  const numero = Number(texto.replace(/[\s,$]/g, ""));
+  const digitos = texto.replace(/\D/g, "");
+  return lista.filter((p) => {
+    const c = p.comprobante && !("otraSede" in p.comprobante) ? p.comprobante : null;
+    return (
+      (p.pagador || "").toLowerCase().includes(texto) ||
+      (Number.isFinite(numero) && numero > 0 && Math.abs(p.monto - numero) < 0.005) ||
+      (!!c && c.cliente.toLowerCase().includes(texto)) ||
+      (!!c && digitos.length >= 5 && c.orderId.includes(digitos))
+    );
+  });
+}
 
 const cifra = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 
@@ -205,7 +247,11 @@ export default function ConciliacionBinance({
   const [verImagen, setVerImagen] = useState<Comprobante | null>(null);
   const [ignorados, setIgnorados] = useState(0);
   const [paginaComprobantes, setPaginaComprobantes] = useState(0);
+  // Buscador de comprobantes: cliente, ID de orden, pagador o monto.
+  const [buscar, setBuscar] = useState("");
   const [paginaPagos, setPaginaPagos] = useState(0);
+  // Buscador del estado de cuenta: pagador, monto o el comprobante que tomó el pago.
+  const [buscarPagos, setBuscarPagos] = useState("");
   // Impresion de conciliados: los sin imprimir van todos salvo los desmarcados;
   // los ya impresos, solo los que se marquen para volver a imprimirlos.
   const [pestanaImpresion, setPestanaImpresion] = useState<"pendientes" | "impresos">("pendientes");
@@ -282,7 +328,8 @@ export default function ConciliacionBinance({
     const form = new FormData();
     if (archivo) form.append("archivo", archivo);
     if (driveId) form.append("drive_id", driveId);
-    form.append("semana", semana);
+    // Con "todas" un comprobante sin fecha ni carpeta va a la semana actual.
+    form.append("semana", semana === TODAS ? opciones[0].value : semana);
     // La carpeta de los comprobantes se llama como el dia de los pagos ("02-10-2026").
     if (carpeta) form.append("carpeta", carpeta);
     if (tipo === "estado") form.append("tipo", "estado");
@@ -439,8 +486,10 @@ export default function ConciliacionBinance({
   };
 
   const comprobantes = datos?.comprobantes || [];
+  const encontrados = filtrarComprobantes(comprobantes, buscar);
   const sinComprobante = datos?.sinComprobante || [];
   const pagosSemana = datos?.pagos || [];
+  const pagosEncontrados = filtrarPagos(pagosSemana, buscarPagos);
   const esConciliado = (c: Comprobante) => c.estado === "conciliado" || c.estado === "manual";
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
@@ -504,7 +553,7 @@ export default function ConciliacionBinance({
   const imprimirConciliados = () => {
     const esc = (s: string) =>
       s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
-    const semanaTexto = opciones.find((o) => o.value === semana)?.label || semana;
+    const semanaTexto = semana === TODAS ? "todas" : opciones.find((o) => o.value === semana)?.label || semana;
     const tarjetas = aImprimir
       .map((c) => {
         const imagen = /\.pdf$/i.test(c.archivoNombre || "")
@@ -583,6 +632,7 @@ export default function ConciliacionBinance({
             className="border rounded-lg px-3 py-2 text-sm bg-white"
             aria-label="Semana"
           >
+            <option value={TODAS}>Todas las semanas</option>
             {opciones.map((o) => (
               <option key={o.value} value={o.value}>
                 Semana {o.label}
@@ -957,7 +1007,7 @@ export default function ConciliacionBinance({
             {(cxc || tabla === "comprobantes") && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-                <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
+                <CardTitle className="text-base">{semana === TODAS ? "Comprobantes" : "Comprobantes de la semana"}</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
@@ -1025,6 +1075,19 @@ export default function ConciliacionBinance({
                     )}
                   </div>
                 )}
+                <div className="relative mb-3 w-full sm:w-80">
+                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={buscar}
+                    onChange={(e) => {
+                      setBuscar(e.target.value);
+                      setPaginaComprobantes(0);
+                    }}
+                    placeholder="Buscar por cliente, ID de orden o monto"
+                    aria-label="Buscar comprobantes"
+                    className="border rounded-lg pl-9 pr-3 py-2 text-sm bg-white w-full"
+                  />
+                </div>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1039,8 +1102,13 @@ export default function ConciliacionBinance({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {comprobantes.length === 0 && <FilaVacia columnas={8} texto="No hay comprobantes en esta semana." />}
-                    {deLaPagina(comprobantes, paginaComprobantes).map((c) => (
+                    {encontrados.length === 0 && (
+                      <FilaVacia
+                        columnas={8}
+                        texto={buscar.trim() ? "Ningún comprobante coincide con la búsqueda." : semana === TODAS ? "No hay comprobantes." : "No hay comprobantes en esta semana."}
+                      />
+                    )}
+                    {deLaPagina(encontrados, paginaComprobantes).map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
                         <TableCell>{c.cliente || "—"}</TableCell>
@@ -1118,7 +1186,7 @@ export default function ConciliacionBinance({
                     ))}
                   </TableBody>
                 </Table>
-                <Paginacion pagina={paginaComprobantes} total={comprobantes.length} cambiar={setPaginaComprobantes} />
+                <Paginacion pagina={paginaComprobantes} total={encontrados.length} cambiar={setPaginaComprobantes} />
               </CardContent>
             </Card>
             )}
@@ -1185,6 +1253,19 @@ export default function ConciliacionBinance({
                 </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
+                <div className="relative mb-3 w-full sm:w-80">
+                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={buscarPagos}
+                    onChange={(e) => {
+                      setBuscarPagos(e.target.value);
+                      setPaginaPagos(0);
+                    }}
+                    placeholder={`Buscar por ${salida ? "destinatario" : "pagador"}, monto, ${salida ? "beneficiario" : "cliente"} o ID de orden`}
+                    aria-label="Buscar en el estado de cuenta"
+                    className="border rounded-lg pl-9 pr-3 py-2 text-sm bg-white w-full"
+                  />
+                </div>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1196,8 +1277,13 @@ export default function ConciliacionBinance({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pagosSemana.length === 0 && <FilaVacia columnas={5} texto={`No hay pagos ${salida ? "enviados" : "recibidos"} en esta semana.`} />}
-                    {deLaPagina(pagosSemana, paginaPagos).map((p) => {
+                    {pagosEncontrados.length === 0 && (
+                      <FilaVacia
+                        columnas={5}
+                        texto={buscarPagos.trim() ? "Ningún pago coincide con la búsqueda." : `No hay pagos ${salida ? "enviados" : "recibidos"} en esta semana.`}
+                      />
+                    )}
+                    {deLaPagina(pagosEncontrados, paginaPagos).map((p) => {
                       const c = p.comprobante;
                       return (
                         <TableRow key={p.id}>
@@ -1232,7 +1318,7 @@ export default function ConciliacionBinance({
                     })}
                   </TableBody>
                 </Table>
-                <Paginacion pagina={paginaPagos} total={pagosSemana.length} cambiar={setPaginaPagos} />
+                <Paginacion pagina={paginaPagos} total={pagosEncontrados.length} cambiar={setPaginaPagos} />
               </CardContent>
             </Card>
             )}
