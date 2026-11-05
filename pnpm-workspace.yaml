@@ -14,3 +14,6 @@ allowBuilds:
   '@swc/core': true
   protobufjs: true
   sharp: true
+  # Su script solo imprime un aviso de donaciones; lo trae jspdf. false = no correrlo
+  # sin que pnpm 11 aborte con ERR_PNPM_IGNORED_BUILDS.
+  core-js: false
