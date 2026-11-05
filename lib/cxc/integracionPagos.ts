@@ -1,3 +1,4 @@
+import { esImpuesto } from "@/lib/cxc/impuestos";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 
 /**
@@ -143,6 +144,8 @@ export async function respuestaIntegracionPagos(
 
   let resultado = todas;
   if (vendedor && vendedor !== "all") resultado = resultado.filter((f) => f.vendedor === vendedor);
+  // «Excluir impuestos»: retenciones, 25% de IVA, IGTF e ISLR por la descripción o el diario.
+  if (searchParams.get("sinImpuestos") === "1") resultado = resultado.filter((f) => !esImpuesto(f.descripcion, f.diario));
   if (search) {
     resultado = resultado.filter((f) =>
       [f.cliente, f.factura, f.pago, f.rif].some((v) => v.toLowerCase().includes(search)),

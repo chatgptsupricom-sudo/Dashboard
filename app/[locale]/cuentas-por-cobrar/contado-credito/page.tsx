@@ -153,8 +153,8 @@ export default function ContadoCreditoPage() {
   const excluirAsistenteActual = excluirAsistente[modo];
   // Solo en Cobrado: marcados (default) es la regla de lib/cxc/cobros.ts,
   // retenciones y pagos del 25% de IVA no cuentan como cobro.
-  const [excluirRetenciones, setExcluirRetenciones] = useState(true);
-  const [excluirIva25, setExcluirIva25] = useState(true);
+  // Un solo botón para retenciones, 25% de IVA, IGTF e ISLR (lib/cxc/impuestos.ts).
+  const [excluirImpuestos, setExcluirImpuestos] = useState(true);
 
   // Filtros adicionales, iguales a los que ya tiene "Integracion de Pagos"
   // en Odoo -- todos opcionales, sin tocar el default de lo que ya habia
@@ -218,8 +218,9 @@ export default function ContadoCreditoPage() {
       params.set("modo", modo);
       params.set("excluirAsistente", String(excluirAsistenteActual));
       if (esCobrado) {
-        params.set("excluirRetenciones", String(excluirRetenciones));
-        params.set("excluirIva25", String(excluirIva25));
+        params.set("excluirRetenciones", String(excluirImpuestos));
+        params.set("excluirIva25", String(excluirImpuestos));
+        params.set("excluirImpuestos", String(excluirImpuestos));
       }
       if (vendedorId) params.set("vendedorId", vendedorId);
       if (searchDebounced) params.set("search", searchDebounced);
@@ -232,7 +233,7 @@ export default function ContadoCreditoPage() {
       console.error("Error:", e);
     }
     if (fetchId === fetchIdRef.current) setLoading(false);
-  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual, excluirRetenciones, excluirIva25, vendedorId, searchDebounced, bancoId, usarRangoFechas, startDate, endDate, esCobrado]);
+  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual, excluirImpuestos, vendedorId, searchDebounced, bancoId, usarRangoFechas, startDate, endDate, esCobrado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   // Facturado y Cobrado no tienen meses futuros: al salir de Por cobrar se vuelve al mes en curso.
@@ -275,8 +276,9 @@ export default function ContadoCreditoPage() {
       params.set("modo", modo);
       params.set("excluirAsistente", String(excluirAsistenteActual));
       if (esCobrado) {
-        params.set("excluirRetenciones", String(excluirRetenciones));
-        params.set("excluirIva25", String(excluirIva25));
+        params.set("excluirRetenciones", String(excluirImpuestos));
+        params.set("excluirIva25", String(excluirImpuestos));
+        params.set("excluirImpuestos", String(excluirImpuestos));
       }
       if (vendedorId) params.set("vendedorId", vendedorId);
       if (esCobrado && bancoId) params.set("bancoId", bancoId);
@@ -291,7 +293,7 @@ export default function ContadoCreditoPage() {
       console.error(e);
     }
     if (fetchId === facturasFetchIdRef.current) setFacturasLoading(false);
-  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual, excluirRetenciones, excluirIva25, vendedorId, bancoId, usarRangoFechas, startDate, endDate, esCobrado]);
+  }, [empresa, userCids, selectedMonth, selectedYear, modo, excluirAsistenteActual, excluirImpuestos, vendedorId, bancoId, usarRangoFechas, startDate, endDate, esCobrado]);
 
   // X: cierra toda la cadena de modales. Flecha: vuelve un nivel atras
   // (mismos datos ya cargados, sin volver a pedirlos).
@@ -610,33 +612,21 @@ export default function ContadoCreditoPage() {
             onChange={(e) => setExcluirAsistente((prev) => ({ ...prev, [modo]: e.target.checked }))}
             className="accent-blue-600"
           />
-          Excluir Asistente de Ventas
+          Excluir no vendedores
         </label>
         {esCobrado && (
           <>
             <label
               className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 cursor-pointer select-none"
-              title="Diarios que no son banco/caja o dicen «retenido» (IVA/ISLR retenido, descuentos, devoluciones…)"
+              title="Retenciones (diarios que no son banco/caja o dicen «retenido»), pagos del 25% de IVA, IGTF e ISLR. Los pagos y abonos de facturas se quedan."
             >
               <input
                 type="checkbox"
-                checked={excluirRetenciones}
-                onChange={(e) => setExcluirRetenciones(e.target.checked)}
+                checked={excluirImpuestos}
+                onChange={(e) => setExcluirImpuestos(e.target.checked)}
                 className="accent-blue-600"
               />
-              Excluir retenciones
-            </label>
-            <label
-              className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 cursor-pointer select-none"
-              title="Pagos del 25% de IVA: somos agentes de retención, no es cobro"
-            >
-              <input
-                type="checkbox"
-                checked={excluirIva25}
-                onChange={(e) => setExcluirIva25(e.target.checked)}
-                className="accent-blue-600"
-              />
-              Excluir 25% de IVA
+              Excluir impuestos
             </label>
           </>
         )}

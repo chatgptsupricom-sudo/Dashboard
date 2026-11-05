@@ -66,6 +66,8 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
     to: new Date(),
   });
   const [pagina, setPagina] = useState(1);
+  // «Excluir impuestos»: retenciones, 25% de IVA, IGTF e ISLR (lib/cxc/impuestos.ts).
+  const [sinImpuestos, setSinImpuestos] = useState(false);
 
   const parametros = (extra: Record<string, string>) =>
     new URLSearchParams({
@@ -75,6 +77,7 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
       fecha: porFecha,
       fechaInicio: aIso(rango.from),
       fechaFin: aIso(rango.to ?? rango.from),
+      ...(sinImpuestos ? { sinImpuestos: "1" } : {}),
       ...extra,
     });
 
@@ -100,7 +103,7 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
     return () => {
       vigente = false;
     };
-  }, [api, cid, pagina, buscar, vendedor, porFecha, rango]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [api, cid, pagina, buscar, vendedor, porFecha, rango, sinImpuestos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const exportar = async () => {
     setCargando(true);
@@ -210,6 +213,22 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
           Exportar Excel
         </button>
       </div>
+
+      <label
+        className="flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 cursor-pointer select-none"
+        title="Saca las retenciones y los pagos cuya descripción o diario dicen IVA (25% de IVA), IGTF, ISLR o retención. Los pagos y abonos de facturas se quedan."
+      >
+        <input
+          type="checkbox"
+          checked={sinImpuestos}
+          onChange={(e) => {
+            setSinImpuestos(e.target.checked);
+            setPagina(1);
+          }}
+          className="accent-blue-600"
+        />
+        Excluir impuestos
+      </label>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
 

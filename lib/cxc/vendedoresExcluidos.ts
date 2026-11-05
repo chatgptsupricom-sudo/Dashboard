@@ -23,6 +23,20 @@ export function esVendedorExcluido(nombreVendedor: string | null | undefined, co
 }
 
 /**
+ * Personas que no son vendedores en ninguna sede: facturan o cobran pero no
+ * venden (administración, gerencia). Se suman a EXCLUSIONES_POR_SEDE en el
+ * botón «Excluir no vendedores» de Contado/Crédito (nov-2026, a pedido de CxC).
+ * Para sacar a alguien más, agregar aquí su nombre como sale en Odoo.
+ */
+const NO_VENDEDORES = ["dameris"];
+
+/** true si no es vendedor: los excluidos de su sede (asistentes, cuentas internas) o NO_VENDEDORES. */
+export function esNoVendedor(nombreVendedor: string | null | undefined, companyId: number | null | undefined): boolean {
+  const nombre = (nombreVendedor || "").toLowerCase();
+  return esVendedorExcluido(nombreVendedor, companyId) || NO_VENDEDORES.some((n) => nombre.includes(n));
+}
+
+/**
  * Quienes NO son responsables de cobranza y por eso no van en la tabla
  * "Cartera por Responsable de Cobranza" del Dashboard (pedido de CxC,
  * sep-2026). `sedes` vacío = en todas las sedes.
