@@ -120,10 +120,11 @@ export default function DetalleAlerta({
                             <span className="font-medium">{f.texto}</span>
                           )}
                           {f.sub && <div className="text-xs text-gray-500">{f.sub}</div>}
+                          {f.barra && <BarraLimite {...f.barra} grave={!!f.grave} />}
                         </TableCell>
                         {conFecha && <TableCell className="whitespace-nowrap text-sm">{fecha(f.fecha)}</TableCell>}
                         {conMonto && (
-                          <TableCell className="text-right whitespace-nowrap font-medium">
+                          <TableCell className={`text-right whitespace-nowrap font-medium ${f.grave ? "text-red-600" : ""}`}>
                             {typeof f.monto === "number" ? money(f.monto) : "—"}
                           </TableCell>
                         )}
@@ -140,5 +141,28 @@ export default function DetalleAlerta({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Lo que debe un cliente contra su limite: la parte hasta el limite en gris, lo
+ * que se pasa en ambar (rojo si es grave), y una raya donde esta el limite.
+ */
+function BarraLimite({ usado, limite, grave }: { usado: number; limite: number; grave: boolean }) {
+  const tope = Math.max(usado, limite) || 1;
+  const pLimite = (Math.min(usado, limite) / tope) * 100;
+  const pExceso = (Math.max(0, usado - limite) / tope) * 100;
+  return (
+    <div className="mt-1.5 max-w-sm" aria-label={`Debe ${money(usado)} con límite de ${money(limite)}`}>
+      <div className="relative h-2.5 rounded-full bg-gray-100 overflow-hidden flex">
+        <div className="h-full bg-slate-400" style={{ width: `${pLimite}%` }} />
+        <div className={`h-full ${grave ? "bg-red-500" : "bg-amber-400"}`} style={{ width: `${pExceso}%` }} />
+        <div className="absolute top-0 h-full w-0.5 bg-gray-800" style={{ left: `calc(${(limite / tope) * 100}% - 1px)` }} />
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+        <span>Límite {money(limite)}</span>
+        <span>Debe {money(usado)}</span>
+      </div>
+    </div>
   );
 }

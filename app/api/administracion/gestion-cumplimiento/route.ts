@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "documentos_procesados_a_tiempo",
-          numero: 23,
+          numero: 22,
           nombre: "Documentos procesados a tiempo",
           formula: "Solicitudes resueltas dentro del plazo / total resueltas × 100",
           peso: 2,
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "tiempo_promedio_procesamiento",
-          numero: 24,
+          numero: 23,
           nombre: "Tiempo promedio de procesamiento",
           formula: "Promedio (fecha resolución − fecha creación) de solicitudes resueltas",
           peso: 2,
@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "legalizacion_pendiente",
-          numero: 25,
+          numero: 24,
           nombre: "Anticipos y viáticos pendientes de legalización",
           formula: "Pendientes con +días del umbral / total pendientes × 100",
           peso: 3,
@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "cumplimiento_cierre_mensual",
-          numero: 26,
+          numero: 25,
           nombre: "Cumplimiento de cierre mensual",
           formula: "Ítems de cierre cerrados a tiempo / total con fecha límite × 100",
           peso: 3,
@@ -192,7 +192,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "documentos_sin_soporte",
-          numero: 27,
+          numero: 26,
           nombre: "Documentos sin soporte",
           formula: "Facturas sin adjunto / total facturas × 100",
           peso: 2,
@@ -210,7 +210,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "operaciones_fuera_politica",
-          numero: 28,
+          numero: 27,
           nombre: "Operaciones fuera de política",
           formula: "Excepciones de política registradas en el período",
           peso: 3,
@@ -233,7 +233,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "incidencias_vencidas",
-          numero: 29,
+          numero: 28,
           nombre: "Incidencias abiertas vencidas",
           formula: "Incidencias abiertas con SLA vencido / total abiertas × 100",
           peso: 3,
@@ -256,7 +256,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "auditoria_cerrados",
-          numero: 30,
+          numero: 29,
           nombre: "Pendientes de auditoría cerrados",
           formula: "Hallazgos cerrados / total hallazgos del período × 100",
           peso: 1,
@@ -279,7 +279,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "reincidencias",
-          numero: 31,
+          numero: 30,
           nombre: "Reincidencias",
           formula: "Hallazgos marcados como reincidencia en el período",
           peso: 1,

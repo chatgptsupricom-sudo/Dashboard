@@ -6,6 +6,8 @@ import { CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA } from "@/lib/administracion/ges
 import { cargarRefsAdminKpis, idsParaEmpresas, searchReadTodo } from "@/lib/administracion/odooRefs";
 import { fetchCuentasGasto, fetchGastoReal, mesAnterior, rangoDelMes } from "@/lib/administracion/gastos";
 import { query } from "@/lib/db";
+import { detalleEfectividad } from "@/lib/cxc/efectividad";
+import { efectividadDelMes } from "@/lib/cxc/cierreEfectividad";
 import { cargarMetas } from "@/lib/administracion/metas";
 import { hoyCaracas, sumarDias } from "@/lib/administracion/lectura";
 
@@ -27,6 +29,10 @@ export interface FilaDetalle {
   fecha?: string | null;
   monto?: number | null;
   url?: string | null;
+  /** Barra de uso contra un tope (clientes excedidos: lo que debe contra su límite). */
+  barra?: { usado: number; limite: number };
+  /** El monto se marca en rojo (se pasa por mucho). */
+  grave?: boolean;
 }
 
 export interface DetalleAlerta {
@@ -42,6 +48,8 @@ export interface DetalleAlerta {
 }
 
 const MAX_FILAS = 300;
+// Un cliente que debe esto o mas por encima de su limite (0,5 = 50 %) sale en rojo.
+const EXCESO_GRAVE = 0.5;
 const ODOO = (process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com").replace(/\/+$/, "");
 
 const urlRegistro = (model: string, id: number, cid?: number | null) =>
@@ -258,8 +266,70 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
       };
     }
 
+    case "sf-dso": {
+      // Mismo peso que el indicador: cada tramo de antiguedad por su punto medio (15/45/75/105 dias).
+      const peso = (dias: number) => (dias <= 30 ? 15 : dias <= 60 ? 45 : dias <= 90 ? 75 : 105);
+      const porCliente = new Map<string, { nombre: string; id: number; sede: number | null; vencido: number; ponderado: number; facturas: number }>();
+      for (const f of await cxcPendientes(companyIds)) {
+        const saldo = Number(f.amount_residual_signed);
+        if (f.move_type !== "out_invoice" || saldo <= 0.01 || !f.invoice_date_due || f.invoice_date_due >= hoy) continue;
+        const dias = Math.floor((Date.parse(hoy) - Date.parse(f.invoice_date_due)) / 86400000);
+        const clave = `${cid(f)}:${f.partner_id?.[0]}`;
+        const c = porCliente.get(clave) || { nombre: nombre(f.partner_id), id: f.partner_id?.[0], sede: cid(f), vencido: 0, ponderado: 0, facturas: 0 };
+        c.vencido += saldo;
+        c.ponderado += saldo * peso(dias);
+        c.facturas += 1;
+        porCliente.set(clave, c);
+      }
+      const totalPonderado = [...porCliente.values()].reduce((s, c) => s + c.ponderado, 0);
+      const lista = [...porCliente.values()]
+        .sort((a, b) => b.ponderado - a.ponderado)
+        .map((c) => ({
+          texto: c.nombre || "Sin cliente",
+          sub:
+            `${c.facturas} factura${c.facturas === 1 ? "" : "s"} vencida${c.facturas === 1 ? "" : "s"} · ${Math.round(c.ponderado / c.vencido)} días en promedio` +
+            ` · pesa ${totalPonderado > 0 ? Math.round((c.ponderado / totalPonderado) * 1000) / 10 : 0}% del indicador`,
+          monto: redondo(c.vencido),
+          url: c.id ? urlRegistro("res.partner", c.id, c.sede) : null,
+        }));
+      return {
+        origen:
+          "Días promedio de la cartera vencida: cada factura vencida pesa por su saldo y por su tramo de antigüedad (1-30 días cuenta 15, 31-60 cuenta 45, 61-90 cuenta 75 y más de 90 cuenta 105). Aquí está por cliente, ordenado por cuánto sube el promedio: el de arriba es el que más días le suma.",
+        odoo: { etiqueta: "Contabilidad › Clientes › Facturas", url: (await urlAccion("facturasCliente", "account.move", companyIds)) || "" },
+        panel: { etiqueta: "Cuentas por Cobrar", ruta: "/cuentas-por-cobrar" },
+        ...recortar(lista),
+      };
+    }
+
+    case "sf-cumplimiento_cobranza": {
+      // Lo mismo que el modal de Efectividad de Cobranza de CxC: por cliente, lo que había que cobrar y lo cobrado.
+      const fin = new Date(anio, m, 0);
+      const corte = new Date();
+      corte.setHours(23, 59, 59, 999);
+      const { detalle } = await efectividadDelMes(companyIds, mes, fin, corte, () =>
+        detalleEfectividad(companyIds, new Date(anio, m - 1, 1), fin, [], corte),
+      );
+      const r = detalle.resumen;
+      const lista = detalle.clientes
+        .filter((c) => c.falta > 0.01)
+        .map((c) => ({
+          texto: c.nombre,
+          sub: `Había que cobrar ${redondo(c.porCobrar).toLocaleString("en-US")} · cobrado ${redondo(c.cobrado).toLocaleString("en-US")}${c.vendedor ? ` · ${c.vendedor}` : ""}`,
+          monto: redondo(c.falta),
+          url: c.partnerId ? urlRegistro("res.partner", c.partnerId) : null,
+        }));
+      return {
+        origen:
+          `Es la tarjeta Efectividad de Cobranza de Cuentas por Cobrar: de lo que había que cobrar en el mes (${redondo(r.venciaAntes).toLocaleString("en-US")} ya vencido al empezar el mes + ${redondo(r.vencioEnElMes).toLocaleString("en-US")} que se venció en el mes` +
+          (r.notasCredito > 0 ? ` − ${redondo(r.notasCredito).toLocaleString("en-US")} de notas de crédito` : "") +
+          `), cuánto se cobró: ${redondo(r.cobrado).toLocaleString("en-US")}. Solo crédito, sin Supricom ni SUPER TECHNO; un mes cerrado sale de la foto de cierre. Aquí están los clientes con lo que les falta pagar.`,
+        odoo: { etiqueta: "Contabilidad › Clientes › Facturas", url: (await urlAccion("facturasCliente", "account.move", companyIds)) || "" },
+        panel: { etiqueta: "Cuentas por Cobrar", ruta: "/cuentas-por-cobrar" },
+        ...recortar(lista),
+      };
+    }
+
     case "sf-cartera_vencida":
-    case "sf-dso":
     case "sf-cartera_90": {
       const limite = alertaId === "sf-cartera_90" ? sumarDias(hoy, -90) : hoy;
       const lista = (await cxcPendientes(companyIds))
@@ -282,8 +352,7 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
       };
     }
 
-    case "sf-cobros_esperados":
-    case "sf-cumplimiento_cobranza": {
+    case "sf-cobros_esperados": {
       const delMes = (
         await searchReadTodo(
           "account.move",
@@ -309,7 +378,7 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
         .sort((a, b) => (b.monto ?? 0) - (a.monto ?? 0));
       return {
         origen:
-          "Facturas de cliente que vencen en el mes y todavía tienen saldo, sin empresas del grupo: es lo que falta por cobrar de lo esperado. El indicador compara lo cobrado de esas facturas (y, en Cumplimiento, todo lo que entró a banco y caja) contra lo esperado.",
+          "Facturas de cliente que vencen en el mes y todavía tienen saldo, sin empresas del grupo: es lo que falta por cobrar de lo esperado. El indicador compara lo cobrado de esas facturas contra lo que vencía en el mes.",
         odoo: { etiqueta: "Contabilidad › Clientes › Facturas", url: (await urlAccion("facturasCliente", "account.move", companyIds)) || "" },
         panel: { etiqueta: "Cuentas por Cobrar", ruta: "/cuentas-por-cobrar" },
         ...recortar(lista),
@@ -330,16 +399,23 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
       const lista = porSede
         .flat()
         .filter((p) => !esIntercompania(p.display_name) && Number(p.credit) > Number(p.credit_limit))
-        .map((p) => ({
-          texto: p.display_name,
-          sub: `Debe ${redondo(Number(p.credit)).toLocaleString("en-US")} con límite de ${redondo(Number(p.credit_limit)).toLocaleString("en-US")}`,
-          monto: redondo(Number(p.credit) - Number(p.credit_limit)),
-          url: urlRegistro("res.partner", p.id, p.sede),
-        }))
+        .map((p) => {
+          const debe = Number(p.credit);
+          const limite = Number(p.credit_limit);
+          const exceso = debe - limite;
+          return {
+            texto: p.display_name,
+            sub: `Debe ${redondo(debe).toLocaleString("en-US")} con límite de ${redondo(limite).toLocaleString("en-US")} · se pasa ${Math.round((exceso / limite) * 100)}%`,
+            monto: redondo(exceso),
+            url: urlRegistro("res.partner", p.id, p.sede),
+            barra: { usado: redondo(debe), limite: redondo(limite) },
+            grave: exceso >= limite * EXCESO_GRAVE,
+          };
+        })
         .sort((a, b) => (b.monto ?? 0) - (a.monto ?? 0));
       return {
         origen:
-          "Clientes con límite de crédito cargado (ficha del contacto › Contabilidad) cuyo total por cobrar lo pasa. El monto es cuánto se pasan del límite.",
+          `Clientes con límite de crédito cargado (ficha del contacto › Contabilidad) cuyo total por cobrar lo pasa. La barra es lo que deben contra su límite (la raya es el límite) y el monto, cuánto se pasan; en rojo los que se pasan ${EXCESO_GRAVE * 100}% o más del límite.`,
         odoo: { etiqueta: "Contabilidad › Clientes › Clientes", url: (await urlAccion("clientes", "res.partner", companyIds)) || "" },
         panel: null,
         ...recortar(lista),
