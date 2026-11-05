@@ -293,6 +293,7 @@ export const rolePermissions: RolePermissions = {
       // Ventas dropdown
       "reporte_diario", // Reporte Diario
       "reporte_ventas", // Reporte de Ventas (de su sede, payload.cids)
+      "semaforo_clientes", // Semáforo de clientes de su sede (lib/semaforo-clientes)
       "seller_map", // Mapa de Clientes (sub-item de Ventas)
       // Leads dropdown
       "adminleads", // Leads (permiso principal del dropdown)
