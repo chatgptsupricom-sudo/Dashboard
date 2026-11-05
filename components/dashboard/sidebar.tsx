@@ -619,6 +619,8 @@ export function Sidebar({
         !(isSuperAdminRole &&
           [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...gerenteMarcaSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+        // Gerente de Operaciones: el Semáforo va dentro de su desplegable Ventas.
+        !(showVentasDropdown && isGerenteOperaciones && item.id === "semaforo_clientes") &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") &&
         // El SuperAdmin ya la tiene completa en el desplegable "Administración".
@@ -1448,7 +1450,7 @@ export function Sidebar({
                               permission: "reportes_comerciales",
                             }]
                           : []),
-                        ...((isSuperAdminRole || isBIRole) && allowedSections.includes("semaforo_clientes")
+                        ...((isSuperAdminRole || isBIRole || isGerenteOperaciones) && allowedSections.includes("semaforo_clientes")
                           ? [{
                               label: "Semáforo de clientes",
                               href: `/${locale}/semaforo-clientes`,
