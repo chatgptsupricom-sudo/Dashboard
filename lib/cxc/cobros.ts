@@ -1,3 +1,4 @@
+import { dominioSinImpuestos } from "@/lib/cxc/impuestos";
 import { callOdooRPC } from "@/lib/odoo";
 import { fechasDePagos } from "@/lib/cxc/fechaConfirmacion";
 import { esICExcluido } from "@/lib/intercompania";
@@ -87,6 +88,11 @@ export interface OpcionesCobros {
    */
   excluirRetenciones?: boolean;
   excluirIva25?: boolean;
+  /**
+   * Además fuera los pagos cuya descripción dice IGTF, ISLR, IVA o retención
+   * (lib/cxc/impuestos.ts). Default false: solo el botón «Excluir impuestos».
+   */
+  excluirImpuestos?: boolean;
   /** Dominio extra sobre la FACTURA (`account.move`), p.ej. vencimiento o partner. */
   dominioFactura?: any[];
 }
@@ -179,6 +185,7 @@ export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros):
       ["credit_move_id.payment_id.payment_description", "not ilike", "25\\%"],
     );
   }
+  if (opts.excluirImpuestos) dominio.push(...dominioSinImpuestos("credit_move_id."));
   if (opts.dominioFactura?.length) dominio.push(...prefijar(opts.dominioFactura, "debit_move_id.move_id."));
 
   const conciliaciones = await paginar("account.partial.reconcile", dominio, [

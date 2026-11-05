@@ -3,7 +3,7 @@ import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
-import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
+import { esNoVendedor } from "@/lib/cxc/vendedoresExcluidos";
 import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
 import { nombresPlazos } from "@/lib/cxc/credito";
 import { NextRequest, NextResponse } from "next/server";
@@ -55,7 +55,7 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
   );
 
   const invoices = (invoicesRaw || [])
-    .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv.invoice_user_id?.[1], inv.company_id?.[0]))
+    .filter((inv) => !excluirAsistente || !esNoVendedor(inv.invoice_user_id?.[1], inv.company_id?.[0]))
     .filter((inv) => vendedorId === undefined || inv.invoice_user_id?.[0] === vendedorId);
   const ptMap = await mapaPlazos(invoices.map((f) => f.invoice_payment_term_id?.[0]));
 
@@ -77,6 +77,7 @@ async function facturasDelMes(companyIds: number[], partnerId: number, monthStar
 async function cobrosDelMes(
   companyIds: number[], partnerId: number, monthStart: Date, monthEnd: Date, excluirAsistente: boolean,
   vendedorId: number | undefined, bancoId: number | undefined, excluirRetenciones: boolean, excluirIva25: boolean,
+  excluirImpuestos: boolean,
 ): Promise<Factura[]> {
   const cobros = await obtenerCobros(companyIds, {
     desde: monthStart.toISOString().split("T")[0],
@@ -84,11 +85,12 @@ async function cobrosDelMes(
     dominioFactura: [["partner_id", "=", partnerId]],
     excluirRetenciones,
     excluirIva25,
+    excluirImpuestos,
   });
 
   const filtrados = cobros.filter((c) => {
     // "Cobrado" no excluye asistentes por defecto (ver contado-credito/route.ts).
-    if (excluirAsistente && esVendedorExcluido(c.vendedorName, c.companyId)) return false;
+    if (excluirAsistente && esNoVendedor(c.vendedorName, c.companyId)) return false;
     if (vendedorId !== undefined && c.vendedorId !== vendedorId) return false;
     if (bancoId !== undefined && c.journalId !== bancoId) return false;
     return true;
@@ -116,7 +118,7 @@ async function porCobrarDelCliente(
 ): Promise<Factura[]> {
   const { renglones } = await porCobrarAlCierre(companyIds, monthEnd, partnerId);
   const filtrados = renglones
-    .filter((r) => !excluirAsistente || !esVendedorExcluido(r.sellerName, r.companyId))
+    .filter((r) => !excluirAsistente || !esNoVendedor(r.sellerName, r.companyId))
     .filter((r) => vendedorId === undefined || r.sellerId === vendedorId);
   const ptMap = await mapaPlazos(filtrados.map((r) => r.plazoId));
   return filtrados
@@ -162,6 +164,7 @@ async function leerGET(request: NextRequest) {
     // Mismos checks que contado-credito/route.ts (solo en Cobrado).
     const excluirRetenciones = searchParams.get("excluirRetenciones") !== "false";
     const excluirIva25 = searchParams.get("excluirIva25") !== "false";
+    const excluirImpuestos = searchParams.get("excluirImpuestos") === "true";
     // Filtros globales de la pantalla (los mismos que contado-credito/
     // route.ts): vendedor puntual y banco/diario puntual, independientes
     // de la card de la que salio el drill-down.
@@ -200,7 +203,7 @@ async function leerGET(request: NextRequest) {
     let facturas = modo === "por_cobrar"
       ? await porCobrarDelCliente(companyIds, partnerId, monthEnd, excluirAsistente, vendedorId)
       : modo === "cobrado"
-      ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId, bancoId, excluirRetenciones, excluirIva25)
+      ? await cobrosDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId, bancoId, excluirRetenciones, excluirIva25, excluirImpuestos)
       : await facturasDelMes(companyIds, partnerId, monthStart, monthEnd, excluirAsistente, vendedorId);
 
     if (journalIdParam) {
