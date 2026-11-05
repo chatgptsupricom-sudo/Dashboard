@@ -1,7 +1,6 @@
 "use client";
 
-import { DateRangePicker } from "@tremor/react";
-import { ChevronLeft, ChevronRight, RefreshCcw } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, RefreshCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { XLSX, estilizarHoja } from "@/lib/excel";
 import { useSedeFija } from "@/components/administracion/comunes";
@@ -43,8 +42,8 @@ const COLUMNAS: { titulo: string; valor: (f: FilaIntegracion) => string | number
 
 const dia = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "");
 const dinero = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const aIso = (d?: Date) =>
-  d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "";
+const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const dos = (n: number) => String(n).padStart(2, "0");
 
 export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: boolean }) {
   const [datos, setDatos] = useState<Respuesta>({ results: [], total_count: 0, total_monto: 0 });
@@ -61,10 +60,17 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
   const [vendedor, setVendedor] = useState("all");
   const [buscar, setBuscar] = useState("");
   const [porFecha, setPorFecha] = useState<"aplicacion" | "pago">("aplicacion");
-  const [rango, setRango] = useState<{ from?: Date; to?: Date }>({
-    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-    to: new Date(),
-  });
+  // Mes/Año, o un rango de fechas a mano: el mismo filtro de Contado/Crédito.
+  const hoy = new Date();
+  const [mes, setMes] = useState(hoy.getMonth() + 1);
+  const [anio, setAnio] = useState(hoy.getFullYear());
+  const [usarRango, setUsarRango] = useState(false);
+  const [inicio, setInicio] = useState("");
+  const [fin, setFin] = useState("");
+  const conRango = usarRango && !!inicio && !!fin;
+  const desde = conRango ? inicio : `${anio}-${dos(mes)}-01`;
+  const hasta = conRango ? fin : `${anio}-${dos(mes)}-${dos(new Date(anio, mes, 0).getDate())}`;
+  const anios = Array.from({ length: hoy.getFullYear() - 2024 }, (_, i) => 2025 + i);
   const [pagina, setPagina] = useState(1);
   // «Excluir impuestos»: retenciones, 25% de IVA, IGTF e ISLR (lib/cxc/impuestos.ts).
   const [sinImpuestos, setSinImpuestos] = useState(false);
@@ -75,8 +81,8 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
       search: buscar,
       vendedor,
       fecha: porFecha,
-      fechaInicio: aIso(rango.from),
-      fechaFin: aIso(rango.to ?? rango.from),
+      fechaInicio: desde,
+      fechaFin: hasta,
       ...(sinImpuestos ? { sinImpuestos: "1" } : {}),
       ...extra,
     });
@@ -103,7 +109,7 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
     return () => {
       vigente = false;
     };
-  }, [api, cid, pagina, buscar, vendedor, porFecha, rango, sinImpuestos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [api, cid, pagina, buscar, vendedor, porFecha, desde, hasta, sinImpuestos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const exportar = async () => {
     setCargando(true);
@@ -117,7 +123,7 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
       estilizarHoja(hoja);
       const libro = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(libro, hoja, "Integración de Pagos");
-      XLSX.writeFile(libro, `Integracion_de_Pagos_${aIso(rango.from)}_${aIso(rango.to ?? rango.from)}.xlsx`);
+      XLSX.writeFile(libro, `Integracion_de_Pagos_${desde}_${hasta}.xlsx`);
     } catch {
       setError("No se pudo exportar el Excel");
     } finally {
@@ -188,16 +194,68 @@ export function IntegracionPagos({ api, eligeSede }: { api: string; eligeSede: b
           <option value="aplicacion">Por fecha de aplicación</option>
           <option value="pago">Por fecha de pago</option>
         </select>
-        <div className="md:col-span-2 bg-[#f8fafc] rounded-[20px] p-[2px]">
-          <DateRangePicker
-            value={rango}
-            onValueChange={(v) => {
-              setRango({ from: v.from, to: v.to });
-              setPagina(1);
-            }}
-            className="w-full bg-[#f8fafc] border-none shadow-none ring-0 [&>button]:border-none [&>button]:!ring-0 [&>button]:bg-[#f8fafc] [&>button]:rounded-[20px] text-xs font-semibold"
-          />
-        </div>
+        {!usarRango ? (
+          <div className="md:col-span-2 flex items-center gap-1 bg-slate-50 rounded-xl px-3 py-2">
+            <Calendar size={14} className="text-slate-400 shrink-0" />
+            <select
+              value={mes}
+              onChange={(e) => cambiar(setMes)(parseInt(e.target.value))}
+              className="text-sm bg-transparent border-none outline-none text-slate-700"
+              aria-label="Mes"
+            >
+              {MESES.map((m, i) => (
+                <option key={m} value={i + 1} disabled={anio === hoy.getFullYear() && i > hoy.getMonth()}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <select
+              value={anio}
+              onChange={(e) => cambiar(setAnio)(parseInt(e.target.value))}
+              className="text-sm bg-transparent border-none outline-none text-slate-700 ml-1"
+              aria-label="Año"
+            >
+              {anios.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setUsarRango(true)}
+              className="text-xs text-blue-600 hover:underline ml-auto"
+              title="Usar un rango de fechas específico en vez de mes/año"
+            >
+              Rango
+            </button>
+          </div>
+        ) : (
+          <div className="md:col-span-2 flex items-center gap-1 bg-slate-50 rounded-xl px-3 py-2">
+            <Calendar size={14} className="text-slate-400 shrink-0" />
+            <input
+              type="date"
+              value={inicio}
+              onChange={(e) => cambiar(setInicio)(e.target.value)}
+              className="text-sm bg-transparent border-none outline-none text-slate-700 min-w-0"
+              aria-label="Desde"
+            />
+            <span className="text-slate-300">–</span>
+            <input
+              type="date"
+              value={fin}
+              onChange={(e) => cambiar(setFin)(e.target.value)}
+              className="text-sm bg-transparent border-none outline-none text-slate-700 min-w-0"
+              aria-label="Hasta"
+            />
+            <button
+              onClick={() => cambiar(setUsarRango)(false)}
+              className="text-xs text-blue-600 hover:underline ml-auto"
+              title="Volver a filtrar por mes/año"
+            >
+              Mes/Año
+            </button>
+          </div>
+        )}
         <input
           value={buscar}
           onChange={(e) => cambiar(setBuscar)(e.target.value)}
