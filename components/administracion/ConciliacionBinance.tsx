@@ -14,7 +14,7 @@ import type {
 } from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Link2, Loader2, Printer, Search, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Loader2, Printer, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
@@ -106,27 +106,27 @@ const soloFecha = (iso: string) =>
 /** Dia (YYYY-MM-DD) en hora de Caracas. */
 const diaCaracas = (iso: string) => new Date(Date.parse(iso) - 4 * 3600_000).toISOString().slice(0, 10);
 
-/** Valor del selector para ver todas las semanas juntas (TODAS_LAS_SEMANAS de lib/administracion/binance.ts). */
-const TODAS = "todas";
-
-/**
- * Comprobantes que coinciden con lo buscado: cliente (nombre del archivo),
- * pagador, ID de orden (o un pedazo de 5 dígitos o más) o monto ("1500", "1,500.50").
- */
-function filtrarComprobantes(lista: Comprobante[], buscar: string) {
-  const texto = buscar.trim().toLowerCase();
-  if (!texto) return lista;
-  const numero = Number(texto.replace(/[\s,$]/g, ""));
-  // Un ID de orden tiene 18 dígitos: con menos de 5 es un monto, no un pedazo del ID.
-  const digitos = texto.replace(/\D/g, "");
-  return lista.filter(
-    (c) =>
-      c.cliente.toLowerCase().includes(texto) ||
-      (c.binance?.pagador || "").toLowerCase().includes(texto) ||
-      (digitos.length >= 5 && c.orderId.includes(digitos)) ||
-      (Number.isFinite(numero) && numero > 0 && Math.abs(c.monto - numero) < 0.005),
-  );
-}
+/** Valor del selector para ver todas las semanas juntas (TODAS_LAS_SEMANAS de lib/administracion/binance.ts). */
+const TODAS = "todas";
+
+/**
+ * Comprobantes que coinciden con lo buscado: cliente (nombre del archivo),
+ * pagador, ID de orden (o un pedazo de 5 dígitos o más) o monto ("1500", "1,500.50").
+ */
+function filtrarComprobantes(lista: Comprobante[], buscar: string) {
+  const texto = buscar.trim().toLowerCase();
+  if (!texto) return lista;
+  const numero = Number(texto.replace(/[\s,$]/g, ""));
+  // Un ID de orden tiene 18 dígitos: con menos de 5 es un monto, no un pedazo del ID.
+  const digitos = texto.replace(/\D/g, "");
+  return lista.filter(
+    (c) =>
+      c.cliente.toLowerCase().includes(texto) ||
+      (c.binance?.pagador || "").toLowerCase().includes(texto) ||
+      (digitos.length >= 5 && c.orderId.includes(digitos)) ||
+      (Number.isFinite(numero) && numero > 0 && Math.abs(c.monto - numero) < 0.005),
+  );
+}
 
 /**
  * Pagos del estado de cuenta que coinciden con lo buscado: pagador, monto
@@ -263,16 +263,6 @@ export default function ConciliacionBinance({
   const inputEstado = useRef<HTMLInputElement>(null);
   const carpeta = useRef<HTMLInputElement>(null);
   const carpetaEstado = useRef<HTMLInputElement>(null);
-  const [drive, setDrive] = useState<{ configurado: boolean; conectado: boolean; correo: string } | null>(null);
-  const [enlace, setEnlace] = useState("");
-  const [leyendoDrive, setLeyendoDrive] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/administracion/binance/drive?estado=1")
-      .then((r) => r.json())
-      .then((j) => setDrive(j?.configurado !== undefined ? j : null))
-      .catch(() => setDrive(null));
-  }, []);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -418,39 +408,6 @@ export default function ConciliacionBinance({
     setSubiendo(null);
     for (const el of [input, inputEstado, carpeta, carpetaEstado]) if (el.current) el.current.value = "";
     cargar();
-  };
-
-  /** Lee la carpeta de Google Drive pegada y sube sus comprobantes (el servidor los baja de Drive). */
-  const leerDrive = async () => {
-    setError(null);
-    setLeyendoDrive(true);
-    try {
-      const json = await (
-        await fetch("/api/administracion/binance/drive", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: enlace }),
-        })
-      ).json();
-      if (!json.success) setError(json.error || "No se pudo leer la carpeta de Drive");
-      else if (!json.archivos.length) setError(`La carpeta «${json.carpeta}» no tiene fotos ni PDF`);
-      else {
-        setIgnorados(0);
-        setLeyendoDrive(false);
-        await subirLista(
-          json.archivos.map((a: { id: string; nombre: string; carpeta: string }) => ({
-            driveId: a.id,
-            nombre: a.nombre,
-            carpeta: a.carpeta,
-          })),
-          "comprobante",
-        );
-        setEnlace("");
-      }
-    } catch {
-      setError("No se pudo leer la carpeta de Drive");
-    }
-    setLeyendoDrive(false);
   };
 
   const asignar = async (c: Comprobante, valor: string, aprobar = false) => {
@@ -982,6 +939,7 @@ export default function ConciliacionBinance({
               </DialogContent>
             </Dialog>
 
+            <div className="flex flex-wrap items-center justify-between gap-3">
             {!cxc && (
               <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Tabla">
                 {(
@@ -1003,6 +961,34 @@ export default function ConciliacionBinance({
                 ))}
               </div>
             )}
+              {/* Un buscador para la tabla que se ve: comprobantes o estado de cuenta. */}
+              <div className="relative w-full sm:w-96">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                {cxc || tabla === "comprobantes" ? (
+                  <input
+                    value={buscar}
+                    onChange={(e) => {
+                      setBuscar(e.target.value);
+                      setPaginaComprobantes(0);
+                    }}
+                    placeholder={`Buscar comprobante por ${salida ? "beneficiario" : "cliente"}, ID de orden o monto`}
+                    aria-label="Buscar comprobantes"
+                    className="border rounded-lg pl-9 pr-3 py-2 text-sm bg-white w-full"
+                  />
+                ) : (
+                  <input
+                    value={buscarPagos}
+                    onChange={(e) => {
+                      setBuscarPagos(e.target.value);
+                      setPaginaPagos(0);
+                    }}
+                    placeholder={`Buscar pago por ${salida ? "destinatario" : "pagador"}, monto, ${salida ? "beneficiario" : "cliente"} o ID de orden`}
+                    aria-label="Buscar en el estado de cuenta"
+                    className="border rounded-lg pl-9 pr-3 py-2 text-sm bg-white w-full"
+                  />
+                )}
+              </div>
+            </div>
 
             {(cxc || tabla === "comprobantes") && (
             <Card>
@@ -1039,63 +1025,13 @@ export default function ConciliacionBinance({
                 </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                {drive?.configurado && (
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
-                    {drive.conectado ? (
-                      <>
-                        <input
-                          value={enlace}
-                          onChange={(e) => setEnlace(e.target.value)}
-                          placeholder="Pega el enlace de la carpeta de Google Drive"
-                          aria-label="Enlace de la carpeta de Google Drive"
-                          className="border rounded-lg px-3 py-2 text-sm bg-white flex-1 min-w-0"
-                        />
-                        <Button
-                          size="sm"
-                          className="h-9"
-                          disabled={!enlace.trim() || leyendoDrive || !!subiendo}
-                          onClick={leerDrive}
-                          title={drive.correo ? `Se lee con la cuenta ${drive.correo}` : undefined}
-                        >
-                          {leyendoDrive ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
-                          Leer carpeta de Drive
-                        </Button>
-                      </>
-                    ) : cxc ? (
-                      <p className="text-xs text-gray-500">
-                        Para subir desde una carpeta de Google Drive, Administración tiene que conectar Google Drive.
-                      </p>
-                    ) : (
-                      <Button asChild size="sm" variant="outline" className="h-9">
-                        <a href="/api/administracion/binance/drive">
-                          <Link2 className="h-4 w-4 mr-2" />
-                          Conectar Google Drive
-                        </a>
-                      </Button>
-                    )}
-                  </div>
-                )}
-                <div className="relative mb-3 w-full sm:w-80">
-                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    value={buscar}
-                    onChange={(e) => {
-                      setBuscar(e.target.value);
-                      setPaginaComprobantes(0);
-                    }}
-                    placeholder="Buscar por cliente, ID de orden o monto"
-                    aria-label="Buscar comprobantes"
-                    className="border rounded-lg pl-9 pr-3 py-2 text-sm bg-white w-full"
-                  />
-                </div>
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Fecha</TableHead>
                       <TableHead>{QUIEN}</TableHead>
                       <TableHead>ID de orden</TableHead>
-                      <TableHead className="text-right">Comprobante</TableHead>
-                      <TableHead className="text-right">Binance</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
                       <TableHead>{CONTRAPARTE}</TableHead>
                       <TableHead>Estado</TableHead>
                       <TableHead />
@@ -1104,7 +1040,7 @@ export default function ConciliacionBinance({
                   <TableBody>
                     {encontrados.length === 0 && (
                       <FilaVacia
-                        columnas={8}
+                        columnas={7}
                         texto={buscar.trim() ? "Ningún comprobante coincide con la búsqueda." : semana === TODAS ? "No hay comprobantes." : "No hay comprobantes en esta semana."}
                       />
                     )}
@@ -1131,9 +1067,6 @@ export default function ConciliacionBinance({
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap">
                           {cifra(c.monto)} {c.moneda}
-                        </TableCell>
-                        <TableCell className="text-right whitespace-nowrap">
-                          {c.binance ? `${cifra(c.binance.monto)} ${c.binance.moneda}` : "—"}
                         </TableCell>
                         <TableCell>{c.binance?.pagador || "—"}</TableCell>
                         <TableCell>
@@ -1253,19 +1186,6 @@ export default function ConciliacionBinance({
                 </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                <div className="relative mb-3 w-full sm:w-80">
-                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    value={buscarPagos}
-                    onChange={(e) => {
-                      setBuscarPagos(e.target.value);
-                      setPaginaPagos(0);
-                    }}
-                    placeholder={`Buscar por ${salida ? "destinatario" : "pagador"}, monto, ${salida ? "beneficiario" : "cliente"} o ID de orden`}
-                    aria-label="Buscar en el estado de cuenta"
-                    className="border rounded-lg pl-9 pr-3 py-2 text-sm bg-white w-full"
-                  />
-                </div>
                 <Table>
                   <TableHeader>
                     <TableRow>
