@@ -42,6 +42,9 @@ export function ExitsTab({
   const [location, setLocation] = useState<"office" | "warehouse">("office");
   const [useOtherLocation, setUseOtherLocation] = useState(false);
   const [client, setClient] = useState<any>(null);
+  // Cliente potencial: todavía no está en Odoo, se escribe su nombre.
+  const [potencial, setPotencial] = useState(false);
+  const [nombrePotencial, setNombrePotencial] = useState("");
   const [ordenVenta, setOrdenVenta] = useState("");
   const [vendedor, setVendedor] = useState("");
   const [vendedores, setVendedores] = useState<{ id: number; name: string }[]>([]);
@@ -90,8 +93,12 @@ export function ExitsTab({
       return;
     }
 
-    if (kind === "cliente" && !client) {
+    if (kind === "cliente" && !potencial && !client) {
       setError("Selecciona un cliente de Odoo");
+      return;
+    }
+    if (kind === "cliente" && potencial && !nombrePotencial.trim()) {
+      setError("Indica el nombre del cliente potencial");
       return;
     }
     if (kind !== "cliente" && !destination.trim()) {
@@ -120,8 +127,13 @@ export function ExitsTab({
     };
 
     if (kind === "cliente") {
-      body.clientId = client.id;
-      body.clientName = client.name;
+      if (potencial) {
+        body.potentialClient = true;
+        body.clientName = nombrePotencial.trim();
+      } else {
+        body.clientId = client.id;
+        body.clientName = client.name;
+      }
       body.clientCids = null;
       body.odooOrderName = ordenVenta.trim() || null;
       body.sellerName = vendedor.trim() || null;
@@ -154,6 +166,7 @@ export function ExitsTab({
       setDestination("");
       setRecipient("");
       setClient(null);
+      setNombrePotencial("");
       setUseOtherLocation(false);
       setNotes("");
       setMovementDate(today());
@@ -238,9 +251,28 @@ export function ExitsTab({
             {kind === "cliente" && (
               <>
                 <div>
-                  <Label>Cliente (Odoo)</Label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label>{potencial ? "Cliente potencial" : "Cliente (Odoo)"}</Label>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={potencial}
+                        onChange={(e) => setPotencial(e.target.checked)}
+                      />
+                      Cliente potencial (no está en Odoo)
+                    </label>
+                  </div>
                   <div className="mt-1.5">
-                    <OdooClientSelect value={client} onChange={setClient} />
+                    {potencial ? (
+                      <Input
+                        value={nombrePotencial}
+                        onChange={(e) => setNombrePotencial(e.target.value)}
+                        placeholder="Nombre o razón social del cliente"
+                        maxLength={255}
+                      />
+                    ) : (
+                      <OdooClientSelect value={client} onChange={setClient} />
+                    )}
                   </div>
                 </div>
                 <div>
