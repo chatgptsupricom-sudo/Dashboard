@@ -1,11 +1,13 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { esIntercompania } from "@/lib/administracion/intercompania";
 import { fetchFechasDePago } from "@/lib/administracion/saludFinanciera";
-import { fetchTesoreriaAdmin } from "@/lib/administracion/tesoreria";
+import { fetchTesoreriaAdmin, type CuentaTesoreria } from "@/lib/administracion/tesoreria";
 import { CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA } from "@/lib/administracion/gestionAdministrativa";
 import { cargarRefsAdminKpis, idsParaEmpresas, searchReadTodo } from "@/lib/administracion/odooRefs";
 import { fetchCuentasGasto, fetchGastoReal, mesAnterior, rangoDelMes } from "@/lib/administracion/gastos";
 import { query } from "@/lib/db";
+import { detalleEfectividad } from "@/lib/cxc/efectividad";
+import { efectividadDelMes } from "@/lib/cxc/cierreEfectividad";
 import { cargarMetas } from "@/lib/administracion/metas";
 import { hoyCaracas, sumarDias } from "@/lib/administracion/lectura";
 
@@ -27,6 +29,16 @@ export interface FilaDetalle {
   fecha?: string | null;
   monto?: number | null;
   url?: string | null;
+  /** Barra de uso contra un tope (clientes excedidos: lo que debe contra su límite). */
+  barra?: { usado: number; limite: number };
+  /** El monto se marca en rojo (se pasa por mucho). */
+  grave?: boolean;
+  /** Por que esta asi (una cuenta de banco en negativo), resaltado debajo. */
+  explicacion?: string;
+  /** Registros que lo componen (los asientos que la dejaron en negativo, las facturas de un total). */
+  hijos?: FilaDetalle[];
+  /** Cuantos hijos hay en total, si se muestran menos. */
+  totalHijos?: number;
 }
 
 export interface DetalleAlerta {
@@ -42,6 +54,8 @@ export interface DetalleAlerta {
 }
 
 const MAX_FILAS = 300;
+// Un cliente que debe esto o mas por encima de su limite (0,5 = 50 %) sale en rojo.
+const EXCESO_GRAVE = 0.5;
 const ODOO = (process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com").replace(/\/+$/, "");
 
 const urlRegistro = (model: string, id: number, cid?: number | null) =>
@@ -136,6 +150,112 @@ const filaFactura = (f: any, sub: string, monto: number): FilaDetalle => ({
   monto: redondo(monto),
   url: urlRegistro("account.move", f.id, cid(f)),
 });
+
+const usd = (n: number) => `$${redondo(n).toLocaleString("en-US")}`;
+
+/**
+ * Las cuentas de banco y caja disponibles; a las que estan en negativo se les
+ * explica por que y se les cuelgan los asientos que las dejaron asi.
+ */
+async function filasDeCuentas(cuentas: CuentaTesoreria[]): Promise<FilaDetalle[]> {
+  const disponibles = cuentas.filter((c) => c.clase === "disponible" && Math.abs(c.saldo) > 0.01).sort((a, b) => a.saldo - b.saldo);
+  return Promise.all(
+    disponibles.map(async (c) => {
+      const fila: FilaDetalle = {
+        texto: `${c.codigo} ${c.nombre}`,
+        sub:
+          `${c.sede} · en el banco ${usd(c.saldoBanco)}` +
+          (Math.abs(c.pendiente) > 0.01 ? ` · cobros/pagos registrados sin conciliar (R/P) ${usd(c.pendiente)}` : ""),
+        monto: redondo(c.saldo),
+        url: urlRegistro("account.account", c.cuentaId),
+      };
+      return c.saldo < -0.01 ? { ...fila, ...(await porQueNegativa(c)) } : fila;
+    }),
+  );
+}
+
+const ASIENTOS_POR_CUENTA = 8;
+// Una transferencia en bolivares cargada en un diario en dolares deja la diferencia aqui.
+const RE_DIFERENCIAL = /diferencial cambiario/i;
+
+/**
+ * Por que una cuenta de banco esta en negativo y que asientos la dejaron asi:
+ * los pagos registrados sin conciliar (R/P) mas grandes y, si la cuenta del
+ * banco misma esta en negativo, sus apuntes negativos mas grandes.
+ */
+async function porQueNegativa(c: CuentaTesoreria): Promise<Pick<FilaDetalle, "explicacion" | "hijos" | "totalHijos">> {
+  const campos = ["move_id", "date", "name", "ref", "partner_id", "balance", "company_id"];
+  const [pendientes, delBanco] = await Promise.all([
+    c.cuentasPendientes.length
+      ? searchReadTodo(
+          "account.move.line",
+          [["account_id", "in", c.cuentasPendientes], ["parent_state", "=", "posted"], ["reconciled", "=", false]],
+          campos,
+        )
+      : Promise.resolve([] as any[]),
+    c.saldoBanco < -0.01
+      ? callOdooRPC<any[]>(
+          "account.move.line",
+          "search_read",
+          [[["account_id", "=", c.cuentaId], ["parent_state", "=", "posted"], ["balance", "<", 0]]],
+          { fields: campos, order: "balance asc", limit: ASIENTOS_POR_CUENTA },
+        ).then((r) => r || [])
+      : Promise.resolve([] as any[]),
+  ]);
+  const pagos = pendientes.filter((l) => Number(l.balance) < 0);
+  const cobros = pendientes.filter((l) => Number(l.balance) > 0);
+  const suma = (ls: any[]) => ls.reduce((t, l) => t + Number(l.balance), 0);
+  const mayores = [...pagos].sort((a, b) => Number(a.balance) - Number(b.balance)).slice(0, ASIENTOS_POR_CUENTA);
+
+  // Asientos de esos pagos que mandaron la diferencia a "Diferencial Cambiario".
+  const movesId = [...new Set(mayores.map((l) => l.move_id?.[0]).filter(Boolean))];
+  const conDiferencial = new Set<number>();
+  if (movesId.length) {
+    const otras = await callOdooRPC<any[]>(
+      "account.move.line",
+      "search_read",
+      [[["move_id", "in", movesId]]],
+      { fields: ["move_id", "account_id"], limit: 0 },
+    );
+    (otras || []).forEach((l) => RE_DIFERENCIAL.test(nombre(l.account_id)) && conDiferencial.add(l.move_id[0]));
+  }
+
+  const fila = (l: any, origen: string): FilaDetalle => {
+    const enBs = conDiferencial.has(l.move_id?.[0]);
+    return {
+      texto: `${nombre(l.move_id)} · ${nombre(l.partner_id) || l.ref || l.name || "sin contacto"}`,
+      sub:
+        [origen, l.ref && nombre(l.partner_id) ? l.ref : "", typeof l.name === "string" && l.name !== l.ref ? l.name : ""].filter(Boolean).join(" · ") +
+        (enBs ? " · parece un monto en bolívares cargado en dólares: la diferencia se fue a Diferencial Cambiario" : ""),
+      fecha: l.date,
+      monto: redondo(Number(l.balance)),
+      url: l.move_id?.[0] ? urlRegistro("account.move", l.move_id[0], cid(l)) : null,
+      grave: enBs,
+    };
+  };
+
+  const partes: string[] = [];
+  if (pagos.length) {
+    partes.push(
+      `Tiene ${pagos.length} pago${pagos.length === 1 ? "" : "s"} registrado${pagos.length === 1 ? "" : "s"} sin conciliar por ${usd(-suma(pagos))}` +
+        ` contra ${cobros.length} cobro${cobros.length === 1 ? "" : "s"} sin conciliar por ${usd(suma(cobros))} y ${usd(c.saldoBanco)} en la cuenta del banco` +
+        ` (último extracto: ${c.extracto.ultimo ? fechaLatina(c.extracto.ultimo) : "ninguno"}).`,
+    );
+  }
+  if (conDiferencial.size) {
+    partes.push(
+      `${conDiferencial.size === 1 ? "Un asiento parece" : `${conDiferencial.size} asientos parecen`} un monto en bolívares cargado como dólares: hay que anularlo y rehacerlo con el monto correcto.`,
+    );
+  }
+  if (delBanco.length) partes.push("La cuenta del banco misma está en negativo: hay apuntes directos contra ella que pasan lo que entró.");
+  partes.push(
+    pagos.length
+      ? "Si los pagos son reales, al cargar y conciliar el extracto se ve qué cobro falta registrar; si no, hay pagos de más o duplicados."
+      : "Revisa los apuntes de abajo.",
+  );
+  const hijos = [...mayores.map((l) => fila(l, "Pago sin conciliar")), ...delBanco.map((l) => fila(l, "Apunte en la cuenta del banco"))];
+  return { explicacion: partes.join(" "), hijos, totalHijos: pagos.length + delBanco.length };
+}
 
 const fechaLatina = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—");
 
@@ -258,8 +378,70 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
       };
     }
 
+    case "sf-dso": {
+      // Mismo peso que el indicador: cada tramo de antiguedad por su punto medio (15/45/75/105 dias).
+      const peso = (dias: number) => (dias <= 30 ? 15 : dias <= 60 ? 45 : dias <= 90 ? 75 : 105);
+      const porCliente = new Map<string, { nombre: string; id: number; sede: number | null; vencido: number; ponderado: number; facturas: number }>();
+      for (const f of await cxcPendientes(companyIds)) {
+        const saldo = Number(f.amount_residual_signed);
+        if (f.move_type !== "out_invoice" || saldo <= 0.01 || !f.invoice_date_due || f.invoice_date_due >= hoy) continue;
+        const dias = Math.floor((Date.parse(hoy) - Date.parse(f.invoice_date_due)) / 86400000);
+        const clave = `${cid(f)}:${f.partner_id?.[0]}`;
+        const c = porCliente.get(clave) || { nombre: nombre(f.partner_id), id: f.partner_id?.[0], sede: cid(f), vencido: 0, ponderado: 0, facturas: 0 };
+        c.vencido += saldo;
+        c.ponderado += saldo * peso(dias);
+        c.facturas += 1;
+        porCliente.set(clave, c);
+      }
+      const totalPonderado = [...porCliente.values()].reduce((s, c) => s + c.ponderado, 0);
+      const lista = [...porCliente.values()]
+        .sort((a, b) => b.ponderado - a.ponderado)
+        .map((c) => ({
+          texto: c.nombre || "Sin cliente",
+          sub:
+            `${c.facturas} factura${c.facturas === 1 ? "" : "s"} vencida${c.facturas === 1 ? "" : "s"} · ${Math.round(c.ponderado / c.vencido)} días en promedio` +
+            ` · pesa ${totalPonderado > 0 ? Math.round((c.ponderado / totalPonderado) * 1000) / 10 : 0}% del indicador`,
+          monto: redondo(c.vencido),
+          url: c.id ? urlRegistro("res.partner", c.id, c.sede) : null,
+        }));
+      return {
+        origen:
+          "Días promedio de la cartera vencida: cada factura vencida pesa por su saldo y por su tramo de antigüedad (1-30 días cuenta 15, 31-60 cuenta 45, 61-90 cuenta 75 y más de 90 cuenta 105). Aquí está por cliente, ordenado por cuánto sube el promedio: el de arriba es el que más días le suma.",
+        odoo: { etiqueta: "Contabilidad › Clientes › Facturas", url: (await urlAccion("facturasCliente", "account.move", companyIds)) || "" },
+        panel: { etiqueta: "Cuentas por Cobrar", ruta: "/cuentas-por-cobrar" },
+        ...recortar(lista),
+      };
+    }
+
+    case "sf-cumplimiento_cobranza": {
+      // Lo mismo que el modal de Efectividad de Cobranza de CxC: por cliente, lo que había que cobrar y lo cobrado.
+      const fin = new Date(anio, m, 0);
+      const corte = new Date();
+      corte.setHours(23, 59, 59, 999);
+      const { detalle } = await efectividadDelMes(companyIds, mes, fin, corte, () =>
+        detalleEfectividad(companyIds, new Date(anio, m - 1, 1), fin, [], corte),
+      );
+      const r = detalle.resumen;
+      const lista = detalle.clientes
+        .filter((c) => c.falta > 0.01)
+        .map((c) => ({
+          texto: c.nombre,
+          sub: `Había que cobrar ${redondo(c.porCobrar).toLocaleString("en-US")} · cobrado ${redondo(c.cobrado).toLocaleString("en-US")}${c.vendedor ? ` · ${c.vendedor}` : ""}`,
+          monto: redondo(c.falta),
+          url: c.partnerId ? urlRegistro("res.partner", c.partnerId) : null,
+        }));
+      return {
+        origen:
+          `Es la tarjeta Efectividad de Cobranza de Cuentas por Cobrar: de lo que había que cobrar en el mes (${redondo(r.venciaAntes).toLocaleString("en-US")} ya vencido al empezar el mes + ${redondo(r.vencioEnElMes).toLocaleString("en-US")} que se venció en el mes` +
+          (r.notasCredito > 0 ? ` − ${redondo(r.notasCredito).toLocaleString("en-US")} de notas de crédito` : "") +
+          `), cuánto se cobró: ${redondo(r.cobrado).toLocaleString("en-US")}. Solo crédito, sin Supricom ni SUPER TECHNO; un mes cerrado sale de la foto de cierre. Aquí están los clientes con lo que les falta pagar.`,
+        odoo: { etiqueta: "Contabilidad › Clientes › Facturas", url: (await urlAccion("facturasCliente", "account.move", companyIds)) || "" },
+        panel: { etiqueta: "Cuentas por Cobrar", ruta: "/cuentas-por-cobrar" },
+        ...recortar(lista),
+      };
+    }
+
     case "sf-cartera_vencida":
-    case "sf-dso":
     case "sf-cartera_90": {
       const limite = alertaId === "sf-cartera_90" ? sumarDias(hoy, -90) : hoy;
       const lista = (await cxcPendientes(companyIds))
@@ -282,8 +464,7 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
       };
     }
 
-    case "sf-cobros_esperados":
-    case "sf-cumplimiento_cobranza": {
+    case "sf-cobros_esperados": {
       const delMes = (
         await searchReadTodo(
           "account.move",
@@ -309,7 +490,7 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
         .sort((a, b) => (b.monto ?? 0) - (a.monto ?? 0));
       return {
         origen:
-          "Facturas de cliente que vencen en el mes y todavía tienen saldo, sin empresas del grupo: es lo que falta por cobrar de lo esperado. El indicador compara lo cobrado de esas facturas (y, en Cumplimiento, todo lo que entró a banco y caja) contra lo esperado.",
+          "Facturas de cliente que vencen en el mes y todavía tienen saldo, sin empresas del grupo: es lo que falta por cobrar de lo esperado. El indicador compara lo cobrado de esas facturas contra lo que vencía en el mes.",
         odoo: { etiqueta: "Contabilidad › Clientes › Facturas", url: (await urlAccion("facturasCliente", "account.move", companyIds)) || "" },
         panel: { etiqueta: "Cuentas por Cobrar", ruta: "/cuentas-por-cobrar" },
         ...recortar(lista),
@@ -330,45 +511,109 @@ export async function detalleAlerta(alertaId: string, companyIds: number[], mes:
       const lista = porSede
         .flat()
         .filter((p) => !esIntercompania(p.display_name) && Number(p.credit) > Number(p.credit_limit))
-        .map((p) => ({
-          texto: p.display_name,
-          sub: `Debe ${redondo(Number(p.credit)).toLocaleString("en-US")} con límite de ${redondo(Number(p.credit_limit)).toLocaleString("en-US")}`,
-          monto: redondo(Number(p.credit) - Number(p.credit_limit)),
-          url: urlRegistro("res.partner", p.id, p.sede),
-        }))
+        .map((p) => {
+          const debe = Number(p.credit);
+          const limite = Number(p.credit_limit);
+          const exceso = debe - limite;
+          return {
+            texto: p.display_name,
+            sub: `Debe ${redondo(debe).toLocaleString("en-US")} con límite de ${redondo(limite).toLocaleString("en-US")} · se pasa ${Math.round((exceso / limite) * 100)}%`,
+            monto: redondo(exceso),
+            url: urlRegistro("res.partner", p.id, p.sede),
+            barra: { usado: redondo(debe), limite: redondo(limite) },
+            grave: exceso >= limite * EXCESO_GRAVE,
+          };
+        })
         .sort((a, b) => (b.monto ?? 0) - (a.monto ?? 0));
       return {
         origen:
-          "Clientes con límite de crédito cargado (ficha del contacto › Contabilidad) cuyo total por cobrar lo pasa. El monto es cuánto se pasan del límite.",
+          `Clientes con límite de crédito cargado (ficha del contacto › Contabilidad) cuyo total por cobrar lo pasa. La barra es lo que deben contra su límite (la raya es el límite) y el monto, cuánto se pasan; en rojo los que se pasan ${EXCESO_GRAVE * 100}% o más del límite.`,
         odoo: { etiqueta: "Contabilidad › Clientes › Clientes", url: (await urlAccion("clientes", "res.partner", companyIds)) || "" },
         panel: null,
         ...recortar(lista),
       };
     }
 
-    case "sf-cobertura_caja_30d":
-    case "sf-flujo_proyectado_30d":
     case "sf-disponibilidad_bancaria": {
       const tes = await fetchTesoreriaAdmin(companyIds, hoy, desde, hasta);
-      const lista = tes.cuentas
-        .filter((c) => c.clase === "disponible" && Math.abs(c.saldo) > 0.01)
-        .sort((a, b) => a.saldo - b.saldo)
-        .map((c) => ({
-          texto: `${c.codigo} ${c.nombre}`,
-          sub:
-            `${c.sede} · en el banco ${redondo(c.saldoBanco).toLocaleString("en-US")}` +
-            (Math.abs(c.pendiente) > 0.01
-              ? ` · cobros/pagos registrados sin conciliar (R/P) ${redondo(c.pendiente).toLocaleString("en-US")}`
-              : ""),
-          monto: redondo(c.saldo),
-          url: urlRegistro("account.account", c.cuentaId),
-        }));
+      const lista = await filasDeCuentas(tes.cuentas);
       return {
         origen:
-          "La caja es el saldo en libros de cada cuenta de banco y caja: lo de la cuenta del banco más los cobros y pagos registrados que todavía no se concilian con un extracto (R/P). Sin extractos cargados, los pagos se quedan en R/P y la caja puede salir negativa sin serlo. El flujo y la cobertura suman a esa caja lo que hay por cobrar y por pagar a 30 días.",
+          "El disponible es el saldo en libros de cada cuenta de banco y caja: lo de la cuenta del banco más los cobros y pagos registrados que todavía no se concilian con un extracto (R/P). Las cuentas en negativo traen por qué y los asientos que las dejaron así.",
         odoo: { etiqueta: "Contabilidad › Tablero", url: (await urlAccion("tablero", "account.journal", companyIds)) || "" },
         panel: { etiqueta: "Tesorería y Bancos", ruta: "/administracion/tesoreria" },
         ...recortar(lista),
+      };
+    }
+
+    case "sf-cobertura_caja_30d":
+    case "sf-flujo_proyectado_30d": {
+      const flujo = alertaId === "sf-flujo_proyectado_30d";
+      const hasta30 = sumarDias(hoy, 30);
+      const [tes, cxp, cxc] = await Promise.all([
+        fetchTesoreriaAdmin(companyIds, hoy, desde, hasta),
+        cxpPendientes(companyIds),
+        flujo ? cxcPendientes(companyIds) : Promise.resolve([] as any[]),
+      ]);
+      const cuentas = await filasDeCuentas(tes.cuentas);
+      const debe = (f: any) => -Number(f.amount_residual_signed);
+      const factura = (f: any, vence: string) => filaFactura(f, vence, debe(f));
+      const vencidas = cxp.filter((f) => f.invoice_date_due && f.invoice_date_due < hoy).sort((a, b) => debe(b) - debe(a));
+      const proximas = cxp
+        .filter((f) => f.invoice_date_due && f.invoice_date_due >= hoy && f.invoice_date_due <= hasta30)
+        .sort((a, b) => debe(b) - debe(a));
+      const suma = (fs: any[], m: (f: any) => number) => redondo(fs.reduce((t, f) => t + m(f), 0));
+      const HIJOS = 15;
+      const grupo = (texto: string, sub: string, monto: number, hijos: FilaDetalle[]): FilaDetalle => ({
+        texto,
+        sub,
+        monto,
+        hijos: hijos.slice(0, HIJOS),
+        totalHijos: hijos.length,
+      });
+      const filas: FilaDetalle[] = [
+        grupo(
+          "Caja disponible",
+          `${tes.cuentas.filter((c) => c.clase === "disponible").length} cuentas de banco y caja; las que están en negativo dicen por qué`,
+          redondo(tes.resumen.disponible),
+          cuentas,
+        ),
+      ];
+      if (flujo) {
+        const porCobrar = cxc
+          .filter((f) => f.move_type === "out_invoice" && Number(f.amount_residual_signed) > 0.01 && f.invoice_date_due && f.invoice_date_due >= hoy)
+          .sort((a, b) => Number(b.amount_residual_signed) - Number(a.amount_residual_signed));
+        filas.push(
+          grupo(
+            "+ Por cobrar no vencido",
+            `${porCobrar.length} facturas de cliente que todavía no vencen (el indicador resta los saldos a favor de cada cliente)`,
+            suma(porCobrar, (f) => Number(f.amount_residual_signed)),
+            porCobrar.map((f) => filaFactura(f, `Vence ${fechaLatina(f.invoice_date_due)}`, Number(f.amount_residual_signed))),
+          ),
+        );
+      }
+      filas.push(
+        grupo(
+          `${flujo ? "− " : ""}Por pagar ya vencido`,
+          `${vencidas.length} facturas de proveedor vencidas (las sin condición de pago vencen el día de la factura)`,
+          flujo ? -suma(vencidas, debe) : suma(vencidas, debe),
+          vencidas.map((f) => factura(f, `Venció ${fechaLatina(f.invoice_date_due)}${f.invoice_payment_term_id ? "" : " · sin condición de pago"}`)),
+        ),
+        grupo(
+          `${flujo ? "− " : ""}Por pagar en los próximos 30 días`,
+          `${proximas.length} facturas de proveedor que vencen hasta el ${fechaLatina(hasta30)}`,
+          flujo ? -suma(proximas, debe) : suma(proximas, debe),
+          proximas.map((f) => factura(f, `Vence ${fechaLatina(f.invoice_date_due)}`)),
+        ),
+      );
+      return {
+        origen: flujo
+          ? "Flujo a 30 días = caja disponible + lo que hay por cobrar no vencido − lo que hay por pagar (vencido y lo que vence en 30 días), sin empresas del grupo. Abre cada parte para ver lo que la compone."
+          : "Cobertura = caja disponible ÷ lo que hay por pagar (vencido y lo que vence en 30 días), sin empresas del grupo. Abre cada parte para ver lo que la compone.",
+        odoo: { etiqueta: "Contabilidad › Proveedores › Facturas", url: (await urlAccion("facturasProveedor", "account.move", companyIds)) || "" },
+        panel: { etiqueta: "Tesorería y Bancos", ruta: "/administracion/tesoreria" },
+        filas,
+        total: filas.length,
       };
     }
 

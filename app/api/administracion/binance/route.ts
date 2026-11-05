@@ -8,7 +8,9 @@ import {
   borrarMovimientosSemana,
   capturaPorHuella,
   comprobantePorHuella,
-  conciliacionSemana,
+  conciliacion,
+  semanaValida,
+  TODAS_LAS_SEMANAS,
   clienteDelArchivo,
   diaDeCarpeta,
   eliminarComprobante,
@@ -42,8 +44,8 @@ export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_CXC]);
   if (auth.error) return auth.error;
   const semana = request.nextUrl.searchParams.get("semana") || "";
-  if (!rangoSemana(semana)) {
-    return NextResponse.json({ error: "La semana debe ser un lunes (YYYY-MM-DD)" }, { status: 400 });
+  if (!semanaValida(semana)) {
+    return NextResponse.json({ error: "La semana debe ser un lunes (YYYY-MM-DD) o «todas»" }, { status: 400 });
   }
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
@@ -55,7 +57,7 @@ export async function GET(request: NextRequest) {
     // ?vista=comprobantes: lo que ve Cuentas por Cobrar al subir, solo los
     // comprobantes de la semana con su estado (sin el estado de cuenta).
     if (request.nextUrl.searchParams.get("vista") === "comprobantes") {
-      const { comprobantes } = await conciliacionSemana(semana, sede);
+      const { comprobantes } = await conciliacion(semana, sede);
       return NextResponse.json({ success: true, semana, comprobantes });
     }
     // Cuentas por Cobrar solo ve los conciliados que todavia no registro en Odoo
@@ -63,7 +65,7 @@ export async function GET(request: NextRequest) {
     // el SuperAdmin y Administracion.
     const esCxC = esRolCxC(auth.payload);
     if (esCxC || request.nextUrl.searchParams.get("vista") === "cxc") {
-      const { comprobantes } = await conciliacionSemana(semana, sede);
+      const { comprobantes } = await conciliacion(semana, sede);
       const conciliados = comprobantes.filter((c) => c.estado === "conciliado" || c.estado === "manual");
       let registradas: Set<string>;
       try {
@@ -80,8 +82,9 @@ export async function GET(request: NextRequest) {
       });
     }
     const [datos, borrables] = await Promise.all([
-      conciliacionSemana(semana, sede, lado),
-      movimientosBorrables(semana, sede),
+      conciliacion(semana, sede, lado),
+      // Con todas las semanas no se ofrece borrar el estado de cuenta (se borra por semana).
+      semana === TODAS_LAS_SEMANAS ? Promise.resolve(0) : movimientosBorrables(semana, sede),
     ]);
     return NextResponse.json({ success: true, semana, ...datos, borrables });
   } catch (e: any) {

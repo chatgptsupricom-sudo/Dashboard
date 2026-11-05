@@ -17,6 +17,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 // Administración, solo con los conciliados de su sede que faltan en Odoo).
 
 const DIA = 86400_000;
+// Valor del selector para ver todas las semanas juntas (TODAS_LAS_SEMANAS de lib/administracion/binance.ts).
+const TODAS = "todas";
 
 /** Lunes (YYYY-MM-DD) de las ultimas `n` semanas, la actual primero. */
 function semanas(n = 12) {
@@ -116,8 +118,10 @@ export default function BinanceCxCPage() {
     setDia(null);
   }, [semana]);
 
+  const todas = semana === TODAS;
   const semanaCompleta = conciliados || [];
-  const dias = diasDeSemana(semana);
+  // Con todas las semanas no hay filtro por día.
+  const dias = todas ? [] : diasDeSemana(semana);
   const lista = dia ? semanaCompleta.filter((c) => diaDe(c) === dia) : semanaCompleta;
   const texto = buscar.trim().toLowerCase();
   const filtrados = texto
@@ -125,7 +129,7 @@ export default function BinanceCxCPage() {
         [c.cliente, c.orderId, c.binance?.pagador || "", String(c.monto)].some((v) => v.toLowerCase().includes(texto)),
       )
     : lista;
-  const etiquetaSemana = opciones.find((o) => o.value === semana)?.label;
+  const etiquetaSemana = todas ? "todas" : opciones.find((o) => o.value === semana)?.label;
 
   // Las semanas van de la mas nueva a la mas vieja: "anterior" es el indice siguiente.
   const indice = opciones.findIndex((o) => o.value === semana);
@@ -146,7 +150,7 @@ export default function BinanceCxCPage() {
           <button
             type="button"
             onClick={() => setSemana(opciones[indice + 1].value)}
-            disabled={indice >= opciones.length - 1}
+            disabled={todas || indice >= opciones.length - 1}
             className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-30"
             aria-label="Semana anterior"
           >
@@ -158,6 +162,7 @@ export default function BinanceCxCPage() {
             className="bg-transparent px-1 py-1 text-sm font-medium outline-none"
             aria-label="Semana"
           >
+            <option value={TODAS}>Todas las semanas</option>
             {opciones.map((o) => (
               <option key={o.value} value={o.value}>
                 Semana {o.label}
@@ -167,7 +172,7 @@ export default function BinanceCxCPage() {
           <button
             type="button"
             onClick={() => setSemana(opciones[indice - 1].value)}
-            disabled={indice <= 0}
+            disabled={todas || indice <= 0}
             className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-30"
             aria-label="Semana siguiente"
           >
@@ -199,7 +204,7 @@ export default function BinanceCxCPage() {
         </TabsContent>
 
         <TabsContent value="odoo" className="mt-0 space-y-3 min-w-0">
-          <div className="flex gap-1 overflow-x-auto" role="group" aria-label="Filtrar por día">
+          <div className={`flex gap-1 overflow-x-auto ${todas ? "hidden" : ""}`} role="group" aria-label="Filtrar por día">
             {[{ valor: null as string | null, label: "Todos" }, ...dias].map((d) => {
               const n = d.valor ? semanaCompleta.filter((c) => diaDe(c) === d.valor).length : semanaCompleta.length;
               const activo = dia === d.valor;
@@ -219,8 +224,8 @@ export default function BinanceCxCPage() {
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-sm text-gray-600">
-              {dia ? "Día" : "Semana"}{" "}
-              <span className="font-medium">{dia ? dias.find((d) => d.valor === dia)?.label : etiquetaSemana}</span> ·{" "}
+              {dia ? "Día" : todas ? "" : "Semana"}{" "}
+              <span className="font-medium">{dia ? dias.find((d) => d.valor === dia)?.label : todas ? "Todas las semanas" : etiquetaSemana}</span> ·{" "}
               {lista.length} por registrar ·{" "}
               {porMoneda(lista)}
               {registrados > 0 && <span className="text-gray-400"> · {registrados} ya registrados en Odoo</span>}

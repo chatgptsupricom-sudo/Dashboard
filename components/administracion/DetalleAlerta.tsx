@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ExternalLink, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { DetalleAlerta as Detalle } from "@/lib/administracion/saludDetalle";
+import type { DetalleAlerta as Detalle, FilaDetalle } from "@/lib/administracion/saludDetalle";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const fecha = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—");
@@ -120,10 +120,18 @@ export default function DetalleAlerta({
                             <span className="font-medium">{f.texto}</span>
                           )}
                           {f.sub && <div className="text-xs text-gray-500">{f.sub}</div>}
+                          {f.barra && <BarraLimite {...f.barra} grave={!!f.grave} />}
+                          {f.explicacion && (
+                            <div className="mt-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                              <span className="font-medium">Por qué: </span>
+                              {f.explicacion}
+                            </div>
+                          )}
+                          {f.hijos && f.hijos.length > 0 && <Hijos hijos={f.hijos} total={f.totalHijos ?? f.hijos.length} />}
                         </TableCell>
                         {conFecha && <TableCell className="whitespace-nowrap text-sm">{fecha(f.fecha)}</TableCell>}
                         {conMonto && (
-                          <TableCell className="text-right whitespace-nowrap font-medium">
+                          <TableCell className={`text-right whitespace-nowrap font-medium ${f.grave ? "text-red-600" : ""}`}>
                             {typeof f.monto === "number" ? money(f.monto) : "—"}
                           </TableCell>
                         )}
@@ -140,5 +148,63 @@ export default function DetalleAlerta({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Lo que debe un cliente contra su limite: la parte hasta el limite en gris, lo
+ * que se pasa en ambar (rojo si es grave), y una raya donde esta el limite.
+ */
+function BarraLimite({ usado, limite, grave }: { usado: number; limite: number; grave: boolean }) {
+  const tope = Math.max(usado, limite) || 1;
+  const pLimite = (Math.min(usado, limite) / tope) * 100;
+  const pExceso = (Math.max(0, usado - limite) / tope) * 100;
+  return (
+    <div className="mt-1.5 max-w-sm" aria-label={`Debe ${money(usado)} con límite de ${money(limite)}`}>
+      <div className="relative h-2.5 rounded-full bg-gray-100 overflow-hidden flex">
+        <div className="h-full bg-slate-400" style={{ width: `${pLimite}%` }} />
+        <div className={`h-full ${grave ? "bg-red-500" : "bg-amber-400"}`} style={{ width: `${pExceso}%` }} />
+        <div className="absolute top-0 h-full w-0.5 bg-gray-800" style={{ left: `calc(${(limite / tope) * 100}% - 1px)` }} />
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+        <span>Límite {money(limite)}</span>
+        <span>Debe {money(usado)}</span>
+      </div>
+    </div>
+  );
+}
+
+
+/** Los registros que componen una fila (asientos de una cuenta, facturas de un total), plegados. */
+function Hijos({ hijos, total }: { hijos: FilaDetalle[]; total: number }) {
+  return (
+    <details className="mt-1.5">
+      <summary className="cursor-pointer text-xs text-blue-700">
+        Ver {total > hijos.length ? `los ${hijos.length} más grandes de ${total}` : `los ${total}`}
+      </summary>
+      <ul className="mt-1 divide-y rounded-md border text-xs">
+        {hijos.map((h, i) => (
+          <li key={i} className="flex items-start justify-between gap-3 px-2 py-1.5">
+            <div className="min-w-0">
+              {h.url ? (
+                <a href={h.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-700 hover:underline">
+                  {h.texto} <ExternalLink className="inline h-3 w-3" />
+                </a>
+              ) : (
+                <span className="font-medium">{h.texto}</span>
+              )}
+              {(h.sub || h.fecha) && (
+                <div className={h.grave ? "text-red-600" : "text-gray-500"}>
+                  {[h.fecha && fecha(h.fecha), h.sub].filter(Boolean).join(" · ")}
+                </div>
+              )}
+            </div>
+            {typeof h.monto === "number" && (
+              <span className={`whitespace-nowrap font-medium ${h.grave ? "text-red-600" : ""}`}>{money(h.monto)}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

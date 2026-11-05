@@ -1,12 +1,12 @@
 import { query } from "@/lib/db";
 import { SUCURSALES } from "@/lib/recepcion/flujo";
 import { cargarRecepcion } from "@/lib/recepcion/servidor";
-import { FOTO_PX, excelObservaciones, filasObservaciones } from "@/lib/recepcion/observaciones";
+import { FOTO_PX, cantidades, encabezadoObservaciones, filasObservaciones, pdfObservaciones } from "@/lib/recepcion/observaciones";
 
 /**
  * Correo con las observaciones de una recepcion cuando Almacen termina de
  * descargar un contenedor (solo lo de ese contenedor) o cierra el packing
- * list (todo). Lleva el Excel del boton «Descargar observaciones» adjunto.
+ * list (todo). Lleva adjunto el PDF del boton «Descargar observaciones».
  * Sin observaciones no sale nada.
  *
  * Va al flujo de n8n "Recepción - Observaciones"
@@ -36,9 +36,9 @@ async function procesar(recepcionId: number, origenPeticion: string, contenedorI
   const rec = datos.recepcion;
   const contenedor = contenedorId === undefined ? null : datos.contenedores.find((c) => Number(c.id) === contenedorId);
   const sede = SUCURSALES.find((s) => s.cids === Number(rec.cids))?.nombre || "";
-  const excel = await excelObservaciones(filas, leerFoto);
+  const pdf = await pdfObservaciones(encabezadoObservaciones(datos, contenedorId), filas, leerFoto);
   const que = contenedor ? `contenedor ${contenedor.numero}` : rec.origen === "factura" ? `factura ${rec.referencia}` : `packing list ${rec.referencia}`;
-  const nombre = `Observaciones_${rec.referencia}${contenedor ? `_${contenedor.numero}` : ""}.xlsx`.replace(/[\\/:*?"<>|]/g, "-");
+  const nombre = `Observaciones_${rec.referencia}${contenedor ? `_${contenedor.numero}` : ""}.pdf`.replace(/[\\/:*?"<>|]/g, "-");
 
   const res = await fetch(url, {
     method: "POST",
@@ -62,20 +62,20 @@ async function procesar(recepcionId: number, origenPeticion: string, contenedorI
         tipo: f.tipo,
         contenedor: f.contenedor,
         producto: [f.codigo, f.producto].filter(Boolean).join(" · "),
-        cantidades: f.esperado === "" ? "" : `${f.recibido === "" ? "—" : f.recibido} de ${f.esperado}${f.diferencia === "" || f.diferencia === 0 ? "" : ` (${f.diferencia > 0 ? "+" : ""}${f.diferencia})`}`,
+        cantidades: cantidades(f),
         detalle: f.detalle,
         fotos: f.fotos.length,
         por: f.por,
         fecha: f.fecha,
       })),
       link: `${origenPeticion.replace(/\/+$/, "")}/es/seguridad/mercancia/recepcion/${recepcionId}`,
-      adjunto: { nombre, base64: Buffer.from(excel).toString("base64") },
+      adjunto: { nombre, base64: Buffer.from(pdf).toString("base64") },
     }),
   });
   if (!res.ok) console.error(`[recepcion/avisoObservaciones] n8n respondió ${res.status} (recepcion ${recepcionId})`);
 }
 
-/** La foto de la base, achicada como en el navegador (al doble, para que no se vea borrosa). */
+/** La foto de la base, achicada como en el navegador. */
 async function leerFoto(archivo: { id: number }) {
   try {
     const fila = ((await query("SELECT data FROM recepcion_packing_archivos WHERE id = ?", [archivo.id])).rows as any[])[0];
@@ -83,10 +83,10 @@ async function leerFoto(archivo: { id: number }) {
     const sharp = (await import("sharp")).default;
     const { data, info } = await sharp(fila.data as Buffer)
       .rotate()
-      .resize(FOTO_PX * 2, FOTO_PX * 2, { fit: "inside" })
-      .jpeg({ quality: 85 })
+      .resize(FOTO_PX, FOTO_PX, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 82 })
       .toBuffer({ resolveWithObject: true });
-    return { base64: data.toString("base64"), ancho: Math.round(info.width / 2), alto: Math.round(info.height / 2) };
+    return { base64: data.toString("base64"), ancho: info.width, alto: info.height };
   } catch {
     return null;
   }

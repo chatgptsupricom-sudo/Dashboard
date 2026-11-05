@@ -190,10 +190,17 @@ export async function POST(request: NextRequest) {
     const cids = resolveMaterialPopCids(auth.payload);
     const userId = auth.payload?.uid || auth.payload?.id || null;
     const userName = auth.payload?.name || "Usuario";
-    const clientId = body?.clientId ? Number(body.clientId) : null;
+    // Cliente potencial: se le entrega material pero todavía no está en Odoo.
+    // Queda con client_id NULL y el nombre escrito a mano.
+    const clientePotencial = type === "exit" && body?.potentialClient === true;
+    const clientId = !clientePotencial && body?.clientId ? Number(body.clientId) : null;
     let verifiedClientName: string | null = null;
 
-    if (type === "exit" && String(body?.reasonType || "cliente") === "cliente") {
+    if (clientePotencial && String(body?.reasonType || "cliente") === "cliente") {
+      if (!truncar(body?.clientName, 255)) {
+        return NextResponse.json({ error: "Indica el nombre del cliente potencial" }, { status: 400 });
+      }
+    } else if (type === "exit" && String(body?.reasonType || "cliente") === "cliente") {
       if (clientId === null || !Number.isInteger(clientId) || clientId <= 0) {
         return NextResponse.json({ error: "Selecciona un cliente de Odoo" }, { status: 400 });
       }
@@ -372,7 +379,12 @@ export async function POST(request: NextRequest) {
         }
 
         const reasonType = truncar(body?.reasonType, 50) || "cliente";
-        const reasonCustom = truncar(body?.reasonCustom, 255);
+        // El historial muestra reason_custom en vez del tipo: así se distingue
+        // la salida a un cliente potencial.
+        const reasonCustom =
+          clientePotencial && reasonType === "cliente"
+            ? "Cliente potencial"
+            : truncar(body?.reasonCustom, 255);
         const clientName = verifiedClientName || truncar(body?.clientName, 255);
         const destination = truncar(body?.destination, 255);
         if (!["cliente", "uso_interno", "evento", "campana"].includes(reasonType)) {

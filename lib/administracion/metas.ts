@@ -23,7 +23,6 @@ export const METAS_DEFAULT: Record<string, number | null> = {
   // ajusta sola al tamano de la cartera que vence.
   cumplimiento_cobranza: 90,
   cartera_90: 3,
-  promesas_pago: 95,
   clientes_excedidos: 2,
   // Tesoreria
   cobertura_caja_30d: 1.5,
