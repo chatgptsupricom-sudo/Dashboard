@@ -3768,7 +3768,7 @@
     "no_llego_ninguno": "No llegó ninguno",
     "quitar_serial": "Quitar el serial {serial}",
     "descargar_seriales": "Descargar seriales en Excel ({count})",
-    "descargar_observaciones": "Descargar observaciones en Excel ({count})",
+    "descargar_observaciones": "Descargar observaciones en PDF ({count})",
     "motivo": "Motivo de la diferencia (obligatorio)",
     "golpeado": "Caja en mal estado",
     "dano_titulo": "Estado de la caja",

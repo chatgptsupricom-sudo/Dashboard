@@ -60,7 +60,7 @@ import EscenaRecepcion from "./EscenaRecepcion";
 import CruceOdoo from "./CruceOdoo";
 import SerialesOdoo from "./SerialesOdoo";
 import SubirSeriales from "./SubirSeriales";
-import { FOTO_PX, excelObservaciones, filasObservaciones, type FotoExcel } from "@/lib/recepcion/observaciones";
+import { FOTO_PX, encabezadoObservaciones, filasObservaciones, pdfObservaciones, type FotoPdf } from "@/lib/recepcion/observaciones";
 
 /**
  * Detalle de una recepcion por packing list.
@@ -183,20 +183,18 @@ function conFila<T extends Item>(item: T, contenedorId: number, enContenedor: nu
 
 const fmt = (n: number) => n.toLocaleString("es-VE");
 
-/** La foto achicada para el Excel (al doble de resolucion, para que no se vea borrosa). null si no se pudo leer. */
-async function miniatura(url: string): Promise<FotoExcel | null> {
+/** La foto achicada para el PDF. null si no se pudo leer. */
+async function miniatura(url: string): Promise<FotoPdf | null> {
   try {
     const r = await fetch(url);
     if (!r.ok) return null;
     const bitmap = await createImageBitmap(await r.blob());
-    const escala = FOTO_PX / Math.max(bitmap.width, bitmap.height);
-    const ancho = Math.round(bitmap.width * escala);
-    const alto = Math.round(bitmap.height * escala);
+    const escala = Math.min(1, FOTO_PX / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement("canvas");
-    canvas.width = ancho * 2;
-    canvas.height = alto * 2;
+    canvas.width = Math.round(bitmap.width * escala);
+    canvas.height = Math.round(bitmap.height * escala);
     canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return { base64: canvas.toDataURL("image/jpeg", 0.85).split(",")[1], ancho, alto };
+    return { base64: canvas.toDataURL("image/jpeg", 0.82).split(",")[1], ancho: canvas.width, alto: canvas.height };
   } catch {
     return null;
   }
@@ -574,23 +572,27 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   };
 
   // Todo lo anotado como novedad (lo guardado en el servidor): notas, precintos, diferencias y cajas en mal estado.
-  const observacionesExcel = () => (rec ? filasObservaciones({ recepcion: rec, contenedores, items, archivos }) : []);
+  const observaciones = () => (rec ? filasObservaciones({ recepcion: rec, contenedores, items, archivos }) : []);
   const [bajandoObservaciones, setBajandoObservaciones] = useState(false);
-  // ExcelJS (no SheetJS): lleva el encabezado con color y las fotos dentro de la hoja (lib/recepcion/observaciones.ts).
+  // PDF con una tarjeta por observacion y sus fotos (lib/recepcion/observaciones.ts), el mismo que va por correo.
   const descargarObservaciones = async () => {
     if (!rec) return;
     setBajandoObservaciones(true);
     try {
       const { saveAs } = await import("file-saver");
-      const buffer = await excelObservaciones(observacionesExcel(), (foto) => miniatura(`/api/recepcion/${rec.id}/archivos/${foto.id}`));
-      saveAs(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `Observaciones_${rec.referencia}.xlsx`);
+      const buffer = await pdfObservaciones(
+        encabezadoObservaciones({ recepcion: rec, contenedores, items, archivos }),
+        observaciones(),
+        (foto) => miniatura(`/api/recepcion/${rec.id}/archivos/${foto.id}`),
+      );
+      saveAs(new Blob([buffer], { type: "application/pdf" }), `Observaciones_${rec.referencia}.pdf`);
     } catch (e: any) {
-      setError(e?.message || "No se pudo armar el Excel de observaciones.");
+      setError(e?.message || "No se pudo armar el PDF de observaciones.");
     } finally {
       setBajandoObservaciones(false);
     }
   };
-  const nObservaciones = observacionesExcel().length;
+  const nObservaciones = observaciones().length;
 
   const corregirPrecintos = async (contenedorId: number) => {
     setError(null);
@@ -1329,7 +1331,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       disabled={bajandoObservaciones}
                       className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline disabled:opacity-60"
                     >
-                      {bajandoObservaciones ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+                      {bajandoObservaciones ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                       {t("descargar_observaciones", { count: nObservaciones })}
                     </button>
                   )}
