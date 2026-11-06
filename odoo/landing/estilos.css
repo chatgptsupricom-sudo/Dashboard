@@ -176,7 +176,7 @@ button { font: inherit; color: inherit; }
 .boton[aria-disabled] { opacity: .45; pointer-events: none; }
 
 /* Títulos de sección */
-.titulo { font-size: clamp(36px, 3.2vw + 16px, 60px); line-height: 1.06; font-weight: 800; letter-spacing: -0.03em; }
+.titulo { font-size: clamp(28px, 2.2vw + 16px, 48px); line-height: 1.06; font-weight: 800; letter-spacing: -0.03em; }
 .titulo-apoyo { font-size: clamp(26px, 1.6vw + 14px, 36px); line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
 .cabeza-seccion { display: grid; gap: 10px; margin-bottom: 40px; }
 .titulo-nota { color: var(--gris); font-size: 18px; line-height: 1.5; max-width: 560px; }
@@ -697,10 +697,14 @@ body.carrito-abierto .carrito { transform: none; visibility: visible; transition
 .pie-legal p { color: var(--gris); font-size: 14px; }
 
 /* ------------------------------------------------------------------ Portada: la oferta y la acción */
-.portada-texto { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px 40px; padding-top: 28px; }
-.portada-titulo { font-size: clamp(30px, 2.4vw + 12px, 46px); line-height: 1.06; font-weight: 800; letter-spacing: -0.03em; text-wrap: balance; max-width: 16ch; }
+.portada-texto { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 14px; padding-top: 32px; }
+.portada-titulo { font-size: clamp(30px, 4.2vw + 12px, 72px); line-height: 1.02; font-weight: 800; letter-spacing: -0.035em; text-wrap: balance; max-width: 18ch; }
 .portada-nota { grid-column: 1; color: var(--gris); font-size: 18px; line-height: 1.5; max-width: 44ch; text-wrap: pretty; }
-.portada-texto .acciones { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; gap: 10px; }
+.portada-texto .acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.portada-entrar { color: var(--gris); font-size: 15px; }
+.portada-entrar a, .ficha-entrar { display: inline-flex; align-items: center; gap: 6px; color: var(--acento); font-weight: 700; text-decoration: none; }
+.portada-entrar a:hover, .ficha-entrar:hover { text-decoration: underline; }
+.paso p a { color: var(--acento); font-weight: 700; }
 .cabecera-cta { flex: 0 0 auto; }
 
 /* ------------------------------------------------------------------ Superficies del navegador */
@@ -813,7 +817,6 @@ h1, h2, h3, .ficha-nombre, .combo-titulo, .acordeon summary { text-wrap: balance
     .pasos { grid-template-columns: 1fr; }
     .portada { display: flex; flex-direction: column; }
     .portada-texto { order: -1; grid-template-columns: 1fr; padding: 4px var(--lado) 20px; }
-    .portada-texto .acciones { grid-column: 1; grid-row: auto; }
     .ficha-nombre { font-size: 22px; }
     .pasos::before, .pasos::after { display: none; }
     .preguntas-fila { grid-template-columns: 1fr; gap: 24px; }
@@ -838,7 +841,7 @@ h1, h2, h3, .ficha-nombre, .combo-titulo, .acordeon summary { text-wrap: balance
 
 /* Pantallas bajas (celular, laptop chica): más lugar para la lista. */
 @media (max-height: 760px) {
-    .buscador-ayuda { display: none; }
+    .carrito.con-productos .buscador-ayuda { display: none; }
 }
 /* Quien pide menos movimiento ve todo quieto, sin desplazamientos raros y con todo alcanzable. */
 @media (prefers-reduced-motion: reduce) {
@@ -876,3 +879,13 @@ h1, h2, h3, .ficha-nombre, .combo-titulo, .acordeon summary { text-wrap: balance
     .menu .sede-ubicar { width: 52px; height: 50px; }
     .menu .cabecera-cta { margin-top: 8px; }
 }
+
+/* ------------------------------------------------------------------ Línea quitada: se puede deshacer unos segundos */
+.linea-quitada {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 64px; padding: 10px 14px;
+    margin: 6px 0; border-radius: 12px; background: var(--superficie-2); color: var(--gris); font-size: 14px;
+    animation: entra-linea .35s var(--curva) both;
+}
+.linea-quitada p { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linea-quitada strong { color: var(--tinta); font-weight: 700; }
+.linea-quitada .enlace-chico { flex: 0 0 auto; }

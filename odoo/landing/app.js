@@ -344,7 +344,7 @@
     };
     const paso = 360 / enAnillo.length;
     const items = enAnillo.map((p, i) => {
-        const a = crear("a", { class: "orbita-item", href: FICHAS ? ficha(p.id) : "#carrito", draggable: false, "aria-label": FICHAS ? `${p.marca} ${p.nombre}` : `Agregar ${p.marca} ${p.nombre} al carrito` }, [
+        const a = crear("a", { class: "orbita-item", href: FICHAS ? ficha(p.id) : "#carrito", draggable: false, "aria-label": FICHAS ? `${p.marca} ${p.nombre}` : `Agregar ${p.marca} ${p.nombre} a tu cotización` }, [
             crear("img", { src: foto(p.id), alt: "", draggable: false }),
             crear("span", { text: p.marca }),
         ]);
@@ -422,6 +422,10 @@
                 angulo += velocidad * f;
                 velocidad *= Math.pow(0.94, f);
                 if (!QUIETO && !pausaAnillo && Math.abs(velocidad) < 0.12) angulo += 0.12 * f;
+                if (elegido && !QUIETO && Math.abs(velocidad) < 0.05 && frenteActual >= 0) {
+                    const centrado = anguloMasCercano(frenteActual);
+                    if (Math.abs(centrado - angulo) > 0.05) { destino = centrado; velocidad = 0; }
+                }
             }
         }
         pintarAnillo();
@@ -493,14 +497,23 @@
         if (antes && !pausaAnillo) { soltarGiroCongelado(); arrancar(); }
     };
     filaVitrina.addEventListener("pointerover", (ev) => {
+        if (ev.pointerType !== "mouse") return;
         const sobre = Boolean(ev.target.closest(".orbita-item, .ficha"));
         if (sobre !== sobreTarjeta) { sobreTarjeta = sobre; pintarPausa(); }
     });
-    filaVitrina.addEventListener("pointerleave", () => { sobreTarjeta = false; pintarPausa(); });
+    filaVitrina.addEventListener("pointerleave", (ev) => { if (ev.pointerType === "mouse") { sobreTarjeta = false; pintarPausa(); } });
+    // Con el dedo no hay «encima»: el primer toque en el anillo o en la ficha lo deja detenido, como el botón de
+    // pausa (así no cambia el producto mientras se lee ni «Cotizar» suma otro). Sigue girando con el botón.
+    filaVitrina.addEventListener("pointerup", (ev) => {
+        if (ev.pointerType === "mouse" || elegido || !ev.target.closest(".orbita-escena, .ficha")) return;
+        elegido = true;
+        pintarPausa();
+    });
     // Con el teclado (foco visible) se detiene para poder leer; un clic con el mouse no lo deja detenido.
     filaVitrina.addEventListener("focusin", (ev) => { conTeclado = ev.target.matches(":focus-visible"); pintarPausa(); });
     filaVitrina.addEventListener("focusout", (ev) => { if (!filaVitrina.contains(ev.relatedTarget)) { conTeclado = false; pintarPausa(); } });
-    botonPausaAnillo.addEventListener("click", () => { elegido = !elegido; pintarPausa(); });
+    // Al pausar se corre al menos un cuadro, así la tarjeta más cercana queda centrada aunque ya estuviera detenido.
+    botonPausaAnillo.addEventListener("click", () => { elegido = !elegido; pintarPausa(); if (elegido) arrancar(); });
     if (QUIETO) botonPausaAnillo.hidden = true;
     orbita.addEventListener("keydown", (e) => {
         if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
@@ -916,6 +929,7 @@
     const listaSugeridos = $(".sugeridos-lista");
     let listaParaCopiar = null;
     enviar.classList.toggle("por-whatsapp", POR_WHATSAPP);
+    for (const a of $$("[data-abrir-lista]")) a.addEventListener("click", (ev) => { ev.preventDefault(); abrirCarrito(buscador); });
 
     const filasTicket = new Map();
     const nuevaFila = (codigo) => {
@@ -963,7 +977,7 @@
             // El nombre empieza por lo que se ve (para quien usa la voz) y dice el producto y el estado.
             const p = porCodigo.get(b.dataset.agregar);
             const prod = p ? `${p.marca} ${p.nombre}` : b.dataset.agregar;
-            b.setAttribute("aria-label", n ? `${visible} de ${prod} en el carrito. Sumar otra unidad` : `${visible} ${prod}`);
+            b.setAttribute("aria-label", n ? `${visible} de ${prod} en tu cotización. Sumar otra unidad` : `${visible} ${prod}`);
         }
     };
     // Los combos dicen si ya están todos en el carrito; el cierre ofrece volver a la cotización.
@@ -973,8 +987,8 @@
             const ps = combo ? combo.ids.map((id) => porId.get(id)).filter(Boolean) : [];
             const todos = ps.length > 0 && ps.every((p) => cotizacion.has(p.codigo.toUpperCase()));
             b.classList.toggle("en-cotizacion", todos);
-            $("span", b).textContent = todos ? "Combo en el carrito" : `Agregar el combo (${ps.length})`;
-            b.setAttribute("aria-label", todos ? `Combo ${combo.titulo} en el carrito. Agregar los que falten` : `Agregar el combo ${combo ? combo.titulo : ""}: ${ps.length} productos`);
+            $("span", b).textContent = todos ? "Combo en tu cotización" : `Agregar el combo (${ps.length})`;
+            b.setAttribute("aria-label", todos ? `Combo ${combo.titulo} en tu cotización. Agregar los que falten` : `Agregar el combo ${combo ? combo.titulo : ""}: ${ps.length} productos`);
         }
         const cierre = $(".cierre-carrito");
         cierre.hidden = !cotizacion.size;
@@ -989,8 +1003,8 @@
         numeroCarrito.hidden = !u;
         numeroCarrito.textContent = u > 999 ? "999+" : miles(u);
         botonCarrito.setAttribute("aria-label", u
-            ? `Abrir el carrito: ${cotizacion.size} ${cotizacion.size === 1 ? "producto" : "productos"}, ${unidadesTxt(u)}`
-            : "Abrir el carrito (vacío)");
+            ? `Abrir tu cotización: ${cotizacion.size} ${cotizacion.size === 1 ? "producto" : "productos"}, ${unidadesTxt(u)}`
+            : "Abrir tu cotización (vacía)");
     };
 
     let primeraVez = true;
@@ -1008,7 +1022,8 @@
                 filasTicket.set(codigo, fila);
                 if (!primeraVez) fila.classList.add("entra");
             }
-            const esperado = anterior ? anterior.nextElementSibling : lineasTicket.firstElementChild;
+            let esperado = anterior ? anterior.nextElementSibling : lineasTicket.firstElementChild;
+            while (esperado && esperado.classList.contains("linea-quitada")) esperado = esperado.nextElementSibling;
             if (esperado !== fila) lineasTicket.insertBefore(fila, esperado);
             const campo = $("input", fila);
             if (document.activeElement !== campo) campo.value = String(cant);
@@ -1021,7 +1036,8 @@
             corto.push(`${codigo} x ${cant}${p ? "" : " (por revisar)"}`);
         }
         const n = cotizacion.size;
-        vacioTicket.hidden = n > 0;
+        vacioTicket.hidden = n > 0 || Boolean(lineasTicket.querySelector(".linea-quitada"));
+        carrito.classList.toggle("con-productos", n > 0);
         botonVaciar.hidden = !n;
         for (const e of totalLineas) e.textContent = miles(n);
         for (const e of totalUnidades) e.textContent = miles(unidades);
@@ -1105,7 +1121,7 @@
         cambio();
         volar(vuelo);
         mostrarAvisoCarrito(p.id, `${p.marca} ${p.nombre}`);
-        anunciar(`Agregado al carrito: ${p.marca} ${p.nombre}. Llevas ${unidadesTxt(cotizacion.get(codigo))}.`);
+        anunciar(`Sumado a tu cotización: ${p.marca} ${p.nombre}. Llevas ${unidadesTxt(cotizacion.get(codigo))}.`);
     };
     enLaSede.agregar = (p, img) => agregarProducto(p, img);
 
@@ -1121,7 +1137,7 @@
             cambio();
             volar(vuelo);
             if (lista.length) mostrarAvisoCarrito(lista[0].id, `Combo: ${combo.titulo} (${lista.length})`);
-            anunciar(`Agregado al carrito el combo ${combo ? combo.titulo : ""}: ${lista.length} productos.`);
+            anunciar(`Sumado a tu cotización el combo ${combo ? combo.titulo : ""}: ${lista.length} productos.`);
             return;
         }
         const p = porCodigo.get(b.dataset.agregar);
@@ -1137,6 +1153,67 @@
         }
     });
 
+    // Quitar una línea deja en su lugar «Quitaste … · Deshacer» durante unos segundos; deshacer la devuelve
+    // con su cantidad y en la misma posición de la lista.
+    const quitarLinea = (fila, codigo, cant) => {
+        const nombre = nombreDe(codigo);
+        const deshacer = crear("button", { type: "button", class: "enlace-chico enlace-acento", text: "Deshacer", "aria-label": `Deshacer: volver a poner ${nombre}` });
+        const aviso = crear("div", { class: "linea-quitada", role: "listitem" }, [
+            crear("p", {}, ["Quitaste ", crear("strong", { text: nombre }), ` (${miles(cant)})`]),
+            deshacer,
+        ]);
+        let reloj = 0;
+        // La línea de la cotización que queda antes del aviso (saltando otros avisos): ahí vuelve al deshacer.
+        const lineaAnterior = () => {
+            let e = aviso.previousElementSibling;
+            while (e && !e.classList.contains("linea-pedido")) e = e.previousElementSibling;
+            return e;
+        };
+        const irse = () => {
+            clearTimeout(reloj);
+            if (!aviso.isConnected) return;
+            // Si el foco estaba en «Deshacer», pasa a la línea vecina (o al buscador): no se pierde fuera del panel.
+            let vecina = null;
+            if (aviso.contains(document.activeElement)) {
+                vecina = aviso.nextElementSibling;
+                while (vecina && !vecina.classList.contains("linea-pedido")) vecina = vecina.nextElementSibling;
+                vecina = vecina || lineaAnterior();
+            }
+            const teniaFoco = aviso.contains(document.activeElement);
+            aviso.remove();
+            pintar();
+            if (teniaFoco) (vecina ? $(".linea-quitar", vecina) : buscador).focus();
+        };
+        const esperar = () => { clearTimeout(reloj); reloj = setTimeout(irse, 6000); };
+        // Mientras el mouse está encima, o el foco del teclado en «Deshacer», no se va.
+        aviso.addEventListener("pointerenter", () => clearTimeout(reloj));
+        aviso.addEventListener("pointerleave", esperar);
+        aviso.addEventListener("focusin", () => { if (deshacer.matches(":focus-visible")) clearTimeout(reloj); });
+        aviso.addEventListener("focusout", esperar);
+        lineasTicket.insertBefore(aviso, fila);
+        poner(codigo, 0);
+        cambio();
+        anunciar(`Quitaste ${nombre}. Puedes deshacerlo.`);
+        esperar();
+        deshacer.focus();
+        deshacer.addEventListener("click", () => {
+            clearTimeout(reloj);
+            if (!cotizacion.has(codigo)) {
+                const lista = [...cotizacion];
+                const ant = lineaAnterior();
+                const pos = ant ? lista.findIndex(([c]) => c === ant.dataset.codigo) + 1 : 0;
+                lista.splice(pos, 0, [codigo, cant]);
+                cotizacion.clear();
+                for (const [c, n] of lista) cotizacion.set(c, n);
+            }
+            aviso.remove();
+            cambio();
+            anunciar(`${nombre} volvió a tu cotización.`);
+            const devuelta = filasTicket.get(codigo);
+            (devuelta ? $(".linea-quitar", devuelta) : buscador).focus();
+        });
+    };
+
     // Cantidades, quitar y vaciar desde la lista.
     const cambiar = (codigo, nueva) => {
         if (!cotizacion.has(codigo)) return;
@@ -1149,15 +1226,12 @@
         const b = ev.target.closest("button");
         if (!b) return;
         const fila = b.closest(".linea-pedido");
+        if (!fila) return; // «Deshacer» de una línea quitada tiene su propio manejo
         const codigo = fila.dataset.codigo;
         const actual = cotizacion.get(codigo) || 0;
         if (b.classList.contains("contador-mas")) cambiar(codigo, actual + 1);
         else if (b.classList.contains("contador-menos")) { if (actual > 1) cambiar(codigo, actual - 1); }
-        else if (b.classList.contains("linea-quitar")) {
-            const siguiente = fila.nextElementSibling || fila.previousElementSibling;
-            cambiar(codigo, 0);
-            (siguiente && siguiente.isConnected ? $(".linea-quitar", siguiente) : buscador).focus();
-        }
+        else if (b.classList.contains("linea-quitar")) quitarLinea(fila, codigo, actual);
     });
     // Escribir una cantidad: se guarda con Enter o al salir; vacío o 0 vuelve a lo que había.
     const guardarCampo = (campo) => {
@@ -1178,12 +1252,13 @@
     botonVaciar.addEventListener("click", () => {
         respaldo = [...cotizacion];
         cotizacion.clear();
+        for (const q of $$(".linea-quitada", lineasTicket)) q.remove();
         cambiosEnEstaVisita = true;
         guardarCotizacion();
         pintar();
         botonDeshacer.hidden = false;
         botonDeshacer.focus();
-        anunciar("Carrito vacío. Puedes deshacerlo.");
+        anunciar("Cotización vacía. Puedes deshacerlo.");
     });
     botonDeshacer.addEventListener("click", () => {
         if (!respaldo) return;
@@ -1193,7 +1268,7 @@
         guardarCotizacion();
         pintar();
         buscador.focus();
-        anunciar("Carrito recuperado.");
+        anunciar("Cotización recuperada.");
     });
     // Con una lista larga el correo se abre con un saludo: la lista se copia para pegarla.
     enviar.addEventListener("click", () => {
