@@ -103,32 +103,13 @@
     const MEDIO = POR_WHATSAPP ? "WhatsApp" : "correo";
 
     // Textos de la página que dependen de la sede.
-    document.title = `SUPRICOM ${S.nombre} · Tecnología al mayor`;
     for (const el of $$("[data-sede]")) {
-        const v = { nombre: S.nombre, documento: S.documento, medio: MEDIO }[el.dataset.sede];
+        const v = { documento: S.documento, medio: MEDIO }[el.dataset.sede];
         if (v !== undefined) el.textContent = v;
     }
     for (const el of $$("[data-solo-whatsapp]")) el.hidden = !POR_WHATSAPP;
     for (const el of $$("[data-solo-correo]")) el.hidden = POR_WHATSAPP;
 
-    // Sedes: la elegida primero y marcada; las otras con un enlace para cambiarse.
-    const grillaSedes = $(".sedes-grilla");
-    for (const id of [SEDE.id, ...IDS_SEDE.filter((x) => x !== SEDE.id)]) {
-        const s = TODO.sedes[id];
-        const actual = id === SEDE.id;
-        const titulo = [crear("h3", { text: s.nombre })];
-        if (actual) titulo.push(crear("span", { class: "sede-marca", text: "Tu sede" }));
-        const hijos = [crear("div", { class: "sede-titulo" }, titulo), crear("p", { class: "sede-pais", text: s.pais })];
-        if (s.telefono) hijos.push(crear("p", {}, [crear("a", { href: `tel:${s.telefono.replace(/[^\d+]/g, "")}`, text: s.telefono })]));
-        hijos.push(crear("p", {}, [crear("a", { href: `mailto:${s.correo}`, text: s.correo })]));
-        if (!s.whatsapp) hijos.push(crear("p", { class: "sede-nota", text: "Cotizaciones por correo: tu vendedor te responde." }));
-        if (!actual) {
-            const ir = crear("a", { class: "sede-ir", href: `?sede=${id}` }, [`Ver los productos de ${s.nombre} `, icono("ir", "icono-ir")]);
-            ir.addEventListener("click", (ev) => { ev.preventDefault(); irASede(id); });
-            hijos.push(ir);
-        }
-        grillaSedes.append(crear("article", { class: `sede${actual ? " sede-actual" : ""}` }, hijos));
-    }
     const nombreCategoria = Object.fromEntries(D.categorias.map((c) => [c.id, c.nombre]));
 
     /* ---------------------------------------------------------------- Modo claro / oscuro */
@@ -1171,15 +1152,6 @@
         buscador.focus();
         anunciar("Carrito recuperado.");
     });
-    $('[data-accion="cambiar-sede"]').addEventListener("click", (ev) => {
-        ev.stopPropagation(); // si no, el clic llega al documento y cierra el aviso que se abre aquí
-        cerrarCarrito(false); // el selector está en la cabecera, detrás del panel
-        selectorSede.focus({ preventScroll: true });
-        let abierto = false;
-        if (typeof selectorSede.showPicker === "function") { try { selectorSede.showPicker(); abierto = true; } catch (e) { /* sin gesto válido */ } }
-        // Safari no tiene showPicker: se indica dónde está la lista.
-        if (!abierto) mostrarAviso("Elige tu sede en la lista de arriba. Tu carrito se mantiene.");
-    });
     // Con una lista larga el correo se abre con un saludo: la lista se copia para pegarla.
     enviar.addEventListener("click", () => {
         if (!listaParaCopiar || !navigator.clipboard) return;
@@ -1356,9 +1328,9 @@
 
     /* ---------------------------------------------------------------- Estantes */
     const LISTAS = {
-        masVendidos: { chip: (i) => `N.º ${i + 1}`, clase: "", nota: `Ordenados por cuántas facturas tuvieron en ${S.nombre} en los últimos 90 días.` },
-        novedades: { chip: () => "Nuevo", clase: "nuevo", nota: `Llegaron a ${S.nombre} en los últimos dos meses y medio.` },
-        menosRotan: { chip: () => "Oportunidad", clase: "oportunidad", nota: `En existencia en ${S.nombre}, para sumar a tu próximo pedido.` },
+        masVendidos: { chip: (i) => `N.º ${i + 1}`, clase: "", nota: "Ordenados por cuántas facturas tuvieron en los últimos 90 días." },
+        novedades: { chip: () => "Nuevo", clase: "nuevo", nota: "Llegaron en los últimos dos meses y medio." },
+        menosRotan: { chip: () => "Oportunidad", clase: "oportunidad", nota: "En existencia, para sumar a tu próximo pedido." },
     };
     const pistaEstante = $(".estante-pista");
     const notaEstante = $(".estante-nota");

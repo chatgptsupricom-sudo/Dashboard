@@ -20,7 +20,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261106b">
+<link rel="stylesheet" href="estilos.css?v=20261106c">
 </head>
 <body>
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -37,7 +37,6 @@
                 <a href="#comprar">Cómo comprar</a>
                 <a href="#categorias">Categorías</a>
                 <a href="#marcas">Marcas</a>
-                <a href="#sedes">Sedes</a>
                 <button type="button" class="menu-ubicar">Usar mi ubicación para elegir la sede</button>
                 <button type="button" class="menu-tema">Cambiar a modo oscuro</button>
                 <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
@@ -94,7 +93,7 @@
         </div>
         <div class="contenedor portada-texto">
             <h1 class="portada-titulo">Tecnología al mayor para tu negocio</h1>
-            <p class="portada-nota">Arma tu cotización aquí, sin pagar en la web, y tu vendedor de <span data-sede="nombre">Valencia</span> te responde.</p>
+            <p class="portada-nota">Arma tu cotización aquí, sin pagar en la web, y tu vendedor te responde.</p>
             <div class="acciones">
                 <a class="boton boton-tinta boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
                 <a class="boton boton-claro boton-grande" href="#estantes">Arma tu cotización</a>
@@ -107,7 +106,7 @@
         <div class="contenedor">
             <div class="cabeza-seccion aparece">
                 <h2 class="titulo">Destacados</h2>
-                <p class="titulo-nota">Un producto de cada categoría que despacha <span data-sede="nombre">Valencia</span>.</p>
+                <p class="titulo-nota">Un producto de cada categoría.</p>
             </div>
             <div class="vitrina-fila">
                 <div class="orbita aparece" role="group" aria-roledescription="carrusel" aria-label="Productos destacados. Usa las flechas izquierda y derecha para girar.">
@@ -142,7 +141,7 @@
     <section id="estantes" class="estantes" data-seccion>
         <div class="contenedor estantes-cabeza aparece">
             <div class="cabeza-seccion">
-                <h2 class="titulo">Lo que se mueve en <span data-sede="nombre">Valencia</span></h2>
+                <h2 class="titulo">Lo que más se mueve</h2>
                 <p class="titulo-nota">Sale de las facturas y del almacén de la sede: súmalo a tu cotización.</p>
             </div>
             <div class="estantes-pestanas" role="tablist" aria-label="Listas de productos">
@@ -181,7 +180,7 @@
                 <li class="paso">
                     <span class="paso-num">3</span>
                     <h3>Con tu cuenta, más rápido</h3>
-                    <p>Con el <span data-sede="documento">RIF</span> de tu empresa ves los precios de tu sede al cotizar.</p>
+                    <p>Con el <span data-sede="documento">RIF</span> de tu empresa ves tus precios al cotizar.</p>
                 </li>
             </ol>
         </div>
@@ -192,7 +191,7 @@
         <div class="contenedor">
             <div class="cabeza-seccion aparece">
                 <h2 class="titulo">Se piden juntos</h2>
-                <p class="titulo-nota">Combos que salen de lo que los clientes de <span data-sede="nombre">Valencia</span> facturan juntos.</p>
+                <p class="titulo-nota">Combos que salen de lo que nuestros clientes facturan juntos.</p>
             </div>
             <div class="combos"></div>
         </div>
@@ -204,7 +203,7 @@
             <div class="contenedor">
                 <div class="cabeza-seccion aparece">
                     <h2 class="titulo">Compra por categoría</h2>
-                    <p class="titulo-nota">Las líneas que despacha <span data-sede="nombre">Valencia</span>.</p>
+                    <p class="titulo-nota">Las líneas que despachamos.</p>
                 </div>
             </div>
             <div class="categorias-pista"></div>
@@ -217,7 +216,7 @@
         <div class="contenedor">
             <div class="cabeza-seccion aparece">
                 <h2 class="titulo">Las marcas que despachamos</h2>
-                <p class="titulo-nota">Algunas de las que tenemos en <span data-sede="nombre">Valencia</span>.</p>
+                <p class="titulo-nota">Algunas de las que trabajamos.</p>
             </div>
         </div>
         <div class="contenedor marcas-control"><button type="button" class="enlace-chico marcas-pausa" aria-pressed="false">Pausar las marcas</button></div>
@@ -260,7 +259,7 @@
             <div class="acordeon">
                 <details>
                     <summary>¿Por qué no veo los precios?</summary>
-                    <p>Somos mayoristas: los precios son los de la lista de tu sede y se ven al entrar con tu cuenta de distribuidor. Sin cuenta igual puedes pedir tu cotización y tu vendedor te responde con los precios.</p>
+                    <p>Somos mayoristas: los precios son los de tu lista de distribuidor y se ven al entrar con tu cuenta de distribuidor. Sin cuenta igual puedes pedir tu cotización y tu vendedor te responde con los precios.</p>
                 </details>
                 <details>
                     <summary>¿Cómo pido mi cuenta?</summary>
@@ -282,23 +281,13 @@
         </div>
     </section>
 
-    <!-- Sedes -->
-    <section id="sedes" class="sedes" data-seccion>
-        <div class="contenedor">
-            <div class="cabeza-seccion aparece"><h2 class="titulo-apoyo">Tu sede y las otras dos</h2></div>
-            <div class="sedes-grilla">
-                <!-- Las arma app.js desde datos.js: la sede elegida va primero y marcada. -->
-            </div>
-        </div>
-    </section>
-
     <!-- Cierre -->
     <section class="cierre">
         <div class="contenedor">
             <div class="cierre-caja aparece">
                 <div>
                     <h2>Pide tu cuenta de distribuidor</h2>
-                    <p>Con el <span data-sede="documento">RIF</span> de tu empresa. Al aprobarla ves los precios de tu sede y cotizas en la web.</p>
+                    <p>Con el <span data-sede="documento">RIF</span> de tu empresa. Al aprobarla ves tus precios y cotizas en la web.</p>
                 </div>
                 <div class="acciones">
                     <a class="boton boton-blanco boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
@@ -331,7 +320,6 @@
         <nav aria-label="SUPRICOM">
             <h3>SUPRICOM</h3>
             <a data-odoo="/quienes-somos">Quiénes somos</a>
-            <a href="#sedes">Sedes</a>
             <a href="https://www.facebook.com/supricomvenezuela/" target="_blank" rel="noopener">Facebook</a>
         </nav>
     </div>
@@ -346,7 +334,6 @@
     <div class="carrito-cabeza">
         <div>
             <h2 id="carrito-titulo" class="carrito-titulo">Tu carrito</h2>
-            <p class="carrito-sub">Cotización para <strong data-sede="nombre">Valencia</strong> · <button type="button" class="enlace-chico" data-accion="cambiar-sede">Cambiar de sede</button></p>
         </div>
         <button type="button" class="carrito-cerrar" aria-label="Cerrar el carrito">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
@@ -409,7 +396,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver carrito</button>
 </div>
 
-<script src="datos.js?v=20261106b"></script>
-<script src="app.js?v=20261106b"></script>
+<script src="datos.js?v=20261106c"></script>
+<script src="app.js?v=20261106c"></script>
 </body>
 </html>
