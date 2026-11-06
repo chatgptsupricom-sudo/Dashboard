@@ -43,7 +43,7 @@
     const escritorio = () => mqEscritorio.matches;
     const $ = (s, el = document) => el.querySelector(s);
     const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-    const foto = (id) => `${D.odoo}/web/image/product.template/${id}/image_512`;
+    const foto = (id, tam = 512) => `${D.odoo}/web/image/product.template/${id}/image_${tam}`;
     const ficha = (id) => `${D.odoo}/shop/p-${id}`;
     const buscar = (q) => `${D.odoo}/shop${q ? `?search=${encodeURIComponent(q)}` : ""}`;
     const miles = (n) => n.toLocaleString("es-VE");
@@ -59,6 +59,27 @@
         return el;
     };
     const destacadoDe = (cat) => destacadoEn(D.productos, cat);
+    // Íconos dibujados (trazo redondeado), en vez de glifos de texto.
+    const ICONOS = {
+        ir: "M5 12h14M13 6l6 6-6 6", mas: "M12 5v14M5 12h14", menos: "M5 12h14", listo: "m5 12.5 4.5 4.5L19 7.5",
+        revisar: "M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7M12 17h.01",
+    };
+    const icono = (nombre, clase = "icono-ico") => {
+        const e = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        e.setAttribute("viewBox", "0 0 24 24");
+        e.setAttribute("aria-hidden", "true");
+        e.setAttribute("class", clase);
+        e.innerHTML = `<path d="${ICONOS[nombre]}"/>`;
+        return e;
+    };
+    // Una foto que no carga deja un fondo neutro en vez del ícono roto del navegador.
+    document.addEventListener("error", (ev) => {
+        const i = ev.target;
+        if (i.tagName !== "IMG" || i.dataset.sinFoto) return;
+        i.dataset.sinFoto = "1";
+        i.removeAttribute("src");
+        i.classList.add("sin-foto");
+    }, true);
     // Odoo tiene una sola tienda, con la existencia de Valencia: en las sedes sin tienda propia una ficha
     // diría «Agotado» aunque la sede lo tenga. Ahí los productos van a la lista de cotización y las
     // categorías, marcas y banners se buscan entre los productos de la sede (los arma la sección de la lista).
@@ -95,19 +116,18 @@
     for (const id of [SEDE.id, ...IDS_SEDE.filter((x) => x !== SEDE.id)]) {
         const s = TODO.sedes[id];
         const actual = id === SEDE.id;
-        const hijos = [
-            crear("p", { class: "sede-pais", text: s.pais }),
-            crear("h3", { text: s.nombre }),
-        ];
-        if (actual) hijos.unshift(crear("span", { class: "sede-marca", text: "Tu sede" }));
+        const titulo = [crear("h3", { text: s.nombre })];
+        if (actual) titulo.push(crear("span", { class: "sede-marca", text: "Tu sede" }));
+        const hijos = [crear("div", { class: "sede-titulo" }, titulo), crear("p", { class: "sede-pais", text: s.pais })];
         if (s.telefono) hijos.push(crear("p", {}, [crear("a", { href: `tel:${s.telefono.replace(/[^\d+]/g, "")}`, text: s.telefono })]));
         hijos.push(crear("p", {}, [crear("a", { href: `mailto:${s.correo}`, text: s.correo })]));
+        if (!s.whatsapp) hijos.push(crear("p", { class: "sede-nota", text: "Cotizaciones por correo: tu vendedor te responde." }));
         if (!actual) {
-            const ir = crear("a", { class: "sede-ir", href: `?sede=${id}`, text: `Ver los productos de ${s.nombre} →` });
+            const ir = crear("a", { class: "sede-ir", href: `?sede=${id}` }, [`Ver los productos de ${s.nombre} `, icono("ir", "icono-ir")]);
             ir.addEventListener("click", (ev) => { ev.preventDefault(); irASede(id); });
             hijos.push(ir);
         }
-        grillaSedes.append(crear("article", { class: `sede aparece${actual ? " sede-actual" : ""}` }, hijos));
+        grillaSedes.append(crear("article", { class: `sede${actual ? " sede-actual" : ""}` }, hijos));
     }
     const nombreCategoria = Object.fromEntries(D.categorias.map((c) => [c.id, c.nombre]));
 
@@ -127,7 +147,8 @@
     };
     ponerTema(raiz.getAttribute("data-tema") === "oscuro" ? "oscuro" : "claro", false);
     botonTema.addEventListener("click", () => ponerTema(raiz.getAttribute("data-tema") === "oscuro" ? "claro" : "oscuro", true));
-    sistemaOscuro.addEventListener("change", (e) => { if (!guardado()) ponerTema(e.matches ? "oscuro" : "claro", false); });
+    const temaDelEnlace = ["claro", "oscuro"].includes(new URLSearchParams(location.search).get("tema"));
+    sistemaOscuro.addEventListener("change", (e) => { if (!guardado() && !temaDelEnlace) ponerTema(e.matches ? "oscuro" : "claro", false); });
 
     /* ---------------------------------------------------------------- Selector de sede y ubicación */
     const selectorSede = $("#sede");
@@ -275,6 +296,7 @@
         }
     }, { threshold: 0.15 });
     for (const el of $$(".aparece")) aparecer.observe(el);
+    setTimeout(() => { for (const el of $$(".aparece")) el.classList.add("visible"); }, 2500);
 
     const activa = new IntersectionObserver((entradas) => {
         for (const e of entradas) {
@@ -330,7 +352,8 @@
         const ancho = escritorio() ? 210 : 150;
         return Math.ceil(ancho / 2 / Math.tan(Math.PI / enAnillo.length)) + (escritorio() ? 75 : 20);
     };
-    const giroScroll = () => (escritorio() && !QUIETO ? window.scrollY * 0.08 : 0);
+    let elegido = false; // la persona eligió un producto: el anillo ya no gira solo ni con el scroll
+    const giroScroll = () => (escritorio() && !QUIETO && !pausaAnillo && !elegido ? window.scrollY * 0.08 : 0);
     let angulo = 0;
     let velocidad = 0;
     let arrastre = null;
@@ -435,10 +458,26 @@
     }, true);
     // Sin tienda propia no hay ficha que ver: queda solo «Cotizar».
     if (!FICHAS) ficha_.ver.hidden = true;
-    orbita.addEventListener("pointerenter", () => { pausaAnillo = true; });
-    orbita.addEventListener("pointerleave", () => { pausaAnillo = false; arrancar(); });
-    orbita.addEventListener("focusin", () => { pausaAnillo = true; });
-    orbita.addEventListener("focusout", () => { pausaAnillo = false; arrancar(); });
+    // La pausa abarca el anillo y la ficha (están juntos en la fila): usar la ficha no cambia el producto.
+    const filaVitrina = $(".vitrina-fila");
+    const botonPausaAnillo = $(".orbita-pausa");
+    const pintarPausaAnillo = () => {
+        botonPausaAnillo.setAttribute("aria-pressed", String(elegido));
+        botonPausaAnillo.setAttribute("aria-label", elegido ? "Seguir girando" : "Pausar el giro");
+    };
+    const fijarAnillo = () => { elegido = true; pausaAnillo = true; pintarPausaAnillo(); };
+    filaVitrina.addEventListener("pointerenter", () => { pausaAnillo = true; });
+    filaVitrina.addEventListener("pointerleave", () => { if (!elegido) { pausaAnillo = false; arrancar(); } });
+    filaVitrina.addEventListener("focusin", () => { pausaAnillo = true; });
+    filaVitrina.addEventListener("focusout", (ev) => { if (!elegido && !filaVitrina.contains(ev.relatedTarget)) { pausaAnillo = false; arrancar(); } });
+    escena.addEventListener("pointerdown", fijarAnillo);
+    ficha_.mini.addEventListener("click", fijarAnillo);
+    ficha_.cotizar.addEventListener("click", fijarAnillo);
+    botonPausaAnillo.addEventListener("click", () => {
+        if (elegido) { elegido = false; pausaAnillo = false; pintarPausaAnillo(); arrancar(); }
+        else fijarAnillo();
+    });
+    if (QUIETO) botonPausaAnillo.hidden = true;
     orbita.addEventListener("keydown", (e) => {
         if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
         e.preventDefault();
@@ -466,7 +505,7 @@
     for (const f of $$(".flecha-lado", promos)) f.hidden = nB < 2;
     const banners = D.banners.map((b, i) => {
         const a = crear("a", { class: "banner", "aria-roledescription": "diapositiva", "aria-label": `${i + 1} de ${nB}: ${b.alt}` },
-            [crear("img", { src: b.img, alt: "", draggable: false })]);
+            [crear("img", { src: b.img, alt: "", draggable: false, decoding: "async", loading: i === 0 ? "eager" : "lazy", fetchPriority: i === 0 ? "high" : "low" })]);
         enlazarBusqueda(a, b.buscar);
         a.dataset.i = i;
         pistaBanners.append(a);
@@ -487,7 +526,7 @@
     const programar = () => {
         clearTimeout(reloj);
         promos.classList.toggle("pausado", enPausa());
-        if (QUIETO || enPausa() || nB < 2) return;
+        if (enPausa() || nB < 2) return;
         reloj = setTimeout(() => irBanner(pasoBanner + 1), INTERVALO);
     };
     const botonesBanner = D.banners.map((b, i) => {
@@ -574,6 +613,24 @@
         pista.style.setProperty("--duracion-cinta", `${(44 + f * 8) * juegos}s`);
     });
 
+    // La cinta se puede pausar (se mueve sola); la elección se recuerda.
+    const seccionMarcas = $(".marcas");
+    const botonPausaMarcas = $(".marcas-pausa");
+    const pausarMarcas = (si) => {
+        seccionMarcas.classList.toggle("pausado", si);
+        botonPausaMarcas.setAttribute("aria-pressed", String(si));
+        botonPausaMarcas.textContent = si ? "Mover las marcas" : "Pausar las marcas";
+    };
+    let marcasQuietas = false;
+    try { marcasQuietas = localStorage.getItem("supricom-marcas-quietas") === "1"; } catch (e) { /* sin almacenamiento */ }
+    pausarMarcas(marcasQuietas);
+    if (QUIETO) botonPausaMarcas.hidden = true;
+    botonPausaMarcas.addEventListener("click", () => {
+        marcasQuietas = !marcasQuietas;
+        pausarMarcas(marcasQuietas);
+        try { localStorage.setItem("supricom-marcas-quietas", marcasQuietas ? "1" : "0"); } catch (e) { /* sin almacenamiento */ }
+    });
+
     /* ---------------------------------------------------------------- Categorías */
     const seccionCats = $(".categorias");
     const fijaCats = $(".categorias-fija");
@@ -582,7 +639,7 @@
         const a = crear("a", { class: "cat" }, [
             crear("h3", { text: c.nombre }),
             crear("div", { class: "cat-foto" }, [crear("img", { src: foto(c.foto), alt: "", loading: "lazy" })]),
-            crear("span", { class: "cat-ir", text: "Ver productos →" }),
+            crear("span", { class: "cat-ir" }, ["Ver productos ", icono("ir", "icono-ir")]),
         ]);
         enlazarBusqueda(a, FICHAS ? c.buscar : c.nombre);
         pistaCats.append(a);
@@ -596,7 +653,7 @@
             return;
         }
         sobranteCats = Math.max(0, pistaCats.scrollWidth - window.innerWidth);
-        seccionCats.style.setProperty("--alto-categorias", `${window.innerHeight + sobranteCats}px`);
+        seccionCats.style.setProperty("--alto-categorias", `${window.innerHeight + sobranteCats * 0.5}px`);
     };
     // Con Tab el navegador movería la fila de lado; en su lugar se baja la página hasta la tarjeta.
     fijaCats.addEventListener("scroll", () => { fijaCats.scrollLeft = 0; });
@@ -605,12 +662,12 @@
         if (!cat || sobranteCats <= 0) return;
         fijaCats.scrollLeft = 0;
         const x = Math.min(sobranteCats, Math.max(0, cat.offsetLeft - (window.innerWidth - cat.offsetWidth) / 2));
-        window.scrollTo({ top: seccionCats.offsetTop + x, behavior: "instant" });
+        window.scrollTo({ top: seccionCats.offsetTop + x * 0.5, behavior: "instant" });
     });
 
     // Inclinación 3D de las tarjetas de categoría y de servicio siguiendo el mouse.
     if (!QUIETO) {
-        for (const el of $$(".cat, .servicio")) {
+        for (const el of $$(".cat")) {
             el.addEventListener("mousemove", (ev) => {
                 const r = el.getBoundingClientRect();
                 const x = (ev.clientX - r.left) / r.width - 0.5;
@@ -630,7 +687,7 @@
         const rComprar = seccionComprar.getBoundingClientRect(); // se lee antes de escribir estilos
         cabecera.classList.toggle("con-scroll", y > 8);
         if (sobranteCats > 0) {
-            const k = Math.min(1, Math.max(0, (y - seccionCats.offsetTop) / sobranteCats));
+            const k = Math.min(1, Math.max(0, (y - seccionCats.offsetTop) / (sobranteCats * 0.5)));
             pistaCats.style.transform = `translateX(${-k * sobranteCats}px)`;
             seccionCats.style.setProperty("--avance-cats", String(k));
         }
@@ -841,15 +898,15 @@
         const p = porCodigo.get(codigo);
         const nombre = nombreDe(codigo);
         return crear("div", { class: `linea-pedido${p ? "" : " desconocido"}`, role: "listitem", "data-codigo": codigo }, [
-            p ? crear("img", { src: foto(p.id), alt: "", loading: "lazy" }) : crear("span", { class: "linea-icono", "aria-hidden": "true", text: "?" }),
+            p ? crear("img", { src: foto(p.id, 128), alt: "", loading: "lazy" }) : crear("span", { class: "linea-icono", "aria-hidden": "true" }, [icono("revisar")]),
             crear("div", { class: "linea-texto" }, [
                 crear("strong", { text: nombre }),
                 crear("small", { text: p ? codigo : "Código por revisar: tu vendedor lo confirma" }),
             ]),
             crear("div", { class: "contador", role: "group", "aria-label": `Cantidad de ${nombre}` }, [
-                crear("button", { type: "button", class: "contador-menos", "aria-label": `Una unidad menos de ${nombre}`, text: "−" }),
+                crear("button", { type: "button", class: "contador-menos", "aria-label": `Una unidad menos de ${nombre}` }, [icono("menos")]),
                 crear("input", { type: "number", inputMode: "numeric", min: 1, max: MAX_CANT, "aria-label": `Unidades de ${nombre}` }),
-                crear("button", { type: "button", class: "contador-mas", "aria-label": `Una unidad más de ${nombre}`, text: "+" }),
+                crear("button", { type: "button", class: "contador-mas", "aria-label": `Una unidad más de ${nombre}` }, [icono("mas")]),
             ]),
             crear("button", { type: "button", class: "linea-quitar", "aria-label": `Quitar ${nombre}` }, [svg("", "M6 6l12 12M18 6 6 18")]),
         ]);
@@ -868,7 +925,7 @@
         sugeridos.hidden = !lista.length;
         listaSugeridos.replaceChildren(...lista.map((p) => crear("button", {
             type: "button", class: "sugerido", "data-agregar": p.codigo.toUpperCase(), "aria-label": `Sumar ${p.marca} ${p.nombre}`,
-        }, [crear("img", { src: foto(p.id), alt: "", loading: "lazy" }), crear("span", { text: `${p.marca} ${p.nombre}` }), crear("i", { "aria-hidden": "true", text: "+" })])));
+        }, [crear("img", { src: foto(p.id, 128), alt: "", loading: "lazy" }), crear("span", { text: `${p.marca} ${p.nombre}` }), icono("mas")])));
     };
 
     // Todos los botones «+ Cotizar» de la página muestran si ese producto ya está y cuántas unidades lleva.
@@ -885,7 +942,22 @@
             b.setAttribute("aria-label", n ? `${visible} de ${prod} en el carrito. Sumar otra unidad` : `${visible} ${prod}`);
         }
     };
-    enLaSede.marcar = marcarBotones;
+    // Los combos dicen si ya están todos en el carrito; el cierre ofrece volver a la cotización.
+    const marcarCombos = () => {
+        for (const b of $$("[data-combo]")) {
+            const combo = (S.combos || [])[Number(b.dataset.combo)];
+            const ps = combo ? combo.ids.map((id) => porId.get(id)).filter(Boolean) : [];
+            const todos = ps.length > 0 && ps.every((p) => cotizacion.has(p.codigo.toUpperCase()));
+            b.classList.toggle("en-cotizacion", todos);
+            $("span", b).textContent = todos ? "Combo en el carrito" : `Agregar el combo (${ps.length})`;
+            b.setAttribute("aria-label", todos ? `Combo ${combo.titulo} en el carrito. Agregar los que falten` : `Agregar el combo ${combo ? combo.titulo : ""}: ${ps.length} productos`);
+        }
+        const cierre = $(".cierre-carrito");
+        cierre.hidden = !cotizacion.size;
+        $(".cierre-carrito-n").textContent = miles([...cotizacion.values()].reduce((a, b) => a + b, 0));
+    };
+    enLaSede.marcar = () => { marcarBotones(); marcarCombos(); };
+    $(".cierre-carrito").addEventListener("click", () => abrirCarrito());
 
     // El número del carrito en la cabecera: las unidades que llevas.
     const pintarBotonCarrito = () => {
@@ -957,6 +1029,7 @@
         resumen.textContent = porRevisar ? `${porRevisar} ${porRevisar === 1 ? "código" : "códigos"} por revisar: tu vendedor los confirma.` : "";
         pintarSugeridos();
         marcarBotones();
+        marcarCombos();
         pintarBotonCarrito();
         primeraVez = false;
     };
@@ -1164,7 +1237,7 @@
         opciones.replaceChildren(...resultados.map((p, i) => crear("li", { id: `opcion-${i}`, role: "option", "aria-selected": "false", "data-i": String(i) }, [
             crear("img", { src: foto(p.id), alt: "", loading: "lazy" }),
             crear("span", {}, [crear("strong", { text: `${p.marca} ${p.nombre}` }), crear("small", { text: p.codigo })]),
-            crear("span", { class: "opcion-mas", "aria-hidden": "true", text: cotizacion.has(p.codigo.toUpperCase()) ? "✓" : "+" }),
+            crear("span", { class: "opcion-mas", "aria-hidden": "true" }, [icono(cotizacion.has(p.codigo.toUpperCase()) ? "listo" : "mas")]),
         ])));
         const hay = resultados.length > 0;
         opciones.hidden = !hay;
@@ -1173,7 +1246,7 @@
             ? `No está en esta página. Pulsa Enter para pedir «${q.toUpperCase()}» igual: tu vendedor lo confirma.`
             : "No está entre los productos de esta página.";
         enlaceCatalogo.hidden = !FICHAS;
-        if (FICHAS) { enlaceCatalogo.href = buscar(q); enlaceCatalogo.textContent = `Buscar «${q}» en todo el catálogo →`; }
+        if (FICHAS) { enlaceCatalogo.href = buscar(q); enlaceCatalogo.replaceChildren(`Buscar «${q}» en todo el catálogo `, icono("ir", "icono-ir")); }
         panelBusqueda.hidden = false;
         buscador.setAttribute("aria-expanded", String(hay));
         marcar(-1);
@@ -1313,14 +1386,14 @@
     // Cada tarjeta gira según qué tan lejos está del centro de la fila: un abanico que se mueve al deslizar.
     const girarEstante = () => {
         if (QUIETO) return;
-        const r = pistaEstante.getBoundingClientRect();
-        const centro = r.left + r.width / 2;
-        for (const c of pistaEstante.children) {
-            const b = c.getBoundingClientRect();
-            const k = Math.max(-1, Math.min(1, (b.left + b.width / 2 - centro) / (r.width / 2)));
-            c.style.setProperty("--giro", `${(-k * 16).toFixed(2)}deg`);
-            c.style.setProperty("--hondo", `${(-Math.abs(k) * 36).toFixed(1)}px`);
-        }
+        const izq = pistaEstante.scrollLeft;
+        const ancho = pistaEstante.clientWidth;
+        const tarjetas = [...pistaEstante.children];
+        const ks = tarjetas.map((c) => Math.max(-1, Math.min(1, (c.offsetLeft - izq + c.offsetWidth / 2 - ancho / 2) / (ancho / 2))));
+        tarjetas.forEach((c, i) => {
+            c.style.setProperty("--giro", `${(-ks[i] * 16).toFixed(2)}deg`);
+            c.style.setProperty("--hondo", `${(-Math.abs(ks[i]) * 36).toFixed(1)}px`);
+        });
     };
     const flechasEstante = $$(".flecha-estante");
     const pintarFlechasEstante = () => {
@@ -1392,16 +1465,8 @@
             crear("h3", { class: "combo-titulo", text: combo.titulo }),
             crear("ul", { class: "combo-lista" }, lista.map((p) => crear("li", { text: `${p.marca} ${p.nombre}` }))),
             crear("button", { type: "button", class: "agregar", "data-combo": String(k), "aria-label": `Agregar el combo ${combo.titulo}: ${lista.length} productos` },
-                [svg("icono-mas", ICONO_MAS), crear("span", { text: `Agregar el combo (${lista.length})` })]),
+                [svg("icono-mas", ICONO_MAS), svg("icono-listo", ICONO_LISTO), crear("span", { text: `Agregar el combo (${lista.length})` })]),
         ]);
-        if (!QUIETO) {
-            tarjeta.addEventListener("mousemove", (ev) => {
-                const r = tarjeta.getBoundingClientRect();
-                tarjeta.style.setProperty("--rx", `${-((ev.clientY - r.top) / r.height - 0.5) * 8}deg`);
-                tarjeta.style.setProperty("--ry", `${((ev.clientX - r.left) / r.width - 0.5) * 10}deg`);
-            });
-            tarjeta.addEventListener("mouseleave", () => { tarjeta.style.setProperty("--rx", "0deg"); tarjeta.style.setProperty("--ry", "0deg"); });
-        }
         contenedorCombos.append(tarjeta);
     });
     if (!contenedorCombos.children.length) $("#juntos").hidden = true;

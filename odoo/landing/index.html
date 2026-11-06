@@ -14,12 +14,13 @@
         if (t !== "claro" && t !== "oscuro") { try { t = localStorage.getItem("supricom-tema"); } catch (e) {} }
         if (t !== "claro" && t !== "oscuro") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro";
         document.documentElement.setAttribute("data-tema", t);
+        document.documentElement.classList.add("js"); /* las entradas solo se ocultan si hay JS que las muestre */
     })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261104z">
+<link rel="stylesheet" href="estilos.css?v=20261105c">
 </head>
 <body>
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -33,15 +34,15 @@
         <div class="cabecera-acciones">
             <nav id="menu" class="menu" aria-label="Secciones">
                 <a href="#destacados">Destacados</a>
+                <a href="#comprar">Cómo comprar</a>
                 <a href="#categorias">Categorías</a>
                 <a href="#marcas">Marcas</a>
-                <a href="#comprar">Cómo comprar</a>
                 <a href="#sedes">Sedes</a>
                 <button type="button" class="menu-ubicar">Usar mi ubicación para elegir la sede</button>
                 <button type="button" class="menu-tema">Cambiar a modo oscuro</button>
                 <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
-                <a class="boton boton-tinta" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
             </nav>
+            <a class="boton boton-tinta cabecera-cta" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
             <div class="sede-selector">
                 <svg class="sede-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
                 <label class="solo-lectores" for="sede">Sede</label>
@@ -78,7 +79,6 @@
 
     <!-- Portada: los banners reales del sitio en abanico 3D -->
     <section id="inicio" class="portada" data-seccion>
-        <h1 class="solo-lectores">SUPRICOM, mayorista de tecnología</h1>
         <!-- Los controles van sobre el banner del frente: puntos con el avance, pausa y, con el mouse, flechas a los lados. -->
         <div class="banners" role="region" aria-roledescription="carrusel" aria-label="Promociones">
             <div class="banners-pista"></div>
@@ -92,6 +92,14 @@
                 </button>
             </div>
         </div>
+        <div class="contenedor portada-texto">
+            <h1 class="portada-titulo">Tecnología al mayor para tu negocio</h1>
+            <p class="portada-nota">Arma tu cotización aquí, sin pagar en la web, y tu vendedor de <span data-sede="nombre">Valencia</span> te responde.</p>
+            <div class="acciones">
+                <a class="boton boton-tinta boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+                <a class="boton boton-claro boton-grande" href="#estantes">Arma tu cotización</a>
+            </div>
+        </div>
     </section>
 
     <!-- Destacados: anillo 3D + ficha del producto que está al frente -->
@@ -99,7 +107,7 @@
         <div class="contenedor">
             <div class="cabeza-seccion aparece">
                 <h2 class="titulo">Destacados</h2>
-                <p class="titulo-nota">Un producto de cada categoría. Gíralo arrastrando o con las flechas del teclado.</p>
+                <p class="titulo-nota">Un producto de cada categoría que despacha <span data-sede="nombre">Valencia</span>.</p>
             </div>
             <div class="vitrina-fila">
                 <div class="orbita aparece" role="group" aria-roledescription="carrusel" aria-label="Productos destacados. Usa las flechas izquierda y derecha para girar.">
@@ -107,21 +115,24 @@
                         <div class="anillo"></div>
                     </div>
                     <div class="orbita-sombra" aria-hidden="true"></div>
-                    <p class="orbita-ayuda" aria-hidden="true">Arrastra para girar</p>
+                    <div class="orbita-pie">
+                        <p class="orbita-ayuda" aria-hidden="true">Arrastra para girar</p>
+                        <button type="button" class="banners-pausa orbita-pausa" aria-pressed="false" aria-label="Pausar el giro"><svg viewBox="0 0 24 24" aria-hidden="true" class="icono-pausa"><path d="M9 6v12M15 6v12"/></svg><svg viewBox="0 0 24 24" aria-hidden="true" class="icono-seguir"><path d="m8 5 11 7-11 7z"/></svg></button>
+                    </div>
                 </div>
                 <article class="ficha aparece" aria-live="off">
-                    <p class="ficha-cat"></p>
                     <h3 class="ficha-nombre"></h3>
                     <dl class="ficha-datos">
+                        <div><dt>Categoría</dt><dd class="ficha-cat"></dd></div>
                         <div><dt>Marca</dt><dd class="ficha-marca"></dd></div>
                         <div><dt>Código</dt><dd class="ficha-codigo"></dd></div>
                         <div><dt>Precio</dt><dd>Con tu cuenta de distribuidor</dd></div>
                     </dl>
                     <div class="acciones">
-                        <a class="boton boton-tinta ficha-ver">Ver ficha</a>
-                        <button type="button" class="boton boton-claro agregar ficha-cotizar"><svg class="icono-mas" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><svg class="icono-listo" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Cotizar</span></button>
+                        <button type="button" class="boton boton-tinta agregar ficha-cotizar"><svg class="icono-mas" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><svg class="icono-listo" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Cotizar</span></button>
+                        <a class="prod-ver ficha-ver">Ver ficha</a>
                     </div>
-                    <div class="ficha-mini" aria-label="Elegir producto"></div>
+                    <div class="ficha-mini" role="group" aria-label="Elegir producto"></div>
                 </article>
             </div>
         </div>
@@ -132,7 +143,7 @@
         <div class="contenedor estantes-cabeza aparece">
             <div class="cabeza-seccion">
                 <h2 class="titulo">Lo que se mueve en <span data-sede="nombre">Valencia</span></h2>
-                <p class="titulo-nota">Sale de las facturas y del almacén de la sede. Toca <strong>+</strong> para sumarlo a tu cotización.</p>
+                <p class="titulo-nota">Sale de las facturas y del almacén de la sede: súmalo a tu cotización.</p>
             </div>
             <div class="estantes-pestanas" role="tablist" aria-label="Listas de productos">
                 <button type="button" role="tab" id="pestana-masVendidos" data-lista="masVendidos" aria-controls="estante" aria-selected="true">Lo más pedido</button>
@@ -149,6 +160,30 @@
                 <button type="button" class="flecha-estante" data-mover="-1" aria-label="Ver los anteriores"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
                 <button type="button" class="flecha-estante" data-mover="1" aria-label="Ver los siguientes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
             </div>
+        </div>
+    </section>
+
+    <!-- Cómo comprar: va temprano, para que quien llega sepa que puede cotizar sin cuenta -->
+    <section id="comprar" class="comprar" data-seccion>
+        <div class="contenedor comprar-fila">
+            <div class="cabeza-seccion aparece"><h2 class="titulo-apoyo">Así compras</h2></div>
+            <ol class="pasos">
+                <li class="paso">
+                    <span class="paso-num">1</span>
+                    <h3>Arma tu cotización</h3>
+                    <p>Con + en cualquier producto o pegando tu lista de códigos. No necesitas cuenta.</p>
+                </li>
+                <li class="paso">
+                    <span class="paso-num">2</span>
+                    <h3>Tu vendedor te responde</h3>
+                    <p>Te manda la cotización por <span data-sede="medio">WhatsApp</span> y coordina contigo el pago y la entrega. En la web no se paga.</p>
+                </li>
+                <li class="paso">
+                    <span class="paso-num">3</span>
+                    <h3>Con tu cuenta, más rápido</h3>
+                    <p>Con el <span data-sede="documento">RIF</span> de tu empresa ves los precios de tu sede al cotizar.</p>
+                </li>
+            </ol>
         </div>
     </section>
 
@@ -169,7 +204,7 @@
             <div class="contenedor">
                 <div class="cabeza-seccion aparece">
                     <h2 class="titulo">Compra por categoría</h2>
-                    <p class="titulo-nota">Sigue bajando para recorrerlas.</p>
+                    <p class="titulo-nota">Las líneas que despacha <span data-sede="nombre">Valencia</span>.</p>
                 </div>
             </div>
             <div class="categorias-pista"></div>
@@ -181,57 +216,37 @@
     <section id="marcas" class="marcas" data-seccion>
         <div class="contenedor">
             <div class="cabeza-seccion aparece">
-                <h2 class="titulo">Marcas que distribuimos</h2>
+                <h2 class="titulo">Las marcas que despachamos</h2>
                 <p class="titulo-nota">Algunas de las <span data-sede="marcas">41</span> marcas que hay en <span data-sede="nombre">Valencia</span>.</p>
             </div>
         </div>
+        <div class="contenedor marcas-control"><button type="button" class="enlace-chico marcas-pausa" aria-pressed="false">Pausar las marcas</button></div>
         <div class="marcas-ventana"><div class="marcas-pista"></div></div>
         <div class="marcas-ventana"><div class="marcas-pista marcas-pista-inversa"></div></div>
     </section>
 
     <!-- Servicios -->
-    <section class="servicios" data-seccion aria-label="Servicios">
+    <section class="servicios" data-seccion>
+        <div class="contenedor">
+            <div class="cabeza-seccion aparece"><h2 class="titulo-apoyo">Después de la cotización</h2></div>
+        </div>
         <div class="contenedor servicios-grilla">
-            <article class="servicio aparece">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>
-                <h3>Retiro o despacho</h3>
+            <article class="servicio">
+                <div class="servicio-cabeza"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>
+                <h3>Retiro o despacho</h3></div>
                 <p>Retiras en la sucursal o lo despachamos por nuestra ruta, por encomienda o con tu transporte.</p>
             </article>
-            <article class="servicio aparece">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/></svg>
-                <h3>Servicio técnico</h3>
+            <article class="servicio">
+                <div class="servicio-cabeza"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/></svg>
+                <h3>Servicio técnico</h3></div>
                 <p>Reportas la falla con tu factura en el portal y sigues el estado del equipo en línea.</p>
-                <a class="servicio-ir" href="https://servicio.supricom.com.ve/es/servicio-tecnico">Ir al portal →</a>
+                <a class="servicio-ir" href="https://servicio.supricom.com.ve/es/servicio-tecnico">Ir al portal <svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
             </article>
-            <article class="servicio aparece">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
-                <h3>Tu vendedor de siempre</h3>
+            <article class="servicio">
+                <div class="servicio-cabeza"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+                <h3>Tu vendedor de siempre</h3></div>
                 <p>Cada cuenta tiene su vendedor: él confirma tus cotizaciones y te atiende por <span data-sede="medio">WhatsApp</span>.</p>
             </article>
-        </div>
-    </section>
-
-    <!-- Cómo comprar -->
-    <section id="comprar" class="comprar" data-seccion>
-        <div class="contenedor">
-            <div class="cabeza-seccion aparece"><h2 class="titulo">Así compras</h2></div>
-            <ol class="pasos">
-                <li class="paso aparece">
-                    <span class="paso-num">1</span>
-                    <h3>Pide tu cuenta</h3>
-                    <p>Con el <span data-sede="documento">RIF</span> de tu empresa. Al aprobarla ves los precios de tu sede.</p>
-                </li>
-                <li class="paso aparece">
-                    <span class="paso-num">2</span>
-                    <h3>Arma tu cotización</h3>
-                    <p>Agrega productos al carrito con + o pega tu lista de códigos, y mándasela a ventas.</p>
-                </li>
-                <li class="paso aparece">
-                    <span class="paso-num">3</span>
-                    <h3>Tu vendedor la confirma</h3>
-                    <p>La pasa a pedido y coordina contigo el pago y la entrega o el retiro. En la web no se paga.</p>
-                </li>
-            </ol>
         </div>
     </section>
 
@@ -239,27 +254,27 @@
     <section id="preguntas" class="preguntas" data-seccion>
         <div class="contenedor preguntas-fila">
             <div class="cabeza-seccion aparece">
-                <h2 class="titulo">Preguntas frecuentes</h2>
+                <h2 class="titulo-apoyo">Preguntas frecuentes</h2>
                 <p class="titulo-nota">Lo que más nos preguntan antes de abrir la cuenta.</p>
             </div>
             <div class="acordeon">
-                <details class="aparece">
+                <details>
                     <summary>¿Por qué no veo los precios?</summary>
-                    <p>Somos mayoristas: los precios son los de la lista de tu sede y se ven al entrar con tu cuenta de distribuidor.</p>
+                    <p>Somos mayoristas: los precios son los de la lista de tu sede y se ven al entrar con tu cuenta de distribuidor. Sin cuenta igual puedes pedir tu cotización y tu vendedor te responde con los precios.</p>
                 </details>
-                <details class="aparece">
+                <details>
                     <summary>¿Cómo pido mi cuenta?</summary>
                     <p>Con «Solicitar cuenta» llenas los datos de tu empresa y su <span data-sede="documento">RIF</span>. Tu vendedor la revisa y te la activa.</p>
                 </details>
-                <details class="aparece">
+                <details>
                     <summary>¿Puedo pagar en la web?</summary>
                     <p>No. En la web armas tu cotización y tu vendedor la confirma como pedido; el pago se coordina con él.</p>
                 </details>
-                <details class="aparece">
+                <details>
                     <summary>¿Cómo recibo la mercancía?</summary>
                     <p>La retiras en la sucursal o te la despachamos por nuestra ruta, por encomienda o con el transporte que tú elijas.</p>
                 </details>
-                <details class="aparece">
+                <details>
                     <summary>¿Qué hago si un equipo falla?</summary>
                     <p>Lo reportas con tu factura en el <a href="https://servicio.supricom.com.ve/es/servicio-tecnico">portal de servicio técnico</a> y sigues el caso en línea.</p>
                 </details>
@@ -270,7 +285,7 @@
     <!-- Sedes -->
     <section id="sedes" class="sedes" data-seccion>
         <div class="contenedor">
-            <div class="cabeza-seccion aparece"><h2 class="titulo">Tres sedes</h2></div>
+            <div class="cabeza-seccion aparece"><h2 class="titulo-apoyo">Tu sede y las otras dos</h2></div>
             <div class="sedes-grilla">
                 <!-- Las arma app.js desde datos.js: la sede elegida va primero y marcada. -->
             </div>
@@ -285,7 +300,10 @@
                     <h2>Pide tu cuenta de distribuidor</h2>
                     <p>Con el <span data-sede="documento">RIF</span> de tu empresa. Al aprobarla ves los precios de tu sede y cotizas en la web.</p>
                 </div>
-                <a class="boton boton-blanco boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+                <div class="acciones">
+                    <a class="boton boton-blanco boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+                    <button type="button" class="boton boton-borde-blanco boton-grande cierre-carrito" hidden>Ver mi cotización (<span class="cierre-carrito-n">0</span>)</button>
+                </div>
             </div>
         </div>
     </section>
@@ -391,7 +409,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver carrito</button>
 </div>
 
-<script src="datos.js?v=20261104z"></script>
-<script src="app.js?v=20261104z"></script>
+<script src="datos.js?v=20261105c"></script>
+<script src="app.js?v=20261105c"></script>
 </body>
 </html>
