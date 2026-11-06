@@ -236,7 +236,7 @@ interface DatosSede {
  * recibió por compra en Odoo y entró con la carga inicial de inventario
  * (oct-2026: 555 productos con stock en Venezuela) toma la fecha de ese ajuste.
  */
-async function ultimosIngresos(companyId: number, hasta: string): Promise<Map<number, string>> {
+export async function ultimosIngresos(companyId: number, hasta: string): Promise<Map<number, string>> {
   const { ubicaciones } = await almacenSede(companyId);
   const porOrigen = (usos: string[]) =>
     agrupar(

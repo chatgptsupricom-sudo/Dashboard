@@ -2,6 +2,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { ultimaVenta } from "@/lib/compras/datosOdoo";
 import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
 import { IDS_SEDES, listasPrincipales } from "@/lib/calidad-odoo/odoo";
+import { ultimosIngresos } from "@/lib/inteligencia-negocio/reportes";
 
 /**
  * Reporte de rotación de SKUs para el equipo de contenido (adminleads).
@@ -49,6 +50,13 @@ export type FilaRotacion = {
    * FIN_CARGA_INICIAL): su fecha real es anterior, la antigüedad es "al menos".
    */
   antiguedadAntesDeOdoo: boolean;
+  /**
+   * Día del último ingreso al almacén principal: la última recepción de compra
+   * (proveedor o tránsito entre sedes); sin compras en Odoo, el ajuste de
+   * inventario (la carga inicial). Es `ultimosIngresos` del reporte de
+   * Productos de Inteligencia de Negocio. null = nunca entró.
+   */
+  ultimoIngreso: string | null;
   estado: EstadoRotacion;
   /** Posición dentro de su categoría por unidades vendidas (30d). 1 = el que más vende. */
   rankingCategoria: number;
@@ -196,19 +204,23 @@ export async function calcularRotacion(
 
   // --- 4. Última venta de toda la historia (Odoo + Smartbit), la más
   // reciente entre las sedes; si falla, queda la de la ventana de 90 días.
-  const ultimas = await Promise.all(
-    companyIds.map((c) =>
-      ultimaVenta(c).catch((e) => {
-        console.error("Rotación: última venta de la sede", c, e?.message);
-        return new Map<number, string>();
-      }),
-    ),
-  );
-  const ultimaDe = (pid: number, ventana: string | null) =>
-    [ventana, ...ultimas.map((m) => m.get(pid) ?? null)].reduce<string | null>(
-      (max, d) => (d && (!max || d > max) ? d : max),
-      null,
+  const porSede = <T,>(leer: (c: number) => Promise<Map<number, T>>, que: string) =>
+    Promise.all(
+      companyIds.map((c) =>
+        leer(c).catch((e) => {
+          console.error(`Rotación: ${que} de la sede`, c, e?.message);
+          return new Map<number, T>();
+        }),
+      ),
     );
+  const [ultimas, ingresos] = await Promise.all([
+    porSede(ultimaVenta, "última venta"),
+    porSede((c) => ultimosIngresos(c, hasta), "último ingreso"),
+  ]);
+  const masReciente = (fechas: (string | null | undefined)[]) =>
+    fechas.reduce<string | null>((max, d) => (d && (!max || d > max) ? d : max), null);
+  const ultimaDe = (pid: number, ventana: string | null) =>
+    masReciente([ventana, ...ultimas.map((m) => m.get(pid))]);
 
   // --- 5. Armar filas + estado ---
   const hoyStr = hasta;
@@ -259,6 +271,7 @@ export async function calcularRotacion(
       ultimaVenta: ultima,
       antiguedadDias: diasDesde(entro),
       antiguedadAntesDeOdoo: !!entro && entro < FIN_CARGA_INICIAL,
+      ultimoIngreso: masReciente(ingresos.map((m) => m.get(pid))),
       estado,
       rankingCategoria: 0,
     });
