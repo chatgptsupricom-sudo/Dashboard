@@ -21,7 +21,8 @@ const ESTADO_LABEL: Record<EstadoRotacion, string> = {
  *   &categoria=&marca=&estado=&q=
  *
  * Exporta el reporte de rotación con las columnas del brief. Respeta los
- * mismos filtros que la tabla (se pasan por query). Solo cantidades físicas.
+ * mismos filtros que la tabla (se pasan por query). Cantidades y precio de
+ * venta, sin costos.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest) {
       { header: "Nombre del producto", get: (f) => f.nombre },
       { header: "Marca", get: (f) => f.marca },
       { header: "Categoría", get: (f) => f.categoria },
+      { header: "Precio de venta", get: (f) => f.precio },
       { header: "Stock actual", get: (f) => f.stock },
       { header: "Unidades vendidas (30 días)", get: (f) => f.vendidas30 },
       { header: "Unidades vendidas (60 días)", get: (f) => f.vendidas60 },
@@ -94,7 +96,7 @@ export async function GET(request: NextRequest) {
 
     ws.columns = columnas.map((c, i) => ({
       key: String(i),
-      width: [18, 46, 18, 24, 13, 16, 16, 16, 16, 14][i] ?? 18,
+      width: [18, 46, 18, 24, 14, 13, 16, 16, 16, 16, 14][i] ?? 18,
     }));
     const hdr = ws.addRow(columnas.map((c) => c.header));
     hdr.height = 22;
@@ -103,7 +105,8 @@ export async function GET(request: NextRequest) {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF7C3AED" } };
       cell.alignment = { vertical: "middle", horizontal: "center" };
     });
-    ws.autoFilter = "A1:J1";
+    ws.autoFilter = "A1:K1";
+    ws.getColumn(5).numFmt = "#,##0.00";
     ws.views = [{ state: "frozen", ySplit: 1 }];
 
     for (const f of filtradas) {

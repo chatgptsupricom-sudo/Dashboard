@@ -8,8 +8,8 @@ export const maxDuration = 60;
 /**
  * GET /api/adminleads/rotacion
  *
- * Reporte de rotación de SKUs para el equipo de contenido. Solo cantidades
- * físicas: nada de precios, márgenes, costos ni facturación (ver
+ * Reporte de rotación de SKUs para el equipo de contenido: cantidades y
+ * precio de venta; nada de costos, márgenes ni facturación (ver
  * lib/adminleads/rotacion.ts).
  */
 export async function GET(request: NextRequest) {
