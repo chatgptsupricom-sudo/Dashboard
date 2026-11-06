@@ -333,8 +333,23 @@
         const ancho = escritorio() ? 210 : 150;
         return Math.ceil(ancho / 2 / Math.tan(Math.PI / enAnillo.length)) + (escritorio() ? 75 : 20);
     };
-    let elegido = false; // la persona eligió un producto: el anillo ya no gira solo ni con el scroll
-    const giroScroll = () => (escritorio() && !QUIETO && !pausaAnillo && !elegido ? window.scrollY * 0.08 : 0);
+    let elegido = false; // pausado con el botón: no gira solo ni con el scroll hasta que se reanude
+    // El scroll también hace girar el anillo. Mientras está detenido, esa parte queda congelada (así no salta
+    // ni cambia de producto); al seguir, se compensa en el ángulo para que no dé un brinco.
+    let giroCongelado = null;
+    const giroScroll = () => {
+        if (!escritorio() || QUIETO) return 0;
+        if (pausaAnillo) {
+            if (giroCongelado === null) giroCongelado = window.scrollY * 0.08;
+            return giroCongelado;
+        }
+        return window.scrollY * 0.08;
+    };
+    const soltarGiroCongelado = () => {
+        if (giroCongelado === null) return;
+        if (escritorio() && !QUIETO) angulo += giroCongelado - window.scrollY * 0.08;
+        giroCongelado = null;
+    };
     let angulo = 0;
     let velocidad = 0;
     let arrastre = null;
@@ -439,25 +454,29 @@
     }, true);
     // Sin tienda propia no hay ficha que ver: queda solo «Cotizar».
     if (!FICHAS) ficha_.ver.hidden = true;
-    // La pausa abarca el anillo y la ficha (están juntos en la fila): usar la ficha no cambia el producto.
+    // El anillo gira siempre y solo se detiene mientras el mouse está sobre una tarjeta (las del anillo o la
+    // ficha), mientras se recorre con el teclado o si se pausó con el botón. Al salir, sigue girando.
     const filaVitrina = $(".vitrina-fila");
     const botonPausaAnillo = $(".orbita-pausa");
-    const pintarPausaAnillo = () => {
+    let sobreTarjeta = false;
+    let conTeclado = false;
+    const pintarPausa = () => {
+        const antes = pausaAnillo;
+        pausaAnillo = sobreTarjeta || conTeclado || elegido;
         botonPausaAnillo.setAttribute("aria-pressed", String(elegido));
         botonPausaAnillo.setAttribute("aria-label", elegido ? "Seguir girando" : "Pausar el giro");
+        if (!antes && pausaAnillo) giroScroll(); // congela la parte del scroll en el punto donde se detuvo
+        if (antes && !pausaAnillo) { soltarGiroCongelado(); arrancar(); }
     };
-    const fijarAnillo = () => { elegido = true; pausaAnillo = true; pintarPausaAnillo(); };
-    filaVitrina.addEventListener("pointerenter", () => { pausaAnillo = true; });
-    filaVitrina.addEventListener("pointerleave", () => { if (!elegido) { pausaAnillo = false; arrancar(); } });
-    filaVitrina.addEventListener("focusin", () => { pausaAnillo = true; });
-    filaVitrina.addEventListener("focusout", (ev) => { if (!elegido && !filaVitrina.contains(ev.relatedTarget)) { pausaAnillo = false; arrancar(); } });
-    escena.addEventListener("pointerdown", fijarAnillo);
-    ficha_.mini.addEventListener("click", fijarAnillo);
-    ficha_.cotizar.addEventListener("click", fijarAnillo);
-    botonPausaAnillo.addEventListener("click", () => {
-        if (elegido) { elegido = false; pausaAnillo = false; pintarPausaAnillo(); arrancar(); }
-        else fijarAnillo();
+    filaVitrina.addEventListener("pointerover", (ev) => {
+        const sobre = Boolean(ev.target.closest(".orbita-item, .ficha"));
+        if (sobre !== sobreTarjeta) { sobreTarjeta = sobre; pintarPausa(); }
     });
+    filaVitrina.addEventListener("pointerleave", () => { sobreTarjeta = false; pintarPausa(); });
+    // Con el teclado (foco visible) se detiene para poder leer; un clic con el mouse no lo deja detenido.
+    filaVitrina.addEventListener("focusin", (ev) => { conTeclado = ev.target.matches(":focus-visible"); pintarPausa(); });
+    filaVitrina.addEventListener("focusout", (ev) => { if (!filaVitrina.contains(ev.relatedTarget)) { conTeclado = false; pintarPausa(); } });
+    botonPausaAnillo.addEventListener("click", () => { elegido = !elegido; pintarPausa(); });
     if (QUIETO) botonPausaAnillo.hidden = true;
     orbita.addEventListener("keydown", (e) => {
         if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
