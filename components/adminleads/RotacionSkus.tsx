@@ -17,6 +17,7 @@ type Fila = {
   nombre: string;
   marca: string;
   categoria: string;
+  precio: number;
   stock: number;
   vendidas30: number;
   vendidas60: number;
@@ -59,6 +60,7 @@ type SortCol =
   | "nombre"
   | "marca"
   | "categoria"
+  | "precio"
   | "stock"
   | "vendidas30"
   | "vendidas60"
@@ -106,17 +108,22 @@ export function RotacionSkus() {
     };
   }, []);
 
-  const filtradas = useMemo(() => {
+  // Categoría, marca y búsqueda: lo que cuentan las tarjetas. El estado no,
+  // porque las tarjetas son el filtro de estado.
+  const delFiltro = useMemo(() => {
     if (!data) return [];
     const term = q.trim().toLowerCase();
-    const rows = data.filas.filter((f) => {
+    return data.filas.filter((f) => {
       if (categoria && f.categoria !== categoria) return false;
       if (marca && f.marca !== marca) return false;
-      if (estado && f.estado !== estado) return false;
       if (term && !`${f.sku} ${f.nombre} ${f.marca}`.toLowerCase().includes(term))
         return false;
       return true;
     });
+  }, [data, q, categoria, marca]);
+
+  const filtradas = useMemo(() => {
+    const rows = delFiltro.filter((f) => !estado || f.estado === estado);
     const dir = sort.dir === "asc" ? 1 : -1;
     rows.sort((a, b) => {
       const av = a[sort.col];
@@ -130,17 +137,14 @@ export function RotacionSkus() {
       return ((av as number) - (bv as number)) * dir;
     });
     return rows;
-  }, [data, q, categoria, marca, estado, sort]);
+  }, [delFiltro, estado, sort]);
 
-  const conteos = useMemo(() => {
-    const base = data?.filas ?? [];
-    return {
-      total: base.length,
-      alta: base.filter((f) => f.estado === "alta").length,
-      media: base.filter((f) => f.estado === "media").length,
-      baja: base.filter((f) => f.estado === "baja").length,
-    };
-  }, [data]);
+  const conteos = useMemo(() => ({
+    total: delFiltro.length,
+    alta: delFiltro.filter((f) => f.estado === "alta").length,
+    media: delFiltro.filter((f) => f.estado === "media").length,
+    baja: delFiltro.filter((f) => f.estado === "baja").length,
+  }), [delFiltro]);
 
   const exportUrl = (formato: "xlsx" | "csv") => {
     const p = new URLSearchParams({ formato });
@@ -194,7 +198,7 @@ export function RotacionSkus() {
             </h2>
             <p className="text-sm text-slate-500">
               Qué se mueve rápido, qué está estancado y cómo se ordena cada
-              categoría. Solo unidades — sin precios ni costos.
+              categoría. Unidades y precio de venta, sin costos.
             </p>
           </div>
         </div>
@@ -305,6 +309,7 @@ export function RotacionSkus() {
                 {th("nombre", "Producto")}
                 {th("marca", "Marca")}
                 {th("categoria", "Categoría")}
+                {th("precio", "Precio", true)}
                 {th("stock", "Stock", true)}
                 {th("vendidas30", "30 d", true)}
                 {th("vendidas60", "60 d", true)}
@@ -331,6 +336,13 @@ export function RotacionSkus() {
                   </td>
                   <td className="px-3 py-2 text-slate-600">{f.marca}</td>
                   <td className="px-3 py-2 text-slate-600">{f.categoria}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                    {f.precio > 0 ? (
+                      `$${f.precio.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    ) : (
+                      <span className="text-slate-400">sin precio</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                     {f.stock.toLocaleString("es-VE")}
                   </td>
@@ -363,7 +375,7 @@ export function RotacionSkus() {
               {filtradas.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="py-12 text-center text-sm text-slate-400"
                   >
                     Ningún SKU coincide con los filtros.
