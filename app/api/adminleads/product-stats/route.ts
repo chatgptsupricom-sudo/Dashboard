@@ -70,15 +70,17 @@ export async function GET(request: NextRequest) {
         ],
       ],
       {
-        fields: ["product_id", "quantity"],
+        fields: ["product_id", "quantity", "balance"],
         limit: 50000,
       },
     );
     const [facturas, notas] = await Promise.all([leerLineas("out_invoice"), leerLineas("out_refund")]);
+    // Monto = −balance: USD de la empresa sin IVA, positivo en la factura y
+    // negativo en la nota de crédito (Caracas tiene documentos en bolívares).
     const lines = [
       ...(facturas || []),
       ...(notas || []).map((l: any) => ({ ...l, quantity: -(Number(l.quantity) || 0) })),
-    ];
+    ].map((l: any) => ({ ...l, monto: -(Number(l.balance) || 0) }));
 
     if (lines.length === 0) {
       return NextResponse.json({
@@ -114,10 +116,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Aggregate by brand
-    const brandMap = new Map<string, { qty: number; products: Map<string, { qty: number; name: string; code: string }> }>();
-    // Aggregate by category
-    const categoryMap = new Map<string, number>();
+    // Por marca y por categoría, en unidades y monto, con sus productos (y, en
+    // la categoría, sus marcas). La pantalla elige la medida y ordena.
+    type Suma = { qty: number; monto: number };
+    type Grupo = Suma & { products: Map<string, Suma & { name: string; code: string }>; brands: Map<string, Suma> };
+    const nuevoGrupo = (): Grupo => ({ qty: 0, monto: 0, products: new Map(), brands: new Map() });
+    const sumar = (s: Suma, qty: number, monto: number) => {
+      s.qty += qty;
+      s.monto += monto;
+    };
+    const brandMap = new Map<string, Grupo>();
+    const categoryMap = new Map<string, Grupo>();
 
     for (const line of lines) {
       const pid = line.product_id?.[0];
@@ -125,50 +134,54 @@ export async function GET(request: NextRequest) {
       const info = productMap.get(pid);
       if (!info) continue;
       const qty = Number(line.quantity) || 0;
-      if (qty === 0) continue;
-
-      // Brand aggregation
-      if (!brandMap.has(info.brand)) {
-        brandMap.set(info.brand, { qty: 0, products: new Map() });
-      }
-      const brandEntry = brandMap.get(info.brand)!;
-      brandEntry.qty += qty;
+      const monto = line.monto;
+      if (qty === 0 && monto === 0) continue;
 
       const productKey = info.code || info.name;
-      if (!brandEntry.products.has(productKey)) {
-        brandEntry.products.set(productKey, { qty: 0, name: info.name, code: info.code });
+      for (const [mapa, clave] of [[brandMap, info.brand], [categoryMap, info.category]] as const) {
+        if (!mapa.has(clave)) mapa.set(clave, nuevoGrupo());
+        const g = mapa.get(clave)!;
+        sumar(g, qty, monto);
+        if (!g.products.has(productKey)) g.products.set(productKey, { qty: 0, monto: 0, name: info.name, code: info.code });
+        sumar(g.products.get(productKey)!, qty, monto);
+        if (mapa === categoryMap) {
+          if (!g.brands.has(info.brand)) g.brands.set(info.brand, { qty: 0, monto: 0 });
+          sumar(g.brands.get(info.brand)!, qty, monto);
+        }
       }
-      brandEntry.products.get(productKey)!.qty += qty;
-
-      // Category aggregation
-      categoryMap.set(info.category, (categoryMap.get(info.category) || 0) + qty);
     }
 
-    // Convert to sorted arrays
-    // Lo devuelto entero (neto ≤ 0) no entra en los rankings.
+    // Lo devuelto entero (neto ≤ 0 en las dos medidas) no entra en los rankings.
+    const positivo = (s: Suma) => s.qty > 0 || s.monto > 0;
+    const redondear = (s: Suma) => ({ qty: s.qty, monto: Math.round(s.monto * 100) / 100 });
+    // Los productos que más venden en cualquiera de las dos medidas.
+    const mejores = <T extends Suma>(mapa: Map<string, T>, n: number) => {
+      const lista = [...mapa.values()].filter(positivo);
+      const top = new Set([
+        ...[...lista].sort((a, b) => b.qty - a.qty).slice(0, n),
+        ...[...lista].sort((a, b) => b.monto - a.monto).slice(0, n),
+      ]);
+      return [...top];
+    };
+    const productos = (g: Grupo) =>
+      mejores(g.products, 10).map((p) => ({ code: p.code, name: p.name, ...redondear(p) }));
+
     const brands = [...brandMap.entries()]
-      .filter(([, data]) => data.qty > 0)
+      .filter(([, g]) => positivo(g))
       .sort((a, b) => b[1].qty - a[1].qty)
-      .slice(0, 20)
-      .map(([name, data]) => ({
-        name,
-        qty: data.qty,
-        products: [...data.products.entries()]
-          .filter(([, p]) => p.qty > 0)
-          .sort((a, b) => b[1].qty - a[1].qty)
-          .slice(0, 10)
-          .map(([key, p]) => ({
-            code: p.code,
-            name: p.name,
-            qty: p.qty,
-          })),
-      }));
+      .map(([name, g]) => ({ name, ...redondear(g), products: productos(g) }));
 
     const categories = [...categoryMap.entries()]
-      .filter(([, qty]) => qty > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 15)
-      .map(([name, qty]) => ({ name, qty }));
+      .filter(([, g]) => positivo(g))
+      .sort((a, b) => b[1].qty - a[1].qty)
+      .map(([name, g]) => ({
+        name,
+        ...redondear(g),
+        products: productos(g),
+        brands: [...g.brands.entries()]
+          .filter(([, b]) => positivo(b))
+          .map(([marca, b]) => ({ name: marca, ...redondear(b) })),
+      }));
 
     return NextResponse.json({
       success: true,
