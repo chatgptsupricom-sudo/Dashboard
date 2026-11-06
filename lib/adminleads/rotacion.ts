@@ -24,7 +24,11 @@ export type FilaRotacion = {
   stock: number;
   vendidas30: number;
   vendidas60: number;
-  /** stock ÷ (vendidas30 / 30). null = sin ventas recientes (cobertura infinita). */
+  /**
+   * Cobertura: días que dura el stock al ritmo de venta de 60 días,
+   * stock ÷ (vendidas60 / 60). No es la antigüedad en el almacén. Con 60 y no
+   * 30 días, un mes flojo no la dispara. null = sin ventas en 60 días.
+   */
   coberturaDias: number | null;
   /** Días desde la última venta. null = sin ventas en la ventana consultada. */
   diasSinVenta: number | null;
@@ -165,7 +169,7 @@ export async function calcularRotacion(
     // Ignora productos sin stock y sin ventas: no aportan nada al contenido.
     if (st === 0 && v.v60 === 0) continue;
 
-    const ritmoDiario = v.v30 / 30;
+    const ritmoDiario = v.v60 / 60;
     const coberturaDias = ritmoDiario > 0 ? Math.round(st / ritmoDiario) : null;
     const diasSinVenta = diasDesde(v.ultima);
 
