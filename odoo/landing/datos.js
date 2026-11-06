@@ -42,12 +42,12 @@ window.SUPRICOM = {
     // `dominio`: el de la sede; ahí la página abre ya en esa sede. En supricom.com se elige en el menú.
     // `coords`: la sede, para proponer la más cercana con la ubicación del visitante.
     // `whatsapp`: sin número, las cotizaciones de esa sede van por correo a `correo`.
-    // `marcas`: cuántas marcas tiene en existencia la sede. `destacado`: el del anillo, uno por categoría.
+    // `destacado`: el del anillo, uno por categoría.
     sedes: {
         valencia: {
             nombre: "Valencia", pais: "Venezuela", dominio: "supricom.com.ve", tienda: "https://supricom2.odoo.com", tiendaPropia: true,
             coords: [10.170, -68.004], whatsapp: "584123326646", telefono: "+58 412 3326646",
-            correo: "webstore.valencia@supricom.com.ve", documento: "RIF", marcas: 41,
+            correo: "webstore.valencia@supricom.com.ve", documento: "RIF",
             banners: ["aliado", "hikvision", "papel", "nexxt"],
             logos: ["HP", "Havit", "Canon", "TP-Link", "Logitech", "Epson", "Kingston", "Nexxt", "Targus", "EZVIZ"],
             productos: [
@@ -138,7 +138,7 @@ window.SUPRICOM = {
         caracas: {
             nombre: "Caracas", pais: "Venezuela", dominio: "caracas.supricom.com.ve", tienda: "https://supricom2.odoo.com",
             coords: [10.490, -66.830], whatsapp: "", telefono: "",
-            correo: "webstore.ccs@supricom.com.ve", documento: "RIF", marcas: 42,
+            correo: "webstore.ccs@supricom.com.ve", documento: "RIF",
             // Sin papel HP en existencia en Caracas: va sin ese banner.
             banners: ["aliado", "hikvision", "nexxt"],
             logos: ["HP", "Havit", "Canon", "TP-Link", "Logitech", "Epson", "Kingston", "Nexxt", "Targus"],
@@ -227,7 +227,7 @@ window.SUPRICOM = {
         panama: {
             nombre: "Panamá", pais: "Panamá", dominio: "supricom.com.pa", tienda: "https://supricom2.odoo.com",
             coords: [8.990, -79.505], whatsapp: "", telefono: "+507 399-4554",
-            correo: "webstore@supricom.com.pa", documento: "RUC", marcas: 26,
+            correo: "webstore@supricom.com.pa", documento: "RUC",
             banners: ["aliado"],
             logos: ["HP", "Canon", "TP-Link", "Logitech", "Epson", "Kingston", "EZVIZ"],
             productos: [

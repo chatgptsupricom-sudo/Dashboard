@@ -341,11 +341,9 @@ button { font: inherit; color: inherit; }
     display: grid; place-items: center; padding: 12px 22px; text-decoration: none; background: #fff;
     transition: border-color .25s, transform .25s var(--curva), box-shadow .25s;
 }
-.marca-logo img { max-width: 100%; object-fit: contain; filter: grayscale(1); opacity: .7; transition: filter .3s, opacity .3s; }
+.marca-logo img { max-width: 100%; object-fit: contain; }
 .marca-logo:hover, .marca-logo:focus-visible { box-shadow: 0 18px 30px -18px var(--sombra); }
-.marca-logo:hover img, .marca-logo:focus-visible img { filter: none; opacity: 1; }
 .marca-logo.oscura { background: #14161C; border-color: #14161C; }
-.marca-logo.oscura img { filter: none; opacity: .85; }
 
 /* ------------------------------------------------------------------ Servicios */
 .servicios { padding: 0 0 var(--seccion); }
@@ -735,7 +733,7 @@ html { accent-color: var(--acento); scrollbar-color: color-mix(in srgb, var(--ti
 input, textarea { caret-color: var(--acento); }
 .carrito-cuerpo, .buscador-opciones, .menu { scrollbar-width: thin; scrollbar-color: var(--borde-boton) transparent; }
 a { text-underline-offset: .22em; text-decoration-thickness: 1.5px; }
-.carrito-n, .contador input, .paso-num, .sede a[href^="tel:"], [data-sede="marcas"] { font-variant-numeric: tabular-nums; }
+.carrito-n, .contador input, .paso-num, .sede a[href^="tel:"] { font-variant-numeric: tabular-nums; }
 :root[data-tema="oscuro"] .marca-logo:not(.oscura) { background: #E6E9EF; border-color: transparent; }
 
 /* ------------------------------------------------------------------ Íconos dibujados (en vez de glifos) */

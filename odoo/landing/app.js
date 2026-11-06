@@ -105,7 +105,7 @@
     // Textos de la página que dependen de la sede.
     document.title = `SUPRICOM ${S.nombre} · Tecnología al mayor`;
     for (const el of $$("[data-sede]")) {
-        const v = { nombre: S.nombre, documento: S.documento, marcas: miles(S.marcas), medio: MEDIO }[el.dataset.sede];
+        const v = { nombre: S.nombre, documento: S.documento, medio: MEDIO }[el.dataset.sede];
         if (v !== undefined) el.textContent = v;
     }
     for (const el of $$("[data-solo-whatsapp]")) el.hidden = !POR_WHATSAPP;
