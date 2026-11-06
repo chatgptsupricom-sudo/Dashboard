@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { ultimaVenta } from "@/lib/compras/datosOdoo";
 import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
+import { IDS_SEDES, listasPrincipales } from "@/lib/calidad-odoo/odoo";
 
 /**
  * Reporte de rotación de SKUs para el equipo de contenido (adminleads).
@@ -9,7 +10,8 @@ import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
  * estancado, y cómo se ordena cada categoría — SOLO con cantidades físicas.
  *
  * Devuelve unidades vendidas, stock, días de cobertura (stock ÷ ritmo de
- * venta), ranking de rotación y el precio de venta de lista (`lst_price`).
+ * venta), ranking de rotación y el precio de venta (el de la lista de precios
+ * principal de la sede, `listasPrincipales`).
  * Nada de costos, márgenes, facturación por SKU ni proveedores: a pedido, el
  * precio de venta sí, el costo no (nov-2026).
  */
@@ -21,7 +23,11 @@ export type FilaRotacion = {
   nombre: string;
   marca: string;
   categoria: string;
-  /** Precio de venta de lista en Odoo (`lst_price`), sin IVA. */
+  /**
+   * Precio de venta sin IVA: la regla de precio fijo de la lista principal de
+   * la sede (en Odoo el precio del producto es 1 en casi todos); sin regla, el
+   * `lst_price` si es mayor que 1. 0 = sin precio.
+   */
   precio: number;
   stock: number;
   vendidas30: number;
@@ -118,10 +124,30 @@ export async function calcularRotacion(
       ["type", "=", "product"],
     ],
   ], {
-    fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "lst_price"],
+    fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "lst_price", "product_tmpl_id"],
     limit: 20000,
     context: { lang: "es_VE", allowed_company_ids: companyIds },
   });
+
+  // Precio de la lista principal de cada sede del usuario (el SuperAdmin:
+  // Valencia, si no Caracas, si no Panamá).
+  const listas = (
+    await listasPrincipales().catch((e) => {
+      console.error("Rotación: listas de precios", e?.message);
+      return [];
+    })
+  )
+    .filter((l) => companyIds.includes(l.companyId))
+    .sort((a, b) => IDS_SEDES.indexOf(a.companyId) - IDS_SEDES.indexOf(b.companyId));
+  const precioDe = (p: any) => {
+    const tmpl = Array.isArray(p.product_tmpl_id) ? p.product_tmpl_id[0] : 0;
+    for (const l of listas) {
+      const precio = l.precios.get(tmpl)?.find((x) => x > 0);
+      if (precio) return precio;
+    }
+    const lista = Number(p.lst_price) || 0;
+    return lista > 1 ? lista : 0;
+  };
 
   const infoProd = new Map<number, { sku: string; nombre: string; marca: string; categoria: string; precio: number }>();
   const agregar = (p: any) =>
@@ -130,7 +156,7 @@ export async function calcularRotacion(
       nombre: p.name || "",
       marca: Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : p.x_studio_marca || "Sin marca",
       categoria: Array.isArray(p.categ_id) ? p.categ_id[1] : "Sin categoría",
-      precio: Number(p.lst_price) || 0,
+      precio: precioDe(p),
     });
   for (const p of productos || []) agregar(p);
 
@@ -139,7 +165,7 @@ export async function calcularRotacion(
   for (let i = 0; i < faltantes.length; i += 100) {
     const batch = faltantes.slice(i, i + 100);
     const extra = await callOdooRPC<any[]>("product.product", "read", [batch], {
-      fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "lst_price"],
+      fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "lst_price", "product_tmpl_id"],
       context: { lang: "es_VE", allowed_company_ids: companyIds },
     });
     for (const p of extra || []) agregar(p);
