@@ -29,7 +29,7 @@ window.SUPRICOM = {
     // Klip Xtreme y Xtech quedan fuera hasta tener su logo.
     logos: {
         HP: { logo: "hp.svg", alto: 40 },
-        Havit: { logo: "havit.png", alto: 26, oscura: true },
+        Havit: { logo: "havit.png?v=2", alto: 26 }, // ?v=2: el logo oficial (nov-2026) reemplazó al blanco
         Canon: { logo: "canon.svg", alto: 24 },
         "TP-Link": { logo: "tplink.svg", alto: 32 },
         Logitech: { logo: "logitech.svg", alto: 28 },
