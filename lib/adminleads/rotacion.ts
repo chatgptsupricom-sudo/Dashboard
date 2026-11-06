@@ -6,12 +6,10 @@ import { callOdooRPC } from "@/lib/odoo";
  * Responde a las 3 preguntas del brief: qué se mueve rápido, qué está
  * estancado, y cómo se ordena cada categoría — SOLO con cantidades físicas.
  *
- * RESTRICCIÓN DURA: nada de dinero. No se consultan ni se devuelven precios,
- * márgenes, costos, facturación por SKU ni proveedores. Solo:
- *   - unidades vendidas (cantidades físicas)
- *   - stock actual (unidades)
- *   - días de cobertura (stock ÷ ritmo de venta)
- *   - ranking de rotación (posición 1, 2, 3…)
+ * Devuelve unidades vendidas, stock, días de cobertura (stock ÷ ritmo de
+ * venta), ranking de rotación y el precio de venta de lista (`lst_price`).
+ * Nada de costos, márgenes, facturación por SKU ni proveedores: a pedido, el
+ * precio de venta sí, el costo no (nov-2026).
  */
 
 export type EstadoRotacion = "alta" | "media" | "baja";
@@ -21,6 +19,8 @@ export type FilaRotacion = {
   nombre: string;
   marca: string;
   categoria: string;
+  /** Precio de venta de lista en Odoo (`lst_price`), sin IVA. */
+  precio: number;
   stock: number;
   vendidas30: number;
   vendidas60: number;
@@ -103,37 +103,31 @@ export async function calcularRotacion(
       ["type", "=", "product"],
     ],
   ], {
-    fields: ["id", "default_code", "name", "x_studio_marca", "categ_id"],
+    fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "lst_price"],
     limit: 20000,
     context: { lang: "es_VE", allowed_company_ids: companyIds },
   });
 
-  const infoProd = new Map<number, { sku: string; nombre: string; marca: string; categoria: string }>();
-  for (const p of productos || []) {
+  const infoProd = new Map<number, { sku: string; nombre: string; marca: string; categoria: string; precio: number }>();
+  const agregar = (p: any) =>
     infoProd.set(p.id, {
       sku: typeof p.default_code === "string" ? p.default_code : "",
       nombre: p.name || "",
       marca: Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : p.x_studio_marca || "Sin marca",
       categoria: Array.isArray(p.categ_id) ? p.categ_id[1] : "Sin categoría",
+      precio: Number(p.lst_price) || 0,
     });
-  }
+  for (const p of productos || []) agregar(p);
 
   // Productos con ventas que no aparecieron arriba (no vendibles / archivados):
   const faltantes = [...ventas.keys()].filter((id) => !infoProd.has(id));
   for (let i = 0; i < faltantes.length; i += 100) {
     const batch = faltantes.slice(i, i + 100);
     const extra = await callOdooRPC<any[]>("product.product", "read", [batch], {
-      fields: ["id", "default_code", "name", "x_studio_marca", "categ_id"],
-      context: { lang: "es_VE" },
+      fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "lst_price"],
+      context: { lang: "es_VE", allowed_company_ids: companyIds },
     });
-    for (const p of extra || []) {
-      infoProd.set(p.id, {
-        sku: typeof p.default_code === "string" ? p.default_code : "",
-        nombre: p.name || "",
-        marca: Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : p.x_studio_marca || "Sin marca",
-        categoria: Array.isArray(p.categ_id) ? p.categ_id[1] : "Sin categoría",
-      });
-    }
+    for (const p of extra || []) agregar(p);
   }
 
   // --- 3. Stock actual (quants de ubicaciones internas de las compañías) ---
@@ -194,6 +188,7 @@ export async function calcularRotacion(
       nombre: info.nombre,
       marca: info.marca,
       categoria: info.categoria,
+      precio: info.precio,
       stock: Math.round(st),
       vendidas30: Math.round(v.v30),
       vendidas60: Math.round(v.v60),
