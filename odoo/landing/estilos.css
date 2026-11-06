@@ -148,7 +148,7 @@ button { font: inherit; color: inherit; }
 .menu > a:not(.boton):hover, .menu > a.activo { color: var(--tinta); background: var(--superficie-2); }
 .menu .boton { margin-left: 6px; }
 .menu-boton { display: none; }
-.menu-ubicar, .menu-tema { display: none; }
+.menu-tema, .menu-sede { display: none; }
 .tema {
     width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--borde-boton); background: transparent;
     display: grid; place-items: center; cursor: pointer; transition: border-color .2s, transform .3s var(--curva);
@@ -749,10 +749,6 @@ h1, h2, h3, .ficha-nombre, .combo-titulo, .acordeon summary { text-wrap: balance
     .banners-pausa, .orbita-pausa { width: 44px; height: 44px; }
     .prod-ver, .agregar { min-height: 44px; }
 }
-/* Debajo de 600 px la acción ya está arriba del banner */
-@media (max-width: 599px) {
-    .cabecera-cta { display: none; }
-}
 
 /* ------------------------------------------------------------------ Menú desplegable (con el selector de sede no cabe en una fila) */
 @media (max-width: 1260px) {
@@ -779,8 +775,6 @@ h1, h2, h3, .ficha-nombre, .combo-titulo, .acordeon summary { text-wrap: balance
     .logo { height: 28px; }
     .cabecera-fila { gap: 10px; }
     .cabecera-acciones { gap: 6px; }
-    .sede-selector select { padding: 0 24px 0 30px; font-size: 14px; max-width: 128px; }
-    .sede-pin { left: 10px; }
     /* Debajo de la cabecera. Es `fixed` dentro de ella (el backdrop-filter la vuelve su contenedor), así que
        `top` se mide desde la cabecera, que ocupa todo el ancho arriba. Se cierra al abrir el menú o al tocar afuera. */
     .sede-aviso { position: fixed; top: 80px; left: 16px; right: 16px; width: auto; }
@@ -862,7 +856,7 @@ h1, h2, h3, .ficha-nombre, .combo-titulo, .acordeon summary { text-wrap: balance
     .banners-pestanas button[aria-current="true"]::before { background: currentColor; } /* sin la barra de avance */
 }
 
-/* Celulares angostos (320-420 px): el logo no se aplasta; la ubicación se pide desde el aviso o el menú. */
+/* Celulares angostos (320-420 px): el logo no se aplasta; el tema va dentro del menú. */
 @media (max-width: 420px) {
     .cabecera-fila { gap: 8px; }
     .cabecera-acciones { gap: 4px; }
@@ -870,9 +864,15 @@ h1, h2, h3, .ficha-nombre, .combo-titulo, .acordeon summary { text-wrap: balance
     .menu-boton, .carrito-boton { width: 40px; height: 40px; }
     .tema { display: none; } /* va dentro del menú */
     .menu .menu-tema { display: flex; align-items: center; min-height: 50px; padding: 0 12px; border: 0; background: none; color: var(--tinta); font-size: 17px; font-weight: 700; text-align: left; cursor: pointer; }
-    .sede-selector { height: 40px; }
-    .sede-ubicar { display: none; }
-    .menu .menu-ubicar { display: flex; align-items: center; min-height: 50px; padding: 0 12px; border: 0; background: none; color: var(--acento); font-size: 17px; font-weight: 700; text-align: left; cursor: pointer; }
-    .sede-selector select { height: 38px; max-width: 108px; padding: 0 22px 0 28px; font-size: 13px; border-radius: 999px; background-position: calc(100% - 13px) 52%, calc(100% - 8px) 52%; }
-    .sede-pin { left: 9px; }
+}
+
+/* ------------------------------------------------------------------ Sede y «Solicitar cuenta» dentro del menú (celular y tableta) */
+@media (max-width: 960px) {
+    .menu .menu-sede { display: grid; gap: 8px; padding: 4px 0 16px; margin-bottom: 8px; border-bottom: 1px solid var(--linea); }
+    .menu-sede-titulo { padding: 0 4px; color: var(--gris); font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .menu .sede-selector { height: 52px; }
+    .menu .sede-selector select { flex: 1; min-width: 0; height: 50px; padding: 0 34px 0 40px; font-size: 16px; }
+    .menu .sede-pin { left: 15px; width: 18px; height: 18px; }
+    .menu .sede-ubicar { width: 52px; height: 50px; }
+    .menu .cabecera-cta { margin-top: 8px; }
 }

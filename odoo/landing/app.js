@@ -185,9 +185,11 @@
         guardarSede(SEDE.id);
         const estabaDentro = avisoSede.contains(document.activeElement);
         cerrarAviso();
-        if (devolverFoco || estabaDentro) selectorSede.focus();
+        if (devolverFoco || estabaDentro) (menu.contains(selectorSede) && !menu.classList.contains("abierto") ? menuBoton : selectorSede).focus();
     };
-    const avisoSupuesta = `Te mostramos los productos de ${S.nombre}. ¿Compras en otra sede? Usa tu ubicación o elígela en la lista.`;
+    // En el celular la lista de sedes está dentro del menú.
+    const enLaLista = () => (mqEscritorio.matches ? "en la lista" : "en el menú");
+    const avisoSupuesta = () => `Te mostramos los productos de ${S.nombre}. ¿Compras en otra sede? Usa tu ubicación o elígela ${enLaLista()}.`;
     // Si ya empezó a usar la página, no se la recarga sin preguntar.
     const yaUsoLaPagina = () => window.scrollY > 120
         || enLaSede.usada()
@@ -195,8 +197,8 @@
     let buscandoUbicacion = false;
     const ubicar = (pedidoPorLaPersona) => {
         if (buscandoUbicacion) return;
-        const fallo = (texto) => mostrarAviso(pedidoPorLaPersona ? texto : avisoSupuesta, { enfocar: pedidoPorLaPersona });
-        if (!("geolocation" in navigator)) { fallo("Este navegador no comparte la ubicación. Elige tu sede en la lista."); return; }
+        const fallo = (texto) => mostrarAviso(pedidoPorLaPersona ? texto : avisoSupuesta(), { enfocar: pedidoPorLaPersona });
+        if (!("geolocation" in navigator)) { fallo(`Este navegador no comparte la ubicación. Elige tu sede ${enLaLista()}.`); return; }
         buscandoUbicacion = true;
         botonUbicar.setAttribute("aria-busy", "true");
         botonUbicar.classList.add("buscando");
@@ -210,7 +212,7 @@
             botonUbicar.classList.remove("buscando");
             return true;
         };
-        reloj = setTimeout(() => { if (terminar()) fallo("No pudimos saber dónde estás. Elige tu sede en la lista."); }, 12000);
+        reloj = setTimeout(() => { if (terminar()) fallo(`No pudimos saber dónde estás. Elige tu sede ${enLaLista()}.`); }, 12000);
         navigator.geolocation.getCurrentPosition((pos) => {
             if (!terminar()) return;
             const id = masCercana([pos.coords.latitude, pos.coords.longitude]);
@@ -224,20 +226,21 @@
             mostrarAviso(`Tu sede más cercana es ${TODO.sedes[id].nombre}. ¿Quieres ver sus productos?`, { cambiarA: id });
         }, (err) => {
             if (terminar()) fallo(err.code === 1
-                ? "No diste permiso para usar tu ubicación. Elige tu sede en la lista."
-                : "No pudimos saber dónde estás. Elige tu sede en la lista.");
+                ? `No diste permiso para usar tu ubicación. Elige tu sede ${enLaLista()}.`
+                : `No pudimos saber dónde estás. Elige tu sede ${enLaLista()}.`);
         }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60 * 60 * 1000 });
     };
-    botonUbicar.addEventListener("click", () => ubicar(true));
+    // Desde el menú: se cierra primero, si no el aviso queda tapado por él.
+    botonUbicar.addEventListener("click", () => { if (menu.contains(botonUbicar)) cerrarMenu(false); ubicar(true); });
     $(".sede-aviso-ubicar").addEventListener("click", () => ubicar(true));
     $(".sede-aviso-listo").addEventListener("click", () => aceptarSede(true));
     botonCambiarAviso.addEventListener("click", () => irASede(botonCambiarAviso.dataset.destino));
     // El Escape o el clic que usa el carrito (o que ocurre dentro de él) no cuenta como respuesta al aviso de sede.
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && !avisoSede.hidden) aceptarSede(false); });
-    document.addEventListener("click", (e) => { if (!avisoSede.hidden && !e.target.closest(".sede-selector, #carrito")) aceptarSede(false); });
+    document.addEventListener("click", (e) => { if (!avisoSede.hidden && !e.target.closest(".sede-selector, .sede-aviso, #carrito")) aceptarSede(false); });
     // Primera visita sin sede conocida: si ya dio permiso de ubicación se usa sin preguntar; si no, se le ofrece.
     if (SEDE.origen === "supuesta") {
-        const ofrecer = () => mostrarAviso(avisoSupuesta);
+        const ofrecer = () => mostrarAviso(avisoSupuesta());
         if (navigator.permissions && navigator.permissions.query) {
             navigator.permissions.query({ name: "geolocation" })
                 .then((p) => { if (p.state === "granted") ubicar(false); else ofrecer(); })
@@ -262,10 +265,31 @@
         menuBoton.setAttribute("aria-label", abierto ? "Cerrar menú" : "Abrir menú");
     });
     for (const a of $$("a", menu)) a.addEventListener("click", () => cerrarMenu(false));
-    $(".menu-ubicar").addEventListener("click", (ev) => { ev.stopPropagation(); cerrarMenu(false); ubicar(true); });
     $(".menu-tema").addEventListener("click", () => botonTema.click());
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menu.classList.contains("abierto")) cerrarMenu(true); });
     document.addEventListener("click", (e) => { if (menu.classList.contains("abierto") && !cabecera.contains(e.target)) cerrarMenu(false); });
+
+    // En el celular y la tableta, la sede y «Solicitar cuenta» van dentro del menú para no cargar la cabecera.
+    // Se mueven los mismos elementos (no copias), así todo sigue funcionando igual. El aviso de sede se queda
+    // en la cabecera: con el menú cerrado no se vería.
+    const accionesCabecera = $(".cabecera-acciones");
+    const cajaSede = $(".sede-selector");
+    const ctaCabecera = $(".cabecera-cta");
+    const anclaCarrito = $(".carrito-boton");
+    const acomodarCabecera = () => {
+        const enMenu = menu.contains(cajaSede);
+        if (mqEscritorio.matches && enMenu) {
+            accionesCabecera.insertBefore(ctaCabecera, anclaCarrito);
+            accionesCabecera.insertBefore(cajaSede, anclaCarrito);
+            cajaSede.append(avisoSede);
+        } else if (!mqEscritorio.matches && !enMenu) {
+            $(".menu-sede").append(cajaSede);
+            menu.append(ctaCabecera);
+            accionesCabecera.append(avisoSede);
+        }
+    };
+    acomodarCabecera();
+    mqEscritorio.addEventListener("change", acomodarCabecera);
 
     /* ---------------------------------------------------------------- Aparecer y sección activa */
     const aparecer = new IntersectionObserver((entradas) => {
