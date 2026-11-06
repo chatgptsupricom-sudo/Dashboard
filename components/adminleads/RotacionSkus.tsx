@@ -61,6 +61,7 @@ const ESTADO_META: Record<
 };
 
 type SortCol =
+  | "sku"
   | "nombre"
   | "marca"
   | "categoria"
@@ -313,6 +314,7 @@ export function RotacionSkus() {
           <table className="w-full text-sm">
             <thead className="border-b border-slate-200 bg-slate-50/60">
               <tr>
+                {th("sku", "SKU")}
                 {th("nombre", "Producto")}
                 {th("marca", "Marca")}
                 {th("categoria", "Categoría")}
@@ -336,14 +338,10 @@ export function RotacionSkus() {
                   key={f.sku || f.nombre}
                   className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50"
                 >
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-slate-900">{f.nombre}</div>
-                    {f.sku && (
-                      <div className="font-mono text-[11px] text-slate-400">
-                        {f.sku}
-                      </div>
-                    )}
+                  <td className="px-3 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">
+                    {f.sku || <span className="text-slate-300">sin código</span>}
                   </td>
+                  <td className="px-3 py-2 font-medium text-slate-900">{f.nombre}</td>
                   <td className="px-3 py-2 text-slate-600">{f.marca}</td>
                   <td className="px-3 py-2 text-slate-600">{f.categoria}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-700">
@@ -418,7 +416,7 @@ export function RotacionSkus() {
               {filtradas.length === 0 && (
                 <tr>
                   <td
-                    colSpan={13}
+                    colSpan={14}
                     className="py-12 text-center text-sm text-slate-400"
                   >
                     Ningún SKU coincide con los filtros.
