@@ -313,7 +313,7 @@ export function RotacionSkus() {
                 {th("stock", "Stock", true)}
                 {th("vendidas30", "30 d", true)}
                 {th("vendidas60", "60 d", true)}
-                {th("coberturaDias", "Días inv.", true)}
+                {th("coberturaDias", "Cobertura", true)}
                 {th("rankingCategoria", "Rank cat.", true)}
                 <th className="px-3 py-2 text-left font-semibold text-slate-500">
                   Estado
@@ -393,7 +393,7 @@ export function RotacionSkus() {
             ? `Mostrando los primeros ${MAX_FILAS} de ${filtradas.length}. Afiná los filtros o exportá para verlos todos.`
             : `${filtradas.length} SKU${filtradas.length === 1 ? "" : "s"}.`}
           {data?.periodo &&
-            ` · Ventas desde ${data.periodo.desde} · "Días inv." = a este ritmo, el stock dura N días.`}
+            ` · Ventas desde ${data.periodo.desde} · "Cobertura" = días que dura el stock al ritmo de venta de los últimos 60 días (no es cuánto lleva en el almacén).`}
         </p>
       )}
     </section>

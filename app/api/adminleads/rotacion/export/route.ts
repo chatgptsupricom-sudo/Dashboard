@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
       { header: "Unidades vendidas (30 días)", get: (f) => f.vendidas30 },
       { header: "Unidades vendidas (60 días)", get: (f) => f.vendidas60 },
       {
-        header: "Días de inventario",
+        header: "Cobertura (días, ritmo de 60 días)",
         get: (f) => (f.coberturaDias === null ? "" : f.coberturaDias),
       },
       { header: "Estado de rotación", get: (f) => ESTADO_LABEL[f.estado] },
