@@ -55,6 +55,7 @@ import {
   Monitor,
   Landmark,
   Banknote,
+  ArrowLeftRight,
   Bitcoin,
   BookOpenCheck,
   FileCheck2,
@@ -458,6 +459,7 @@ export function Sidebar({
     { id: "admin_tesoreria", label: "Tesorería y Bancos", icon: Landmark, slug: "/administracion/tesoreria", absoluteHref: true },
     { id: "admin_binance", label: "Conciliación Binance", icon: Bitcoin, slug: "/administracion/binance", absoluteHref: true },
     { id: "admin_bancos", label: "Conciliación bancaria", icon: Banknote, slug: "/administracion/bancos", absoluteHref: true },
+    { id: "admin_intercompania", label: "Pagos entre sedes", icon: ArrowLeftRight, slug: "/administracion/intercompania", absoluteHref: true },
     { id: "admin_fiscal", label: "Fiscal", icon: FileText, slug: "/administracion/fiscal", absoluteHref: true },
     { id: "admin_contabilidad", label: "Contabilidad y cierre", icon: BookOpenCheck, slug: "/administracion/contabilidad", absoluteHref: true },
     // Gerente de Marca (lib/gerente-marca/): sus marcas, en Valencia y Caracas.
@@ -576,6 +578,7 @@ export function Sidebar({
     "admin_tesoreria",
     "admin_binance",
     "admin_bancos",
+    "admin_intercompania",
     "admin_fiscal",
     "admin_contabilidad",
   ];
@@ -1898,6 +1901,7 @@ export function Sidebar({
                         { label: "Tesorería y Bancos", href: `/${locale}/administracion/tesoreria` },
                         { label: "Conciliación Binance", href: `/${locale}/administracion/binance` },
                         { label: "Conciliación bancaria", href: `/${locale}/administracion/bancos` },
+                        { label: "Pagos entre sedes", href: `/${locale}/administracion/intercompania` },
                         { label: "Fiscal", href: `/${locale}/administracion/fiscal` },
                         { label: "Contabilidad y cierre", href: `/${locale}/administracion/contabilidad` },
                       ].map((subItem, index) => {
