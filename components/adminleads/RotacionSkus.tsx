@@ -26,6 +26,7 @@ type Fila = {
   ultimaVenta: string | null;
   antiguedadDias: number | null;
   antiguedadAntesDeOdoo: boolean;
+  ultimoIngreso: string | null;
   estado: Estado;
   rankingCategoria: number;
 };
@@ -69,6 +70,7 @@ type SortCol =
   | "vendidas60"
   | "coberturaDias"
   | "antiguedadDias"
+  | "ultimoIngreso"
   | "diasSinVenta"
   | "rankingCategoria";
 
@@ -133,12 +135,12 @@ export function RotacionSkus() {
     rows.sort((a, b) => {
       const av = a[sort.col];
       const bv = b[sort.col];
+      // null (sin ventas, sin stock, sin ingreso) al fondo siempre
+      if (av === null) return bv === null ? 0 : 1;
+      if (bv === null) return -1;
       if (typeof av === "string" || typeof bv === "string") {
         return String(av).localeCompare(String(bv)) * dir;
       }
-      // null (cobertura infinita) al fondo siempre
-      if (av === null) return 1;
-      if (bv === null) return -1;
       return ((av as number) - (bv as number)) * dir;
     });
     return rows;
@@ -320,6 +322,7 @@ export function RotacionSkus() {
                 {th("vendidas60", "60 d", true)}
                 {th("coberturaDias", "Cobertura", true)}
                 {th("antiguedadDias", "Antigüedad", true)}
+                {th("ultimoIngreso", "Último ingreso", true)}
                 {th("diasSinVenta", "Última venta", true)}
                 {th("rankingCategoria", "Rank cat.", true)}
                 <th className="px-3 py-2 text-left font-semibold text-slate-500">
@@ -381,6 +384,13 @@ export function RotacionSkus() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+                    {f.ultimoIngreso === null ? (
+                      <span className="text-slate-400">sin ingreso</span>
+                    ) : (
+                      f.ultimoIngreso.split("-").reverse().join("/")
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
                     {f.ultimaVenta === null ? (
                       <span className="text-slate-400">nunca</span>
                     ) : (
@@ -408,7 +418,7 @@ export function RotacionSkus() {
               {filtradas.length === 0 && (
                 <tr>
                   <td
-                    colSpan={12}
+                    colSpan={13}
                     className="py-12 text-center text-sm text-slate-400"
                   >
                     Ningún SKU coincide con los filtros.
@@ -426,7 +436,7 @@ export function RotacionSkus() {
             ? `Mostrando los primeros ${MAX_FILAS} de ${filtradas.length}. Afiná los filtros o exportá para verlos todos.`
             : `${filtradas.length} SKU${filtradas.length === 1 ? "" : "s"}.`}
           {data?.periodo &&
-            ` · Ventas desde ${data.periodo.desde} · "Cobertura" = días que dura el stock al ritmo de venta de los últimos 60 días (no es cuánto lleva en el almacén) · "Antigüedad" = días desde que entró la unidad más vieja del stock; "+" = entró con la carga inicial de Odoo, la fecha real es anterior.`}
+            ` · Ventas desde ${data.periodo.desde} · "Cobertura" = días que dura el stock al ritmo de venta de los últimos 60 días (no es cuánto lleva en el almacén) · "Antigüedad" = días desde que entró la unidad más vieja del stock; "+" = entró con la carga inicial de Odoo, la fecha real es anterior · "Último ingreso" = última recepción de compra al almacén principal.`}
         </p>
       )}
     </section>
