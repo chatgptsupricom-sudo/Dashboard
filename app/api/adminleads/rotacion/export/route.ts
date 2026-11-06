@@ -64,9 +64,14 @@ export async function GET(request: NextRequest) {
       { header: "Unidades vendidas (30 días)", get: (f) => f.vendidas30 },
       { header: "Unidades vendidas (60 días)", get: (f) => f.vendidas60 },
       {
-        header: "Días de inventario",
+        header: "Cobertura (días, ritmo de 60 días)",
         get: (f) => (f.coberturaDias === null ? "" : f.coberturaDias),
       },
+      {
+        header: "Antigüedad (días desde la entrada más vieja)",
+        get: (f) => (f.antiguedadDias === null ? "" : `${f.antiguedadAntesDeOdoo ? "+" : ""}${f.antiguedadDias}`),
+      },
+      { header: "Última venta", get: (f) => f.ultimaVenta ?? "nunca" },
       { header: "Estado de rotación", get: (f) => ESTADO_LABEL[f.estado] },
       { header: "Ranking en su categoría", get: (f) => f.rankingCategoria },
     ];
@@ -96,7 +101,7 @@ export async function GET(request: NextRequest) {
 
     ws.columns = columnas.map((c, i) => ({
       key: String(i),
-      width: [18, 46, 18, 24, 14, 13, 16, 16, 16, 16, 14][i] ?? 18,
+      width: [18, 46, 18, 24, 14, 13, 16, 16, 16, 18, 14, 16, 14][i] ?? 18,
     }));
     const hdr = ws.addRow(columnas.map((c) => c.header));
     hdr.height = 22;
@@ -105,7 +110,7 @@ export async function GET(request: NextRequest) {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF7C3AED" } };
       cell.alignment = { vertical: "middle", horizontal: "center" };
     });
-    ws.autoFilter = "A1:K1";
+    ws.autoFilter = "A1:M1";
     ws.getColumn(5).numFmt = "#,##0.00";
     ws.views = [{ state: "frozen", ySplit: 1 }];
 

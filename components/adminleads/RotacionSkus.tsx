@@ -23,6 +23,9 @@ type Fila = {
   vendidas60: number;
   coberturaDias: number | null;
   diasSinVenta: number | null;
+  ultimaVenta: string | null;
+  antiguedadDias: number | null;
+  antiguedadAntesDeOdoo: boolean;
   estado: Estado;
   rankingCategoria: number;
 };
@@ -65,6 +68,8 @@ type SortCol =
   | "vendidas30"
   | "vendidas60"
   | "coberturaDias"
+  | "antiguedadDias"
+  | "diasSinVenta"
   | "rankingCategoria";
 
 const MAX_FILAS = 200;
@@ -313,7 +318,9 @@ export function RotacionSkus() {
                 {th("stock", "Stock", true)}
                 {th("vendidas30", "30 d", true)}
                 {th("vendidas60", "60 d", true)}
-                {th("coberturaDias", "Días inv.", true)}
+                {th("coberturaDias", "Cobertura", true)}
+                {th("antiguedadDias", "Antigüedad", true)}
+                {th("diasSinVenta", "Última venta", true)}
                 {th("rankingCategoria", "Rank cat.", true)}
                 <th className="px-3 py-2 text-left font-semibold text-slate-500">
                   Estado
@@ -359,6 +366,32 @@ export function RotacionSkus() {
                       `${f.coberturaDias.toLocaleString("es-VE")} d`
                     )}
                   </td>
+                  <td
+                    className="px-3 py-2 text-right tabular-nums text-slate-700"
+                    title={
+                      f.antiguedadAntesDeOdoo
+                        ? "Entró con la carga inicial de Odoo: lleva al menos estos días, la fecha real es anterior"
+                        : undefined
+                    }
+                  >
+                    {f.antiguedadDias === null ? (
+                      <span className="text-slate-400">sin stock</span>
+                    ) : (
+                      `${f.antiguedadAntesDeOdoo ? "+" : ""}${f.antiguedadDias.toLocaleString("es-VE")} d`
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+                    {f.ultimaVenta === null ? (
+                      <span className="text-slate-400">nunca</span>
+                    ) : (
+                      <>
+                        <div>{f.ultimaVenta.split("-").reverse().join("/")}</div>
+                        <div className="text-[11px] text-slate-400">
+                          hace {(f.diasSinVenta ?? 0).toLocaleString("es-VE")} d
+                        </div>
+                      </>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-500">
                     #{f.rankingCategoria}
                   </td>
@@ -375,7 +408,7 @@ export function RotacionSkus() {
               {filtradas.length === 0 && (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={12}
                     className="py-12 text-center text-sm text-slate-400"
                   >
                     Ningún SKU coincide con los filtros.
@@ -393,7 +426,7 @@ export function RotacionSkus() {
             ? `Mostrando los primeros ${MAX_FILAS} de ${filtradas.length}. Afiná los filtros o exportá para verlos todos.`
             : `${filtradas.length} SKU${filtradas.length === 1 ? "" : "s"}.`}
           {data?.periodo &&
-            ` · Ventas desde ${data.periodo.desde} · "Días inv." = a este ritmo, el stock dura N días.`}
+            ` · Ventas desde ${data.periodo.desde} · "Cobertura" = días que dura el stock al ritmo de venta de los últimos 60 días (no es cuánto lleva en el almacén) · "Antigüedad" = días desde que entró la unidad más vieja del stock; "+" = entró con la carga inicial de Odoo, la fecha real es anterior.`}
         </p>
       )}
     </section>
