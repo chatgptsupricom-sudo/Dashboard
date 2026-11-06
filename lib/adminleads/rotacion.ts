@@ -1,4 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { ultimaVenta } from "@/lib/compras/datosOdoo";
+import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
 
 /**
  * Reporte de rotación de SKUs para el equipo de contenido (adminleads).
@@ -30,8 +32,17 @@ export type FilaRotacion = {
    * 30 días, un mes flojo no la dispara. null = sin ventas en 60 días.
    */
   coberturaDias: number | null;
-  /** Días desde la última venta. null = sin ventas en la ventana consultada. */
+  /** Días desde la última venta. null = nunca se vendió. */
   diasSinVenta: number | null;
+  /** Día de la última venta (YYYY-MM-DD), en Odoo o en Smartbit. null = nunca. */
+  ultimaVenta: string | null;
+  /** Días desde que entró la unidad más vieja del stock actual. null = sin stock. */
+  antiguedadDias: number | null;
+  /**
+   * La unidad más vieja vino en la carga inicial de Odoo (antes de
+   * FIN_CARGA_INICIAL): su fecha real es anterior, la antigüedad es "al menos".
+   */
+  antiguedadAntesDeOdoo: boolean;
   estado: EstadoRotacion;
   /** Posición dentro de su categoría por unidades vendidas (30d). 1 = el que más vende. */
   rankingCategoria: number;
@@ -137,6 +148,7 @@ export async function calcularRotacion(
   // --- 3. Stock actual (quants de ubicaciones internas de las compañías) ---
   const ids = [...infoProd.keys()];
   const stock = new Map<number, number>();
+  const entrada = new Map<number, string>(); // in_date más viejo con unidades
   for (let i = 0; i < ids.length; i += 2000) {
     const batch = ids.slice(i, i + 2000);
     const quants = await callOdooRPC<any[]>("stock.quant", "search_read", [
@@ -145,16 +157,34 @@ export async function calcularRotacion(
         ["location_id.usage", "=", "internal"],
         companyFilter,
       ],
-    ], { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 });
+    ], { fields: ["product_id", "quantity", "reserved_quantity", "in_date"], limit: 0 });
     for (const q of quants || []) {
       const pid = q.product_id?.[0];
       if (!pid) continue;
+      const dia = q.in_date ? String(q.in_date).slice(0, 10) : "";
+      if (dia && Number(q.quantity) > 0 && (!entrada.has(pid) || dia < entrada.get(pid)!)) entrada.set(pid, dia);
       const disp = Math.max(0, (Number(q.quantity) || 0) - (Number(q.reserved_quantity) || 0));
       stock.set(pid, (stock.get(pid) || 0) + disp);
     }
   }
 
-  // --- 4. Armar filas + estado ---
+  // --- 4. Última venta de toda la historia (Odoo + Smartbit), la más
+  // reciente entre las sedes; si falla, queda la de la ventana de 90 días.
+  const ultimas = await Promise.all(
+    companyIds.map((c) =>
+      ultimaVenta(c).catch((e) => {
+        console.error("Rotación: última venta de la sede", c, e?.message);
+        return new Map<number, string>();
+      }),
+    ),
+  );
+  const ultimaDe = (pid: number, ventana: string | null) =>
+    [ventana, ...ultimas.map((m) => m.get(pid) ?? null)].reduce<string | null>(
+      (max, d) => (d && (!max || d > max) ? d : max),
+      null,
+    );
+
+  // --- 5. Armar filas + estado ---
   const hoyStr = hasta;
   const diasDesde = (f: string | null): number | null => {
     if (!f) return null;
@@ -171,7 +201,9 @@ export async function calcularRotacion(
 
     const ritmoDiario = v.v60 / 60;
     const coberturaDias = ritmoDiario > 0 ? Math.round(st / ritmoDiario) : null;
-    const diasSinVenta = diasDesde(v.ultima);
+    const ultima = ultimaDe(pid, v.ultima);
+    const diasSinVenta = diasDesde(ultima);
+    const entro = st > 0 ? entrada.get(pid) ?? null : null;
 
     let estado: EstadoRotacion;
     const estancado =
@@ -198,12 +230,15 @@ export async function calcularRotacion(
       vendidas60: Math.round(v.v60),
       coberturaDias,
       diasSinVenta,
+      ultimaVenta: ultima,
+      antiguedadDias: diasDesde(entro),
+      antiguedadAntesDeOdoo: !!entro && entro < FIN_CARGA_INICIAL,
       estado,
       rankingCategoria: 0,
     });
   }
 
-  // --- 5. Ranking por categoría (unidades 30d, desempate por 60d) ---
+  // --- 6. Ranking por categoría (unidades 30d, desempate por 60d) ---
   const porCat = new Map<string, FilaRotacion[]>();
   for (const f of filas) {
     if (!porCat.has(f.categoria)) porCat.set(f.categoria, []);
