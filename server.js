@@ -312,6 +312,29 @@ app.prepare().then(() => {
   console.log("> Cron programado: foto semanal del Semáforo de clientes, lunes 6:00 (America/Caracas)");
 
   // ==========================================
+  // HISTORIAL DEL CREDITO DE LOS CLIENTES (lib/cxc/historialCredito.ts)
+  // ==========================================
+
+  // Cada hora: foto del cupo y la deuda de cada cliente, y cambios de cupo y
+  // excesos desde la anterior (Odoo no guarda la historia del límite).
+  cron.schedule(
+    "0 * * * *",
+    async () => {
+      try {
+        const response = await fetch(`http://localhost:${PORT}/api/cron/historial-credito`, {
+          headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        });
+        const data = await response.json();
+        if (!response.ok) console.error("Fallo el historial de crédito:", data);
+      } catch (error) {
+        console.error("Error de red en el historial de crédito:", error.message);
+      }
+    },
+    { scheduled: true, timezone: "America/Caracas" },
+  );
+  console.log("> Cron programado: historial de crédito de clientes, cada hora (America/Caracas)");
+
+  // ==========================================
   // FOTO DE CIERRE DE LA EFECTIVIDAD DE COBRANZA (lib/cxc/cierreEfectividad.ts)
   // ==========================================
 
