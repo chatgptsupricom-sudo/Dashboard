@@ -529,6 +529,7 @@ export const rolePermissions: RolePermissions = {
       "agenteia",
       // Desplegable Leads
       "adminleads",
+      "productos_adminleads", // Dashboard de Productos de AdminLeads, con selector de sede
       "monitoreo_leads",
       "cierres_adminleads",
       "recompra_adminleads",
