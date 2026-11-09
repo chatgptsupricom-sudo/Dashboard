@@ -1,11 +1,11 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Aviso,
   BotonExcel,
   EncabezadoAdmin,
   EstadoCarga,
@@ -13,7 +13,6 @@ import {
   NOMBRE_SEDE,
   Paginacion,
   Pestanas,
-  Tarjeta,
   deLaPagina,
   fechaCorta,
   mesActual,
@@ -21,65 +20,237 @@ import {
   money,
   useDatosAdmin,
 } from "@/components/administracion/comunes";
-import type { EstadoPagoIC, PagoIC } from "@/lib/administracion/pagosIntercompania";
-import { ArrowLeftRight, ChevronDown, ChevronRight } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import type { DocumentoAplicado, EstadoPagoIC, PagoIC } from "@/lib/administracion/pagosIntercompania";
+import { claveNumero } from "@/lib/administracion/pagosIntercompaniaCruce";
+import { ArrowLeftRight, Check, ChevronDown, ChevronRight, ClipboardList, Copy, ExternalLink } from "lucide-react";
+import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
 
 type Respuesta = { success: true; empresa: string; mes: string; pagos: PagoIC[] };
-type Vista = "hechos" | "recibidos" | "todos";
+type Vista = "por_hacer" | "recibidos" | "hechos" | "todos";
 
-const ESTADOS: Record<EstadoPagoIC, { texto: (p: PagoIC) => string; clase: string }> = {
-  por_aplicar: {
-    texto: (p) => `Por aplicar en ${NOMBRE_SEDE[p.receptor]}`,
-    clase: "bg-amber-100 text-amber-800 border-amber-200",
-  },
-  sin_aplicar: {
-    texto: (p) => `${NOMBRE_SEDE[p.pagador]} no lo ha aplicado`,
-    clase: "bg-slate-100 text-slate-700 border-slate-200",
-  },
-  sin_equivalente: {
-    texto: () => "Factura sin equivalente",
-    clase: "bg-red-100 text-red-800 border-red-200",
-  },
-  listo: { texto: () => "Aplicado en las dos", clase: "bg-emerald-100 text-emerald-800 border-emerald-200" },
-};
+const N = (s: string) => NOMBRE_SEDE[s] || s;
 
-const TIPO_DOC: Record<string, string> = {
-  in_invoice: "Factura",
-  in_refund: "Nota de crédito",
-  out_invoice: "Factura",
-  out_refund: "Nota de crédito",
-};
+/** Lo que hay que aplicar en la sede que cobra: lo que pagó la otra, con tope en lo que debe allá. */
+const porAplicar = (d: DocumentoAplicado) => (d.equivalente ? Math.min(d.aplicado, d.equivalente.saldo) : 0);
+const pendiente = (d: DocumentoAplicado) => porAplicar(d) > 0.01;
+/** La ref de la factura de proveedor ya es el número de la factura de la otra sede. */
+const mismoNumero = (d: DocumentoAplicado) =>
+  !!d.equivalente && (d.ref.trim() === d.equivalente.numero || claveNumero(d.ref) === claveNumero(d.equivalente.numero));
+const esFactura = (d: DocumentoAplicado) => ["in_invoice", "in_refund", "out_invoice", "out_refund"].includes(d.tipo);
+
+/** Frases desde la sede del usuario (null = ve todas las sedes). */
+function titulo(p: PagoIC, sede: string | null) {
+  if (sede === p.receptor) return `${N(p.pagador)} nos pagó`;
+  if (sede === p.pagador) return `Le pagamos a ${N(p.receptor)}`;
+  return `${N(p.pagador)} le pagó a ${N(p.receptor)}`;
+}
+
+function estado(p: PagoIC, sede: string | null): { texto: string; clase: string } {
+  const e: EstadoPagoIC = p.estado;
+  if (e === "por_aplicar")
+    return {
+      texto: sede === p.receptor ? "Te toca aplicarlo" : `${N(p.receptor)} debe aplicarlo`,
+      clase: "bg-amber-100 text-amber-800 border-amber-200",
+    };
+  if (e === "sin_aplicar")
+    return {
+      texto: sede === p.pagador ? "Falta repartirlo en facturas" : `${N(p.pagador)} aún no lo reparte en facturas`,
+      clase: "bg-slate-100 text-slate-700 border-slate-200",
+    };
+  if (e === "sin_equivalente")
+    return { texto: `Revisar: factura no encontrada en ${N(p.receptor)}`, clase: "bg-red-100 text-red-800 border-red-200" };
+  return { texto: "Listo en las dos sedes", clase: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+}
+
+function Monto({ p }: { p: PagoIC }) {
+  return (
+    <>
+      <div className="font-medium">{money(p.monto, 2)}</div>
+      {p.moneda && p.moneda !== "USD" && (
+        <div className="text-xs text-gray-500">
+          {p.moneda} {p.montoMoneda.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </div>
+      )}
+    </>
+  );
+}
+
+function EnlaceOdoo({ url, children }: { url: string; children: ReactNode }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex items-center gap-1 text-blue-700 hover:underline"
+      title="Abrir en Odoo"
+    >
+      {children}
+      <ExternalLink className="h-3 w-3 shrink-0" />
+    </a>
+  );
+}
+
+/** Número de la factura (uno solo si coincide en las dos sedes) y el documento de la sede que pagó. */
+function Factura({ d, p }: { d: DocumentoAplicado; p: PagoIC }) {
+  if (!esFactura(d)) {
+    return (
+      <div>
+        <EnlaceOdoo url={d.url}>{d.documento}</EnlaceOdoo>
+        <div className="text-xs text-gray-500">Otro asiento{d.ref ? ` · ${d.ref}` : ""}</div>
+      </div>
+    );
+  }
+  return (
+    <div className="min-w-0">
+      {d.equivalente ? (
+        <EnlaceOdoo url={d.equivalente.url}>
+          <span className="font-semibold">{d.equivalente.numero}</span>
+        </EnlaceOdoo>
+      ) : (
+        <span className="font-semibold text-red-700">{d.ref || "Sin número"} · no se encontró en {N(p.receptor)}</span>
+      )}
+      {d.equivalente?.porMonto && (
+        <Badge variant="outline" className="ml-2 bg-amber-50 text-amber-800 border-amber-200">
+          Por monto: revisar
+        </Badge>
+      )}
+      <div className="text-xs text-gray-500">
+        {d.tipo.endsWith("refund") ? "Nota de crédito · " : ""}
+        En {N(p.pagador)}: <EnlaceOdoo url={d.url}>{d.documento}</EnlaceOdoo>
+        {d.equivalente && !mismoNumero(d) && d.ref ? ` (ref ${d.ref})` : ""}
+      </div>
+    </div>
+  );
+}
+
+function BotonCopiar({ texto }: { texto: string }) {
+  const [hecho, setHecho] = useState(false);
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="h-8"
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard?.writeText(texto).then(() => {
+          setHecho(true);
+          setTimeout(() => setHecho(false), 1500);
+        });
+      }}
+    >
+      {hecho ? <Check className="h-3.5 w-3.5 mr-1.5" /> : <Copy className="h-3.5 w-3.5 mr-1.5" />}
+      {hecho ? "Copiado" : "Copiar facturas"}
+    </Button>
+  );
+}
+
+/** Un pago como tarjeta: la vista «Por hacer» y la lista en el celular. */
+function TarjetaPago({ p, sede, soloPendientes }: { p: PagoIC; sede: string | null; soloPendientes: boolean }) {
+  const docs = soloPendientes ? p.documentos.filter((d) => pendiente(d) || (esFactura(d) && !d.equivalente)) : p.documentos;
+  const pendientes = p.documentos.filter(pendiente);
+  const e = estado(p, sede);
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="font-semibold text-gray-900">
+              {titulo(p, sede)} · {fechaCorta(p.fecha)}
+            </p>
+            <p className="text-sm text-gray-600">
+              <EnlaceOdoo url={p.url}>{p.numero}</EnlaceOdoo> · {p.diario}
+            </p>
+            {p.ref && <p className="text-xs text-gray-500 break-words">{p.ref}</p>}
+          </div>
+          <div className="text-right">
+            <Monto p={p} />
+            <Badge variant="outline" className={`mt-1 ${e.clase}`}>
+              {e.texto}
+            </Badge>
+          </div>
+        </div>
+
+        {docs.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            {p.documentos.length === 0
+              ? `${N(p.pagador)} todavía no repartió este pago en facturas en Odoo. Cuando lo haga, sale aquí.`
+              : "No queda nada por aplicar."}
+          </p>
+        ) : (
+          <div className="divide-y rounded-lg border bg-slate-50/50">
+            {docs.map((d) => (
+              <div key={d.url} className="flex items-center justify-between gap-3 p-3">
+                <Factura d={d} p={p} />
+                <div className="text-right shrink-0">
+                  {pendiente(d) ? (
+                    <>
+                      <div className="text-base font-bold text-amber-700">Aplica {money(porAplicar(d), 2)}</div>
+                      <div className="text-xs text-gray-500">saldo allá {money(d.equivalente!.saldo, 2)}</div>
+                    </>
+                  ) : d.equivalente ? (
+                    <>
+                      <div className="text-sm font-medium text-emerald-700">Aplicada</div>
+                      <div className="text-xs text-gray-500">{money(d.aplicado, 2)} con este pago</div>
+                    </>
+                  ) : (
+                    <div className="text-sm">{money(d.aplicado, 2)}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {pendientes.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="text-gray-600">
+              Total por aplicar: <b>{money(pendientes.reduce((s, d) => s + porAplicar(d), 0), 2)}</b> en {pendientes.length}{" "}
+              {pendientes.length === 1 ? "factura" : "facturas"}
+            </span>
+            <BotonCopiar texto={pendientes.map((d) => d.equivalente!.numero).join(", ")} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function PagosEntreSedesPage() {
   const [empresa, setEmpresa] = useState("");
-  const [mes, setMes] = useState(mesActual);
-  const [vista, setVista] = useState<Vista>("recibidos");
-  const [estado, setEstado] = useState<"" | EstadoPagoIC>("");
+  const [mes, setMes] = useState("todos");
+  const [vista, setVista] = useState<Vista>("por_hacer");
+  const [filtroEstado, setFiltroEstado] = useState<"" | EstadoPagoIC>("");
   const [buscar, setBuscar] = useState("");
   const [pagina, setPagina] = useState(0);
   const [abiertos, setAbiertos] = useState<Set<number>>(new Set());
 
   const { datos, cargando, error } = useDatosAdmin<Respuesta>("/api/administracion/intercompania", empresa, mes);
 
-  // Con una sede: lo que pagó y lo que le pagaron. Con todas: una sola lista.
   const sede = datos && NOMBRE_SEDE[datos.empresa] ? datos.empresa : null;
-  const vistaReal: Vista = sede ? (vista === "todos" ? "recibidos" : vista) : "todos";
-
-  const delaVista = useMemo(
+  const todos = datos?.pagos ?? [];
+  const recibidos = sede ? todos.filter((p) => p.receptor === sede) : [];
+  const hechos = sede ? todos.filter((p) => p.pagador === sede) : [];
+  // «Por hacer»: lo que esta sede tiene que aplicar (con todas las sedes, todo lo pendiente), lo más viejo primero.
+  const porHacer = useMemo(
     () =>
-      (datos?.pagos ?? []).filter(
-        (p) => vistaReal === "todos" || (vistaReal === "hechos" ? p.pagador === sede : p.receptor === sede),
-      ),
-    [datos, vistaReal, sede],
+      todos
+        .filter((p) => p.estado === "por_aplicar" && (!sede || p.receptor === sede))
+        .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.numero.localeCompare(b.numero)),
+    [todos, sede],
   );
+  const montoPorHacer = porHacer.reduce((s, p) => s + p.documentos.reduce((t, d) => t + porAplicar(d), 0), 0);
+  const esperanOtra = hechos.filter((p) => p.estado === "por_aplicar");
+
+  const vistaReal: Vista = vista === "por_hacer" ? "por_hacer" : sede ? (vista === "todos" ? "recibidos" : vista) : "todos";
+  const base = vistaReal === "por_hacer" ? porHacer : vistaReal === "recibidos" ? recibidos : vistaReal === "hechos" ? hechos : todos;
 
   const texto = buscar.toLowerCase().trim();
   const pagos = useMemo(
     () =>
-      delaVista.filter(
+      base.filter(
         (p) =>
-          (!estado || p.estado === estado) &&
+          (vistaReal === "por_hacer" || !filtroEstado || p.estado === filtroEstado) &&
           (!texto ||
             p.numero.toLowerCase().includes(texto) ||
             p.ref.toLowerCase().includes(texto) ||
@@ -90,16 +261,9 @@ export default function PagosEntreSedesPage() {
                 (d.equivalente?.numero || "").toLowerCase().includes(texto),
             )),
       ),
-    [delaVista, estado, texto],
+    [base, vistaReal, filtroEstado, texto],
   );
-  useEffect(() => setPagina(0), [vistaReal, estado, texto, datos]);
-
-  const total = (lista: PagoIC[]) => lista.reduce((s, p) => s + p.monto, 0);
-  const hechos = sede ? (datos?.pagos ?? []).filter((p) => p.pagador === sede) : [];
-  const recibidos = sede ? (datos?.pagos ?? []).filter((p) => p.receptor === sede) : [];
-  const porAplicar = delaVista.flatMap((p) =>
-    p.documentos.filter((d) => d.equivalente && d.equivalente.saldo > 0.01).map((d) => ({ p, d })),
-  );
+  useEffect(() => setPagina(0), [vistaReal, filtroEstado, texto, datos]);
 
   const alternar = (id: number) =>
     setAbiertos((prev) => {
@@ -109,12 +273,23 @@ export default function PagosEntreSedesPage() {
       return next;
     });
 
+  const pestanas: { value: Vista; label: string; contador?: number }[] = sede
+    ? [
+        { value: "por_hacer", label: "Por hacer", contador: porHacer.length },
+        { value: "recibidos", label: "Nos pagaron", contador: recibidos.length },
+        { value: "hechos", label: "Pagamos", contador: hechos.length },
+      ]
+    : [
+        { value: "por_hacer", label: "Por aplicar", contador: porHacer.length },
+        { value: "todos", label: "Todos los pagos", contador: todos.length },
+      ];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <EncabezadoAdmin
         icono={<ArrowLeftRight className="h-7 w-7 text-blue-600" />}
         titulo="Pagos entre sedes"
-        subtitulo="Qué facturas pagó cada pago entre sedes y cuál es su factura en la otra sede · desde Odoo, en USD"
+        subtitulo="A qué facturas aplicó cada sede los pagos a otra sede, para aplicarlos igual del otro lado · desde Odoo"
         empresa={empresa}
         setEmpresa={setEmpresa}
         conMes={false}
@@ -124,7 +299,7 @@ export default function PagosEntreSedesPage() {
               value={mes}
               onChange={(e) => setMes(e.target.value)}
               className="border rounded-lg px-3 py-2 text-sm capitalize flex-1 lg:flex-none bg-white"
-              aria-label="Mes"
+              aria-label="Mes del pago"
             >
               <option value="todos">Todos los meses</option>
               {mesesRecientes().map((m) => (
@@ -140,28 +315,28 @@ export default function PagosEntreSedesPage() {
                   {
                     nombre: "Pagos y facturas",
                     filas: pagos.flatMap((p) => {
-                      const base = {
+                      const fila = {
                         Fecha: p.fecha,
                         Pago: p.numero,
-                        Paga: NOMBRE_SEDE[p.pagador],
-                        Cobra: NOMBRE_SEDE[p.receptor],
+                        Paga: N(p.pagador),
+                        Cobra: N(p.receptor),
                         Diario: p.diario,
                         Referencia: p.ref,
-                        "Monto del pago": p.monto,
-                        "Sin aplicar": p.sinAplicar,
-                        Estado: ESTADOS[p.estado].texto(p),
+                        "Monto USD": p.monto,
+                        Moneda: p.moneda,
+                        "Monto en su moneda": p.montoMoneda,
+                        Estado: estado(p, sede).texto,
                       };
-                      if (p.documentos.length === 0) return [base];
+                      if (p.documentos.length === 0) return [fila];
                       return p.documentos.map((d) => ({
-                        ...base,
-                        [`Documento en ${NOMBRE_SEDE[p.pagador]}`]: d.documento,
-                        "Ref (nº en la otra sede)": d.ref,
-                        "Fecha documento": d.fecha,
-                        "Total documento": d.total,
-                        Aplicado: d.aplicado,
-                        [`Factura en ${NOMBRE_SEDE[p.receptor]}`]: d.equivalente?.numero || "",
+                        ...fila,
+                        Factura: d.equivalente?.numero || d.ref,
+                        [`Documento en la sede que paga`]: d.documento,
+                        "Ref de la factura de proveedor": d.ref,
+                        "Aplicado por quien pagó": d.aplicado,
+                        "Por aplicar en quien cobra": porAplicar(d),
+                        "Saldo en quien cobra": d.equivalente ? d.equivalente.saldo : "",
                         "Encontrada por monto": d.equivalente?.porMonto ? "Sí" : "",
-                        [`Saldo en ${NOMBRE_SEDE[p.receptor]}`]: d.equivalente ? d.equivalente.saldo : "",
                       }));
                     }),
                   },
@@ -176,215 +351,153 @@ export default function PagosEntreSedesPage() {
 
       {datos && !cargando && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {sede ? (
-              <>
-                <Tarjeta
-                  titulo={`Pagos que recibió ${NOMBRE_SEDE[sede]}`}
-                  valor={money(total(recibidos))}
-                  detalle={`${recibidos.length} pagos`}
-                  tono="azul"
-                />
-                <Tarjeta
-                  titulo={`Pagos que hizo ${NOMBRE_SEDE[sede]}`}
-                  valor={money(total(hechos))}
-                  detalle={`${hechos.length} pagos`}
-                />
-              </>
-            ) : (
-              <Tarjeta
-                titulo="Pagos entre sedes"
-                valor={money(total(datos.pagos))}
-                detalle={`${datos.pagos.length} pagos`}
-                tono="azul"
-              />
+          {/* Contador: lo que hay que hacer, en una línea. */}
+          <div
+            className={`rounded-xl border p-4 flex flex-wrap items-center gap-x-6 gap-y-1 ${
+              porHacer.length ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"
+            }`}
+          >
+            <p className="text-lg font-semibold text-gray-900">
+              {porHacer.length
+                ? `${porHacer.length} ${porHacer.length === 1 ? "pago" : "pagos"} por aplicar${sede ? ` en ${N(sede)}` : ""} · ${money(montoPorHacer)}`
+                : `Nada por aplicar${sede ? ` en ${N(sede)}` : ""}`}
+            </p>
+            {sede && esperanOtra.length > 0 && (
+              <p className="text-sm text-gray-600">
+                {esperanOtra.length} {esperanOtra.length === 1 ? "pago nuestro espera" : "pagos nuestros esperan"} que la otra sede
+                los aplique
+              </p>
             )}
-            <Tarjeta
-              titulo="Facturas por aplicar en la sede que cobra"
-              valor={money(porAplicar.reduce((s, x) => s + x.d.aplicado, 0))}
-              detalle={`${porAplicar.length} facturas siguen abiertas allá · ${
-                vistaReal === "todos" ? "todos los pagos" : vistaReal === "hechos" ? "de los pagos hechos" : "de los pagos recibidos"
-              }`}
-              tono={porAplicar.length ? "ambar" : "verde"}
-            />
-            <Tarjeta
-              titulo="Sin aplicar por quien pagó"
-              valor={money(delaVista.reduce((s, p) => s + p.sinAplicar, 0))}
-              detalle="Parte de los pagos que todavía no se aplicó a ninguna factura"
-            />
           </div>
 
-          <Aviso tono="azul">
-            Cada pago trae las facturas a las que lo aplicó la sede que pagó y, al lado, la misma factura en la sede que
-            cobra (se busca por la referencia de la factura de proveedor, que es el número de la factura de la otra sede).
-            Si allá sigue con saldo, hay que aplicar el cobro a esa factura en Odoo. «Por monto» = la referencia no
-            coincidió y se tomó la única factura del mismo monto en ±15 días: revísala.
-          </Aviso>
+          {/* Los 3 pasos. */}
+          <ol className="grid sm:grid-cols-3 gap-2 text-sm">
+            {[
+              "Mira qué facturas pagó la otra sede con cada pago.",
+              "En Odoo, aplica tu cobro a esas mismas facturas por el monto que dice «Aplica».",
+              "Recarga esta pantalla: el pago pasa solo a «Listo».",
+            ].map((t, i) => (
+              <li key={i} className="flex gap-2 rounded-lg border bg-white p-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
+                  {i + 1}
+                </span>
+                <span className="text-gray-700">{t}</span>
+              </li>
+            ))}
+          </ol>
 
-          <Card>
-            <CardContent className="p-4 space-y-4">
-              <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
-                {sede ? (
-                  <Pestanas
-                    opciones={[
-                      { value: "recibidos", label: "Pagos que recibimos", contador: recibidos.length },
-                      { value: "hechos", label: "Pagos que hicimos", contador: hechos.length },
-                    ]}
-                    valor={vistaReal}
-                    onChange={(v) => setVista(v as Vista)}
-                  />
-                ) : (
-                  <span />
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <select
-                    value={estado}
-                    onChange={(e) => setEstado(e.target.value as any)}
-                    className="border rounded-lg px-3 py-2 text-sm bg-white"
-                    aria-label="Estado"
-                  >
-                    <option value="">Todos los estados</option>
-                    <option value="por_aplicar">Por aplicar en la sede que cobra</option>
-                    <option value="sin_aplicar">No aplicado por quien pagó</option>
-                    <option value="sin_equivalente">Factura sin equivalente</option>
-                    <option value="listo">Aplicado en las dos</option>
-                  </select>
-                  <Input
-                    value={buscar}
-                    onChange={(e) => setBuscar(e.target.value)}
-                    placeholder="Buscar pago, referencia o factura"
-                    className="w-full sm:w-64"
-                  />
-                </div>
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+            <Pestanas opciones={pestanas} valor={vistaReal} onChange={setVista} />
+            <div className="flex flex-wrap gap-2">
+              {vistaReal !== "por_hacer" && (
+                <select
+                  value={filtroEstado}
+                  onChange={(e) => setFiltroEstado(e.target.value as any)}
+                  className="border rounded-lg px-3 py-2 text-sm bg-white flex-1"
+                  aria-label="Estado"
+                >
+                  <option value="">Todos los estados</option>
+                  <option value="por_aplicar">Por aplicar</option>
+                  <option value="sin_aplicar">Sin repartir en facturas</option>
+                  <option value="sin_equivalente">Factura no encontrada</option>
+                  <option value="listo">Listo en las dos sedes</option>
+                </select>
+              )}
+              <Input
+                value={buscar}
+                onChange={(e) => setBuscar(e.target.value)}
+                placeholder="Buscar pago o factura"
+                className="w-full sm:w-60"
+              />
+            </div>
+          </div>
+
+          {vistaReal === "por_hacer" ? (
+            <div className="space-y-3">
+              {pagos.length === 0 && (
+                <Card>
+                  <CardContent className="py-10 text-center text-gray-500 flex flex-col items-center gap-2">
+                    <ClipboardList className="h-6 w-6" />
+                    {texto ? "Nada coincide con la búsqueda." : "No hay pagos por aplicar."}
+                  </CardContent>
+                </Card>
+              )}
+              {deLaPagina(pagos, pagina).map((p) => (
+                <TarjetaPago key={p.id} p={p} sede={sede} soloPendientes />
+              ))}
+              <Paginacion pagina={pagina} total={pagos.length} cambiar={setPagina} />
+            </div>
+          ) : (
+            <>
+              {/* Celular: tarjetas. */}
+              <div className="space-y-3 md:hidden">
+                {pagos.length === 0 && <p className="text-center text-gray-500 py-8">No hay pagos con ese filtro.</p>}
+                {deLaPagina(pagos, pagina).map((p) => (
+                  <TarjetaPago key={p.id} p={p} sede={sede} soloPendientes={false} />
+                ))}
               </div>
 
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8" />
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Pago</TableHead>
-                      <TableHead>De → a</TableHead>
-                      <TableHead>Diario / referencia</TableHead>
-                      <TableHead className="text-right">Monto</TableHead>
-                      <TableHead className="text-right">Sin aplicar</TableHead>
-                      <TableHead>Facturas</TableHead>
-                      <TableHead>Estado</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pagos.length === 0 && <FilaVacia columnas={9} texto="No hay pagos entre sedes con ese filtro." />}
-                    {deLaPagina(pagos, pagina).map((p) => {
-                      const abierto = abiertos.has(p.id);
-                      return (
-                        <Fragment key={p.id}>
-                          <TableRow className="cursor-pointer hover:bg-slate-50" onClick={() => alternar(p.id)}>
-                            <TableCell>
-                              {abierto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap">{fechaCorta(p.fecha)}</TableCell>
-                            <TableCell className="font-medium whitespace-nowrap">{p.numero}</TableCell>
-                            <TableCell className="whitespace-nowrap">
-                              {NOMBRE_SEDE[p.pagador]} → {NOMBRE_SEDE[p.receptor]}
-                            </TableCell>
-                            <TableCell className="max-w-[280px]">
-                              <div className="text-xs text-gray-500">{p.diario}</div>
-                              <div className="truncate" title={p.ref}>
-                                {p.ref || "—"}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right whitespace-nowrap">{money(p.monto, 2)}</TableCell>
-                            <TableCell className="text-right whitespace-nowrap">
-                              {p.sinAplicar > 0.01 ? money(p.sinAplicar, 2) : "—"}
-                            </TableCell>
-                            <TableCell>{p.documentos.length}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={ESTADOS[p.estado].clase}>
-                                {ESTADOS[p.estado].texto(p)}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                          {abierto && (
-                            <TableRow className="bg-slate-50/60 hover:bg-slate-50/60">
-                              <TableCell />
-                              <TableCell colSpan={8} className="py-3">
-                                {p.documentos.length === 0 ? (
-                                  <p className="text-sm text-gray-500">
-                                    {NOMBRE_SEDE[p.pagador]} todavía no aplicó este pago a ninguna factura en Odoo.
-                                  </p>
-                                ) : (
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead>En {NOMBRE_SEDE[p.pagador]}</TableHead>
-                                        <TableHead>Ref</TableHead>
-                                        <TableHead>Fecha</TableHead>
-                                        <TableHead className="text-right">Total</TableHead>
-                                        <TableHead className="text-right">Aplicado con este pago</TableHead>
-                                        <TableHead>Factura en {NOMBRE_SEDE[p.receptor]}</TableHead>
-                                        <TableHead className="text-right">Saldo en {NOMBRE_SEDE[p.receptor]}</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {p.documentos.map((d) => (
-                                        <TableRow key={d.documento}>
-                                          <TableCell className="whitespace-nowrap">
-                                            <div className="font-medium">{d.documento}</div>
-                                            <div className="text-xs text-gray-500">{TIPO_DOC[d.tipo] || "Otro asiento"}</div>
-                                          </TableCell>
-                                          <TableCell className="max-w-[220px] truncate" title={d.ref}>
-                                            {d.ref || "—"}
-                                          </TableCell>
-                                          <TableCell className="whitespace-nowrap">{fechaCorta(d.fecha)}</TableCell>
-                                          <TableCell className="text-right whitespace-nowrap">{money(d.total, 2)}</TableCell>
-                                          <TableCell className="text-right whitespace-nowrap font-medium">
-                                            {money(d.aplicado, 2)}
-                                          </TableCell>
-                                          <TableCell className="whitespace-nowrap">
-                                            {d.equivalente ? (
-                                              <>
-                                                <span className="font-medium">{d.equivalente.numero}</span>
-                                                {d.equivalente.porMonto && (
-                                                  <Badge variant="outline" className="ml-2 bg-amber-50 text-amber-800 border-amber-200">
-                                                    Por monto
-                                                  </Badge>
-                                                )}
-                                              </>
-                                            ) : TIPO_DOC[d.tipo] ? (
-                                              <span className="text-red-700">No se encontró</span>
-                                            ) : (
-                                              "—"
-                                            )}
-                                          </TableCell>
-                                          <TableCell className="text-right whitespace-nowrap">
-                                            {d.equivalente ? (
-                                              d.equivalente.saldo > 0.01 ? (
-                                                <span className="text-amber-700 font-medium">{money(d.equivalente.saldo, 2)}</span>
-                                              ) : (
-                                                <span className="text-emerald-700">Pagada</span>
-                                              )
-                                            ) : (
-                                              "—"
-                                            )}
-                                          </TableCell>
-                                        </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                )}
+              {/* Escritorio: tabla; clic en un pago = sus facturas. */}
+              <Card className="hidden md:block">
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-8" />
+                        <TableHead>Pago</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
+                        <TableHead className="text-center">Facturas</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pagos.length === 0 && <FilaVacia columnas={5} texto="No hay pagos con ese filtro." />}
+                      {deLaPagina(pagos, pagina).map((p) => {
+                        const abierto = abiertos.has(p.id);
+                        const e = estado(p, sede);
+                        return (
+                          <Fragment key={p.id}>
+                            <TableRow className="cursor-pointer hover:bg-slate-50" onClick={() => alternar(p.id)}>
+                              <TableCell>
+                                {abierto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                              </TableCell>
+                              <TableCell className="max-w-[420px]">
+                                <div className="font-medium">
+                                  {titulo(p, sede)} · {fechaCorta(p.fecha)}
+                                </div>
+                                <div className="text-xs text-gray-500 truncate" title={p.ref}>
+                                  <EnlaceOdoo url={p.url}>{p.numero}</EnlaceOdoo> · {p.diario}
+                                  {p.ref ? ` · ${p.ref}` : ""}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                <Monto p={p} />
+                              </TableCell>
+                              <TableCell className="text-center">{p.documentos.length}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={e.clase}>
+                                  {e.texto}
+                                </Badge>
                               </TableCell>
                             </TableRow>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            {abierto && (
+                              <TableRow className="bg-slate-50/60 hover:bg-slate-50/60">
+                                <TableCell />
+                                <TableCell colSpan={4} className="py-3">
+                                  <TarjetaPago p={p} sede={sede} soloPendientes={false} />
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
               <Paginacion pagina={pagina} total={pagos.length} cambiar={setPagina} />
-            </CardContent>
-          </Card>
+            </>
+          )}
         </>
       )}
     </div>
