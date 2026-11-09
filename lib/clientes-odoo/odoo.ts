@@ -1,5 +1,4 @@
 import { callOdooRPCEstricto } from "@/lib/odoo";
-import { query } from "@/lib/db";
 import { sinRetirados } from "@/lib/vendedores/retirados";
 import { claveRif, rifCompacto, type ClienteNuevo } from "./validar";
 
@@ -10,6 +9,7 @@ import { claveRif, rifCompacto, type ClienteNuevo } from "./validar";
 
 const VENEZUELA = 238;
 const SEDES_VE = [9, 10];
+const ETIQUETA_CLIENTE = 5;
 const ODOO = (process.env.NEXT_PUBLIC_ODOO_URL || "").replace(/\/+$/, "");
 
 export const urlContacto = (id: number) => `${ODOO}/web#id=${id}&model=res.partner&view_type=form`;
@@ -65,13 +65,25 @@ export async function estadosVenezuela(): Promise<{ id: number; nombre: string }
   return r.map((s) => ({ id: s.id, nombre: String(s.name) }));
 }
 
-/** Vendedores activos de la sede (tabla `sellers`, `user_id` = usuario de Odoo). */
+/**
+ * Vendedores de la sede = usuarios activos de Odoo que ya son vendedor de algún
+ * cliente de esa sede (la tabla `sellers` es solo la de leads: le faltaban casi todos).
+ */
 export async function vendedoresDeSede(sede: number): Promise<{ id: number; nombre: string }[]> {
-  const { rows } = await query(
-    "SELECT user_id, name FROM sellers WHERE cids = ? AND activo = 1 AND user_id IS NOT NULL ORDER BY name",
-    [sede],
-  );
-  return sinRetirados(rows as { user_id: number; name: string }[]).map((s) => ({ id: Number(s.user_id), nombre: s.name }));
+  const grupos =
+    (await callOdooRPCEstricto<any[]>(
+      "res.partner",
+      "read_group",
+      [[["customer_rank", ">", 0], ["company_id", "=", sede], ["user_id", "!=", false], ["user_id.active", "=", true]], ["user_id"], ["user_id"]],
+      { lazy: false, context: { allowed_company_ids: [sede] } },
+    )) || [];
+  const filas = grupos
+    .map((g) => m2o(g.user_id))
+    .filter((u): u is [number, string] => !!u)
+    .map(([id, nombre]) => ({ user_id: id, name: nombre.trim() }));
+  return sinRetirados(filas)
+    .map((u) => ({ id: u.user_id, nombre: u.name }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 }
 
 export class ClienteDuplicado extends Error {
@@ -107,6 +119,8 @@ export async function crearCliente(c: ClienteNuevo, autor: { nombre: string; ema
     user_id: c.vendedorId,
     company_id: c.sede,
     customer_rank: 1,
+    // Etiqueta «Cliente» (res.partner.category 5), la que ponen a mano en Odoo.
+    category_id: [[4, ETIQUETA_CLIENTE]],
     lang: "es_VE",
     ...(persona ? { identification_id: c.rif, nationality: c.rif[0] } : {}),
   };
