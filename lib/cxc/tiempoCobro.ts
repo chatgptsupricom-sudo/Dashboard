@@ -4,6 +4,7 @@ import { RELACIONADA } from "@/lib/cxc/cobros";
 import { esCarteraVieja } from "@/lib/cxc/carteraVieja";
 import { esPlazoCredito } from "@/lib/cxc/credito";
 import { terminosSinIC } from "@/lib/intercompania";
+import { claveZona, normalizarTexto, ZONAS_MAPA } from "@/lib/mapaClientes/zonas";
 
 /**
  * "Tiempo de cobro": cuántos días pasan desde que se emite una factura a
@@ -39,6 +40,8 @@ export interface FacturaCobrada {
   partnerId: number;
   cliente: string;
   vendedor: string;
+  /** Estado del cliente en Odoo (lo mismo que x_zona_geografica de Studio). */
+  zona: string;
   emision: string;
   /** Fecha del último abono (la que la dejó pagada). */
   pagada: string;
@@ -67,8 +70,9 @@ export interface TiempoCobro {
   resumen: Grupo & { mediana: number };
   tramos: { label: string; facturas: number; monto: number; pct: number }[];
   porPlazo: (Grupo & { plazo: number })[];
-  clientes: (Grupo & { partnerId: number })[];
+  clientes: (Grupo & { partnerId: number; zona: string })[];
   vendedores: Grupo[];
+  zonas: Grupo[];
   facturas: FacturaCobrada[];
 }
 
@@ -159,6 +163,30 @@ async function ultimosAbonos(conciliaciones: any[]): Promise<Map<number, { fecha
   return ultimo;
 }
 
+export const SIN_ZONA = "Sin zona";
+
+// Zona = estado (state_id) del cliente de la factura; si ese contacto no lo
+// tiene, el de su empresa. Es lo mismo que el campo de Studio
+// x_zona_geografica (related partner_id.state_id.name). En Odoo un mismo estado
+// sale escrito de varias formas ("Bolívar", "Bolivar (EC)", "DTTO CAPITAL",
+// "Ciudad de Panamá"): se juntan con claveZona() del mapa de clientes, salvo
+// Panamá Oeste, que el mapa junta con Panamá solo porque el geojson no las separa.
+function nombreZona(estado: string): string {
+  if (!estado) return "";
+  if (normalizarTexto(estado.replace(/\(.*?\)/g, " ")) === "PANAMA OESTE") return "Panamá Oeste";
+  const clave = claveZona(estado);
+  if (clave === "PANAMA") return "Panamá";
+  return ZONAS_MAPA.VE[clave] ?? ZONAS_MAPA.PA[clave] ?? estado.replace(/\s*\([A-Z]{2}\)$/, "").trim();
+}
+
+async function zonasDeClientes(partnerIds: number[]): Promise<Map<number, string>> {
+  const nombre = (v: any) => (Array.isArray(v) ? nombreZona(String(v[1] || "")) : "");
+  const contactos = await leer("res.partner", partnerIds, ["id", "state_id", "commercial_partner_id"]);
+  const faltan = [...new Set(contactos.filter((c) => !nombre(c.state_id)).map((c) => idDe(c.commercial_partner_id)).filter((id): id is number => !!id))];
+  const empresas = new Map((await leer("res.partner", faltan, ["id", "state_id"])).map((e) => [e.id, nombre(e.state_id)]));
+  return new Map(contactos.map((c) => [c.id, nombre(c.state_id) || empresas.get(idDe(c.commercial_partner_id) ?? -1) || SIN_ZONA]));
+}
+
 // Plazos a crédito (número en el nombre, esPlazoCredito) → días del nombre.
 async function diasPlazoCredito(): Promise<Map<number, number>> {
   const plazos = await callOdooRPC<any[]>("account.payment.term", "search_read", [[]], { fields: ["id", "name"], context: { active_test: false } });
@@ -203,6 +231,7 @@ export async function calcularTiempoCobro(
       "invoice_payment_term_id", "amount_total_signed", "invoice_user_id"]),
     diasPlazoCredito(),
   ]);
+  const zonas = await zonasDeClientes([...new Set(moves.map((m) => idDe(m.partner_id)).filter((id): id is number => !!id))]);
   // Crédito = plazo con número en el nombre (esPlazoCredito, como el resto de
   // CxC). Pero los DÍAS del plazo salen del vencimiento de la factura: es lo
   // que define "a tiempo", y el nombre que devuelve la API (en inglés) quedó
@@ -222,6 +251,7 @@ export async function calcularTiempoCobro(
       partnerId: idDe(m.partner_id) || 0,
       cliente: m.partner_id?.[1] || "Sin cliente",
       vendedor: m.invoice_user_id?.[1] || "Sin vendedor",
+      zona: zonas.get(idDe(m.partner_id) ?? -1) || SIN_ZONA,
       emision: m.invoice_date,
       pagada,
       // Un abono anterior a la factura (anticipo) no da días negativos.
@@ -253,9 +283,12 @@ export async function calcularTiempoCobro(
       .map(([k, fs]) => ({ ...agrupar(k === "0" ? "0 días (contado)" : `${k} días`, fs), plazo: Number(k) }))
       .sort((a, b) => a.plazo - b.plazo),
     clientes: [...clientesMap]
-      .map(([k, fs]) => ({ ...agrupar(fs[0].cliente, fs), partnerId: Number(k) }))
+      .map(([k, fs]) => ({ ...agrupar(fs[0].cliente, fs), partnerId: Number(k), zona: fs[0].zona }))
       .sort((a, b) => b.monto - a.monto),
     vendedores: [...porClave(facturas, (f) => f.vendedor)]
+      .map(([k, fs]) => agrupar(k, fs))
+      .sort((a, b) => b.monto - a.monto),
+    zonas: [...porClave(facturas, (f) => f.zona)]
       .map(([k, fs]) => agrupar(k, fs))
       .sort((a, b) => b.monto - a.monto),
     facturas,
