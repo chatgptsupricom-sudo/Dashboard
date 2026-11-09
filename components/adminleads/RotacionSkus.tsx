@@ -77,7 +77,8 @@ type SortCol =
 
 const MAX_FILAS = 200;
 
-export function RotacionSkus() {
+/** `sede`: solo para SuperAdmin / BI (9, 10 o "venezuela"); los demás roles usan su cids. */
+export function RotacionSkus({ sede }: { sede?: string } = {}) {
   const [data, setData] = useState<Respuesta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +98,7 @@ export function RotacionSkus() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/adminleads/rotacion");
+        const res = await fetch(`/api/adminleads/rotacion${sede ? `?sede=${sede}` : ""}`);
         const json = await res.json();
         if (cancel) return;
         if (!res.ok || !json.success) {
@@ -114,7 +115,7 @@ export function RotacionSkus() {
     return () => {
       cancel = true;
     };
-  }, []);
+  }, [sede]);
 
   // Categoría, marca y búsqueda: lo que cuentan las tarjetas. El estado no,
   // porque las tarjetas son el filtro de estado.
@@ -156,6 +157,7 @@ export function RotacionSkus() {
 
   const exportUrl = (formato: "xlsx" | "csv") => {
     const p = new URLSearchParams({ formato });
+    if (sede) p.set("sede", sede);
     if (categoria) p.set("categoria", categoria);
     if (marca) p.set("marca", marca);
     if (estado) p.set("estado", estado);

@@ -3,6 +3,8 @@ import { ultimaVenta } from "@/lib/compras/datosOdoo";
 import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
 import { IDS_SEDES, listasPrincipales } from "@/lib/calidad-odoo/odoo";
 import { ultimosIngresos } from "@/lib/inteligencia-negocio/reportes";
+import { veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
+import { terminosSinIC } from "@/lib/intercompania";
 
 /**
  * Reporte de rotación de SKUs para el equipo de contenido (adminleads).
@@ -105,6 +107,7 @@ export async function calcularRotacion(
       // el resto de los reportes de ventas del panel).
       ["partner_id.name", "not ilike", "supricom"],
       ["partner_id.name", "not ilike", "office solution"],
+      ...terminosSinIC("move_id.commercial_partner_id"),
       companyFilter,
     ],
   ], { fields: ["product_id", "quantity", "date"], limit: 100000 });
@@ -300,9 +303,18 @@ export async function calcularRotacion(
   return { filas, categorias, marcas, periodo: { desde, hasta } };
 }
 
-export function resolverCompanies(payload: any): number[] | null {
+/**
+ * Sedes del reporte. SuperAdmin e Inteligencia de Negocio eligen con `sede`
+ * (9 Valencia, 10 Caracas, "venezuela" las dos); sin elegir, el SuperAdmin ve
+ * las tres y BI las dos de Venezuela. Los demás roles, la de su `cids`.
+ */
+export function resolverCompanies(payload: any, sede?: string | null): number[] | null {
   const rol = String(payload?.role || "").toLowerCase().trim();
-  if (rol === "superadmin") return [7, 9, 10];
+  if (veTodasLasSedes(rol)) {
+    if (sede === "9" || sede === "10") return [Number(sede)];
+    if (sede === "venezuela") return [9, 10];
+    return rol === "superadmin" ? [7, 9, 10] : [9, 10];
+  }
   const cid = parseInt(payload?.cids, 10);
   if (!Number.isFinite(cid) || cid <= 0) return null;
   return [cid];

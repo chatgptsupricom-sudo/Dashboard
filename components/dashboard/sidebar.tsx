@@ -838,6 +838,11 @@ export function Sidebar({
                           permission: "adminleads",
                         },
                         {
+                          label: "Dashboard de Productos",
+                          href: `/${locale}/adminleads/dashboard`,
+                          permission: "productos_adminleads",
+                        },
+                        {
                           label: t("monitoreo_leads"),
                           href: `/${locale}/adminleads/monitoreo_leads`,
                           permission: "monitoreo_leads",
