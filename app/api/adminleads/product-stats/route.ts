@@ -1,27 +1,24 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
+import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
+import { resolverCompanies } from "@/lib/adminleads/rotacion";
 
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   // El Diseñador usa este mismo dashboard en /disenador/dashboard: ve las
-  // ventas de su sucursal (cids) igual que AdminLeads.
-  const auth = await requireRoles(request, ["adminleads", "diseñador"]);
+  // ventas de su sucursal (cids) igual que AdminLeads. Inteligencia de
+  // Negocio (y el SuperAdmin) eligen sede con `?sede=` (resolverCompanies).
+  const auth = await requireRoles(request, ["adminleads", "diseñador", ROL_BI]);
   if (auth.error) return auth.error;
 
   try {
-    const payload = auth.payload!;
-    const isSuperAdmin = (payload.role as string)?.toLowerCase().trim() === "superadmin";
-
-    let companyFilter: any[];
-    if (isSuperAdmin) {
-      companyFilter = ["company_id", "in", [7, 9, 10]];
-    } else {
-      if (!payload.cids)
-        return NextResponse.json({ success: false, brands: [], categories: [] }, { status: 403 });
-      companyFilter = ["company_id", "=", parseInt(payload.cids as any)];
-    }
-
     const { searchParams } = new URL(request.url);
+    const companies = resolverCompanies(auth.payload!, searchParams.get("sede"));
+    if (!companies)
+      return NextResponse.json({ success: false, brands: [], categories: [] }, { status: 403 });
+    const companyFilter = ["company_id", "in", companies];
+
     // `desde`/`hasta` (YYYY-MM-DD) tienen prioridad; si no vienen, se cae al
     // viejo `months` (rango de los últimos N meses) para no romper llamadas
     // existentes.
@@ -66,6 +63,7 @@ export async function GET(request: NextRequest) {
           // lib/reportes-comerciales/reporteTrimestral.ts y reporte-diario).
           ["partner_id.name", "not ilike", "supricom"],
           ["partner_id.name", "not ilike", "office solution"],
+          ...terminosSinIC("move_id.commercial_partner_id"),
           companyFilter,
         ],
       ],
@@ -194,3 +192,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, brands: [], categories: [] }, { status: 500 });
   }
 }
+
+// Inteligencia de Negocio no ve intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);

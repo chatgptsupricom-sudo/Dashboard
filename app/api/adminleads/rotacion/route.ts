@@ -1,6 +1,7 @@
 import { calcularRotacion, resolverCompanies } from "@/lib/adminleads/rotacion";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
+import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -12,12 +13,12 @@ export const maxDuration = 60;
  * precio de venta; nada de costos, márgenes ni facturación (ver
  * lib/adminleads/rotacion.ts).
  */
-export async function GET(request: NextRequest) {
+async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
 
   try {
-    const companies = resolverCompanies(auth.payload!);
+    const companies = resolverCompanies(auth.payload!, new URL(request.url).searchParams.get("sede"));
     if (!companies) {
       return NextResponse.json(
         { success: false, error: "Sin sucursal asignada" },
@@ -35,3 +36,6 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+// Inteligencia de Negocio no ve intercompañía (lib/intercompania.ts).
+export const GET = conSinIntercompaniaParaBI(leerGET);
