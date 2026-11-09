@@ -113,6 +113,11 @@ export function revisarRif(entrada: string, tipo: TipoCliente): RifRevisado {
 
 /** Operadoras móviles de Venezuela. */
 const MOVILES = ["412", "414", "416", "422", "424", "426"];
+/** Prefijos para elegir en la pantalla (el fijo se escribe entero, con su código de área). */
+export const OPERADORAS = MOVILES.map((m) => `0${m}`);
+
+/** Letras del RIF que se ofrecen según el tipo de cliente. */
+export const LETRAS_RIF: Record<TipoCliente, string[]> = { empresa: ["J", "G", "P", "C"], persona: ["V", "E"] };
 
 export interface TelefonoRevisado {
   ok: boolean;

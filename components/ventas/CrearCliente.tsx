@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  LETRAS_RIF,
+  OPERADORAS,
   revisarEmail,
   revisarRif,
   revisarTelefono,
@@ -25,10 +27,15 @@ type Clave = keyof ClienteNuevo;
 
 const VACIO = {
   tipo: "empresa" as TipoCliente,
+  rifLetra: "J",
+  /** Solo el número; la letra va en rifLetra. */
   rif: "",
   nombre: "",
   comercial: "",
+  telPre: OPERADORAS[0],
+  /** Sin el prefijo (con «Fijo», el número entero con su código de área). */
   telefono: "",
+  tel2Pre: OPERADORAS[0],
   telefono2: "",
   email: "",
   direccion: "",
@@ -37,6 +44,8 @@ const VACIO = {
   vendedorId: "",
 };
 type Form = typeof VACIO;
+const FIJO = "fijo";
+const unirTelefono = (pre: string, num: string) => (pre === FIJO || !num ? num : pre + num);
 
 /**
  * Crear un cliente de Valencia o Caracas en Odoo con validación de RIF
@@ -83,7 +92,17 @@ export function CrearCliente() {
     cargar();
   }, [cargar]);
 
-  const { errores } = validarCliente({ ...form, sede: sede ?? 0, estadoId: Number(form.estadoId), vendedorId: Number(form.vendedorId) });
+  // Lo que se valida y se manda: prefijos ya unidos al número.
+  const datos = {
+    ...form,
+    sede: sede ?? 0,
+    rif: form.rif ? form.rifLetra + form.rif : "",
+    telefono: unirTelefono(form.telPre, form.telefono),
+    telefono2: unirTelefono(form.tel2Pre, form.telefono2),
+    estadoId: Number(form.estadoId),
+    vendedorId: Number(form.vendedorId),
+  };
+  const { errores } = validarCliente(datos);
   const errorDe = (c: Clave) => erroresServidor[c] || (tocados[c] ? errores[c] : undefined);
   const tocar = (c: Clave) => setTocados((t) => ({ ...t, [c]: true }));
 
@@ -91,19 +110,20 @@ export function CrearCliente() {
     setForm((f) => {
       const n = { ...f, [c]: v };
       if (c === "nombre" && !comercialTocado) n.comercial = sugerirComercial(v);
+      if (c === "tipo") n.rifLetra = LETRAS_RIF[v as TipoCliente][0];
       return n;
     });
     setErroresServidor((e) => ({ ...e, [c]: undefined }));
     if (c === "comercial") setComercialTocado(true);
-    if (c === "rif" || c === "tipo") setCoincidencias(null);
+    if (c === "rif" || c === "rifLetra" || c === "tipo") setCoincidencias(null);
   };
 
   const buscarRif = async () => {
     tocar("rif");
-    if (!revisarRif(form.rif, form.tipo).ok) return;
+    if (!revisarRif(datos.rif, form.tipo).ok) return;
     setBuscandoRif(true);
     try {
-      const r = await fetch(`/api/ventas/clientes?rif=${encodeURIComponent(form.rif)}${sede ? `&sede=${sede}` : ""}`);
+      const r = await fetch(`/api/ventas/clientes?rif=${encodeURIComponent(datos.rif)}${sede ? `&sede=${sede}` : ""}`);
       const d = await r.json();
       if (r.ok) setCoincidencias(d.coincidencias);
     } finally {
@@ -115,7 +135,7 @@ export function CrearCliente() {
   const enOtra = (coincidencias || []).filter((c) => c.sede !== sede && c.sede !== null);
 
   const guardar = async () => {
-    setTocados(Object.fromEntries(Object.keys(VACIO).map((k) => [k, true])));
+    setTocados(Object.fromEntries(Object.keys(errores).map((k) => [k, true])));
     if (Object.keys(errores).length || enEstaSede.length) return;
     setGuardando(true);
     setErrorGeneral("");
@@ -123,7 +143,7 @@ export function CrearCliente() {
       const r = await fetch("/api/ventas/clientes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, sede, estadoId: Number(form.estadoId), vendedorId: Number(form.vendedorId) }),
+        body: JSON.stringify(datos),
       });
       const d = await r.json();
       if (r.status === 409) return setCoincidencias(d.coincidencias);
@@ -172,7 +192,7 @@ export function CrearCliente() {
     );
   }
 
-  const rifVista = form.rif && revisarRif(form.rif, form.tipo).ok ? revisarRif(form.rif, form.tipo).valor : "";
+  const rifVista = datos.rif && revisarRif(datos.rif, form.tipo).ok ? revisarRif(datos.rif, form.tipo).valor : "";
   const telVista = (v: string) => (v && revisarTelefono(v).ok ? revisarTelefono(v).valor : "");
 
   return (
@@ -197,7 +217,7 @@ export function CrearCliente() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Identificación</CardTitle>
-              <CardDescription>Escribe el RIF como venga: el panel lo deja sin guiones y revisa el dígito verificador.</CardDescription>
+              <CardDescription>Elige la letra y escribe el número: el panel revisa el dígito verificador.</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               {!sedeFija && (
@@ -232,9 +252,17 @@ export function CrearCliente() {
               </Campo>
 
               <Campo etiqueta={form.tipo === "empresa" ? "RIF" : "Cédula o RIF"} error={errorDe("rif")} ayuda={rifVista && `Se guarda como ${rifVista}`}>
-                <div className="relative">
-                  <Input value={form.rif} onChange={(e) => poner("rif", e.target.value)} onBlur={buscarRif} placeholder={form.tipo === "empresa" ? "J-12345678-9" : "V-12345678"} autoComplete="off" />
-                  {buscandoRif && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
+                <div className="flex gap-2">
+                  <Select value={form.rifLetra} onValueChange={(v) => poner("rifLetra", v)}>
+                    <SelectTrigger className="w-20" aria-label="Letra del RIF"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {LETRAS_RIF[form.tipo].map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <div className="relative flex-1">
+                    <Input inputMode="numeric" value={form.rif} onChange={(e) => poner("rif", e.target.value.replace(/\D/g, ""))} onBlur={buscarRif} placeholder={form.tipo === "empresa" ? "123456789" : "12345678"} maxLength={9} autoComplete="off" />
+                    {buscandoRif && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
+                  </div>
                 </div>
               </Campo>
 
@@ -264,11 +292,11 @@ export function CrearCliente() {
               <CardTitle className="text-base">Contacto</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
-              <Campo etiqueta="Teléfono" error={errorDe("telefono")} ayuda={telVista(form.telefono) && `Se guarda como ${telVista(form.telefono)}`}>
-                <Input type="tel" inputMode="tel" value={form.telefono} onChange={(e) => poner("telefono", e.target.value)} onBlur={() => tocar("telefono")} placeholder="0412-1234567" />
+              <Campo etiqueta="Teléfono" error={errorDe("telefono")} ayuda={telVista(datos.telefono) && `Se guarda como ${telVista(datos.telefono)}`}>
+                <Telefono prefijo={form.telPre} numero={form.telefono} onPrefijo={(v) => poner("telPre", v)} onNumero={(v) => poner("telefono", v)} onBlur={() => tocar("telefono")} />
               </Campo>
-              <Campo etiqueta="Otro teléfono (opcional)" error={errorDe("telefono2")} ayuda={telVista(form.telefono2) && `Se guarda como ${telVista(form.telefono2)}`}>
-                <Input type="tel" inputMode="tel" value={form.telefono2} onChange={(e) => poner("telefono2", e.target.value)} onBlur={() => tocar("telefono2")} placeholder="0241-1234567" />
+              <Campo etiqueta="Otro teléfono (opcional)" error={errorDe("telefono2")} ayuda={telVista(datos.telefono2) && `Se guarda como ${telVista(datos.telefono2)}`}>
+                <Telefono prefijo={form.tel2Pre} numero={form.telefono2} onPrefijo={(v) => poner("tel2Pre", v)} onNumero={(v) => poner("telefono2", v)} onBlur={() => tocar("telefono2")} />
               </Campo>
               <Campo etiqueta="Correo" className="sm:col-span-2" error={errorDe("email")} ayuda={form.email && revisarEmail(form.email).ok && form.email !== revisarEmail(form.email).valor ? `Se guarda como ${revisarEmail(form.email).valor}` : undefined}>
                 <Input type="email" inputMode="email" value={form.email} onChange={(e) => poner("email", e.target.value)} onBlur={() => tocar("email")} placeholder="compras@empresa.com" />
@@ -324,6 +352,31 @@ function Campo({ etiqueta, error, ayuda, className, children }: { etiqueta: stri
       <Label>{etiqueta}</Label>
       {children}
       {error ? <p className="text-xs text-red-600 dark:text-red-400">{error}</p> : ayuda ? <p className="text-xs text-muted-foreground">{ayuda}</p> : null}
+    </div>
+  );
+}
+
+/** Operadora en lista + los 7 dígitos; «Fijo» = número entero con su código de área. */
+function Telefono({ prefijo, numero, onPrefijo, onNumero, onBlur }: { prefijo: string; numero: string; onPrefijo: (v: string) => void; onNumero: (v: string) => void; onBlur: () => void }) {
+  const fijo = prefijo === FIJO;
+  return (
+    <div className="flex gap-2">
+      <Select value={prefijo} onValueChange={(v) => { onPrefijo(v); onNumero(""); }}>
+        <SelectTrigger className="w-24" aria-label="Operadora"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {OPERADORAS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+          <SelectItem value={FIJO}>Fijo</SelectItem>
+        </SelectContent>
+      </Select>
+      <Input
+        type="tel"
+        inputMode="numeric"
+        className="flex-1"
+        value={numero}
+        onChange={(e) => onNumero(fijo ? e.target.value : e.target.value.replace(/\D/g, "").slice(0, 7))}
+        onBlur={onBlur}
+        placeholder={fijo ? "0241-1234567" : "1234567"}
+      />
     </div>
   );
 }
