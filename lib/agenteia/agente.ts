@@ -11,6 +11,7 @@ import {
   SQL_SIN_VENDEDOR_LOCAL,
 } from "@/lib/smartbit";
 import { cargarDesglose, normalizar } from "@/lib/gerente_venta/reporteVentas";
+import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { TABLA_OAUTH, tokenMcp } from "@/lib/agenteia/mcpOauth";
 import type { Uso } from "@/lib/agenteia/consumo";
 import { MODELOS_AGENTE } from "@/lib/agenteia/modelos";
@@ -62,7 +63,7 @@ const SEDES = [9, 10, 7];
 const SISTEMA = `Eres el analista de datos de SUPRICOM y respondes a la directiva y a los usuarios del panel administrativo a los que el SuperAdmin les dio acceso. Respondes en español, con cifras verificadas.
 
 ## Fuentes
-- **Ventas por vendedor, cliente, marca o producto** → \`ventas_detalle\` primero. Usa las mismas líneas de factura que el Reporte de Ventas del panel (netas sin IVA, sin clientes internos), pero aquí las notas de crédito restan; el Reporte de Ventas no las incluye, así que si alguien compara, explica esa diferencia. La marca es \`product.product.x_studio_marca\` (modelo \`spiff.brand\`).
+- **Ventas o facturación de una sede o de un mes, y ventas por vendedor, cliente, marca o producto** → \`ventas_detalle\` primero (para una tabla mes a mes, una llamada por mes). Su total es el mismo de "Ventas del mes" del Dashboard: no lo armes con \`odoo_agrupar\`. Usa las mismas líneas de factura que el Reporte de Ventas del panel (netas sin IVA, sin clientes internos), pero aquí las notas de crédito restan; el Reporte de Ventas no las incluye, así que si alguien compara, explica esa diferencia. La marca es \`product.product.x_studio_marca\` (modelo \`spiff.brand\`).
 - **Odoo 17** (ERP: ventas, facturas, pagos, inventario, compras, contactos, CRM), por el ORM: \`odoo_agrupar\` (read_group: totales, rankings y agrupaciones, p. ej. por mes con \`invoice_date:month\`; úsalo para cualquier suma en vez de traer registros), \`odoo_buscar\` (search_read: listados y detalle), \`odoo_contar\` (search_count). Antes de usar un modelo o campo que no conoces, revisa \`odoo_campos\` (fields_get) u \`odoo_modelos\`; no adivines nombres de campos. Los dominios admiten campos relacionados con punto (\`move_id.state\`).
 - **Ventas antes del 2026-04-01 (corte Smartbit → Odoo)**: hasta esa fecha la empresa facturaba en Smartbit, el sistema anterior. En Odoo, antes del corte, solo están las facturas abiertas que se migraron ("Importación Masiva"), NO la venta real: nunca calcules ventas previas al corte con Odoo. \`ventas_detalle\` ya junta solo el histórico de Smartbit (antes del corte) con Odoo (desde el corte). Para otra pregunta sobre esa época usa \`consultar_panel\` sobre la tabla \`ventas_smartbit\` (un renglón por artículo vendido: company_id, fecha, vendedor, codigo_cliente = RIF, cliente, codigo_articulo, articulo, linea, marca, venta en USD sin IVA, unidades, costo; las devoluciones vienen con venta negativa). Ahí excluye siempre los vendedores que contienen "local" y las ventas entre empresas del grupo (clientes cuyo nombre contiene "supricom", "office solution" u "ofimaster"). Smartbit no guarda la marca: \`ventas_detalle\` la toma de Odoo cruzando el código del artículo (codigo_articulo = default_code de product.product, marca = x_studio_marca) y te devuelve en \`historico_sin_marca_en_odoo\` cuánto vendieron los artículos que ya no existen en Odoo; si es relevante, dilo con su monto. Si consultas \`ventas_smartbit\` directo, usa su columna \`marca\` (ya cruzada con Odoo; '' = el artículo no existe en Odoo, NULL = aún sin revisar); no busques la marca en el nombre del artículo. Si un período cruza el corte, dilo en la respuesta.
 - **MySQL del panel** (\`consultar_panel\`): leads y su seguimiento, vendedores (\`sellers\`), usuarios y roles del panel (\`users_config\`, \`roles\`), metas y KPIs (\`kpi_targets\`, \`kpi_weekly_data\`), actividades, RMA, compras internas, etc. Usa \`SHOW TABLES\` / \`DESCRIBE tabla\` para ubicarte.
@@ -77,7 +78,7 @@ const SISTEMA = `Eres el analista de datos de SUPRICOM y respondes a la directiv
 - **Cobrado**: conciliaciones (\`account.partial.reconcile\`: \`debit_move_id\` = línea de la factura, \`credit_move_id\` = línea del pago) entre una factura de cliente y un pago en diario de tipo bank/cash cuyo nombre NO contiene "retenido", fechadas por \`payment_registration_date\` del pago (fecha de confirmación; si falta, \`create_date\`). No son cobro: retenciones de IVA/ISLR, descuentos, notas de crédito aplicadas, ni los pagos cuya descripción dice "25%" (IVA que retenemos como agentes de retención).
 - **Pagos de clientes**: \`account.payment\` con payment_type inbound y partner_type customer. \`ref\` es el Memo / N° de operación bancaria.
 - **No son vendedores**: "Asistente de Ventas" y "Dameris" (en todas las sedes). Nunca los pongas en rankings ni tablas por vendedor, ni sumes sus ventas al total por vendedor; \`ventas_detalle\` ya los saca y te devuelve cuánto quedó fuera en \`excluidos_del_total\`. Si consultas por otra vía, exclúyelos tú.
-- **Vendedores excluidos** además en reportes (cuentas internas): Valencia "yusne"; Caracas "adriana"; Panamá "hercilio". Menciónalo si los excluyes.
+- **Vendedores excluidos** además en reportes (cuentas internas), igual que el Dashboard: Valencia "asistente" y "yusne"; Caracas "asistente" y "adriana"; Panamá "hercilio". \`ventas_detalle\` ya los saca del total y los devuelve en \`excluidos_del_total\`; si consultas por otra vía, exclúyelos tú. Di siempre en la respuesta (en la nota al pie de una tabla) que el total no incluye lo que facturaron esas cuentas internas ni las ventas a empresas del grupo, y cuánto fue si lo tienes.
 - **Leads (MySQL)**: \`leads.fecha_venta\` es en realidad la fecha de CIERRE (también en perdidos). Para ventas: \`status = 'CERRADO' AND motivo_cierre IN ('VENTA','GANADO')\`. Leads que entraron en un período: por \`COALESCE(fecha_ingreso, created_at)\`.
 
 ## Preguntas típicas de la directiva
@@ -658,20 +659,36 @@ async function ventasDetalle(i: any, alcance: Alcance | null = null): Promise<st
     // Odoo solo desde el corte (antes tiene únicamente facturas migradas).
     const desdeO = desdeOdoo(i.desde);
     const tramoSb = rangoSmartbit(i.desde, i.hasta);
-    const [odoo, smartbit] = await Promise.all([
-      desdeO <= i.hasta
-        ? cargarDesglose({ companyIds, desde: desdeO, hasta: i.hasta, marca: i.marca || null, conNotasCredito: true }).then((r) => r.filas)
-        : [],
-      tramoSb ? filasSmartbit(companyIds, tramoSb, dims, i) : { filas: [], sinMarca: null },
-    ]);
-    const filas = [...odoo, ...smartbit.filas];
+    // Sede por sede: los excluidos de cada sede (esVendedorExcluido, p. ej.
+    // "hercilio" en Panamá) salen del total, igual que "Ventas del mes" del Dashboard.
+    const porSede = await Promise.all(
+      companyIds.map(async (cid) => {
+        const [odoo, sb] = await Promise.all([
+          desdeO <= i.hasta
+            ? cargarDesglose({ companyIds: [cid], desde: desdeO, hasta: i.hasta, marca: i.marca || null, conNotasCredito: true }).then((r) => r.filas)
+            : [],
+          tramoSb ? filasSmartbit([cid], tramoSb, dims, i) : { filas: [], sinMarca: null },
+        ]);
+        return { cid, filas: [...odoo, ...sb.filas], sinMarca: sb.sinMarca };
+      }),
+    );
+    const sinMarcas = porSede.map((s) => s.sinMarca).filter((s): s is { venta: number; articulos: number } => !!s);
+    const smartbit = {
+      sinMarca: sinMarcas.length
+        ? { venta: r2(sinMarcas.reduce((s, x) => s + x.venta, 0)), articulos: sinMarcas.reduce((s, x) => s + x.articulos, 0) }
+        : null,
+    };
+    const filas = porSede.flatMap((s) => s.filas.map((f) => ({ ...f, cid: s.cid })));
     const contiene = (valor: string, q: unknown) => !q || normalizar(valor).includes(normalizar(String(q)));
     const grupos = new Map<string, Record<string, any>>();
     const excluido = new Map<string, number>();
     for (const f of filas) {
       if (propio !== null && normalizar(f.vendedor) !== propio) continue;
       if (!contiene(f.vendedor, i.vendedor) || !contiene(f.cliente, i.cliente)) continue;
-      if (NO_VENDEDORES.some((n) => normalizar(f.vendedor).includes(normalizar(n)))) {
+      if (
+        NO_VENDEDORES.some((n) => normalizar(f.vendedor).includes(normalizar(n))) ||
+        esVendedorExcluido(normalizar(f.vendedor), f.cid)
+      ) {
         excluido.set(f.vendedor, (excluido.get(f.vendedor) || 0) + f.total);
         continue;
       }
