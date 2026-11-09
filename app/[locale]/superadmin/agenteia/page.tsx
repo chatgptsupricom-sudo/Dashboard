@@ -48,6 +48,7 @@ import ReactMarkdown from "react-markdown";
 import PanelSupervision from "@/components/agenteia/PanelSupervision";
 import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 import remarkGfm from "remark-gfm";
+import { aplicarPasos, partirRespuesta, type Paso } from "@/lib/agenteia/respuesta";
 
 interface AttachedFile {
   name: string;
@@ -710,6 +711,10 @@ function PasosHerramientas({
 // de la conexión y los códigos HTTP del panel.
 const ERROR_RED =
   "Se perdió la conexión con el agente antes de que terminara de responder. Suele pasar cuando el servidor del panel se reinicia o la red se cae. Puedes reintentar.";
+// Se cortó la conexión pero el agente sigue en el servidor (lib/agenteia/enCurso.ts):
+// la pantalla trae la respuesta sola. Sin ⚠️: no es un error todavía.
+const AVISO_CORTE =
+  "⏳ Se cortó la conexión, pero el agente sigue trabajando. La respuesta aparecerá aquí cuando termine, aunque cierres la página.";
 
 function errorHttp(status: number, detalle?: string): string {
   if (status === 401) return "Tu sesión venció. Vuelve a iniciar sesión y reintenta.";
@@ -1000,28 +1005,7 @@ function VistaArchivo({ id, nombre, onCerrar }: ArchivoRef & { onCerrar: () => v
   );
 }
 
-// Herramientas que va usando el agente: el backend intercala
-// [[paso:<json base64url>]] con { id, fase: inicio|detalle|fin, nombre, detalle, ok }.
-interface Paso {
-  id: string;
-  nombre: string;
-  detalle?: string;
-  estado: "corriendo" | "ok" | "error";
-  inicio: number;
-  fin?: number;
-}
-const MARCA_PASO = /\[\[paso:([A-Za-z0-9_-]+)\]\]/g;
-function leerPaso(b64: string): any {
-  try {
-    return JSON.parse(decodeURIComponent(escape(atob(b64.replace(/-/g, "+").replace(/_/g, "/")))));
-  } catch {
-    return null;
-  }
-}
-
-// Mientras trabaja, el backend intercala [[avance:texto]] en la respuesta: no
-// es parte del mensaje, es el estado que se muestra debajo ("Consultando…").
-const MARCA_AVANCE = /\[\[avance:([^\]\n]*)\]\]/g;
+// Paso y cómo se leen las marcas de la respuesta: lib/agenteia/respuesta.ts
 
 const duracion = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${s % 60}s`);
 
@@ -1100,6 +1084,10 @@ export default function AgenteIAPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Chat cuya respuesta se está escribiendo, y chats que esperan una respuesta
+  // que siguió en el servidor tras un corte de conexión.
+  const generandoEn = useRef<string | null>(null);
+  const recuperando = useRef(new Set<string>());
   const recognitionRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1567,7 +1555,10 @@ export default function AgenteIAPage() {
 
     const control = new AbortController();
     abortRef.current = control;
+    generandoEn.current = chatId;
     let accumulated = "";
+    // El servidor ya aceptó la pregunta (respondió 200): un corte después no la pierde.
+    let huboRespuesta = false;
 
     try {
       const response = await fetch("/api/superadmin/agenteia", {
@@ -1582,6 +1573,7 @@ export default function AgenteIAPage() {
         throw new Error(errorHttp(response.status, errBody?.error));
       }
       if (!response.body) return;
+      huboRespuesta = true;
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1597,31 +1589,11 @@ export default function AgenteIAPage() {
         // El servidor manda espacios de ancho cero como latido: no son texto.
         crudo += decoder.decode(value, { stream: !d }).replace(/\u200B/g, "");
         // Los pasos de herramientas se leen y se sacan del texto.
-        for (const m of [...crudo.matchAll(MARCA_PASO)].slice(leidos)) {
-          const e = leerPaso(m[1]);
-          if (!e?.id) continue;
-          const actual: Paso = pasos.get(e.id) || { id: e.id, nombre: e.nombre || "Herramienta", estado: "corriendo", inicio: Date.now() };
-          if (e.nombre) actual.nombre = e.nombre;
-          if (e.detalle) actual.detalle = e.detalle;
-          if (e.fase === "fin") {
-            actual.estado = e.ok === false ? "error" : "ok";
-            actual.fin = Date.now();
-          }
-          pasos.set(e.id, actual);
-        }
-        leidos = [...crudo.matchAll(MARCA_PASO)].length;
-        const sinPasos = crudo.replace(MARCA_PASO, "");
-        // La respuesta es lo que viene después de la última consulta. Lo que
-        // el agente escribió antes (entre consulta y consulta) es su proceso:
-        // se guarda aparte y se muestra plegado, no como respuesta.
-        const marcas = [...sinPasos.matchAll(MARCA_AVANCE)];
-        const ultima = marcas[marcas.length - 1];
-        const corte = ultima ? ultima.index! + ultima[0].length : 0;
-        const proceso = sinPasos.slice(0, corte).replace(MARCA_AVANCE, "\n\n").replace(/\n{3,}/g, "\n\n").trim();
-        accumulated = sinPasos.slice(corte).trimStart();
-        // Una marca que llegó cortada entre dos trozos no se muestra a medias.
-        if (!d) accumulated = accumulated.replace(/\[\[[^\]]*$/, "");
-        setAvance(ultima && accumulated.trim() === "" ? ultima[1] : "");
+        leidos = aplicarPasos(crudo, pasos, leidos);
+        const partes = partirRespuesta(crudo, d);
+        const proceso = partes.proceso;
+        accumulated = partes.contenido;
+        setAvance(partes.avance);
         setMessages((prev) => {
           const next = [...prev];
           const last = next.length - 1;
@@ -1660,6 +1632,18 @@ export default function AgenteIAPage() {
       }
       // fetch y la lectura del streaming lanzan TypeError cuando se corta la
       // conexión (red, reinicio del servidor, proxy). Lo ya escrito se conserva.
+      // Corte con la respuesta ya en marcha: el agente sigue en el servidor.
+      if (err instanceof TypeError && huboRespuesta) {
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next.length - 1;
+          if (next[last]?.role === "assistant")
+            next[last] = { ...next[last], content: `${accumulated.trim() ? `${accumulated.trim()}\n\n` : ""}${AVISO_CORTE}` };
+          return next;
+        }, chatId);
+        recuperar(chatId);
+        return;
+      }
       const motivo = err instanceof TypeError ? ERROR_RED : err?.message || "Ocurrió un error inesperado. Puedes reintentar.";
       const errorMsg = `${accumulated.trim() ? `${accumulated.trim()}\n\n` : ""}⚠️ ${motivo}`;
       setMessages((prev) => {
@@ -1672,6 +1656,7 @@ export default function AgenteIAPage() {
       if (isConversationModeRef.current) speakText("Ocurrió un error.");
     } finally {
       abortRef.current = null;
+      generandoEn.current = null;
       setIsGenerating(false);
       setAvance("");
       setMessages((prev) => {
@@ -1683,6 +1668,67 @@ export default function AgenteIAPage() {
       }, chatId);
     }
   };
+
+  // Detener: la orden va al servidor, porque un corte de conexión ya no detiene
+  // al agente (lib/agenteia/enCurso.ts).
+  const detener = () => {
+    const id = generandoEn.current;
+    if (id)
+      fetch("/api/superadmin/agenteia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ detener: id }),
+      }).catch(() => {});
+    abortRef.current?.abort();
+  };
+
+  // Tras un corte, pregunta cada 4 s por la respuesta que siguió en el
+  // servidor y la pone en el chat. Se rinde si en ese chat se hizo otra
+  // pregunta o pasan 20 minutos.
+  const recuperar = async (chatId: string) => {
+    if (recuperando.current.has(chatId)) return;
+    recuperando.current.add(chatId);
+    try {
+      for (let i = 0; i < 300; i++) {
+        await new Promise((r) => setTimeout(r, 4000));
+        if (generandoEn.current === chatId) return;
+        let r: { estado: string; mensaje?: Partial<Message> } | null = null;
+        try {
+          const res = await fetch("/api/superadmin/agenteia", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pendiente: chatId }),
+          });
+          r = res.ok ? await res.json() : null;
+        } catch {}
+        if (!r || r.estado === "corriendo") continue;
+        const final = r;
+        // Terminó: la respuesta reemplaza el aviso. Si no está (el servidor se
+        // reinició), el aviso pasa a error para poder reintentar.
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next.length - 1;
+          const m = next[last];
+          if (m?.role !== "assistant" || !m.content.includes(AVISO_CORTE)) return prev;
+          next[last] =
+            final.estado === "terminado" && final.mensaje
+              ? { ...m, ...final.mensaje }
+              : { ...m, content: m.content.replace(AVISO_CORTE, `⚠️ ${ERROR_RED}`) };
+          return next;
+        }, chatId);
+        return;
+      }
+    } finally {
+      recuperando.current.delete(chatId);
+    }
+  };
+
+  // Al abrir un chat que quedó esperando (se recargó la página), se sigue esperando.
+  useEffect(() => {
+    const m = messages[messages.length - 1];
+    if (activeChatId && !isGenerating && m?.role === "assistant" && m.content.includes(AVISO_CORTE)) recuperar(activeChatId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId, messages.length]);
 
   // Reintenta la pregunta que terminó en error: quita la pregunta y la
   // respuesta fallida y la vuelve a enviar sobre el historial anterior.
@@ -2346,7 +2392,7 @@ export default function AgenteIAPage() {
                 {isGenerating && abortRef.current && !isConversationMode ? (
                   <button
                     type="button"
-                    onClick={() => abortRef.current?.abort()}
+                    onClick={detener}
                     title={t("detener")}
                     aria-label={t("detener")}
                     className="h-8 w-8 grid place-items-center rounded-full bg-slate-900 hover:bg-slate-700 text-white transition-colors"
