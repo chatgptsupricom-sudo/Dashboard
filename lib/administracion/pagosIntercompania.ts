@@ -32,6 +32,8 @@ export type EstadoPagoIC = "sin_aplicar" | "por_aplicar" | "sin_equivalente" | "
 
 export interface DocumentoAplicado {
   documento: string;
+  /** Enlace al documento en el Odoo de la sede que paga. */
+  url: string;
   /** La ref de la factura de proveedor: el numero de la factura en la otra sede. */
   ref: string;
   tipo: string;
@@ -40,7 +42,7 @@ export interface DocumentoAplicado {
   aplicado: number;
   /** Lo que le queda en la sede que paga. */
   saldo: number;
-  equivalente: (FacturaReceptor & { porMonto: boolean }) | null;
+  equivalente: (FacturaReceptor & { porMonto: boolean; url: string }) | null;
 }
 
 export interface PagoIC {
@@ -51,13 +53,21 @@ export interface PagoIC {
   diario: string;
   pagador: SedeIC;
   receptor: SedeIC;
+  url: string;
   /** USD (moneda de la empresa). */
   monto: number;
+  /** Moneda y monto del pago tal como se hizo (Bs en Caracas, a veces). */
+  moneda: string;
+  montoMoneda: number;
   /** Lo del pago que la sede que paga todavia no aplico a nada. */
   sinAplicar: number;
   documentos: DocumentoAplicado[];
   estado: EstadoPagoIC;
 }
+
+const ODOO = (process.env.NEXT_PUBLIC_ODOO_URL || "").replace(/\/$/, "");
+const enlace = (model: string, id: number, cid: number) =>
+  `${ODOO}/web#id=${id}&model=${model}&view_type=form&cids=${cid}`;
 
 const ES_FACTURA = new Set(["in_invoice", "in_refund", "out_invoice", "out_refund"]);
 
@@ -98,7 +108,7 @@ export async function pagosEntreSedes(
   const crudos = await leerTodo(
     "account.payment",
     dominio,
-    ["name", "date", "ref", "journal_id", "company_id", "partner_id", "amount_company_currency_signed"],
+    ["name", "date", "ref", "journal_id", "company_id", "partner_id", "amount_company_currency_signed", "amount", "currency_id"],
     TODAS,
     "date desc, id desc",
   );
@@ -204,13 +214,16 @@ export async function pagosEntreSedes(
         : null;
       return {
         documento: String(a.name || ""),
+        url: enlace("account.move", id, COMPANY_DE_SEDE[pagador]),
         ref,
         tipo: String(a.move_type || ""),
         fecha,
         total: redondear(total),
         aplicado: redondear(aplicado),
         saldo: redondear(Math.abs(Number(a.amount_residual_signed) || 0)),
-        equivalente: eq ? { ...eq.factura, porMonto: eq.porMonto } : null,
+        equivalente: eq
+          ? { ...eq.factura, porMonto: eq.porMonto, url: enlace("account.move", eq.factura.id, COMPANY_DE_SEDE[receptor]) }
+          : null,
       };
     });
     documentos.sort((x, y) => (x.fecha || "").localeCompare(y.fecha || "") || x.documento.localeCompare(y.documento));
@@ -233,7 +246,10 @@ export async function pagosEntreSedes(
       diario: nombreM2o(p.journal_id),
       pagador,
       receptor,
+      url: enlace("account.payment", p.id, COMPANY_DE_SEDE[pagador]),
       monto: redondear(Math.abs(Number(p.amount_company_currency_signed) || 0)),
+      moneda: nombreM2o(p.currency_id, "USD"),
+      montoMoneda: redondear(Math.abs(Number(p.amount) || 0)),
       sinAplicar: redondear(sinAplicar.get(p.id) || 0),
       documentos,
       estado,
