@@ -1,5 +1,6 @@
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { sinRetirados } from "@/lib/vendedores/retirados";
+import { esNoVendedor } from "@/lib/cxc/vendedoresExcluidos";
 import { claveRif, rifCompacto, type ClienteNuevo } from "./validar";
 
 /**
@@ -77,10 +78,13 @@ export async function vendedoresDeSede(sede: number): Promise<{ id: number; nomb
       [[["customer_rank", ">", 0], ["company_id", "=", sede], ["user_id", "!=", false], ["user_id.active", "=", true]], ["user_id"], ["user_id"]],
       { lazy: false, context: { allowed_company_ids: [sede] } },
     )) || [];
-  const filas = grupos
-    .map((g) => m2o(g.user_id))
-    .filter((u): u is [number, string] => !!u)
-    .map(([id, nombre]) => ({ user_id: id, name: nombre.trim() }));
+  const ids = grupos.map((g) => m2o(g.user_id)?.[0]).filter((id): id is number => !!id);
+  // Solo usuarios de la sede (hay clientes de Valencia con un vendedor de Panamá) y que venden.
+  const usuarios =
+    (await callOdooRPCEstricto<any[]>("res.users", "read", [ids], { fields: ["name", "company_ids"] })) || [];
+  const filas = usuarios
+    .filter((u) => (u.company_ids || []).includes(sede) && !esNoVendedor(u.name, sede))
+    .map((u) => ({ user_id: Number(u.id), name: String(u.name).trim() }));
   return sinRetirados(filas)
     .map((u) => ({ id: u.user_id, nombre: u.name }))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
