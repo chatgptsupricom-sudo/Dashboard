@@ -1101,6 +1101,28 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
           <p className="text-sm text-slate-500 mt-1">{t("page_subtitle")}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {/* El vendedor no tiene la barra de herramientas: aquí elige el mes
+              (la API /api/vendedores/stoplight ya filtra por ?mes=). */}
+          {vendorMode && (
+            <label className="flex items-center gap-2 h-9 px-3 border border-slate-200 bg-white rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+              <Calendar size={14} className="text-slate-400" />
+              <span className="sr-only">{t("periodo_mes")}</span>
+              <select
+                value={selectedMes}
+                onChange={(e) => {
+                  setSelectedMes(e.target.value);
+                  setCustomDateRange(null);
+                }}
+                className="bg-transparent capitalize text-slate-800 font-medium focus:outline-none cursor-pointer"
+              >
+                {getMesOptions().slice().reverse().map((opt) => (
+                  <option key={opt.value} value={opt.value} className="capitalize">
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {marketingData && !marketingData.connected && (
             <a
               href="/api/auth/google"
