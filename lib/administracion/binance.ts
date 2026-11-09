@@ -1353,10 +1353,12 @@ export async function leerEstadoDeCuenta(
   // 16000: el tope de salida de gpt-4o (unas 250 filas).
   const l = await leerConIA(INSTRUCCIONES_ESTADO, ESQUEMA_ESTADO, prep.bloques, "Lee estos movimientos.", 16000);
   const leidas: any[] = Array.isArray(l?.movimientos) ? l.movimientos : [];
-  // Una fila que cae en el solape de dos franjas sale dos veces: va una.
+  // Una fila que cae en el solape de dos franjas sale dos veces: va una. La IA
+  // puede leer distinto el nombre en cada franja (nov-2026: "Seelcomp-Abel" y
+  // "Seelcomp–Abel", guion y raya): se compara sin signos ni espacios.
   const vistas = new Set<string>();
   const filas = leidas.filter((f) => {
-    const llave = [f?.fecha, f?.tipo, f?.contraparte, f?.monto, f?.moneda].join("|");
+    const llave = [f?.fecha, !!f?.recibido, normalNombre(String(f?.contraparte || "")), Number(f?.monto), f?.moneda].join("|");
     if (vistas.has(llave)) return false;
     vistas.add(llave);
     return true;
@@ -1372,7 +1374,11 @@ export async function leerEstadoDeCuenta(
     const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
     movs.push({
       fechaMs: local + OFFSET_CARACAS_MS,
-      contraparte: String(f?.contraparte || "").trim(),
+      // Rayas y espacios unificados: el UNIQUE de la tabla compara el nombre tal cual.
+      contraparte: String(f?.contraparte || "")
+        .replace(/[‐-―−]/g, "-")
+        .replace(/\s+/g, " ")
+        .trim(),
       monto: f?.recibido ? monto : -monto,
       moneda,
       linea: ubicadas[i] || null,

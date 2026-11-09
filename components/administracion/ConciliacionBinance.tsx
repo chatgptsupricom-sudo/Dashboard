@@ -1156,6 +1156,14 @@ export default function ConciliacionBinance({
                         : "Borrar y volver a subir"}
                     </Button>
                   )}
+                  {/* Sin esto el botón simplemente no salía y no se sabía por qué. */}
+                  {datos.borrables === 0 && datos.movimientos > 0 && (
+                    <span className="text-xs text-gray-500">
+                      {semana === TODAS
+                        ? "Para borrar el estado de cuenta elige una semana."
+                        : "Estos pagos los subió otra sede o el SuperAdmin: solo el SuperAdmin los borra."}
+                    </span>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
