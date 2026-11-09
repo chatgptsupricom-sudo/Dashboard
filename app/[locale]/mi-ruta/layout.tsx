@@ -3,10 +3,12 @@
 import { PortalFooter } from "@/components/servicio-tecnico/portal-footer";
 import { PortalHeader } from "@/components/servicio-tecnico/portal-header";
 import type { Metadata } from "next";
-import { Manrope, Syne } from "next/font/google";
+import localFont from "next/font/local";
 
-const syne = Syne({ subsets: ["latin"], weight: ["600", "700", "800"], variable: "--font-syne", display: "swap" });
-const manrope = Manrope({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-manrope", display: "swap" });
+// Fuentes locales, como en los otros portales: bajarlas de Google en el build
+// rompe el deploy (Turbopack, "next/font/google queries have exactly one entry").
+const syne = localFont({ src: "../../fonts/syne-latin.woff2", weight: "600 800", variable: "--font-syne", display: "swap" });
+const manrope = localFont({ src: "../../fonts/manrope-latin.woff2", weight: "200 800", variable: "--font-manrope", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Rutagrama | Supricom",
