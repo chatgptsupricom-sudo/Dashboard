@@ -45,15 +45,15 @@ type Seccion = { area: Area; nombre: string; detalle: string };
 /** id de sección (rolePermissions / menú) → nombre del menú y qué se hace ahí. */
 export const SECCIONES: Record<string, Seccion> = {
   // General
-  dashboard: { area: "General", nombre: "Dashboard", detalle: "tu página de inicio con los indicadores de tu área" },
-  sales_dashboard: { area: "General", nombre: "Dashboard", detalle: "tu página de inicio con los indicadores de tu área" },
+  dashboard: { area: "General", nombre: "Dashboard", detalle: "su página de inicio con los indicadores de su área" },
+  sales_dashboard: { area: "General", nombre: "Dashboard", detalle: "su página de inicio con los indicadores de su área" },
   alert: { area: "General", nombre: "Alertas", detalle: "avisos de lo que necesita atención" },
   graficas: { area: "General", nombre: "Centro de mando", detalle: "gráficas de ventas, cobranza, inventario, RMA y RRHH" },
-  actividad: { area: "General", nombre: "Actividades", detalle: "tus tareas y actividades del día" },
+  actividad: { area: "General", nombre: "Actividades", detalle: "sus tareas y actividades del día" },
   users: { area: "General", nombre: "Usuarios", detalle: "dar, cambiar o quitar el rol de cada persona en el panel" },
   agenteia: { area: "General", nombre: "Agente IA", detalle: "hacerle preguntas en lenguaje natural sobre los datos de Odoo y del panel" },
   politicas: { area: "General", nombre: "Políticas y Acuerdos", detalle: "leer las políticas, acuerdos y circulares de la empresa y marcarlas como leídas" },
-  solicitudes_personal: { area: "General", nombre: "Solicitudes de personal", detalle: "pedir un colaborador nuevo para tu área y seguir la búsqueda" },
+  solicitudes_personal: { area: "General", nombre: "Solicitudes de personal", detalle: "pedir un colaborador nuevo para su área y seguir la búsqueda" },
   stoplight_reports: { area: "General", nombre: "Stoplight", detalle: "el semáforo de indicadores semanales contra sus metas" },
   inventory: { area: "General", nombre: "Inventario", detalle: "existencias de productos por sede" },
   catalogo: { area: "General", nombre: "Catálogo", detalle: "productos con su disponibilidad, precio e imágenes" },
@@ -61,22 +61,22 @@ export const SECCIONES: Record<string, Seccion> = {
   auditoria_panel: { area: "General", nombre: "Auditoría del panel", detalle: "quién hizo qué dentro del panel" },
   auditoria_nc: { area: "General", nombre: "Auditoría de notas de crédito", detalle: "notas de crédito, facturas anuladas y reabiertas" },
   calidad_odoo: { area: "General", nombre: "Calidad de datos de Odoo", detalle: "errores y datos desordenados que hay que corregir en Odoo" },
-  notas_credito: { area: "General", nombre: "Notas de crédito", detalle: "revisar, preaprobar o aprobar las solicitudes de nota de crédito que te toquen" },
+  notas_credito: { area: "General", nombre: "Notas de crédito", detalle: "revisar, preaprobar o aprobar las solicitudes de nota de crédito que le correspondan" },
   reports: { area: "General", nombre: "Reportes", detalle: "reportes generales" },
   integraciondepago: { area: "Cuentas por Cobrar", nombre: "Integración de Pagos", detalle: "los pagos aplicados a cada factura, como el reporte de Odoo, de cualquier mes" },
 
   // Ventas
-  clientes: { area: "Ventas", nombre: "Clientes", detalle: "tu cartera de clientes" },
-  leads: { area: "Ventas", nombre: "Leads", detalle: "los prospectos que te asignan para contactar y cerrar" },
-  cierres: { area: "Ventas", nombre: "Cierres", detalle: "registrar el resultado de tus leads" },
-  top_clientes: { area: "Ventas", nombre: "Top clientes", detalle: "tus clientes que más compran" },
+  clientes: { area: "Ventas", nombre: "Clientes", detalle: "su cartera de clientes" },
+  leads: { area: "Ventas", nombre: "Leads", detalle: "los prospectos que se le asignan para contactar y cerrar" },
+  cierres: { area: "Ventas", nombre: "Cierres", detalle: "registrar el resultado de sus leads" },
+  top_clientes: { area: "Ventas", nombre: "Top clientes", detalle: "sus clientes que más compran" },
   metodo_retiro: { area: "Ventas", nombre: "Método de retiro", detalle: "indicar cómo se lleva el cliente cada pedido (sucursal, ruta, encomienda o transporte)" },
-  rma_seller: { area: "Ventas", nombre: "RMA de mis clientes", detalle: "seguir los equipos de tus clientes en servicio técnico" },
+  rma_seller: { area: "Ventas", nombre: "RMA de mis clientes", detalle: "seguir los equipos de sus clientes en servicio técnico" },
   semaforo_clientes: { area: "Ventas", nombre: "Semáforo de clientes", detalle: "qué clientes compran menos que de costumbre (verde, amarillo o rojo)" },
   spiff: { area: "Ventas", nombre: "Spiff", detalle: "incentivos por marca" },
   planificacion_visitas: { area: "Ventas", nombre: "Planificación de visitas", detalle: "planificar y registrar las visitas a clientes" },
   banco_imagenes_seller: { area: "Ventas", nombre: "Banco de Flyers", detalle: "ver y descargar los flyers de los productos" },
-  material_pop_seller: { area: "Ventas", nombre: "Material POP", detalle: "pedir material publicitario para tus clientes" },
+  material_pop_seller: { area: "Ventas", nombre: "Material POP", detalle: "pedir material publicitario para sus clientes" },
   cuota: { area: "Ventas", nombre: "Cuota", detalle: "la cuota de venta de cada vendedor y cuánto lleva" },
   MapaClientes: { area: "Ventas", nombre: "Mapa de clientes", detalle: "dónde están los clientes en el mapa" },
   seller_map: { area: "Ventas", nombre: "Mapa de clientes", detalle: "dónde están los clientes en el mapa" },
@@ -100,7 +100,7 @@ export const SECCIONES: Record<string, Seccion> = {
   // Marketing
   catalogo_adminleads: { area: "Marketing", nombre: "Catálogo", detalle: "productos con su disponibilidad para el contenido" },
   catalogo_disenador: { area: "Marketing", nombre: "Catálogo", detalle: "productos con su disponibilidad para el contenido" },
-  llegadas_disenador: { area: "Marketing", nombre: "Llegadas", detalle: "los productos que están por llegar a tu sede" },
+  llegadas_disenador: { area: "Marketing", nombre: "Llegadas", detalle: "los productos que están por llegar a su sede" },
   banco_imagenes: { area: "Marketing", nombre: "Banco de Flyers", detalle: "subir y organizar los flyers de los productos" },
   vista_custom: { area: "Marketing", nombre: "Plan de Contenido", detalle: "el plan de publicaciones por marca" },
   frecuencia_cpm: { area: "Marketing", nombre: "Frecuencia CPM", detalle: "la frecuencia de pauta por marca y mes" },
@@ -111,11 +111,11 @@ export const SECCIONES: Record<string, Seccion> = {
 
   // Marcas
   gerencia_marca: { area: "Marcas", nombre: "Gerencia de Marca", detalle: "asignar las marcas de cada Gerente de Marca" },
-  gm_dashboard: { area: "Marcas", nombre: "Dashboard", detalle: "el resumen de tus marcas" },
+  gm_dashboard: { area: "Marcas", nombre: "Dashboard", detalle: "el resumen de sus marcas" },
   gm_inventario: { area: "Marcas", nombre: "Inventario por marca", detalle: "existencia, disponible, por llegar y valor al costo" },
   gm_antiguedad: { area: "Marcas", nombre: "Antigüedad", detalle: "cuánto tiempo lleva el inventario en el almacén y cuánto se vendió cada mes" },
   gm_ventas: { area: "Marcas", nombre: "Ventas por marca", detalle: "lo facturado y lo cobrado por número de parte" },
-  gm_banco_imagenes: { area: "Marcas", nombre: "Banco de Flyers", detalle: "los flyers de los productos de tus marcas" },
+  gm_banco_imagenes: { area: "Marcas", nombre: "Banco de Flyers", detalle: "los flyers de los productos de sus marcas" },
 
   // Cuentas por Cobrar
   cuentas_por_cobrar: { area: "Cuentas por Cobrar", nombre: "Cuentas por Cobrar", detalle: "la cartera de clientes, lo vencido y la cobranza" },
@@ -200,28 +200,28 @@ export const SECCIONES: Record<string, Seccion> = {
 
 /** Una frase por rol, lo primero que lee en el correo. */
 const RESUMEN: Partial<Record<UserRole, string>> = {
-  [UserRole.SUPER_ADMIN]: "Tienes acceso a todo el panel: todas las áreas y sedes, la configuración y los usuarios.",
-  [UserRole.SELLER]: "Llevas tu cartera de clientes y tus leads, y ves tus propias ventas, cuota y cobranza.",
-  [UserRole.ADMIN_LEADS]: "Administras los leads que llegan por las redes, los repartes a los vendedores y llevas el contenido de marketing.",
-  [UserRole.GERENTE_VENTA]: "Sigues las ventas, cuotas, cobranza y clientes de tu sede y de tus vendedores.",
-  [UserRole.GERENTE_OPERACIONES]: "Sigues las ventas, leads, cobranza y operación de tu sede, y administras los usuarios del panel.",
-  [UserRole.ASISTENTE_VENTAS]: "Apoyas al equipo de ventas: reportes, cuotas, estados de cuenta y el método de retiro de los pedidos.",
-  [UserRole.ADMINISTRACION]: "Llevas la administración de tu sede: salud administrativa, bancos, pagos, fiscal, contabilidad y cuentas por cobrar.",
-  [UserRole.CUENTAS_POR_COBRAR]: "Llevas la cobranza de tu sede: cartera, pagos de clientes, estados de cuenta y alertas.",
-  [UserRole.RECURSOS_HUMANOS]: "Llevas la selección de personal, la asistencia y la documentación del personal.",
-  [UserRole.COMPRAS]: "Decides qué comprar con los reportes de rotación e inventario y llevas las órdenes de compra y los packing list.",
-  [UserRole.RMA]: "Llevas los casos de servicio técnico, desde que el equipo llega hasta que sale.",
-  [UserRole.DISENADOR]: "Haces el contenido y los diseños de los productos y llevas el banco de flyers.",
-  [UserRole.SEGURIDAD]: "Registras en el portón lo que entra y sale: mercancía y equipos de servicio técnico.",
-  [UserRole.ALMACEN]: "Preparas los despachos, recibes los contenedores y llevas el personal y las unidades del almacén.",
-  [UserRole.PROCESOS]: "Documentas los procesos de la empresa: manuales, organigrama, flujogramas y políticas.",
-  [UserRole.IT]: "Revisas las solicitudes de nota de crédito en el paso que te toca.",
-  [UserRole.INTELIGENCIA_NEGOCIO]: "Ves los tableros y reportes de las tres sedes para análisis. Es de solo lectura: no cambias datos.",
-  [UserRole.GERENTE_MARCA]: "Sigues el inventario, la antigüedad y las ventas de las marcas que te asignen, en Valencia y Caracas. Es de solo lectura.",
-  [UserRole.MARKETING_ELECTRO]: "Ves los tableros de ventas, marcas, inventario y marketing de las tres sedes para análisis. Es de solo lectura.",
+  [UserRole.SUPER_ADMIN]: "Tiene acceso a todo el panel: todas las áreas y sedes, la configuración y los usuarios.",
+  [UserRole.SELLER]: "Gestiona su cartera de clientes y sus leads, y consulta sus propias ventas, cuota y cobranza.",
+  [UserRole.ADMIN_LEADS]: "Administra los leads que llegan por las redes sociales, los asigna a los vendedores y gestiona el contenido de marketing.",
+  [UserRole.GERENTE_VENTA]: "Supervisa las ventas, cuotas, cobranza y clientes de su sede y de sus vendedores.",
+  [UserRole.GERENTE_OPERACIONES]: "Supervisa las ventas, leads, cobranza y operación de su sede, y administra los usuarios del panel.",
+  [UserRole.ASISTENTE_VENTAS]: "Apoya al equipo de ventas con reportes, cuotas, estados de cuenta y el método de retiro de los pedidos.",
+  [UserRole.ADMINISTRACION]: "Gestiona la administración de su sede: salud administrativa, bancos, pagos, fiscal, contabilidad y cuentas por cobrar.",
+  [UserRole.CUENTAS_POR_COBRAR]: "Gestiona la cobranza de su sede: cartera, pagos de clientes, estados de cuenta y alertas.",
+  [UserRole.RECURSOS_HUMANOS]: "Gestiona la selección de personal, la asistencia y la documentación del personal.",
+  [UserRole.COMPRAS]: "Define las compras con los reportes de rotación e inventario y gestiona las órdenes de compra y los packing list.",
+  [UserRole.RMA]: "Gestiona los casos de servicio técnico, desde la llegada del equipo hasta su entrega.",
+  [UserRole.DISENADOR]: "Elabora el contenido y los diseños de los productos y gestiona el banco de flyers.",
+  [UserRole.SEGURIDAD]: "Registra en el portón la mercancía y los equipos de servicio técnico que entran y salen.",
+  [UserRole.ALMACEN]: "Prepara los despachos, recibe los contenedores y gestiona el personal y las unidades del almacén.",
+  [UserRole.PROCESOS]: "Documenta los procesos de la empresa: manuales, organigrama, flujogramas y políticas.",
+  [UserRole.IT]: "Revisa las solicitudes de nota de crédito en el paso que le corresponde.",
+  [UserRole.INTELIGENCIA_NEGOCIO]: "Consulta los tableros y reportes de las tres sedes para análisis. Su acceso es de solo lectura: no modifica datos.",
+  [UserRole.GERENTE_MARCA]: "Da seguimiento al inventario, la antigüedad y las ventas de las marcas que se le asignen, en Valencia y Caracas. Su acceso es de solo lectura.",
+  [UserRole.MARKETING_ELECTRO]: "Consulta los tableros de ventas, marcas, inventario y marketing de las tres sedes para análisis. Su acceso es de solo lectura.",
 };
 
-const RESUMEN_GENERICO = "Entras al panel con las secciones de tu rol.";
+const RESUMEN_GENERICO = "Ingresa al panel con las secciones de su rol.";
 
 /** El rol de la tabla `roles` (`name`) como UserRole; "vendedor" es el viejo de seller. */
 export function rolDelPanel(nombre: string | null | undefined): UserRole | null {
