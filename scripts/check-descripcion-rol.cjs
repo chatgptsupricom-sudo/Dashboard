@@ -35,7 +35,7 @@ const enUso = [
 ];
 for (const r of enUso) {
   const x = d.describirRol(r);
-  assert.ok(x.resumen && !x.resumen.startsWith("Entras al panel"), `${r}: sin resumen propio`);
+  assert.ok(x.resumen && !x.resumen.startsWith("Ingresa al panel"), `${r}: sin resumen propio`);
   assert.ok(x.grupos.length > 0, `${r}: sin secciones`);
   const nombres = x.grupos.flatMap((g) => g.secciones.map((s) => `${g.area}|${s.nombre}`));
   assert.strictEqual(new Set(nombres).size, nombres.length, `${r}: secciones repetidas`);
