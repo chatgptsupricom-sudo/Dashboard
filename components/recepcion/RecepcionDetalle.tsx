@@ -60,6 +60,7 @@ import EscenaRecepcion from "./EscenaRecepcion";
 import CruceOdoo from "./CruceOdoo";
 import SerialesOdoo from "./SerialesOdoo";
 import SubirSeriales from "./SubirSeriales";
+import RepartoSedes from "./RepartoSedes";
 import { FOTO_PX, encabezadoObservaciones, filasObservaciones, pdfObservaciones, type FotoPdf } from "@/lib/recepcion/observaciones";
 
 /**
@@ -910,6 +911,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 </div>
               )}
             </Card>
+
+            {/* Reparto entre Valencia y Caracas (no es el reparto por contenedor
+                ni la Factura Especial de Caracas). Se oculta solo si no aplica. */}
+            {!porFactura && <RepartoSedes id={id} cids={Number(rec.cids)} etapa={rec.etapa} />}
 
             {/* Contenedores: cada uno con su llegada y su cierre. Una recepcion
                 con factura no tiene: nace descargando. */}
