@@ -13,6 +13,7 @@ import {
 import { cargarDesglose, normalizar } from "@/lib/gerente_venta/reporteVentas";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { TABLA_OAUTH, tokenMcp } from "@/lib/agenteia/mcpOauth";
+import { instruccionesDe, notasDe, olvidar, recordar, textoMemoria } from "@/lib/agenteia/memoria";
 import type { Uso } from "@/lib/agenteia/consumo";
 import { MODELOS_AGENTE } from "@/lib/agenteia/modelos";
 import {
@@ -285,6 +286,25 @@ const HERRAMIENTAS: Anthropic.Beta.BetaTool[] = [
       required: ["operacion", "model", "resumen"],
     },
   },
+  {
+    name: "recordar_preferencia",
+    description:
+      "Anota una preferencia, criterio o corrección de ESTE usuario para sus próximas conversaciones (solo la ve él). Una regla en una frase clara; nunca cifras, claves ni datos personales de otros.",
+    input_schema: {
+      type: "object",
+      properties: { texto: { type: "string", description: "La regla a recordar, en una frase (máx. 400 caracteres)" } },
+      required: ["texto"],
+    },
+  },
+  {
+    name: "olvidar_preferencia",
+    description: "Borra una nota de este usuario (por su número), cuando ya no vale o la vas a reemplazar por otra.",
+    input_schema: {
+      type: "object",
+      properties: { id: { type: "integer", description: "Número de la nota" } },
+      required: ["id"],
+    },
+  },
 ];
 
 export type ArchivoAdjunto = { name: string; type: string; base64: string };
@@ -316,6 +336,7 @@ function etiquetaAvance(nombre: string): string {
   if (nombre === "ventas_detalle") return "Calculando ventas";
   if (nombre === "consultar_panel") return "Consultando el panel";
   if (nombre === "preparar_cambio_odoo") return "Preparando el cambio";
+  if (nombre === "recordar_preferencia" || nombre === "olvidar_preferencia") return "Anotando para la próxima";
   if (nombre === "web_search") return "Buscando en internet";
   if (nombre === "web_fetch") return "Leyendo una página web";
   if (nombre === "text_editor_code_execution") return "Escribiendo un archivo";
@@ -983,6 +1004,19 @@ export async function responder(
   );
   console.log(`[agenteia] consulta de ${uid} · ${MODELO} · Odoo por ${conMcp ? "MCP + JSON-RPC" : "JSON-RPC (sin MCP)"}`);
 
+  // Lo que aprendió de este usuario (lib/agenteia/memoria.ts). Si la MySQL no
+  // responde, sigue sin notas.
+  const [notas, instrucciones] = await Promise.all([
+    notasDe(uid).catch((e) => {
+      console.error("[agenteia] memoria:", e?.message);
+      return [];
+    }),
+    instruccionesDe(uid).catch((e) => {
+      console.error("[agenteia] instrucciones:", e?.message);
+      return "";
+    }),
+  ]);
+
   const cambios: string[] = [];
   let hayTexto = false;
   let fallosJson = 0;
@@ -1012,6 +1046,7 @@ export async function responder(
         ...(conWeb ? [{ type: "text" as const, text: SISTEMA_WEB }] : []),
         ...(soloLectura ? [{ type: "text" as const, text: SISTEMA_SOLO_LECTURA }] : []),
         ...(alcance ? [{ type: "text" as const, text: describirAlcance(alcance) }] : []),
+        { type: "text", text: textoMemoria(notas, instrucciones) },
         { type: "text", text: `Hoy es ${hoy} (hora de Caracas).` },
       ],
       ...(conMcp && { mcp_servers: [{ type: "url" as const, url: mcpUrl!, name: "odoo", authorization_token: mcpToken }] }),
@@ -1152,6 +1187,14 @@ export async function responder(
             contenido =
               "Cambio preparado y NO ejecutado. El usuario verá un botón para confirmarlo o cancelarlo. Explica brevemente qué se hará y termina tu turno.";
           }
+        } else if (b.name === "recordar_preferencia") {
+          const r = await recordar(uid, (b.input as any)?.texto, "agente");
+          contenido = r.ok ? r.mensaje : `Error: ${r.mensaje}`;
+          esError = !r.ok;
+        } else if (b.name === "olvidar_preferencia") {
+          const ok = await olvidar(uid, (b.input as any)?.id);
+          contenido = ok ? "Nota borrada." : "Error: esa nota no existe o no es de este usuario.";
+          esError = !ok;
         } else {
           contenido = `Error: herramienta desconocida ${b.name}`;
           esError = true;
