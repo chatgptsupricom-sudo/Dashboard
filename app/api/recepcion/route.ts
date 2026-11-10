@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     if (conOdoo && sesion!.rol !== "superadmin") where.push("r.descartado_at IS NULL");
     const res = await query(
       `SELECT r.id, r.cids, r.proveedor, r.referencia, r.contenedor, r.oc_referencia,
-              ${conOdoo ? "r.origen, r.odoo_estado, r.odoo_oc_nombre, r.descartado_at, r.descartado_por, r.descartado_motivo," : ""}
+              ${conOdoo ? "r.origen, r.odoo_estado, r.odoo_oc_nombre, r.odoo_purchase_order_id, r.purchase_order_id, r.descartado_at, r.descartado_por, r.descartado_motivo," : ""}
               r.fecha_estimada, r.etapa, r.resultado, r.precinto_coincide,
               r.creado_por, r.created_at, r.llegada_at, r.cerrado_at,
               (SELECT COUNT(*) FROM recepcion_packing_items i WHERE i.recepcion_id = r.id) AS total_items,
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
     await insertarContenedores(id, contenedores);
     // Lo que trae cada contenedor, si el packing list lo dice.
     await guardarReparto(id, items.map((i) => i.reparto));
-    if (oc) await guardarOcElegida(id, oc);
+    if (oc) await guardarOcElegida(id, oc, sesion!.nombre);
 
     emitirRecepcion({
       accion: "creado",
