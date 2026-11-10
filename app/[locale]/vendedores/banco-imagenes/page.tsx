@@ -14,7 +14,6 @@ import {
   Loader2,
   Image as ImageIcon,
   Camera,
-  Download,
   GripVertical,
   Check,
   ChevronLeft,
@@ -22,12 +21,10 @@ import {
   Layers,
   X,
 } from "lucide-react";
+import DescargaFlyer from "@/components/banco-imagenes/DescargaFlyer";
 import DescargaMultiple from "@/components/banco-imagenes/DescargaMultiple";
 import {
   armarFlyer,
-  flyerPng,
-  guardarBlob,
-  nombreFlyer,
   type FlyerADescargar,
 } from "@/lib/banco-imagenes/descargas";
 
@@ -193,22 +190,17 @@ export default function VendedoresBancoImagenesPage() {
   };
 
   // ── Download ───────────────────────────────────────────────────────────────
-  const handleDownload = async (withPrice: boolean) => {
+  const flyerAbierto = (withPrice: boolean): FlyerADescargar | null => {
     const targetImage = multiImages.length > 0 ? multiImages[multiIndex] : previewImage;
-    if (!targetImage) return;
+    if (!targetImage) return null;
 
     const price = priceMode === "odoo" ? Number(targetImage.price || 0) : parseFloat(customPrice) || 0;
-    const flyer: FlyerADescargar = {
+    return {
       image_path: targetImage.image_path,
       product_code: targetImage.product_code,
       precio: withPrice ? price : null,
       badgePos,
     };
-    try {
-      guardarBlob(await flyerPng(flyer), nombreFlyer(flyer));
-    } catch (error) {
-      console.error("Error:", error);
-    }
   };
 
   // ── Descarga múltiple ─────────────────────────────────────────────────────
@@ -564,14 +556,7 @@ export default function VendedoresBancoImagenesPage() {
                     Descargando flyer {multiIndex + 1} de {multiImages.length}
                   </p>
                 )}
-                <Button onClick={() => handleDownload(true)} className="w-full bg-red-500 hover:bg-red-600 text-white h-11 text-sm font-semibold">
-                  <Download className="w-4 h-4 mr-2" />
-                  Descargar con Precio
-                </Button>
-                <Button onClick={() => handleDownload(false)} variant="outline" className="w-full h-11 text-sm">
-                  <Download className="w-4 h-4 mr-2" />
-                  Descargar sin Precio
-                </Button>
+                <DescargaFlyer obtenerFlyer={flyerAbierto} claseConPrecio="bg-red-500 hover:bg-red-600" />
                 {isMultiMode && (
                   <DescargaMultiple
                     obtenerFlyers={flyersDelEditor}
