@@ -7,7 +7,6 @@ import {
   disponible,
   hoyCaracas,
   leerTodo,
-  sumarDias,
   transito,
   ultimaVenta,
   unidadesVendidas,
@@ -102,20 +101,32 @@ export function productosDelAlcance(asignaciones: Asignacion[]): Promise<Map<num
   });
 }
 
-/** Mismo día del mes, `n` meses atrás (el 31 cae al último día del mes). */
-function mesesAtras(dia: string, n: number): string {
-  const [y, m, d] = dia.split("-").map(Number);
-  const base = new Date(Date.UTC(y, m - 1 - n, 1));
-  const ultimo = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0)).getUTCDate();
-  base.setUTCDate(Math.min(d, ultimo));
-  return base.toISOString().slice(0, 10);
+/** "YYYY-MM" movido `n` meses. */
+function moverMes(mes: string, n: number): string {
+  const [y, m] = mes.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return d.toISOString().slice(0, 7);
 }
 
+/** Último día de un mes "YYYY-MM". */
+const finDeMes = (mes: string) => {
+  const [y, m] = mes.split("-").map(Number);
+  return `${mes}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
+};
+
+/**
+ * Ventanas de "vendidas": el mes en curso y los 6 meses = el mes en curso y
+ * los 5 anteriores completos, mes por mes (como el Excel del gerente, que
+ * trae una columna por mes). Así el total de 6 meses es la suma de las
+ * columnas y coincide con "Últimos 6 meses" de Ventas por marca.
+ */
 export function ventanas(hoy = hoyCaracas()) {
+  const actual = hoy.slice(0, 7);
+  const meses = [5, 4, 3, 2, 1, 0].map((n) => moverMes(actual, -n));
   return {
-    mes: { desde: `${hoy.slice(0, 7)}-01`, hasta: hoy },
-    // Seis meses corridos hasta hoy (incluye el mes en curso).
-    seisMeses: { desde: sumarDias(mesesAtras(hoy, 6), 1), hasta: hoy },
+    mes: { desde: `${actual}-01`, hasta: hoy },
+    seisMeses: { desde: `${meses[0]}-01`, hasta: hoy },
+    meses,
   };
 }
 
@@ -170,12 +181,11 @@ async function antiguedadSede(companyId: number, ids: number[], hoy: string): Pr
 async function inventarioSede(companyId: number, productos: Map<number, ProductoBase>, hoy: string) {
   const ids = [...productos.keys()];
   const v = ventanas(hoy);
-  const [almacen, porLlegar, costo, mes, seis, ultima, edad] = await Promise.all([
+  const [almacen, porLlegar, costo, porMes, ultima, edad] = await Promise.all([
     almacenSede(companyId),
     transito(companyId),
     costos(companyId),
-    unidadesVendidas(companyId, v.mes.desde, v.mes.hasta),
-    unidadesVendidas(companyId, v.seisMeses.desde, v.seisMeses.hasta),
+    Promise.all(v.meses.map((m) => unidadesVendidas(companyId, `${m}-01`, m === v.meses[5] ? hoy : finDeMes(m)))),
     ultimaVenta(companyId),
     antiguedadSede(companyId, ids, hoy),
   ]);
@@ -183,6 +193,7 @@ async function inventarioSede(companyId: number, productos: Map<number, Producto
   for (const id of ids) {
     const s = almacen.stock.get(id);
     const e = edad.get(id);
+    const vendidas = porMes.map((m) => m.get(id) ?? 0);
     filas.set(id, {
       companyId,
       fisico: s?.fisico ?? 0,
@@ -193,8 +204,9 @@ async function inventarioSede(companyId: number, productos: Map<number, Producto
       tramos: e?.tramos ?? {},
       entradaMasVieja: e?.entradaMasVieja ?? null,
       diasPromedio: e?.diasPromedio ?? null,
-      vendidasMes: mes.get(id) ?? 0,
-      vendidas6m: seis.get(id) ?? 0,
+      vendidasMes: vendidas[5],
+      vendidas6m: vendidas.reduce((a, b) => a + b, 0),
+      vendidasPorMes: vendidas,
       ultimaVenta: ultima.get(id) ?? null,
     });
   }
