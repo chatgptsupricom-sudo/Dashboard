@@ -7,11 +7,14 @@
  *  2. Clientes inactivos: la cartera asignada a cada vendedor (res.partner.user_id
  *     en Odoo) que no registra compras en los últimos 3 o 6 meses.
  *
- * Fuente: `account.move.line` de facturas de cliente (`out_invoice`), estado
- * `posted`, de las compañías en alcance. Sin notas de crédito: es un reporte
- * de lo vendido, y una devolución de una factura de otro mes salía como fila
- * negativa (ej. RFCLIE/2026/00152 de sept. revirtiendo la 5035619 de mayo)
- * (7 Panamá · 9 Valencia · 10 Caracas), `invoice_date` dentro del rango pedido.
+ * Fuente: `account.move.line` de facturas de cliente (`out_invoice`) menos
+ * las notas de crédito (`out_refund`), estado `posted`, de las compañías en
+ * alcance (7 Panamá · 9 Valencia · 10 Caracas), `invoice_date` dentro del
+ * rango pedido, y sin los vendedores que el Dashboard deja fuera
+ * (`esVendedorExcluido`): así el total del mes es el del Dashboard (nov-2026,
+ * a pedido; antes no restaba las NC y en oct-2026 daba $377 mil más). Una NC
+ * de una factura de otro mes sale como fila negativa en el mes de la NC
+ * (ej. RFCLIE/2026/00152 de sept. revirtiendo la 5035619 de mayo).
  * La marca sale de `product.(product).x_studio_marca` (mismo patrón que el
  * reporte trimestral).
  *
@@ -24,6 +27,7 @@ import { marcasDeSede } from "@/lib/reportes-comerciales/reporteTrimestral";
 import { CORTE_ODOO, normalizarRif, RIF_SQL, SQL_SIN_INTERCOMPANIA } from "@/lib/smartbit";
 import { esICExcluido, terminosSinIC } from "@/lib/intercompania";
 import { sinRetirados } from "@/lib/vendedores/retirados";
+import { EXCLUSIONES_POR_SEDE, esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 
 export const COMPANY_NAME: Record<number, string> = {
   9: "Valencia",
@@ -215,8 +219,10 @@ export async function cargarDesglose(opts: {
   vendedorUserId?: number | null;
   clienteId?: number | null;
   marca?: string | null;
-  /** Restar las notas de crédito (el Agente IA). El Reporte de Ventas no las usa. */
+  /** Restar las notas de crédito (Reporte de Ventas y Agente IA). */
   conNotasCredito?: boolean;
+  /** Sacar a los vendedores que el Dashboard deja fuera (`esVendedorExcluido`). */
+  excluirVendedores?: boolean;
 }): Promise<DesgloseResult> {
   const marca = (opts.marca || MARCA_TODAS).trim();
   const idsProducto = await idsProductoDeMarca(marca);
@@ -255,7 +261,7 @@ export async function cargarDesglose(opts: {
   const moveIds = [...new Set(crudas.map((l: any) => l.move_id?.[0]).filter(Boolean))] as number[];
   const productIds = [...new Set(crudas.map((l: any) => l.product_id?.[0]).filter(Boolean))] as number[];
 
-  const moves = await readEnLotes("account.move", moveIds, ["invoice_user_id", "move_type"]);
+  const moves = await readEnLotes("account.move", moveIds, ["invoice_user_id", "move_type", "company_id"]);
   const prods = await readEnLotes("product.product", productIds, ["x_studio_marca"]);
 
   const marcaDe = (id: number | undefined): string => {
@@ -275,6 +281,7 @@ export async function cargarDesglose(opts: {
     if (clienteExcluido(nombreCliente)) continue;
 
     const mv = moves.get(l.move_id?.[0]) || {};
+    if (opts.excluirVendedores && esVendedorExcluido(mv.invoice_user_id?.[1], mv.company_id?.[0])) continue;
     const vendedor = limpiarVendedor(mv.invoice_user_id?.[1] || "") || "(sin vendedor)";
     const marcaProd = marcaDe(l.product_id?.[0]);
     const producto = limpiarProducto(l.product_id?.[1] || "") || "(sin producto)";
@@ -323,8 +330,38 @@ export interface PuntoMensual {
 }
 
 /**
- * Facturación por mes (sin notas de crédito, igual que el desglose) con los
- * mismos filtros del desglose (marca, vendedor,
+ * Términos de dominio (sobre `account.move.line`) que dejan fuera las facturas
+ * de los vendedores que el Dashboard excluye en cada sede. Los usuarios se
+ * buscan por nombre con las mismas reglas de `esVendedorExcluido`.
+ */
+async function terminosSinVendedoresExcluidos(companyIds: number[]): Promise<any[]> {
+  const reglas = [...new Set(companyIds.flatMap((c) => EXCLUSIONES_POR_SEDE[c] || []))];
+  if (reglas.length === 0) return [];
+  const dominio: any[] = [
+    ...Array(reglas.length - 1).fill("|"),
+    ...reglas.map((r) => ["name", "ilike", r]),
+  ];
+  const usuarios =
+    (await callOdooRPC<any[]>("res.users", "search_read", [dominio], {
+      fields: ["id", "name"],
+      context: { active_test: false },
+    })) || [];
+  const terminos: any[] = [];
+  for (const cid of companyIds) {
+    const ids = usuarios.filter((u) => esVendedorExcluido(u.name, cid)).map((u) => u.id);
+    if (ids.length === 0) continue;
+    // Otra sede, sin vendedor, o un vendedor que no es de los excluidos.
+    terminos.push("|", "|",
+      ["move_id.company_id", "!=", cid],
+      ["move_id.invoice_user_id", "=", false],
+      ["move_id.invoice_user_id", "not in", ids]);
+  }
+  return terminos;
+}
+
+/**
+ * Facturación por mes (facturas menos notas de crédito, sin los vendedores
+ * excluidos, igual que el desglose) con los mismos filtros del desglose (marca, vendedor,
  * cliente, sede), desde el primer mes con datos hasta hoy. Antes de
  * CORTE_ODOO sale del histórico de Smartbit (lib/smartbit.ts), después de
  * Odoo: allá Odoo solo tiene las facturas abiertas migradas.
@@ -351,9 +388,10 @@ export async function cargarComparativo(opts: {
   const serie = new Map<string, number>();
   const sumar = (mes: string, v: number) => serie.set(mes, (serie.get(mes) || 0) + v);
 
-  // Odoo, desde el corte: agrupado por mes y tipo en el servidor.
+  // Odoo, desde el corte: agrupado por mes y tipo en el servidor. Facturas
+  // menos notas de crédito y sin los vendedores excluidos, como el desglose.
   const dom: any[] = [
-    ["move_type", "=", "out_invoice"],
+    ["move_type", "in", ["out_invoice", "out_refund"]],
     ["parent_state", "=", "posted"],
     ["company_id", "in", opts.companyIds],
     ["invoice_date", ">=", CORTE_ODOO],
@@ -361,29 +399,37 @@ export async function cargarComparativo(opts: {
     ["product_id", "!=", false],
     ...CLIENTES_EXCLUIDOS_SUBSTR.map((s) => ["partner_id.name", "not ilike", s]),
     ...terminosSinIC("move_id.commercial_partner_id"),
+    ...(await terminosSinVendedoresExcluidos(opts.companyIds)),
   ];
   if (opts.vendedorUserId) dom.push(["move_id.invoice_user_id", "=", opts.vendedorUserId]);
   if (opts.clienteId) dom.push(["partner_id", "=", opts.clienteId]);
   if (filtraMarca) dom.push(["product_id", "in", productos.map((p: any) => p.id)]);
   const grupos =
     (await callOdooRPC<any[]>("account.move.line", "read_group", [
-      dom, ["price_subtotal:sum"], ["invoice_date:month"],
+      dom, ["price_subtotal:sum"], ["invoice_date:month", "move_type"],
     ], { lazy: false })) || [];
   for (const g of grupos) {
     const mes = String(g.__range?.["invoice_date:month"]?.from || "").slice(0, 7);
     if (!mes) continue;
-    sumar(mes, Number(g.price_subtotal) || 0);
+    // En una nota de crédito price_subtotal viene en positivo.
+    sumar(mes, (g.move_type === "out_refund" ? -1 : 1) * (Number(g.price_subtotal) || 0));
   }
 
   // Smartbit, antes del corte.
   const where = [
     `company_id IN (${opts.companyIds.map(() => "?").join(",")})`,
     "fecha < ?",
-    // En Smartbit las notas de crédito vienen como venta negativa.
-    "venta > 0",
+    // En Smartbit las notas de crédito vienen como venta negativa: restan.
     SQL_SIN_INTERCOMPANIA,
   ];
   const params: any[] = [...opts.companyIds, CORTE_ODOO];
+  // Los mismos vendedores excluidos, por nombre (como mensualSmartbit del Dashboard).
+  for (const cid of opts.companyIds) {
+    for (const regla of EXCLUSIONES_POR_SEDE[cid] || []) {
+      where.push("NOT (company_id = ? AND LOWER(COALESCE(vendedor,'')) LIKE ?)");
+      params.push(cid, `%${regla}%`);
+    }
+  }
   if (filtraMarca) {
     const codigos = [...new Set(productos.map((p: any) => String(p.default_code || "").trim().toUpperCase()).filter(Boolean))];
     if (codigos.length === 0) return cerrarSerie(serie);
