@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
+import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { SEDES_CLIENTES, validarCliente } from "@/lib/clientes-odoo/validar";
 import {
   buscarPorRif,
@@ -11,20 +12,24 @@ import {
 } from "@/lib/clientes-odoo/odoo";
 
 /**
- * Crear clientes en Odoo desde el panel (lib/clientes-odoo). Por ahora solo
- * el Asistente de Ventas (y el SuperAdmin). El asistente crea en la sede de su
- * `cids`; el SuperAdmin elige Valencia o Caracas.
+ * Crear clientes en Odoo desde el panel (lib/clientes-odoo): el Asistente de
+ * Ventas, Inteligencia de Negocio y el SuperAdmin. El asistente crea en la sede
+ * de su `cids`; el SuperAdmin y BI (que no tiene `cids`) eligen Valencia o Caracas.
  *
  *  GET ?sede=            → estados, vendedores de la sede y la sede fija.
  *  GET ?rif=             → fichas de Valencia/Caracas con ese RIF.
  *  POST {ClienteNuevo}   → valida y crea.
  */
-const ROLES = ["asistente de ventas"];
+const ROLES = ["asistente de ventas", ROL_BI];
 
 function sedeDeSesion(payload: any, pedida: unknown): { sede?: number; fija: boolean; error?: NextResponse } {
   const rol = String(payload?.role || "").toLowerCase().trim();
+  // requireRoles deja entrar a Marketing y Electrodomésticos donde está ROL_BI: esta pantalla es solo de BI.
+  if (esRolBI(rol) && rol !== ROL_BI) {
+    return { fija: true, error: NextResponse.json({ error: "No autorizado" }, { status: 403 }) };
+  }
   const valida = (n: number) => SEDES_CLIENTES.some((s) => s.id === n);
-  if (rol === "superadmin") {
+  if (rol === "superadmin" || rol === ROL_BI) {
     const n = Number(pedida);
     return { sede: valida(n) ? n : SEDES_CLIENTES[0].id, fija: false };
   }
@@ -55,7 +60,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES);
+  // BI solo lee en el resto del panel; crear clientes es la excepción que se le dio.
+  const auth = await requireRoles(request, ROLES, { escribeBI: true });
   if (auth.error) return auth.error;
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
