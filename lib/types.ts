@@ -543,6 +543,7 @@ export const rolePermissions: RolePermissions = {
       "stock_marca",
       "reportes_comerciales",
       "semaforo_clientes", // Semáforo de clientes, las tres sedes (lib/semaforo-clientes)
+      "crear_cliente", // Crear clientes en Odoo (lib/clientes-odoo); elige Valencia o Caracas
       "seller_map",
       "spiff",
       // Desplegable Marketing

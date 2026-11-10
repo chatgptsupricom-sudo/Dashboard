@@ -1465,7 +1465,7 @@ export function Sidebar({
                               permission: "semaforo_clientes",
                             }]
                           : []),
-                        ...(isSuperAdminRole && allowedSections.includes("crear_cliente")
+                        ...((isSuperAdminRole || isBIRole) && allowedSections.includes("crear_cliente")
                           ? [{
                               label: t("crear_cliente"),
                               href: `${basePath}/crear-cliente`,
