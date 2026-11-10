@@ -39,6 +39,8 @@ type Fila = {
   referencia: string;
   contenedor: string | null;
   oc_referencia: string | null;
+  odoo_purchase_order_id?: number | null;
+  purchase_order_id?: number | null;
   fecha_estimada: string | null;
   etapa: Etapa;
   resultado: "conforme" | "con_novedades" | null;
@@ -433,7 +435,21 @@ export default function RecepcionLista({ base }: { base: string }) {
                         {t("reparto_sedes.lista_insignia", { pct: pct(f.reparto_sedes.pctUnidadesCaracas) })}
                       </span>
                     )}
-                    {f.etapa === "cerrado" && f.odoo_estado && (
+                    {/* Sin OC de Odoo no se carga nada en Odoo: Compras la pone
+                        cuando la tenga, aunque ya haya llegado o se haya cerrado. */}
+                    {f.origen !== "factura" &&
+                      !f.descartado_at &&
+                      !f.odoo_purchase_order_id &&
+                      !f.purchase_order_id &&
+                      !["cargando", "cargado", "acumulado"].includes(f.odoo_estado || "") && (
+                        <span
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700"
+                          title={t("odoo.sin_oc_titulo")}
+                        >
+                          {t("odoo.sin_oc_insignia")}
+                        </span>
+                      )}
+                    {f.etapa === "cerrado" && f.odoo_estado && f.odoo_estado !== "sin_oc" && (
                       <span
                         className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
                           f.odoo_estado === "cargado"

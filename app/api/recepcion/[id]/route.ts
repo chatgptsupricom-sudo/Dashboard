@@ -187,7 +187,7 @@ export async function PATCH(
     // el packing list sigue por llegar).
     await query("DELETE FROM recepcion_packing_conteo WHERE recepcion_id = ?", [r.id]);
     await guardarReparto(r.id!, items.map((i) => i.reparto));
-    await guardarOcElegida(r.id!, oc);
+    await guardarOcElegida(r.id!, oc, r.sesion!.nombre);
 
     // Reparto entre sedes (Valencia / Caracas): va por producto, no por
     // renglon, asi que sobrevive a que se borren y se vuelvan a crear. Un
