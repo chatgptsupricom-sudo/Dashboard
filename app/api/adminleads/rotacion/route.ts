@@ -1,4 +1,4 @@
-import { calcularRotacion, resolverCompanies } from "@/lib/adminleads/rotacion";
+import { calcularRotacion, resolverCompanies, verCostoRotacion } from "@/lib/adminleads/rotacion";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
@@ -10,8 +10,8 @@ export const maxDuration = 60;
  * GET /api/adminleads/rotacion
  *
  * Reporte de rotación de SKUs para el equipo de contenido: cantidades y
- * precio de venta; nada de costos, márgenes ni facturación (ver
- * lib/adminleads/rotacion.ts).
+ * precio de venta; el costo solo para SuperAdmin e Inteligencia de Negocio
+ * (ver lib/adminleads/rotacion.ts).
  */
 async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
@@ -26,8 +26,9 @@ async function leerGET(request: NextRequest) {
       );
     }
 
-    const data = await calcularRotacion(companies);
-    return NextResponse.json({ success: true, ...data });
+    const verCosto = verCostoRotacion(auth.payload?.role);
+    const data = await calcularRotacion(companies, verCosto);
+    return NextResponse.json({ success: true, verCosto, ...data });
   } catch (error: any) {
     console.error("GET /api/adminleads/rotacion error:", error?.message);
     return NextResponse.json(

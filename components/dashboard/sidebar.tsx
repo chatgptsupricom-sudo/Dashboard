@@ -310,6 +310,8 @@ export function Sidebar({
     { id: "bi_dias_promedio", label: "Días promedio", icon: Timer, slug: "/dias-promedio" },
     // Productos en camino y si ya se vendieron en la sede (lib/inteligencia-negocio/porLlegar.ts).
     { id: "bi_por_llegar", label: "Por llegar", icon: Truck, slug: "/por-llegar" },
+    // El Dashboard de Productos de AdminLeads (rotación de SKUs), para BI fuera del desplegable Leads.
+    { id: "bi_rotacion_productos", label: "Rotación productos", icon: Boxes, slug: "/adminleads/dashboard", absoluteHref: true },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
     // Organigrama con las actividades de cada cargo (SuperAdmin, Procesos y RRHH).

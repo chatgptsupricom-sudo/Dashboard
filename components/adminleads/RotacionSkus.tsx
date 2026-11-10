@@ -18,6 +18,8 @@ type Fila = {
   marca: string;
   categoria: string;
   precio: number;
+  /** Solo viene para SuperAdmin e Inteligencia de Negocio; null = sin costo. */
+  costo?: number | null;
   stock: number;
   vendidas30: number;
   vendidas60: number;
@@ -33,6 +35,7 @@ type Fila = {
 
 type Respuesta = {
   success: boolean;
+  verCosto?: boolean;
   filas: Fila[];
   categorias: string[];
   marcas: string[];
@@ -66,6 +69,7 @@ type SortCol =
   | "marca"
   | "categoria"
   | "precio"
+  | "costo"
   | "stock"
   | "vendidas30"
   | "vendidas60"
@@ -135,8 +139,8 @@ export function RotacionSkus({ sede }: { sede?: string } = {}) {
     const rows = delFiltro.filter((f) => !estado || f.estado === estado);
     const dir = sort.dir === "asc" ? 1 : -1;
     rows.sort((a, b) => {
-      const av = a[sort.col];
-      const bv = b[sort.col];
+      const av = a[sort.col] ?? null;
+      const bv = b[sort.col] ?? null;
       // null (sin ventas, sin stock, sin ingreso) al fondo siempre
       if (av === null) return bv === null ? 0 : 1;
       if (bv === null) return -1;
@@ -208,7 +212,7 @@ export function RotacionSkus({ sede }: { sede?: string } = {}) {
             </h2>
             <p className="text-sm text-slate-500">
               Qué se mueve rápido, qué está estancado y cómo se ordena cada
-              categoría. Unidades y precio de venta, sin costos.
+              categoría. Unidades y precio de venta{data?.verCosto ? " y costo" : ", sin costos"}.
             </p>
           </div>
         </div>
@@ -321,6 +325,7 @@ export function RotacionSkus({ sede }: { sede?: string } = {}) {
                 {th("marca", "Marca")}
                 {th("categoria", "Categoría")}
                 {th("precio", "Precio", true)}
+                {data?.verCosto && th("costo", "Costo", true)}
                 {th("stock", "Stock", true)}
                 {th("vendidas30", "30 d", true)}
                 {th("vendidas60", "60 d", true)}
@@ -353,6 +358,15 @@ export function RotacionSkus({ sede }: { sede?: string } = {}) {
                       <span className="text-slate-400">sin precio</span>
                     )}
                   </td>
+                  {data?.verCosto && (
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                      {f.costo ? (
+                        `$${f.costo.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      ) : (
+                        <span className="text-slate-400">sin costo</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                     {f.stock.toLocaleString("es-VE")}
                   </td>
@@ -418,7 +432,7 @@ export function RotacionSkus({ sede }: { sede?: string } = {}) {
               {filtradas.length === 0 && (
                 <tr>
                   <td
-                    colSpan={14}
+                    colSpan={data?.verCosto ? 15 : 14}
                     className="py-12 text-center text-sm text-slate-400"
                   >
                     Ningún SKU coincide con los filtros.

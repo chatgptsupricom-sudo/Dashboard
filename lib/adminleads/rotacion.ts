@@ -1,5 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { ultimaVenta } from "@/lib/compras/datosOdoo";
+import { costos, ultimaVenta } from "@/lib/compras/datosOdoo";
 import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
 import { IDS_SEDES, listasPrincipales } from "@/lib/calidad-odoo/odoo";
 import { ultimosIngresos } from "@/lib/inteligencia-negocio/reportes";
@@ -15,8 +15,9 @@ import { terminosSinIC } from "@/lib/intercompania";
  * Devuelve unidades vendidas, stock, días de cobertura (stock ÷ ritmo de
  * venta), ranking de rotación y el precio de venta (el de la lista de precios
  * principal de la sede, `listasPrincipales`).
- * Nada de costos, márgenes, facturación por SKU ni proveedores: a pedido, el
- * precio de venta sí, el costo no (nov-2026).
+ * Nada de márgenes, facturación por SKU ni proveedores: a pedido, el precio
+ * de venta sí. El costo solo lo ven SuperAdmin e Inteligencia de Negocio
+ * (`verCostoRotacion`); el equipo de contenido no (nov-2026).
  */
 
 export type EstadoRotacion = "alta" | "media" | "baja";
@@ -32,6 +33,12 @@ export type FilaRotacion = {
    * `lst_price` si es mayor que 1. 0 = sin precio.
    */
   precio: number;
+  /**
+   * Costo unitario de la sede (`costos()` de Compras: costo de Odoo o, sin él,
+   * el precio del proveedor). Con dos sedes, el de la primera que lo tiene.
+   * Solo viene si se pidió con costo; null = sin costo.
+   */
+  costo?: number | null;
   stock: number;
   vendidas30: number;
   vendidas60: number;
@@ -77,8 +84,12 @@ const VENTANA_DIAS = 90; // se piden 90d y se parte en 30/60 + última venta
 
 type CompanyFilter = ["company_id", "in", number[]] | ["company_id", "=", number];
 
+/** SuperAdmin, Inteligencia de Negocio y Marketing y Electrodomésticos ven el costo. */
+export const verCostoRotacion = (rol: unknown) => veTodasLasSedes(rol);
+
 export async function calcularRotacion(
   companyIds: number[],
+  conCosto = false,
 ): Promise<{ filas: FilaRotacion[]; categorias: string[]; marcas: string[]; periodo: { desde: string; hasta: string } }> {
   const companyFilter: CompanyFilter =
     companyIds.length === 1
@@ -216,10 +227,24 @@ export async function calcularRotacion(
         }),
       ),
     );
-  const [ultimas, ingresos] = await Promise.all([
+  const sedesOrdenadas = [...companyIds].sort((a, b) => IDS_SEDES.indexOf(a) - IDS_SEDES.indexOf(b));
+  const [ultimas, ingresos, costosSede] = await Promise.all([
     porSede(ultimaVenta, "última venta"),
     porSede((c) => ultimosIngresos(c, hasta), "último ingreso"),
+    conCosto
+      ? Promise.all(sedesOrdenadas.map((c) => costos(c).catch((e) => {
+          console.error("Rotación: costos de la sede", c, e?.message);
+          return new Map<number, number>();
+        })))
+      : Promise.resolve([] as Map<number, number>[]),
   ]);
+  const costoDe = (pid: number): number | null => {
+    for (const m of costosSede) {
+      const c = m.get(pid);
+      if (c && c > 0) return Math.round(c * 100) / 100;
+    }
+    return null;
+  };
   const masReciente = (fechas: (string | null | undefined)[]) =>
     fechas.reduce<string | null>((max, d) => (d && (!max || d > max) ? d : max), null);
   const ultimaDe = (pid: number, ventana: string | null) =>
@@ -266,6 +291,7 @@ export async function calcularRotacion(
       marca: info.marca,
       categoria: info.categoria,
       precio: info.precio,
+      ...(conCosto && { costo: costoDe(pid) }),
       stock: Math.round(st),
       vendidas30: Math.round(v.v30),
       vendidas60: Math.round(v.v60),

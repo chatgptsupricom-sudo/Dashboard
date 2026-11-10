@@ -523,13 +523,13 @@ export const rolePermissions: RolePermissions = {
       "inventory",
       "bi_dias_promedio", // Días promedio de cobro, inventario y pago
       "bi_por_llegar", // Productos en camino y si ya se vendieron (lib/inteligencia-negocio/porLlegar.ts)
+      "bi_rotacion_productos", // Rotación productos: el Dashboard de Productos de AdminLeads, con costo, fuera del desplegable Leads
       "bi_reportes", // Desplegable Reportes: Facturación, Productos, Clientes (lib/inteligencia-negocio/reportes.ts)
       "bi_clasificacion", // Desplegable Clasificación: productos, clientes y por marca (lib/inteligencia-negocio/clasificacion)
       "catalogo", // El de los vendedores, de Valencia (lib/catalogo/sede.ts)
       "agenteia",
       // Desplegable Leads
       "adminleads",
-      "productos_adminleads", // Dashboard de Productos de AdminLeads, con selector de sede
       "monitoreo_leads",
       "cierres_adminleads",
       "recompra_adminleads",

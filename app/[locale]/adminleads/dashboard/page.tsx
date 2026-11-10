@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { BarChart3, Calendar } from "lucide-react";
 import { BrandBubbles } from "@/components/dashboard/brand-bubbles";
 import { RotacionSkus } from "@/components/adminleads/RotacionSkus";
-import { veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
+import { esRolBI, veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
 import { useAuthStore } from "@/lib/stores/auth.store";
 
 function hace3Meses(): string {
@@ -74,7 +74,8 @@ export default function AdminLeadsDashboardPage() {
             <BarChart3 className="w-6 h-6 text-purple-600" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Dashboard de Productos</h1>
+            {/* En el menú de BI la sección se llama "Rotación productos". */}
+            <h1 className="text-2xl font-bold text-slate-900">{esRolBI(user?.role) ? "Rotación productos" : "Dashboard de Productos"}</h1>
             <p className="text-sm text-slate-500">
               Estadísticas de ventas · {desde} a {hasta}
             </p>

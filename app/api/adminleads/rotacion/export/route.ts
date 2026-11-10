@@ -1,6 +1,7 @@
 import {
   calcularRotacion,
   resolverCompanies,
+  verCostoRotacion,
   type EstadoRotacion,
   type FilaRotacion,
 } from "@/lib/adminleads/rotacion";
@@ -23,7 +24,7 @@ const ESTADO_LABEL: Record<EstadoRotacion, string> = {
  *
  * Exporta el reporte de rotación con las columnas del brief. Respeta los
  * mismos filtros que la tabla (se pasan por query). Cantidades y precio de
- * venta, sin costos.
+ * venta; el costo solo para SuperAdmin e Inteligencia de Negocio.
  */
 async function leerGET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
@@ -42,7 +43,8 @@ async function leerGET(request: NextRequest) {
     const fEstado = (searchParams.get("estado") || "").trim().toLowerCase();
     const q = (searchParams.get("q") || "").trim().toLowerCase();
 
-    const { filas } = await calcularRotacion(companies);
+    const verCosto = verCostoRotacion(auth.payload?.role);
+    const { filas } = await calcularRotacion(companies, verCosto);
 
     const filtradas = filas.filter((f) => {
       if (fCategoria && f.categoria !== fCategoria) return false;
@@ -61,6 +63,7 @@ async function leerGET(request: NextRequest) {
       { header: "Marca", get: (f) => f.marca },
       { header: "Categoría", get: (f) => f.categoria },
       { header: "Precio de venta", get: (f) => f.precio },
+      ...(verCosto ? [{ header: "Costo", get: (f: FilaRotacion) => f.costo ?? "" }] : []),
       { header: "Stock actual", get: (f) => f.stock },
       { header: "Unidades vendidas (30 días)", get: (f) => f.vendidas30 },
       { header: "Unidades vendidas (60 días)", get: (f) => f.vendidas60 },
@@ -101,10 +104,8 @@ async function leerGET(request: NextRequest) {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Rotación de SKUs");
 
-    ws.columns = columnas.map((c, i) => ({
-      key: String(i),
-      width: [18, 46, 18, 24, 14, 13, 16, 16, 16, 18, 14, 14, 16, 14][i] ?? 18,
-    }));
+    const anchos = [18, 46, 18, 24, 14, ...(verCosto ? [14] : []), 13, 16, 16, 16, 18, 14, 14, 16, 14];
+    ws.columns = columnas.map((c, i) => ({ key: String(i), width: anchos[i] ?? 18 }));
     const hdr = ws.addRow(columnas.map((c) => c.header));
     hdr.height = 22;
     hdr.eachCell((cell) => {
@@ -112,8 +113,9 @@ async function leerGET(request: NextRequest) {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF7C3AED" } };
       cell.alignment = { vertical: "middle", horizontal: "center" };
     });
-    ws.autoFilter = "A1:N1";
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columnas.length } };
     ws.getColumn(5).numFmt = "#,##0.00";
+    if (verCosto) ws.getColumn(6).numFmt = "#,##0.00";
     ws.views = [{ state: "frozen", ySplit: 1 }];
 
     for (const f of filtradas) {
