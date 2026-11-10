@@ -388,6 +388,8 @@ export function Sidebar({
     // Cómo recibe el cliente cada pedido: lo carga el vendedor (o el asistente
     // de ventas por él) y Almacén lo usa en el egreso (lib/ventas/metodoRetiro).
     { id: "metodo_retiro", label: t("metodo_retiro"), icon: Truck, slug: "/metodo-retiro" },
+    // Alta de clientes en Odoo con RIF/teléfono/correo validados (lib/clientes-odoo).
+    { id: "crear_cliente", label: t("crear_cliente"), icon: UserPlus, slug: "/crear-cliente" },
     // Casos de RMA de los clientes del vendedor, solo lectura (lib/rma/vendedor).
     { id: "rma_seller", label: t("rma_clientes"), icon: Wrench, slug: "/casos-rma" },
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
@@ -587,7 +589,7 @@ export function Sidebar({
   // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
   // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
   const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
-  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes"];
+  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes", "crear_cliente"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -1468,6 +1470,13 @@ export function Sidebar({
                               label: "Semáforo de clientes",
                               href: `/${locale}/semaforo-clientes`,
                               permission: "semaforo_clientes",
+                            }]
+                          : []),
+                        ...((isSuperAdminRole || isBIRole) && allowedSections.includes("crear_cliente")
+                          ? [{
+                              label: t("crear_cliente"),
+                              href: `${basePath}/crear-cliente`,
+                              permission: "crear_cliente",
                             }]
                           : []),
                         {

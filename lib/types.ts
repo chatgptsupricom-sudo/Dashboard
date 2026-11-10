@@ -90,6 +90,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_diario", // Reporte Diario de Ventas
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
       "semaforo_clientes", // Semáforo de clientes: cartera en verde/amarillo/rojo (lib/semaforo-clientes)
+      "crear_cliente", // Crear clientes en Odoo con validaciones (lib/clientes-odoo)
       "metas_marca", // Metas de venta por marca y cumplimiento (Ventas > Metas por Marca)
       "stock_marca", // Stock vs vendido por marca, % vendido (Ventas > Stock por Marca)
       "sorteo_caracas", // Ruleta del sorteo de clientes, sede configurable (Ventas > Sorteo de clientes)
@@ -229,7 +230,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["dashboard", "cuota", "spiff", "reporte_diario", "catalogo", "estado_cuenta", "metodo_retiro"],
+    sections: ["dashboard", "cuota", "spiff", "reporte_diario", "catalogo", "estado_cuenta", "metodo_retiro", "crear_cliente"],
   },
   [UserRole.ADMINISTRACION]: {
     canViewAllSections: false,
@@ -543,6 +544,7 @@ export const rolePermissions: RolePermissions = {
       "stock_marca",
       "reportes_comerciales",
       "semaforo_clientes", // Semáforo de clientes, las tres sedes (lib/semaforo-clientes)
+      "crear_cliente", // Crear clientes en Odoo (lib/clientes-odoo); elige Valencia o Caracas
       "seller_map",
       "spiff",
       // Desplegable Marketing
