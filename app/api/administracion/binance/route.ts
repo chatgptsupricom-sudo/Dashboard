@@ -25,6 +25,7 @@ import {
   movimientosBorrables,
   NOMBRE_SEDE,
   ordenesRegistradasEnOdoo,
+  conRegistroOdoo,
   esRolCxC,
   esLado,
   ROL_CXC,
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
     // comprobantes de la semana con su estado (sin el estado de cuenta).
     if (request.nextUrl.searchParams.get("vista") === "comprobantes") {
       const { comprobantes } = await conciliacion(semana, sede);
-      return NextResponse.json({ success: true, semana, comprobantes });
+      return NextResponse.json({ success: true, semana, comprobantes: await conRegistroOdoo(comprobantes) });
     }
     // Cuentas por Cobrar solo ve los conciliados que todavia no registro en Odoo
     // (ni pendientes ni pagos sin comprobante). ?vista=cxc: la misma vista para
@@ -86,7 +87,9 @@ export async function GET(request: NextRequest) {
       // Con todas las semanas no se ofrece borrar el estado de cuenta (se borra por semana).
       semana === TODAS_LAS_SEMANAS ? Promise.resolve(0) : movimientosBorrables(semana, sede),
     ]);
-    return NextResponse.json({ success: true, semana, ...datos, borrables });
+    // Las salidas son pagos nuestros: no llevan el ID de orden en un cobro de Odoo.
+    const comprobantes = lado === "entrada" ? await conRegistroOdoo(datos.comprobantes) : datos.comprobantes;
+    return NextResponse.json({ success: true, semana, ...datos, comprobantes, borrables });
   } catch (e: any) {
     console.error("[binance] conciliacion:", e?.message);
     return NextResponse.json({ error: "No se pudo cargar la conciliación" }, { status: 500 });
