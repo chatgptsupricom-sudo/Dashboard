@@ -13,6 +13,13 @@ import {
 } from "@/lib/recepcion/servidor";
 import { ErrorRecepcion, guardarOcElegida, packingListRepetido, validarOcElegida } from "@/lib/recepcion/odoo";
 import { guardarReparto } from "@/lib/recepcion/conteo";
+import { puedeRepartirse } from "@/lib/recepcion/repartoSedes";
+import {
+  asegurarTablasReparto,
+  cambiarActivo,
+  recalcularSiReparte,
+  type Quien,
+} from "@/lib/recepcion/repartoSedesDatos";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +44,50 @@ async function obtener(request: NextRequest, params: Promise<{ id: string }>) {
     return { error: NextResponse.json({ error: "No encontrado" }, { status: 404 }) };
   }
   return { sesion: sesion!, id, datos };
+}
+
+/**
+ * Reparto entre sedes despues de editar el packing list. `repartir` es lo que
+ * mando el formulario: true = repartir, false = no repartir, undefined = el
+ * formulario no lo toco (se recalcula si ya se repartia). Devuelve el error
+ * para mostrarlo, sin hacer fallar la edicion.
+ */
+async function repartoTrasEditar(
+  id: number,
+  cids: number,
+  repartir: unknown,
+  quien: Quien,
+): Promise<string | undefined> {
+  try {
+    await asegurarTablasReparto();
+    const act = await query("SELECT activo FROM recepcion_reparto_sedes WHERE recepcion_id = ?", [id]);
+    const estabaActivo = !!Number((act.rows as any[])[0]?.activo);
+
+    // Solo se edita un packing list que todavia no llego, asi que su origen
+    // es siempre packing_list.
+    if (!puedeRepartirse(cids, "packing_list")) {
+      if (estabaActivo) {
+        await cambiarActivo(id, false, quien, { motivo: "El packing list ya no llega a Valencia ni a Caracas" });
+      }
+      return undefined;
+    }
+    if (repartir === false) {
+      if (estabaActivo) await cambiarActivo(id, false, quien, { motivo: "Se quitó al editar el packing list" });
+      return undefined;
+    }
+    if (repartir === true && !estabaActivo) {
+      await cambiarActivo(id, true, quien, { motivo: "Se activó al editar el packing list" });
+      return undefined;
+    }
+    // Ya se repartia (o el formulario no dijo nada): se recalcula con los
+    // renglones nuevos. Nunca lanza: si falla queda anotado en el reparto.
+    await recalcularSiReparte(id, quien, "Se editó el packing list");
+    return undefined;
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    console.error(`[recepcion] reparto entre sedes de #${id} tras editar:`, msg);
+    return msg;
+  }
 }
 
 export async function GET(
@@ -138,13 +189,27 @@ export async function PATCH(
     await guardarReparto(r.id!, items.map((i) => i.reparto));
     await guardarOcElegida(r.id!, oc);
 
+    // Reparto entre sedes (Valencia / Caracas): va por producto, no por
+    // renglon, asi que sobrevive a que se borren y se vuelvan a crear. Un
+    // fallo aqui no deshace la edicion: se avisa y se reintenta del detalle.
+    const repartoSedesError = await repartoTrasEditar(
+      r.id!,
+      cab.cids,
+      body?.repartir_sedes,
+      { nombre: r.sesion!.nombre, email: r.sesion!.payload?.email ? String(r.sesion!.payload.email) : null },
+    );
+
     emitirRecepcion({ accion: "editado", id: r.id!, cids: cab.cids, referencia: cab.referencia });
     // Si cambio de sucursal, la anterior tambien tiene que enterarse.
     if (Number(r.datos!.recepcion.cids) !== cab.cids) {
       emitirRecepcion({ accion: "eliminado", id: r.id!, cids: Number(r.datos!.recepcion.cids) });
     }
 
-    return NextResponse.json({ success: true, ...(await cargarRecepcion(r.id!)) });
+    return NextResponse.json({
+      success: true,
+      ...(await cargarRecepcion(r.id!)),
+      ...(repartoSedesError ? { reparto_sedes_error: repartoSedesError } : {}),
+    });
   } catch (e: any) {
     console.error("Error editando recepcion:", e);
     return NextResponse.json({ error: e.message }, { status: 500 });
@@ -170,6 +235,15 @@ export async function DELETE(
         { error: "El contenedor ya llego: no se puede anular" },
         { status: 409 },
       );
+    }
+    // El reparto entre sedes se va con el packing list; su historial
+    // (recepcion_reparto_eventos) se queda como registro de lo que paso.
+    try {
+      await asegurarTablasReparto();
+      await query("DELETE FROM recepcion_reparto_lineas WHERE recepcion_id = ?", [r.id]);
+      await query("DELETE FROM recepcion_reparto_sedes WHERE recepcion_id = ?", [r.id]);
+    } catch (e: any) {
+      console.warn(`[recepcion] no se borro el reparto entre sedes de #${r.id}:`, e?.message || e);
     }
     emitirRecepcion({ accion: "eliminado", id: r.id!, cids: Number(r.datos!.recepcion.cids) });
     return NextResponse.json({ success: true });

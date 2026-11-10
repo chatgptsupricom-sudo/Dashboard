@@ -444,7 +444,7 @@ export function Sidebar({
     // "Packing List": calendario de lo que llego y va a llegar al almacen, solo
     // fecha y productos.
     // Diseñador y AdminLeads de Valencia; misma pagina para los dos roles.
-    { id: "llegadas_disenador", label: t("llegadas"), icon: PackageCheck, slug: "/disenador/llegadas", absoluteHref: true, cidsOnly: 9 },
+    { id: "llegadas_disenador", label: t("llegadas"), icon: PackageCheck, slug: "/disenador/llegadas", absoluteHref: true, cidsOnly: [9, 10] },
     { id: "catalogo_disenos", label: "KPI de Diseños", icon: Palette, slug: "/disenos" },
     { id: "editor_ia_disenador", label: "Editor con IA", icon: Sparkles, slug: "/editor-ia" },
     // Cantidad de clientes por estado, en 3D; el país sale del cids (API).
@@ -602,7 +602,10 @@ export function Sidebar({
         ((item as any).adminLeadsOnly ? (userRole === "adminLeads" || userRole === "superAdmin") : true) &&
         // cidsOnly: el item se oculta si el rol tiene un cids asignado que no
         // coincide. superAdmin (sin cids) siempre lo ve.
-        ((item as any).cidsOnly == null || userRole === "superAdmin" || Number(userCids) === (item as any).cidsOnly) &&
+        // Acepta un número o una lista de sedes (ej. [9, 10]).
+        ((item as any).cidsOnly == null ||
+          userRole === "superAdmin" ||
+          ([] as unknown[]).concat((item as any).cidsOnly).some((c) => Number(c) === Number(userCids))) &&
         !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads", "recompra_adminleads", "compras_mes_adminleads"].includes(item.id)) &&
         !((userRole === "superAdmin" || isBIRole) && ["banco_imagenes", "banco_imagenes_seller", "vista_custom", "frecuencia_cpm"].includes(item.id)) &&
         // El item del vendedor duplicaria a "material_pop" para superAdmin, y

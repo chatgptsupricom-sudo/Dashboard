@@ -60,7 +60,19 @@ type Fila = {
   descartado_at?: string | null;
   descartado_por?: string | null;
   descartado_motivo?: string | null;
+  /** Reparto entre sedes (Valencia/Caracas), solo si está activo. Fracciones 0..1. */
+  reparto_sedes?: {
+    pctUnidadesCaracas: number | null;
+    pctValorCaracas: number | null;
+    unidadesCaracas: number;
+    unidades: number;
+  } | null;
 };
+
+/** 0.45 → "45 %". */
+const pct = (f: number) => `${Math.round(f * 100).toLocaleString("es-VE")} %`;
+/** El de Valencia como complemento del redondeado, para que sumen 100 %. */
+const pctResto = (f: number) => `${(100 - Math.round(f * 100)).toLocaleString("es-VE")} %`;
 
 type Filtro = Etapa | "todos" | "descartados";
 
@@ -408,6 +420,17 @@ export default function RecepcionLista({ base }: { base: string }) {
                     {f.origen === "factura" && (
                       <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
                         {t("factura.etiqueta")}
+                      </span>
+                    )}
+                    {f.reparto_sedes && f.reparto_sedes.pctUnidadesCaracas != null && (
+                      <span
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 tabular-nums"
+                        title={t("reparto_sedes.lista_insignia_titulo", {
+                          pctV: pctResto(f.reparto_sedes.pctUnidadesCaracas),
+                          pctC: pct(f.reparto_sedes.pctUnidadesCaracas),
+                        })}
+                      >
+                        {t("reparto_sedes.lista_insignia", { pct: pct(f.reparto_sedes.pctUnidadesCaracas) })}
                       </span>
                     )}
                     {f.etapa === "cerrado" && f.odoo_estado && (

@@ -2,16 +2,42 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ChevronLeft, ChevronRight, Loader2, PackageCheck, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, PackageCheck, Search, Truck, X } from "lucide-react";
+import { useAuthStore } from "@/lib/stores/auth.store";
 
 /**
- * Calendario de mercancia de Valencia para el Diseñador y AdminLeads: cada dia
- * marca si llego mercancia o si se espera, y al tocarlo muestra los productos.
+ * Calendario de mercancia para el Diseñador y AdminLeads de Valencia y de
+ * Caracas (cada sede ve lo suyo; el SuperAdmin elige): cada dia marca si
+ * llego mercancia o si se espera, y al tocarlo muestra los productos.
  * Solo fecha y productos: sin proveedor, contenedores, precintos ni fotos.
+ * La parte del reparto entre sedes que llega por la otra sede sale con una
+ * nota (`via_valencia` / `via_caracas`).
  */
 
 // Lo que va a llegar (`por_llegar` y sin fecha) viene sin cantidad.
-type Producto = { codigo: string | null; producto: string; cantidad?: number };
+type Producto = {
+  codigo: string | null;
+  producto: string;
+  cantidad?: number;
+  via_valencia?: boolean;
+  via_caracas?: boolean;
+};
+
+const SEDES = [9, 10] as const;
+type Sede = (typeof SEDES)[number];
+
+/** Nota de lo que llega por la otra sede (reparto entre sedes). */
+function NotaVia({ p, t }: { p: Producto; t: (k: string) => string }) {
+  if (!p.via_valencia && !p.via_caracas) return null;
+  return (
+    <p className="text-[11px] text-indigo-600 mt-0.5 flex items-center gap-1">
+      <Truck className="w-3 h-3 shrink-0" />
+      {t(p.via_valencia ? "via_valencia" : "via_caracas")}
+    </p>
+  );
+}
+
+const llaveProducto = (p: Producto) => `${p.codigo}-${p.producto}-${p.via_valencia ? "v" : p.via_caracas ? "c" : ""}`;
 type Lista = "llego" | "contando" | "por_llegar";
 type Dia = { fecha: string } & Record<Lista, Producto[]>;
 
@@ -48,27 +74,42 @@ export default function LlegadasProductos() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
+  const { user } = useAuthStore();
+  const esSuperAdmin = String(user?.role || "").toLowerCase().trim() === "superadmin";
+  // Sede que se mira: la del SuperAdmin la elige él; la de los demás la dice la API (su cids).
+  const [sedeElegida, setSedeElegida] = useState<Sede>(9);
+  const [sede, setSede] = useState<number | null>(null);
+  // Para el subtítulo: lo que confirmó la API o, mientras carga, lo que se pidió / el cids de la sesión.
+  const sedeVista: Sede = esSuperAdmin ? sedeElegida : (sede ?? Number(user?.cids)) === 10 ? 10 : 9;
 
   useEffect(() => {
+    let vigente = true;
+    setCargando(true);
+    setError(null);
     (async () => {
       try {
-        const res = await fetch("/api/recepcion/llegadas");
+        const res = await fetch(esSuperAdmin ? `/api/recepcion/llegadas?cids=${sedeElegida}` : "/api/recepcion/llegadas");
         const j = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(j.error || t("error"));
+        if (!vigente) return;
         setDias(j.dias || []);
         setSinFecha(j.sin_fecha || []);
+        setSede(Number(j.sede) || null);
         if (j.hoy) {
           setHoy(j.hoy);
           setElegido(j.hoy);
           setMes({ anio: Number(j.hoy.slice(0, 4)), mes: Number(j.hoy.slice(5, 7)) });
         }
       } catch (e: any) {
-        setError(e?.message || t("error"));
+        if (vigente) setError(e?.message || t("error"));
       } finally {
-        setCargando(false);
+        if (vigente) setCargando(false);
       }
     })();
-  }, [t]);
+    return () => {
+      vigente = false;
+    };
+  }, [t, esSuperAdmin, sedeElegida]);
 
   // La busqueda filtra los productos de cada lista; un dia sin coincidencias
   // queda sin marca en el calendario.
@@ -127,10 +168,29 @@ export default function LlegadasProductos() {
           <div className="w-11 h-11 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center shrink-0">
             <PackageCheck className="w-5 h-5" />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900">{t("titulo")}</h1>
-            <p className="text-sm text-slate-500">{t("subtitulo")}</p>
+            <p className="text-sm text-slate-500">
+              {t("subtitulo", { sede: t(`sede_${sedeVista}`) })}
+            </p>
           </div>
+          {esSuperAdmin && (
+            <div role="group" aria-label={t("elegir_sede")} className="flex shrink-0 rounded-xl border border-slate-200 bg-white p-0.5">
+              {SEDES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSedeElegida(s)}
+                  aria-pressed={sedeElegida === s}
+                  className={`px-3 h-8 rounded-lg text-xs font-medium transition-colors ${
+                    sedeElegida === s ? "bg-violet-600 text-white" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {t(`sede_${s}`)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -322,7 +382,7 @@ export default function LlegadasProductos() {
                         )}
                         <ul className="mt-2 space-y-0.5">
                           {detalle[l].map((p, i) => (
-                            <li key={`${p.codigo}-${p.producto}`} className="flex items-start gap-3 py-1.5">
+                            <li key={llaveProducto(p)} className="flex items-start gap-3 py-1.5">
                               <span className={NUMERO}>{i + 1}.</span>
                               <div className="min-w-0 flex-1">
                                 {/* Nombre completo en varias lineas: cortado con "..." no se distinguian
@@ -331,6 +391,7 @@ export default function LlegadasProductos() {
                                   {p.producto}
                                 </p>
                                 {p.codigo && <p className={CODIGO}>{p.codigo}</p>}
+                                <NotaVia p={p} t={t} />
                               </div>
                               {conCantidad && p.cantidad != null && (
                                 <span className="shrink-0 text-sm font-semibold text-slate-700 tabular-nums">{p.cantidad.toLocaleString(locale)}</span>
@@ -355,7 +416,7 @@ export default function LlegadasProductos() {
                 <p className="text-[11px] text-slate-500 mt-1">{t("sin_fecha_nota")}</p>
                 <ul className="mt-2 grid sm:grid-cols-2 gap-x-6">
                   {sinFechaVisibles.map((p, i) => (
-                    <li key={`${p.codigo}-${p.producto}`} className="flex items-start gap-3 py-1.5">
+                    <li key={llaveProducto(p)} className="flex items-start gap-3 py-1.5">
                       <span className={NUMERO}>{i + 1}.</span>
                       <div className="min-w-0 flex-1">
                         {/* Nombre completo en varias lineas: cortado con "..." no se distinguian
@@ -364,6 +425,7 @@ export default function LlegadasProductos() {
                           {p.producto}
                         </p>
                         {p.codigo && <p className={CODIGO}>{p.codigo}</p>}
+                        <NotaVia p={p} t={t} />
                       </div>
                     </li>
                   ))}
