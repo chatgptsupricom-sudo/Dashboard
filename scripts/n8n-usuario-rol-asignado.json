@@ -1,0 +1,155 @@
+{
+  "name": "Usuarios - Rol asignado",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "usuario-rol",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "b2e1d3c4-0001-4d5e-8f60-usuariorol01",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "usuario-rol"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.id, a.email, a.nombre, a.rol, a.rol_nombre, a.rol_anterior, a.resumen,\n       a.secciones_json, a.url_panel, a.asignado_por\n  FROM usuarios_avisos_rol a\n  JOIN users_config uc ON uc.id = a.user_id AND LOWER(TRIM(uc.email)) = LOWER(TRIM(a.email))\n  JOIN roles r ON r.id = uc.role_id AND r.name = a.rol\n WHERE a.id = $1\n   AND a.enviado_at IS NULL\n   AND a.created_at >= NOW() - INTERVAL 1 DAY\n LIMIT 1",
+        "options": {
+          "queryReplacement": "={{ $json.body && $json.body.evento === 'usuario_rol' ? (parseInt($json.body.aviso_id, 10) || 0) : 0 }}"
+        }
+      },
+      "id": "b2e1d3c4-0002-4d5e-8f60-usuariorol02",
+      "name": "Leer aviso",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        240,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "mySql": {
+          "id": "REEMPLAZAR",
+          "name": "MySQL panel"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// La fila sale de la MySQL (nodo anterior): el webhook solo trae el id.\n// Sin fila = el aviso ya se mandó, es viejo o la persona ya no tiene ese rol.\nconst a = $input.first() && $input.first().json;\nif (!a || !a.id || !a.email) return [];\n\nconst esc = (s) => String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nlet grupos = [];\ntry { grupos = JSON.parse(a.secciones_json || '[]'); } catch (e) { grupos = []; }\n\nconst url = String(a.url_panel || 'https://panel.supricom.com.ve');\nconst rol = a.rol_nombre || a.rol;\nconst nombre = String(a.nombre || '').trim().split(/\\s+/)[0] || '';\n\nconst intro = a.rol_anterior\n  ? 'Tu rol en el <b>Panel SUPRICOM</b> cambió de <b>' + esc(a.rol_anterior) + '</b> a <b>' + esc(rol) + '</b>.'\n  : 'Ya tienes acceso al <b>Panel SUPRICOM</b> con el rol <b>' + esc(rol) + '</b>.';\n\nconst secciones = grupos.map((g) =>\n  '<p style=\"margin:16px 0 6px;font-weight:bold;color:#1e3a8a\">' + esc(g.area) + '</p>' +\n  '<ul style=\"margin:0;padding-left:20px\">' +\n  (g.secciones || []).map((s) => '<li style=\"margin:3px 0\"><b>' + esc(s.nombre) + '</b>: ' + esc(s.detalle) + '</li>').join('') +\n  '</ul>'\n).join('');\n\nconst html = '<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111;max-width:640px\">' +\n  '<p>Hola' + (nombre ? ' ' + esc(nombre) : '') + ',</p>' +\n  '<p>' + intro + '</p>' +\n  '<div style=\"border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin:16px 0;background:#f9fafb\">' +\n    '<p style=\"margin:0 0 8px\"><b>Dirección del panel:</b> <a href=\"' + esc(url) + '\">' + esc(url) + '</a></p>' +\n    '<p style=\"margin:0 0 8px\"><b>Tu rol:</b> ' + esc(rol) + '</p>' +\n    '<p style=\"margin:0\"><b>Cómo entrar:</b> con tu usuario y tu contraseña de <b>Odoo</b>, los mismos con los que entras a Odoo. ' +\n    'Tu usuario es tu correo: <b>' + esc(a.email) + '</b>. El panel no tiene una contraseña aparte: si la olvidas o la cambias, se hace en Odoo.</p>' +\n  '</div>' +\n  '<p style=\"margin:20px 0\"><a href=\"' + esc(url) + '\" style=\"background:#1e3a8a;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block\">Entrar al panel</a></p>' +\n  '<p style=\"margin:16px 0 4px;font-size:15px\"><b>Qué puedes hacer con este rol</b></p>' +\n  '<p style=\"margin:0 0 8px\">' + esc(a.resumen) + '</p>' +\n  (secciones ? '<p style=\"margin:8px 0 0\">Estas son las secciones de tu menú:</p>' + secciones : '') +\n  (a.rol_anterior ? '<p style=\"margin-top:20px\">Si tenías el panel abierto, vuelve a iniciar sesión para ver tu nuevo menú.</p>' : '') +\n  '<p style=\"margin-top:20px;color:#6b7280;font-size:12px\">Este correo sale solo cuando se te asigna un rol en el panel' +\n  (a.asignado_por ? ' (lo asignó ' + esc(a.asignado_por) + ')' : '') + '. Si no esperabas este acceso, avísale a tu supervisor.</p>' +\n  '</div>';\n\nreturn [{ json: { aviso_id: a.id, to: a.email, subject: 'Tu acceso al Panel SUPRICOM: rol ' + rol, html } }];\n"
+      },
+      "id": "b2e1d3c4-0003-4d5e-8f60-usuariorol03",
+      "name": "Armar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b2e1d3c4-0004-4d5e-8f60-usuariorol04",
+      "name": "Enviar",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Cuenta del panel"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE usuarios_avisos_rol SET enviado_at = NOW() WHERE id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Armar correo').first().json.aviso_id }}"
+        }
+      },
+      "id": "b2e1d3c4-0005-4d5e-8f60-usuariorol05",
+      "name": "Marcar enviado",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        960,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "REEMPLAZAR",
+          "name": "MySQL panel"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Leer aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer aviso": {
+      "main": [
+        [
+          {
+            "node": "Armar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar correo": {
+      "main": [
+        [
+          {
+            "node": "Enviar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar": {
+      "main": [
+        [
+          {
+            "node": "Marcar enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

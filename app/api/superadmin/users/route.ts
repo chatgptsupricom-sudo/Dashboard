@@ -4,6 +4,7 @@ import { callOdooRPC } from "@/lib/odoo";
 import { requireRoles } from "@/lib/auth/roles";
 import { olvidarSesion } from "@/lib/auth/vigencia";
 import { aprobadores } from "@/lib/notas-credito/datos";
+import { avisarRolAsignado } from "@/lib/usuarios/avisoRol";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -207,7 +208,7 @@ export async function POST(request: NextRequest) {
     }
     // Inteligencia de Negocio ve las tres sedes: se guarda sin cids, como el
     // SuperAdmin, aunque la pantalla mande una.
-    const rolDestino = await query("SELECT name FROM roles WHERE id = ?", [roleId]);
+    const rolDestino = await query("SELECT name, display_name FROM roles WHERE id = ?", [roleId]);
     const sinSede = esRolBI(rolDestino?.rows?.[0]?.name);
     const safeCids =
       sinSede || finalCids === "" || finalCids === undefined || finalCids === null
@@ -215,9 +216,12 @@ export async function POST(request: NextRequest) {
         : parseInt(finalCids, 10);
 
     // 2. GESTIONAR users_config (Forzando el ID de Odoo)
-    const checkUser = await query("SELECT id FROM users_config WHERE id = ?", [
-      userId,
-    ]);
+    const checkUser = await query(
+      `SELECT uc.id, uc.role_id, r.display_name, r.name AS role_name
+       FROM users_config uc LEFT JOIN roles r ON r.id = uc.role_id WHERE uc.id = ?`,
+      [userId],
+    );
+    const filaAnterior = checkUser?.rows?.[0];
 
     if (checkUser?.rows && checkUser.rows.length > 0) {
       await query(
@@ -233,6 +237,23 @@ export async function POST(request: NextRequest) {
     }
     // Si le cambió el rol o la sede, su sesión abierta deja de valer ya.
     olvidarSesion(userId);
+
+    // Correo de bienvenida solo si se le dio rol por primera vez o se le
+    // cambió; cambiarle solo la sede (o volver a guardar lo mismo) no avisa.
+    const rolCambio = !filaAnterior || Number(filaAnterior.role_id) !== roleId;
+    if (rolCambio && rolDestino?.rows?.[0]?.name) {
+      avisarRolAsignado({
+        userId,
+        email: cleanEmail,
+        nombre: userName,
+        rol: rolDestino.rows[0].name,
+        rolNombre: rolDestino.rows[0].display_name || rolDestino.rows[0].name,
+        rolAnterior: filaAnterior
+          ? filaAnterior.display_name || filaAnterior.role_name || null
+          : null,
+        asignadoPor: (auth.payload!.email as string) || null,
+      });
+    }
 
     // 3. GESTIONAR TABLA sellers (VINCULACIÓN) — además de users_config,
     // el rol de vendedor lleva una fila propia en sellers (cuota, activo).
