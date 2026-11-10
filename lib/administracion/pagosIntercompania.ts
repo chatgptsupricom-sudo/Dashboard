@@ -6,6 +6,8 @@ import {
   SedeIC,
   FacturaReceptor,
   buscarEquivalente,
+  pendientePorPieza,
+  Pieza,
   sedeDePartner,
 } from "@/lib/administracion/pagosIntercompaniaCruce";
 
@@ -42,6 +44,8 @@ export interface DocumentoAplicado {
   aplicado: number;
   /** Lo que le queda en la sede que paga. */
   saldo: number;
+  /** Lo de este pago que la sede que cobra todavia no aplico a la equivalente. */
+  porAplicar: number;
   equivalente: (FacturaReceptor & { porMonto: boolean; url: string }) | null;
 }
 
@@ -62,7 +66,16 @@ export interface PagoIC {
   /** Lo del pago que la sede que paga todavia no aplico a nada. */
   sinAplicar: number;
   documentos: DocumentoAplicado[];
+  /** Comprobantes que la sede que paga adjunto al pago en Odoo (chatter del pago o de su asiento). */
+  adjuntos: AdjuntoPago[];
   estado: EstadoPagoIC;
+}
+
+export interface AdjuntoPago {
+  id: number;
+  nombre: string;
+  mimetype: string;
+  tamano: number;
 }
 
 const ODOO = (process.env.NEXT_PUBLIC_ODOO_URL || "").replace(/\/$/, "");
@@ -108,7 +121,7 @@ export async function pagosEntreSedes(
   const crudos = await leerTodo(
     "account.payment",
     dominio,
-    ["name", "date", "ref", "journal_id", "company_id", "partner_id", "amount_company_currency_signed", "amount", "currency_id"],
+    ["name", "date", "ref", "journal_id", "company_id", "partner_id", "move_id", "amount_company_currency_signed", "amount", "currency_id"],
     TODAS,
     "date desc, id desc",
   );
@@ -129,6 +142,8 @@ export async function pagosEntreSedes(
     ) as { p: any; pagador: SedeIC; receptor: SedeIC }[];
   if (pagos.length === 0) return [];
 
+  const adjuntosPorPago = await adjuntosDePagos(pagos.map(({ p }) => p));
+
   // Lineas por pagar/cobrar de cada pago y sus conciliaciones.
   const lineas = await leerTodo(
     "account.move.line",
@@ -143,8 +158,8 @@ export async function pagosEntreSedes(
   const parciales = await leerIds("account.partial.reconcile", parcialIds, ["amount", "debit_move_id", "credit_move_id"]);
   const parcialPorId = new Map(parciales.map((x) => [x.id, x]));
 
-  // Linea del pago -> [linea de la otra parte, monto]
-  const contrapartes: { pagoId: number; lineaId: number; monto: number }[] = [];
+  // Linea del pago -> [linea de la otra parte, monto, conciliacion]
+  const contrapartes: { pagoId: number; lineaId: number; monto: number; parcialId: number }[] = [];
   const sinAplicar = new Map<number, number>();
   for (const l of lineas) {
     const pagoId = idM2o(l.payment_id)!;
@@ -153,7 +168,7 @@ export async function pagosEntreSedes(
       const x = parcialPorId.get(pid);
       if (!x) continue;
       const otra = idM2o(x.debit_move_id) === l.id ? idM2o(x.credit_move_id) : idM2o(x.debit_move_id);
-      if (otra) contrapartes.push({ pagoId, lineaId: otra, monto: Number(x.amount) || 0 });
+      if (otra) contrapartes.push({ pagoId, lineaId: otra, monto: Number(x.amount) || 0, parcialId: x.id });
     }
   }
   const lineasOtra = await leerIds("account.move.line", [...new Set(contrapartes.map((c) => c.lineaId))], ["move_id"]);
@@ -197,14 +212,14 @@ export async function pagosEntreSedes(
     );
   }
 
-  return pagos.map(({ p, pagador, receptor }) => {
+  const armados = pagos.map(({ p, pagador, receptor }) => {
     const porAsiento = new Map<number, number>();
     for (const c of contrapartes) {
       if (c.pagoId !== p.id) continue;
       const a = asientoDeLinea.get(c.lineaId);
       if (a) porAsiento.set(a, (porAsiento.get(a) || 0) + c.monto);
     }
-    const documentos: DocumentoAplicado[] = [...porAsiento.entries()].map(([id, aplicado]) => {
+    const documentos = [...porAsiento.entries()].map(([id, aplicado]) => {
       const a = asientoPorId.get(id) || {};
       const fecha = a.invoice_date || a.date || null;
       const total = Math.abs(Number(a.amount_total_signed) || 0);
@@ -221,22 +236,15 @@ export async function pagosEntreSedes(
         total: redondear(total),
         aplicado: redondear(aplicado),
         saldo: redondear(Math.abs(Number(a.amount_residual_signed) || 0)),
+        porAplicar: 0,
+        asientoId: id,
+        parciales: contrapartes.filter((c) => c.pagoId === p.id && asientoDeLinea.get(c.lineaId) === id).map((c) => c.parcialId),
         equivalente: eq
           ? { ...eq.factura, porMonto: eq.porMonto, url: enlace("account.move", eq.factura.id, COMPANY_DE_SEDE[receptor]) }
           : null,
       };
     });
     documentos.sort((x, y) => (x.fecha || "").localeCompare(y.fecha || "") || x.documento.localeCompare(y.documento));
-
-    const facturas = documentos.filter((d) => ES_FACTURA.has(d.tipo));
-    const estado: EstadoPagoIC =
-      documentos.length === 0
-        ? "sin_aplicar"
-        : facturas.some((d) => d.equivalente && d.equivalente.saldo > 0.01)
-          ? "por_aplicar"
-          : facturas.some((d) => !d.equivalente)
-            ? "sin_equivalente"
-            : "listo";
 
     return {
       id: p.id,
@@ -252,7 +260,129 @@ export async function pagosEntreSedes(
       montoMoneda: redondear(Math.abs(Number(p.amount) || 0)),
       sinAplicar: redondear(sinAplicar.get(p.id) || 0),
       documentos,
-      estado,
+      adjuntos: adjuntosPorPago.get(p.id) || [],
     };
   });
+
+  // Que falta aplicar en quien cobra, pago por pago: se cruzan las conciliaciones
+  // de la factura en las dos sedes (todas, aunque el filtro de mes deje fuera
+  // algun pago), no solo si la equivalente sigue con saldo.
+  const docsConEq = armados.flatMap((x) => x.documentos).filter((d) => d.equivalente && ES_FACTURA.has(d.tipo));
+  const piezasDe = async (asientos: number[]) => {
+    const ls = await leerTodo(
+      "account.move.line",
+      [
+        ["move_id", "in", asientos],
+        ["account_id.account_type", "in", ["liability_payable", "asset_receivable"]],
+      ],
+      ["move_id", "matched_debit_ids", "matched_credit_ids"],
+      TODAS,
+    );
+    const ids = [...new Set(ls.flatMap((l) => [...l.matched_debit_ids, ...l.matched_credit_ids]))];
+    const xs = new Map((await leerIds("account.partial.reconcile", ids, ["amount", "max_date"])).map((x) => [x.id, x]));
+    const out = new Map<number, Pieza[]>();
+    for (const l of ls) {
+      const lista = out.get(idM2o(l.move_id)!) || [];
+      for (const pid of [...l.matched_debit_ids, ...l.matched_credit_ids]) {
+        const x = xs.get(pid);
+        if (x) lista.push({ id: x.id, monto: Number(x.amount) || 0, fecha: String(x.max_date || "") });
+      }
+      out.set(idM2o(l.move_id)!, lista);
+    }
+    return out;
+  };
+  const deQuienPaga = docsConEq.length ? await piezasDe([...new Set(docsConEq.map((d) => d.asientoId))]) : new Map();
+  const deQuienCobra = docsConEq.length ? await piezasDe([...new Set(docsConEq.map((d) => d.equivalente!.id))]) : new Map();
+  // Por factura equivalente: todos los pedazos que aplico quien paga en sus facturas que caen en ella.
+  const pendientes = new Map<number, Map<number, number>>();
+  for (const eqId of new Set(docsConEq.map((d) => d.equivalente!.id))) {
+    const propias = [...new Set(docsConEq.filter((d) => d.equivalente!.id === eqId).map((d) => d.asientoId))];
+    const piezas = [...new Map(propias.flatMap((a) => deQuienPaga.get(a) || []).map((x: Pieza) => [x.id, x])).values()];
+    pendientes.set(eqId, pendientePorPieza(piezas, deQuienCobra.get(eqId) || []));
+  }
+
+  return armados.map((x) => {
+    const documentos: DocumentoAplicado[] = x.documentos.map(({ asientoId, parciales: pids, ...d }) => {
+      const pend = d.equivalente && ES_FACTURA.has(d.tipo) ? pendientes.get(d.equivalente.id) : undefined;
+      const falta = pend ? pids.reduce((s, pid) => s + (pend.get(pid) ?? 0), 0) : 0;
+      return { ...d, porAplicar: redondear(Math.min(falta, d.equivalente?.saldo ?? 0)) };
+    });
+    const facturas = documentos.filter((d) => ES_FACTURA.has(d.tipo));
+    const estado: EstadoPagoIC =
+      documentos.length === 0
+        ? "sin_aplicar"
+        : facturas.some((d) => d.porAplicar > 0.01)
+          ? "por_aplicar"
+          : facturas.some((d) => !d.equivalente)
+            ? "sin_equivalente"
+            : "listo";
+    return { ...x, documentos, estado };
+  });
+}
+
+/** Dominio de los adjuntos de unos pagos: en el pago o en su asiento (el chatter puede ser de cualquiera de los dos). */
+function dominioAdjuntos(pagoIds: number[], asientoIds: number[]): any[] {
+  return [
+    "|",
+    "&",
+    ["res_model", "=", "account.payment"],
+    ["res_id", "in", pagoIds],
+    "&",
+    ["res_model", "=", "account.move"],
+    ["res_id", "in", asientoIds],
+  ];
+}
+
+async function adjuntosDePagos(pagos: any[]): Promise<Map<number, AdjuntoPago[]>> {
+  const pagoDeAsiento = new Map(pagos.map((p) => [idM2o(p.move_id) ?? 0, p.id as number]));
+  const filas = await leerTodo(
+    "ir.attachment",
+    dominioAdjuntos(pagos.map((p) => p.id), [...pagoDeAsiento.keys()].filter(Boolean)),
+    ["name", "mimetype", "file_size", "res_model", "res_id"],
+    TODAS,
+  );
+  const out = new Map<number, AdjuntoPago[]>();
+  for (const a of filas) {
+    const pagoId = a.res_model === "account.payment" ? a.res_id : pagoDeAsiento.get(a.res_id);
+    if (!pagoId) continue;
+    const lista = out.get(pagoId) || [];
+    lista.push({ id: a.id, nombre: String(a.name || "comprobante"), mimetype: String(a.mimetype || ""), tamano: Number(a.file_size) || 0 });
+    out.set(pagoId, lista);
+  }
+  return out;
+}
+
+/**
+ * Un comprobante de un pago entre sedes, solo si el pago es entre dos sedes y
+ * una de ellas esta en `sedesUsuario` (la sede que cobra baja lo que adjunto la que paga).
+ * null = no existe o no le toca.
+ */
+export async function comprobanteDePago(
+  adjuntoId: number,
+  sedesUsuario: number[],
+): Promise<{ nombre: string; mimetype: string; datos: Buffer } | null> {
+  const [a] =
+    (await callOdooRPCEstricto<any[]>("ir.attachment", "read", [[adjuntoId]], {
+      fields: ["name", "mimetype", "res_model", "res_id", "datas"],
+      context: { allowed_company_ids: TODAS },
+    })) || [];
+  if (!a || !a.datas) return null;
+  const dominio: any[] =
+    a.res_model === "account.payment"
+      ? [["id", "=", a.res_id]]
+      : a.res_model === "account.move"
+        ? [["move_id", "=", a.res_id]]
+        : [];
+  if (dominio.length === 0) return null;
+  const [p] = await leerTodo("account.payment", [...dominio, ["company_id", "in", TODAS]], ["company_id", "partner_id"], TODAS);
+  if (!p) return null;
+  const pagador = SEDE_DE_COMPANY[idM2o(p.company_id) ?? 0];
+  const receptor = sedeDePartner(nombreM2o(p.partner_id));
+  if (!pagador || !receptor || pagador === receptor) return null;
+  if (!sedesUsuario.includes(COMPANY_DE_SEDE[pagador]) && !sedesUsuario.includes(COMPANY_DE_SEDE[receptor])) return null;
+  return {
+    nombre: String(a.name || "comprobante"),
+    mimetype: String(a.mimetype || "application/octet-stream"),
+    datos: Buffer.from(String(a.datas), "base64"),
+  };
 }

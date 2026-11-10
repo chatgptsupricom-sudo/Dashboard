@@ -44,4 +44,28 @@ assert.ok(p && p.factura.id === 20 && p.porMonto);
 // Una nota de credito no se cruza con una factura.
 assert.strictEqual(buscarEquivalente("5039017", "in_refund", "2026-10-29", 240058.48, valencia), null);
 
+// 5039018 (nov-2026): Caracas la pago en 12 pagos; Valencia aplico tres cobros
+// con los mismos montos de tres de ellos (uno solo en parte del 00426).
+{
+  const { pendientePorPieza } = m.exports;
+  const pz = (id, monto, fecha) => ({ id, monto, fecha });
+  const caracas = [
+    pz(426, 17960.34, "2026-10-08"), pz(428, 221.15, "2026-10-14"), pz(429, 136443.15, "2026-10-14"),
+    pz(431, 4000, "2026-10-14"), pz(432, 2000, "2026-10-14"), pz(434, 9625.5, "2026-10-16"),
+    pz(438, 1896, "2026-10-19"), pz(439, 1.7, "2026-10-19"), pz(440, 873, "2026-10-19"),
+    pz(441, 25000.15, "2026-10-19"), pz(445, 632.55, "2026-10-22"), pz(446, 109.19, "2026-10-22"),
+  ];
+  const valencia = [pz(1, 17960.34, "2026-10-28"), pz(2, 136443.15, "2026-10-28"), pz(3, 9625.5, "2026-10-28")];
+  const r = pendientePorPieza(caracas, valencia);
+  for (const id of [426, 429, 434]) assert.strictEqual(r.get(id), 0, String(id));
+  for (const p of caracas.filter((p) => ![426, 429, 434].includes(p.id))) assert.strictEqual(r.get(p.id), p.monto, String(p.id));
+  const falta = [...r.values()].reduce((s, x) => s + x, 0);
+  assert.ok(Math.abs(falta - 34733.74) < 0.01, String(falta));
+  // Un cobro que junta dos pagos cubre del mas viejo al mas nuevo.
+  const junto = pendientePorPieza([pz(1, 100, "2026-10-01"), pz(2, 50, "2026-10-02"), pz(3, 70, "2026-10-03")], [pz(9, 150, "2026-10-05")]);
+  assert.deepStrictEqual([...junto.entries()].sort((a, b) => a[0] - b[0]), [[1, 0], [2, 0], [3, 70]]);
+  // Factura saldada alla: nada pendiente.
+  assert.strictEqual(pendientePorPieza([pz(1, 80, "2026-10-01")], [pz(9, 30, "2026-10-01"), pz(8, 50, "2026-10-02")]).get(1), 0);
+}
+
 console.log("check-pagos-intercompania: OK");
