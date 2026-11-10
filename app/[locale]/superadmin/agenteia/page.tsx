@@ -410,6 +410,204 @@ function PanelConsumo() {
   );
 }
 
+// «Tus preferencias»: las instrucciones personales del usuario (cómo quiere que
+// le hable el agente, como las de Claude) y las notas que el agente guardó de él
+// (lib/agenteia/memoria.ts). Solo se usan en sus conversaciones.
+interface NotaMemoria {
+  id: number;
+  texto: string;
+  origen: "agente" | "usuario";
+  creado: string;
+}
+
+function DialogoMemoria({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+  const [notas, setNotas] = useState<NotaMemoria[] | null>(null);
+  const [max, setMax] = useState(40);
+  const [nueva, setNueva] = useState("");
+  const [error, setError] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [instrucciones, setInstrucciones] = useState("");
+  const [guardadas, setGuardadas] = useState("");
+  const [maxInstrucciones, setMaxInstrucciones] = useState(1500);
+  const [aviso, setAviso] = useState("");
+
+  useEffect(() => {
+    if (!abierto) return;
+    setError("");
+    setAviso("");
+    fetch("/api/superadmin/agenteia/memoria")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => {
+        setNotas(d.notas);
+        setMax(d.max);
+        setInstrucciones(d.instrucciones || "");
+        setGuardadas(d.instrucciones || "");
+        setMaxInstrucciones(d.maxInstrucciones || 1500);
+      })
+      .catch(() => setError("No se pudieron leer las notas. Reintenta en un momento."));
+  }, [abierto]);
+
+  const cambiar = async (req: Promise<Response>) => {
+    setOcupado(true);
+    setError("");
+    try {
+      const r = await req;
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || "No se pudo guardar.");
+      setNotas(d.notas);
+      return true;
+    } catch (e: any) {
+      setError(e?.message || "No se pudo guardar.");
+      return false;
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const guardarInstrucciones = async () => {
+    setOcupado(true);
+    setError("");
+    setAviso("");
+    try {
+      const r = await fetch("/api/superadmin/agenteia/memoria", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instrucciones }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || "No se pudieron guardar las instrucciones.");
+      setGuardadas(instrucciones.trim());
+      setInstrucciones(instrucciones.trim());
+      setAviso("Instrucciones guardadas. Valen desde tu próximo mensaje.");
+    } catch (e: any) {
+      setError(e?.message || "No se pudieron guardar las instrucciones.");
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const agregar = async () => {
+    if (!nueva.trim()) return;
+    const ok = await cambiar(
+      fetch("/api/superadmin/agenteia/memoria", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto: nueva }),
+      }),
+    );
+    if (ok) setNueva("");
+  };
+
+  return (
+    <Dialog open={abierto} onOpenChange={(v) => !v && onCerrar()}>
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto agente-scroll">
+        <DialogHeader>
+          <DialogTitle>Tus preferencias</DialogTitle>
+          <DialogDescription>
+            Solo se usan en tus conversaciones: nadie más las ve ni le afectan. No cambian lo que puedes ver en el panel.
+          </DialogDescription>
+        </DialogHeader>
+        <section className="space-y-2">
+          <label htmlFor="agente-instrucciones" className="block text-sm font-semibold text-slate-800">
+            Cómo quieres que te responda
+          </label>
+          <p className="text-xs text-slate-500">
+            Tono, largo, formato, cómo llamarte o qué haces en la empresa. Ej.: «Háblame de tú y sé breve. Soy gerente de
+            Caracas: si no digo sede, usa Caracas. Termina siempre con las 3 acciones más importantes.»
+          </p>
+          <textarea
+            id="agente-instrucciones"
+            value={instrucciones}
+            onChange={(e) => {
+              setInstrucciones(e.target.value);
+              setAviso("");
+            }}
+            maxLength={maxInstrucciones}
+            rows={5}
+            className="w-full rounded-lg border border-slate-200 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 resize-y"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={guardarInstrucciones}
+              disabled={ocupado || instrucciones.trim() === guardadas.trim()}
+              className="h-9 px-3 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+            >
+              Guardar
+            </button>
+            <span className="text-xs text-slate-400">
+              {instrucciones.length} de {maxInstrucciones} caracteres
+            </span>
+          </div>
+          {aviso && <p className="text-sm text-emerald-700">{aviso}</p>}
+        </section>
+        <h3 className="text-sm font-semibold text-slate-800 pt-2">Lo que aprendí de ti</h3>
+        <p className="text-xs text-slate-500 -mt-1">
+          Lo que anoté cuando me corregiste o me dijiste cómo prefieres las cosas.
+        </p>
+        {notas === null && !error ? (
+          <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
+            <Loader2 size={15} className="animate-spin" /> Cargando…
+          </div>
+        ) : (
+          <ul className="max-h-[50vh] overflow-y-auto agente-scroll divide-y divide-slate-100 border border-slate-200 rounded-lg">
+            {(notas ?? []).length === 0 && (
+              <li className="p-3 text-sm text-slate-500">
+                Todavía no anoté nada. Cuando me corrijas o me digas cómo prefieres las respuestas, lo anoto aquí.
+              </li>
+            )}
+            {(notas ?? []).map((n) => (
+              <li key={n.id} className="flex items-start gap-3 p-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-800 break-words">{n.texto}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {n.origen === "usuario" ? "Lo escribiste tú" : "Lo anotó el agente"} ·{" "}
+                    {new Date(n.creado).toLocaleDateString("es-VE")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={ocupado}
+                  onClick={() => cambiar(fetch(`/api/superadmin/agenteia/memoria?id=${n.id}`, { method: "DELETE" }))}
+                  title="Olvidar esta nota"
+                  aria-label="Olvidar esta nota"
+                  className="shrink-0 size-8 grid place-items-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex gap-2">
+          <input
+            id="memoria-nueva"
+            value={nueva}
+            onChange={(e) => setNueva(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && agregar()}
+            maxLength={400}
+            placeholder="Ej.: las ventas de Panamá dámelas sin intercompañía"
+            disabled={ocupado || (notas?.length ?? 0) >= max}
+            className="flex-1 min-w-0 h-9 rounded-lg border border-slate-200 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+          />
+          <button
+            type="button"
+            onClick={agregar}
+            disabled={ocupado || !nueva.trim()}
+            className="h-9 px-3 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+          >
+            Anotar
+          </button>
+        </div>
+        <p className="text-xs text-slate-400">
+          {notas?.length ?? 0} de {max} notas.
+        </p>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // SuperAdmin: Configuración del agente (la tuerca). Quién lo usa, por correo,
 // y la bitácora de cambios hechos en Odoo (/api/superadmin/agenteia/acceso y /cambios).
 function DialogoConfiguracion({
@@ -1051,6 +1249,7 @@ export default function AgenteIAPage() {
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [archivoAbierto, setArchivoAbierto] = useState<ArchivoRef | null>(null);
+  const [memoriaAbierta, setMemoriaAbierta] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   // ¿Puede usar el agente y es SuperAdmin? (null = cargando)
   const [acceso, setAcceso] = useState<{ puede: boolean; superadmin: boolean; editor: boolean } | null>(null);
@@ -2052,6 +2251,15 @@ export default function AgenteIAPage() {
                 <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </label>
             )}
+            <button
+              type="button"
+              onClick={() => setMemoriaAbierta(true)}
+              title="Tus preferencias: cómo quieres que te responda y lo que aprendí de ti"
+              aria-label="Tus preferencias"
+              className="flex items-center justify-center size-8 rounded-lg text-slate-600 hover:bg-slate-200/60 transition-colors"
+            >
+              <BrainCircuit size={16} />
+            </button>
             {acceso?.superadmin && (
               <button
                 type="button"
@@ -2417,6 +2625,8 @@ export default function AgenteIAPage() {
       </div>
 
       <RecorridoGuiado pasos={pasosRecorrido} abierto={recorrido.abierto} onCerrar={recorrido.cerrar} />
+
+      <DialogoMemoria abierto={memoriaAbierta} onCerrar={() => setMemoriaAbierta(false)} />
 
       {acceso?.superadmin && <DialogoConfiguracion
           abierto={configuracion}
