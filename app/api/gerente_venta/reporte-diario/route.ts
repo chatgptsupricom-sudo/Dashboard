@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { conSinIntercompaniaParaBI, terminosSinIC } from "@/lib/intercompania";
 import { esVendedorRetirado, VENDEDORES_RETIRADOS } from "@/lib/vendedores/retirados";
+import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 
 const COMPANY_IDS_ALL = [9, 10, 7];
 const COMPANY_NAME_MAP: Record<number, string> = {
@@ -15,7 +16,8 @@ const COMPANY_NAME_MAP: Record<number, string> = {
 
 // Usuarios de Odoo que no son vendedores del equipo (no están en `sellers`)
 // pero cuya facturación sí pertenece a la sede. Su monto suma en las tarjetas
-// de VENTA / PEDIDOS / VENTA + PEDIDOS, pero NO aparecen como fila en la tabla
+// de PEDIDOS / VENTA + PEDIDOS (VENTA ya cuenta todo lo facturado en la sede,
+// como el Dashboard), pero NO aparecen como fila en la tabla
 // de vendedores ni compiten por cuota. Los vendedores retirados
 // (lib/vendedores/retirados.ts) van igual: lo que facturaron sigue siendo de
 // la sede.
@@ -181,6 +183,8 @@ async function leerGET(req: NextRequest) {
     const odooUserIds = [...sellerUserIds, ...extraUserIds];
 
     // ── VENTAS: facturación acumulada del mes hasta la fecha (patrón cuota route) ──
+    // Todas las facturas de la sede, no solo las de `sellers`: la tarjeta VENTA
+    // es el total del Dashboard (ver `totalVentas`); las filas siguen por vendedor.
     const allInvoices =
       (await callOdooRPC<any[]>(
         "account.move",
@@ -191,14 +195,13 @@ async function leerGET(req: NextRequest) {
             ["state", "=", "posted"],
             ["invoice_date", ">=", firstDayOfMonth],
             ["invoice_date", "<=", dateStr],
-            ["invoice_user_id", "in", odooUserIds],
             ["company_id", "in", companyIds],
             // Con Inteligencia de Negocio, sin ventas al grupo.
             ...terminosSinIC(),
           ],
         ],
         {
-          fields: ["amount_untaxed", "invoice_user_id", "move_type"],
+          fields: ["amount_untaxed", "invoice_user_id", "move_type", "company_id"],
         },
       )) || [];
 
@@ -208,6 +211,10 @@ async function leerGET(req: NextRequest) {
     // vista superadmin de todas las sedes un seller capturara la facturación
     // del homónimo de otra sede.
     const odooUserIdMap: Record<number, number> = {};
+    // Total de la tarjeta VENTA = "Ventas del Mes" del Dashboard
+    // (app/api/superadmin/stats/route.ts): todo lo facturado menos las NC, sin
+    // los vendedores que excluye en cada sede (asistentes, Yusne, Adriana, Hercilio).
+    let ventasSede = 0;
     allInvoices.forEach((inv: any) => {
       const userId = inv.invoice_user_id?.[0] || 0;
       const amount =
@@ -215,6 +222,7 @@ async function leerGET(req: NextRequest) {
           ? -(inv.amount_untaxed || 0)
           : inv.amount_untaxed || 0;
       if (userId) odooUserIdMap[userId] = (odooUserIdMap[userId] || 0) + amount;
+      if (!esVendedorExcluido(inv.invoice_user_id?.[1], inv.company_id?.[0])) ventasSede += amount;
     });
 
     // ── PEDIDOS: mismo criterio que el filtro "Pedidos Activos" de Odoo ──
@@ -295,20 +303,16 @@ async function leerGET(req: NextRequest) {
       .sort((a: any, b: any) => b.venta - a.venta)
       .map((v: any, i: number) => ({ ...v, posicion: i + 1 }));
 
-    // Los extras suman al total por user_id (nunca por nombre: no tienen fila
-    // en `sellers` contra la que cruzar).
-    const extraVentas = extraUserIds.reduce(
-      (sum: number, id: number) => sum + (odooUserIdMap[id] || 0),
-      0,
-    );
+    // Los extras suman a los pedidos por user_id (nunca por nombre: no tienen
+    // fila en `sellers` contra la que cruzar). Las ventas ya los traen en ventasSede.
     const extraPedidos = extraUserIds.reduce(
       (sum: number, id: number) => sum + (orderUserIdMap[id] || 0),
       0,
     );
 
-    const totalVentas =
-      vendedores.reduce((sum: number, v: any) => sum + v.venta, 0) +
-      extraVentas;
+    // Puede no ser la suma de las filas: cuenta también a quien factura sin
+    // estar en `sellers` y deja fuera a los excluidos del Dashboard (nov-2026).
+    const totalVentas = ventasSede;
     const totalPedidos =
       vendedores.reduce((sum: number, v: any) => sum + v.pedidos, 0) +
       extraPedidos;
