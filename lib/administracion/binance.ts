@@ -123,6 +123,12 @@ export type Comprobante = {
   impresoPor: string;
   estado: EstadoComprobante;
   binance: PagoBinance | null;
+  /**
+   * Cuentas por Cobrar ya registro el pago en Odoo (el ID de orden esta en el
+   * Memo de un pago no anulado, `ordenesRegistradasEnOdoo`). null = no se
+   * consulto (salidas) o Odoo no respondio. Lo agrega el GET.
+   */
+  registradoOdoo?: boolean | null;
   /** Su monto sale mas de una vez en los pagos de la semana: se puede amarrar a mano. */
   montoRepetido?: boolean;
   /**
@@ -955,6 +961,22 @@ export async function ordenesRegistradasEnOdoo(orderIds: string[]): Promise<Set<
     }
   }
   return registradas;
+}
+
+/**
+ * Marca en cada comprobante si ya esta registrado en Odoo. Si Odoo falla, la
+ * conciliacion se ve igual con el estado en null (la columna dice "sin dato").
+ */
+export async function conRegistroOdoo<T extends { orderId: string }>(
+  comprobantes: T[],
+): Promise<(T & { registradoOdoo: boolean | null })[]> {
+  try {
+    const registradas = await ordenesRegistradasEnOdoo(comprobantes.map((c) => c.orderId));
+    return comprobantes.map((c) => ({ ...c, registradoOdoo: registradas.has(c.orderId) }));
+  } catch (e: any) {
+    console.error("[binance] pagos en Odoo:", e?.message);
+    return comprobantes.map((c) => ({ ...c, registradoOdoo: null }));
+  }
 }
 
 /** Rol que solo lee la conciliacion (GET), de su sede. */

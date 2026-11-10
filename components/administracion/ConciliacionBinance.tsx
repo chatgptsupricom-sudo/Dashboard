@@ -1034,13 +1034,14 @@ export default function ConciliacionBinance({
                       <TableHead className="text-right">Monto</TableHead>
                       <TableHead>{CONTRAPARTE}</TableHead>
                       <TableHead>Estado</TableHead>
+                      {!salida && <TableHead>En Odoo</TableHead>}
                       <TableHead />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {encontrados.length === 0 && (
                       <FilaVacia
-                        columnas={7}
+                        columnas={salida ? 7 : 8}
                         texto={buscar.trim() ? "Ningún comprobante coincide con la búsqueda." : semana === TODAS ? "No hay comprobantes." : "No hay comprobantes en esta semana."}
                       />
                     )}
@@ -1110,6 +1111,27 @@ export default function ConciliacionBinance({
                             </select>
                           )}
                         </TableCell>
+                        {!salida && (
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={`border-0 whitespace-nowrap ${
+                                c.registradoOdoo === true
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : c.registradoOdoo === false
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-slate-100 text-slate-600"
+                              }`}
+                              title={
+                                c.registradoOdoo === null
+                                  ? "No se pudo consultar Odoo"
+                                  : "Se busca el ID de orden en el Memo de los pagos de Odoo de las tres sedes"
+                              }
+                            >
+                              {c.registradoOdoo === true ? "Registrado" : c.registradoOdoo === false ? "Sin registrar" : "Sin dato"}
+                            </Badge>
+                          </TableCell>
+                        )}
                         <TableCell>
                           <Button variant="ghost" size="icon" onClick={() => eliminar(c)} aria-label="Quitar comprobante">
                             <Trash2 className="h-4 w-4 text-gray-400" />
