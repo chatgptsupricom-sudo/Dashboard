@@ -54,14 +54,30 @@ function cargarImagen(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Dibuja el flyer (y su etiqueta de precio si tiene) a tamaño original. */
+/**
+ * Lado más largo del flyer descargado. Los originales son de ~3400×4200 (14 MP):
+ * a tamaño original el PNG pesa ~7 MB y en el celular el canvas se queda sin
+ * memoria o tarda tanto que parece que no descargó. 2160 px es el doble de lo
+ * que usa Instagram (1080).
+ */
+export const LADO_MAX = 2160;
+
+/** Suelta la memoria del canvas ya usado (Safari en iOS tiene un tope total). */
+function liberar(canvas: HTMLCanvasElement) {
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
+/** Dibuja el flyer (y su etiqueta de precio si tiene), con el lado largo en LADO_MAX como mucho. */
 export async function dibujarFlyer(flyer: FlyerADescargar): Promise<HTMLCanvasElement> {
   const img = await cargarImagen(flyer.image_path);
+  const escala = Math.min(1, LADO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
   const canvas = document.createElement("canvas");
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
+  canvas.width = Math.round(img.naturalWidth * escala);
+  canvas.height = Math.round(img.naturalHeight * escala);
   const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(img, 0, 0);
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
   if (flyer.precio !== null) {
     const priceText = textoPrecio(flyer.precio);
@@ -144,7 +160,17 @@ function nombresUnicos(flyers: FlyerADescargar[]): string[] {
 }
 
 export async function flyerPng(flyer: FlyerADescargar): Promise<Blob> {
-  return canvasABlob(await dibujarFlyer(flyer), "image/png");
+  const canvas = await dibujarFlyer(flyer);
+  try {
+    return await canvasABlob(canvas, "image/png");
+  } finally {
+    liberar(canvas);
+  }
+}
+
+/** Un solo flyer como PNG (los botones "Descargar con/sin precio"). */
+export async function descargarFlyer(flyer: FlyerADescargar): Promise<void> {
+  guardarBlob(await flyerPng(flyer), nombreFlyer(flyer));
 }
 
 function sello(): string {
@@ -216,8 +242,10 @@ export async function descargarPdf(flyers: FlyerADescargar[], onProgreso?: Progr
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, fondo.width, fondo.height);
       ctx.drawImage(canvas, 0, 0);
+      liberar(canvas);
       const jpeg = new Uint8Array(await (await canvasABlob(fondo, "image/jpeg", 0.92)).arrayBuffer());
       paginas.push({ jpeg, ancho: fondo.width, alto: fondo.height });
+      liberar(fondo);
     } catch {
       fallidos.push(flyers[i].product_code || flyers[i].image_path);
     }
