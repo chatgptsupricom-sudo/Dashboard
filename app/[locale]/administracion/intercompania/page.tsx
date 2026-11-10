@@ -22,7 +22,7 @@ import {
 } from "@/components/administracion/comunes";
 import type { DocumentoAplicado, EstadoPagoIC, PagoIC } from "@/lib/administracion/pagosIntercompania";
 import { claveNumero } from "@/lib/administracion/pagosIntercompaniaCruce";
-import { ArrowLeftRight, Check, ChevronDown, ChevronRight, ClipboardList, Copy, ExternalLink } from "lucide-react";
+import { ArrowLeftRight, Check, ChevronDown, ChevronRight, ClipboardList, Copy, ExternalLink, Paperclip } from "lucide-react";
 import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
 
 type Respuesta = { success: true; empresa: string; mes: string; pagos: PagoIC[] };
@@ -30,8 +30,8 @@ type Vista = "por_hacer" | "recibidos" | "hechos" | "todos";
 
 const N = (s: string) => NOMBRE_SEDE[s] || s;
 
-/** Lo que hay que aplicar en la sede que cobra: lo que pagó la otra, con tope en lo que debe allá. */
-const porAplicar = (d: DocumentoAplicado) => (d.equivalente ? Math.min(d.aplicado, d.equivalente.saldo) : 0);
+/** Lo de este pago que la sede que cobra todavía no aplicó (lo calcula el servidor cruzando las conciliaciones). */
+const porAplicar = (d: DocumentoAplicado) => d.porAplicar;
 const pendiente = (d: DocumentoAplicado) => porAplicar(d) > 0.01;
 /** La ref de la factura de proveedor ya es el número de la factura de la otra sede. */
 const mismoNumero = (d: DocumentoAplicado) =>
@@ -145,6 +145,29 @@ function BotonCopiar({ texto }: { texto: string }) {
   );
 }
 
+const tamano = (b: number) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+/** Los comprobantes que la sede que paga adjuntó al pago en Odoo. */
+function Comprobantes({ p }: { p: PagoIC }) {
+  if (p.adjuntos.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 pt-1">
+      {p.adjuntos.map((a) => (
+        <a
+          key={a.id}
+          href={`/api/administracion/intercompania/comprobante?id=${a.id}`}
+          className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-white px-2 py-1 text-xs text-blue-700 hover:bg-blue-50"
+          title={`Descargar el comprobante que adjuntó ${N(p.pagador)}`}
+        >
+          <Paperclip className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{a.nombre}</span>
+          <span className="shrink-0 text-gray-400">{tamano(a.tamano)}</span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 /** Un pago como tarjeta: la vista «Por hacer» y la lista en el celular. */
 function TarjetaPago({ p, sede, soloPendientes }: { p: PagoIC; sede: string | null; soloPendientes: boolean }) {
   const docs = soloPendientes ? p.documentos.filter((d) => pendiente(d) || (esFactura(d) && !d.equivalente)) : p.documentos;
@@ -162,6 +185,7 @@ function TarjetaPago({ p, sede, soloPendientes }: { p: PagoIC; sede: string | nu
               <EnlaceOdoo url={p.url}>{p.numero}</EnlaceOdoo> · {p.diario}
             </p>
             {p.ref && <p className="text-xs text-gray-500 break-words">{p.ref}</p>}
+            <Comprobantes p={p} />
           </div>
           <div className="text-right">
             <Monto p={p} />
@@ -326,6 +350,7 @@ export default function PagosEntreSedesPage() {
                         Moneda: p.moneda,
                         "Monto en su moneda": p.montoMoneda,
                         Estado: estado(p, sede).texto,
+                        Comprobantes: p.adjuntos.map((a) => a.nombre).join(", "),
                       };
                       if (p.documentos.length === 0) return [fila];
                       return p.documentos.map((d) => ({
@@ -469,6 +494,12 @@ export default function PagosEntreSedesPage() {
                                   <EnlaceOdoo url={p.url}>{p.numero}</EnlaceOdoo> · {p.diario}
                                   {p.ref ? ` · ${p.ref}` : ""}
                                 </div>
+                                {p.adjuntos.length > 0 && (
+                                  <div className="mt-0.5 inline-flex items-center gap-1 text-xs text-blue-700">
+                                    <Paperclip className="h-3 w-3" />
+                                    {p.adjuntos.length === 1 ? "1 comprobante" : `${p.adjuntos.length} comprobantes`}
+                                  </div>
+                                )}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap">
                                 <Monto p={p} />

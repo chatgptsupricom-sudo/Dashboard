@@ -86,3 +86,43 @@ export function buscarEquivalente(
   );
   return porMonto.length === 1 ? { factura: porMonto[0], porMonto: true } : null;
 }
+
+/** Un pedazo de lo aplicado a una factura (una conciliacion, `account.partial.reconcile`). */
+export interface Pieza {
+  id: number;
+  monto: number;
+  fecha: string;
+}
+
+/**
+ * Cuanto de cada pedazo que aplico la sede que paga falta aplicar en la sede
+ * que cobra. Mirar solo si la factura equivalente tiene saldo marca como
+ * pendientes todos los pagos de una factura pagada en partes aunque la otra
+ * sede ya haya aplicado casi todos (nov-2026: la 5039018 de Valencia, pagada
+ * por Caracas en 12 pagos, salia con los 12 "por aplicar" faltando $34.733,74).
+ *  1. un pedazo del que cobra con el mismo monto que uno del que paga es ese
+ *     pago (asi aplica Valencia: pago por pago);
+ *  2. lo que el que cobra aplico y no calzo (un cobro que junta varios pagos,
+ *     una NC, una retencion) cubre los demas del mas viejo al mas nuevo.
+ * Devuelve id del pedazo del que paga -> lo que falta aplicar de el.
+ */
+export function pendientePorPieza(pagador: Pieza[], receptor: Pieza[]): Map<number, number> {
+  const libres = receptor.map((r) => r.monto);
+  const orden = [...pagador].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id - b.id);
+  const pendiente = new Map<number, number>();
+  const sinPareja: Pieza[] = [];
+  for (const p of orden) {
+    const i = libres.findIndex((m) => m > 0 && Math.abs(m - p.monto) <= 0.01);
+    if (i >= 0) {
+      libres[i] = 0;
+      pendiente.set(p.id, 0);
+    } else sinPareja.push(p);
+  }
+  let resto = libres.reduce((s, m) => s + m, 0);
+  for (const p of sinPareja) {
+    const cubre = Math.min(resto, p.monto);
+    resto -= cubre;
+    pendiente.set(p.id, Math.max(0, p.monto - cubre));
+  }
+  return pendiente;
+}
