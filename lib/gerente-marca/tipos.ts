@@ -108,7 +108,10 @@ export interface SedeProducto {
   /** Días promedio en inventario, ponderado por unidades. */
   diasPromedio: number | null;
   vendidasMes: number;
+  /** Suma de `vendidasPorMes`: el mes en curso y los 5 anteriores. */
   vendidas6m: number;
+  /** Unidades vendidas en cada mes de `DatosInventario.meses` (mismo orden). */
+  vendidasPorMes: number[];
   ultimaVenta: string | null;
 }
 
@@ -129,7 +132,10 @@ export interface DatosInventario {
   hoy: string;
   /** Rango de "vendidas en el mes en curso" y "últimos 6 meses". */
   mes: { desde: string; hasta: string };
+  /** Del día 1 de hace 5 meses a hoy: los mismos 6 meses de `meses`. */
   seisMeses: { desde: string; hasta: string };
+  /** "YYYY-MM" del más viejo al mes en curso (6). */
+  meses: string[];
   productos: ProductoGerente[];
 }
 

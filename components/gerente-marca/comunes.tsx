@@ -66,6 +66,8 @@ export interface Combinado {
   transito: number;
   /** Existencia × costo de cada sede. */
   valor: number;
+  /** Disponible (existencia − reservado) × costo de cada sede: el "Total costo" del Excel del gerente. */
+  valorDisponible: number;
   /** valor ÷ existencia; sin existencia, el costo más alto de las sedes. */
   costo: number;
   tramos: Partial<Record<Tramo, number>>;
@@ -75,14 +77,16 @@ export interface Combinado {
   inicial: number;
   vendidasMes: number;
   vendidas6m: number;
+  /** Por mes, en el orden de `DatosInventario.meses`. */
+  vendidasPorMes: number[];
   ultimaVenta: string | null;
   porSede: Map<number, SedeProducto>;
 }
 
 export function combinar(p: ProductoGerente): Combinado {
   const c: Combinado = {
-    p, fisico: 0, reservado: 0, disponible: 0, transito: 0, valor: 0, costo: 0, tramos: {},
-    entradaMasVieja: null, diasPromedio: null, inicial: 0, vendidasMes: 0, vendidas6m: 0, ultimaVenta: null,
+    p, fisico: 0, reservado: 0, disponible: 0, transito: 0, valor: 0, valorDisponible: 0, costo: 0, tramos: {},
+    entradaMasVieja: null, diasPromedio: null, inicial: 0, vendidasMes: 0, vendidas6m: 0, vendidasPorMes: [], ultimaVenta: null,
     porSede: new Map(),
   };
   let sumaDias = 0;
@@ -94,6 +98,8 @@ export function combinar(p: ProductoGerente): Combinado {
     c.disponible += s.disponible;
     c.transito += s.transito;
     c.valor += s.fisico * s.costo;
+    c.valorDisponible += s.disponible * s.costo;
+    (s.vendidasPorMes ?? []).forEach((n, i) => { c.vendidasPorMes[i] = (c.vendidasPorMes[i] ?? 0) + n; });
     c.vendidasMes += s.vendidasMes;
     c.vendidas6m += s.vendidas6m;
     if (s.ultimaVenta && (!c.ultimaVenta || s.ultimaVenta > c.ultimaVenta)) c.ultimaVenta = s.ultimaVenta;
@@ -112,6 +118,7 @@ export function combinar(p: ProductoGerente): Combinado {
   c.diasPromedio = conEdad > 0 ? Math.round(sumaDias / conEdad) : null;
   c.costo = c.fisico > 0 ? c.valor / c.fisico : Math.max(0, ...p.sedes.map((s) => s.costo));
   c.valor = Math.round(c.valor * 100) / 100;
+  c.valorDisponible = Math.round(c.valorDisponible * 100) / 100;
   return c;
 }
 
