@@ -5,13 +5,11 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "usuario-rol",
-        "responseMode": "onReceived",
         "options": {}
       },
-      "id": "b2e1d3c4-0001-4d5e-8f60-usuariorol01",
-      "name": "Webhook",
+      "name": "Webhook Usuario",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
+      "typeVersion": 2.1,
       "position": [
         0,
         0
@@ -20,56 +18,65 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT a.id, a.email, a.nombre, a.rol, a.rol_nombre, a.rol_anterior, a.resumen,\n       a.secciones_json, a.url_panel, a.asignado_por\n  FROM usuarios_avisos_rol a\n  JOIN users_config uc ON uc.id = a.user_id AND LOWER(TRIM(uc.email)) = LOWER(TRIM(a.email))\n  JOIN roles r ON r.id = uc.role_id AND r.name = a.rol\n WHERE a.id = $1\n   AND a.enviado_at IS NULL\n   AND a.created_at >= NOW() - INTERVAL 1 DAY\n LIMIT 1",
-        "options": {
-          "queryReplacement": "={{ $json.body && $json.body.evento === 'usuario_rol' ? (parseInt($json.body.aviso_id, 10) || 0) : 0 }}"
-        }
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Valida lo que manda el panel (lib/usuarios/avisoRol.ts): { evento: 'usuario_rol', aviso_id }.\n// Solo eso: destinatario y textos se leen de la MySQL en el nodo siguiente (el webhook es publico).\nconst body = $json.body || {};\nconst id = parseInt(body.aviso_id, 10);\nif (body.evento !== 'usuario_rol' || !(id > 0)) return null;\nreturn { json: { id } };\n"
       },
-      "id": "b2e1d3c4-0002-4d5e-8f60-usuariorol02",
-      "name": "Leer aviso",
-      "type": "n8n-nodes-base.mySql",
-      "typeVersion": 2.4,
-      "position": [
-        240,
-        0
-      ],
-      "alwaysOutputData": true,
-      "credentials": {
-        "mySql": {
-          "id": "REEMPLAZAR",
-          "name": "MySQL panel"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// La fila sale de la MySQL (nodo anterior): el webhook solo trae el id.\n// Sin fila = el aviso ya se mandó, es viejo o la persona ya no tiene ese rol.\nconst a = $input.first() && $input.first().json;\nif (!a || !a.id || !a.email) return [];\n\nconst esc = (s) => String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nlet grupos = [];\ntry { grupos = JSON.parse(a.secciones_json || '[]'); } catch (e) { grupos = []; }\n\nconst url = String(a.url_panel || 'https://panel.supricom.com.ve');\nconst rol = a.rol_nombre || a.rol;\nconst nombre = String(a.nombre || '').trim().split(/\\s+/)[0] || '';\n\nconst intro = a.rol_anterior\n  ? 'Tu rol en el <b>Panel SUPRICOM</b> cambió de <b>' + esc(a.rol_anterior) + '</b> a <b>' + esc(rol) + '</b>.'\n  : 'Ya tienes acceso al <b>Panel SUPRICOM</b> con el rol <b>' + esc(rol) + '</b>.';\n\nconst secciones = grupos.map((g) =>\n  '<p style=\"margin:16px 0 6px;font-weight:bold;color:#1e3a8a\">' + esc(g.area) + '</p>' +\n  '<ul style=\"margin:0;padding-left:20px\">' +\n  (g.secciones || []).map((s) => '<li style=\"margin:3px 0\"><b>' + esc(s.nombre) + '</b>: ' + esc(s.detalle) + '</li>').join('') +\n  '</ul>'\n).join('');\n\nconst html = '<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111;max-width:640px\">' +\n  '<p>Hola' + (nombre ? ' ' + esc(nombre) : '') + ',</p>' +\n  '<p>' + intro + '</p>' +\n  '<div style=\"border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin:16px 0;background:#f9fafb\">' +\n    '<p style=\"margin:0 0 8px\"><b>Dirección del panel:</b> <a href=\"' + esc(url) + '\">' + esc(url) + '</a></p>' +\n    '<p style=\"margin:0 0 8px\"><b>Tu rol:</b> ' + esc(rol) + '</p>' +\n    '<p style=\"margin:0\"><b>Cómo entrar:</b> con tu usuario y tu contraseña de <b>Odoo</b>, los mismos con los que entras a Odoo. ' +\n    'Tu usuario es tu correo: <b>' + esc(a.email) + '</b>. El panel no tiene una contraseña aparte: si la olvidas o la cambias, se hace en Odoo.</p>' +\n  '</div>' +\n  '<p style=\"margin:20px 0\"><a href=\"' + esc(url) + '\" style=\"background:#1e3a8a;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block\">Entrar al panel</a></p>' +\n  '<p style=\"margin:16px 0 4px;font-size:15px\"><b>Qué puedes hacer con este rol</b></p>' +\n  '<p style=\"margin:0 0 8px\">' + esc(a.resumen) + '</p>' +\n  (secciones ? '<p style=\"margin:8px 0 0\">Estas son las secciones de tu menú:</p>' + secciones : '') +\n  (a.rol_anterior ? '<p style=\"margin-top:20px\">Si tenías el panel abierto, vuelve a iniciar sesión para ver tu nuevo menú.</p>' : '') +\n  '<p style=\"margin-top:20px;color:#6b7280;font-size:12px\">Este correo sale solo cuando se te asigna un rol en el panel' +\n  (a.asignado_por ? ' (lo asignó ' + esc(a.asignado_por) + ')' : '') + '. Si no esperabas este acceso, avísale a tu supervisor.</p>' +\n  '</div>';\n\nreturn [{ json: { aviso_id: a.id, to: a.email, subject: 'Tu acceso al Panel SUPRICOM: rol ' + rol, html } }];\n"
-      },
-      "id": "b2e1d3c4-0003-4d5e-8f60-usuariorol03",
-      "name": "Armar correo",
+      "name": "Validar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        480,
+        224,
         0
       ]
     },
     {
       "parameters": {
-        "sendTo": "={{ $json.to }}",
-        "subject": "={{ $json.subject }}",
+        "operation": "executeQuery",
+        "query": "=SELECT a.id, a.email, a.nombre, a.rol, a.rol_nombre, a.rol_anterior, a.resumen, a.secciones_json,\n       a.url_panel, a.asignado_por, uc.cids\n  FROM usuarios_avisos_rol a\n  JOIN users_config uc ON uc.id = a.user_id AND LOWER(TRIM(uc.email)) = LOWER(TRIM(a.email))\n  JOIN roles r ON r.id = uc.role_id AND r.name = a.rol\n WHERE a.id = {{ $json.id }}\n   AND a.enviado_at IS NULL\n   AND a.created_at >= NOW() - INTERVAL 1 DAY\n LIMIT 1",
+        "options": {}
+      },
+      "name": "Leer aviso",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "REEMPLAZAR",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Arma el correo de bienvenida con la fila de \"Leer aviso\" (usuarios_avisos_rol + users_config).\n// Ningún texto ni dirección viene del webhook (es público): todo lo guardó el panel\n// (lib/usuarios/avisoRol.ts). Sin fila = ya se mandó, tiene más de un día o la persona ya no tiene ese rol.\nconst a = $json;\nif (!a || !a.id) return null;\nconst esCorreo = (v) => /^[^\\s@<>,;()]+@[^\\s@<>,;()]+\\.[^\\s@<>,;()]+$/.test(String(v || '').trim());\nconst para = String(a.email || '').trim().toLowerCase();\nif (!esCorreo(para)) return null;\n\nlet grupos = [];\ntry { grupos = JSON.parse(a.secciones_json || '[]'); } catch (e) { grupos = []; }\nif (!Array.isArray(grupos)) grupos = [];\n\n// Marca por sede: OSC en Valencia (9), SUPRICOM en Caracas (10), Panamá (7) y sin sede.\nconst SEDES = { 9: 'Valencia', 10: 'Caracas', 7: 'Panamá' };\nconst sede = SEDES[Number(a.cids)] || '';\nconst M = Number(a.cids) === 9\n  ? { nombre: 'OSC', logo: 'https://panel.supricom.com.ve/osclogo.jpg', ancho: 64, alto: 64, primario: '#1746C1', oscuro: '#0B1E4F', claro: '#EAF0FD', acento: '#2F80ED', razon: 'Office Solutions Center 2004, C.A.' }\n  : { nombre: 'SUPRICOM', logo: 'https://panel.supricom.com.ve/supricom-reporte-logo.png', ancho: 170, alto: 52, primario: '#0E7FD1', oscuro: '#0A2540', claro: '#E8F4FC', acento: '#29ABE2', razon: Number(a.cids) === 10 ? 'SUPRICOM CCS 21, C.A.' : Number(a.cids) === 7 ? 'SUPRICOM, S.A.' : 'SUPRICOM' };\nconst FUENTE = \"font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif\";\nconst esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\nconst url = /^https?:\\/\\//.test(String(a.url_panel || '')) ? String(a.url_panel) : 'https://panel.supricom.com.ve';\nconst rol = a.rol_nombre || a.rol;\nconst nombre = String(a.nombre || '').trim().split(/\\s+/)[0] || '';\nconst cambio = !!a.rol_anterior;\nconst asunto = (cambio ? 'Tu rol en el Panel SUPRICOM cambió: ' : 'Tu acceso al Panel SUPRICOM: ') + rol;\n\nconst titulo = cambio ? 'Tu rol en el panel cambió' : 'Ya tienes acceso al panel';\nconst bajada = cambio\n  ? 'Pasaste de <strong>' + esc(a.rol_anterior) + '</strong> a <strong>' + esc(rol) + '</strong>.'\n  : 'Se te asignó el rol <strong>' + esc(rol) + '</strong>' + (sede ? ' en ' + esc(sede) : '') + '.';\n\nconst fila = (etiqueta, valor) => '<tr><td style=\"padding:10px 14px;color:#64748B;width:130px;font-size:13px;border-bottom:1px solid #EEF1F6;vertical-align:top\">' + etiqueta + '</td><td style=\"padding:10px 14px;font-size:14px;color:#0F172A;border-bottom:1px solid #EEF1F6\">' + valor + '</td></tr>';\nconst datos = '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border:1px solid #E6EAF2;border-radius:12px;background:#FAFBFD\">' +\n  fila('Dirección', '<a href=\"' + esc(url) + '\" style=\"color:' + M.primario + ';font-weight:700\">' + esc(url) + '</a>') +\n  fila('Tu rol', '<strong>' + esc(rol) + '</strong>' + (sede ? ' · ' + esc(sede) : '')) +\n  fila('Usuario', '<strong>' + esc(para) + '</strong>') +\n  fila('Contraseña', 'La misma de <strong>Odoo</strong>') + '</table>';\n\nconst comoEntrar = '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:18px 0 4px 0\"><tr><td style=\"background:' + M.claro + ';border-radius:12px;padding:16px 18px;' + FUENTE + '\">' +\n  '<div style=\"font-size:13px;font-weight:800;color:' + M.oscuro + ';text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px\">Cómo iniciar sesión</div>' +\n  '<div style=\"font-size:14px;line-height:1.55;color:#334155\">Entra con tu <strong>usuario y contraseña de Odoo</strong>, los mismos con los que entras a Odoo: tu usuario es tu correo. ' +\n  'El panel no tiene una contraseña aparte; si la olvidas o la quieres cambiar, se hace en Odoo.' +\n  (cambio ? ' Si tenías el panel abierto, vuelve a iniciar sesión para ver tu nuevo menú.' : '') + '</div></td></tr></table>';\n\nconst secciones = grupos.map((g) =>\n  '<div style=\"margin:18px 0 6px 0;font-size:13px;font-weight:800;color:' + M.primario + ';text-transform:uppercase;letter-spacing:.6px\">' + esc(g.area) + '</div>' +\n  '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">' +\n  (Array.isArray(g.secciones) ? g.secciones : []).map((s) =>\n    '<tr><td style=\"padding:5px 0;font-size:14px;line-height:1.5;color:#334155\"><span style=\"color:' + M.acento + '\">●</span>&nbsp; <strong style=\"color:#0F172A\">' + esc(s.nombre) + '</strong>: ' + esc(s.detalle) + '</td></tr>').join('') +\n  '</table>').join('');\n\nconst queHace = '<div style=\"margin:26px 0 4px 0;font-size:18px;font-weight:800;color:' + M.oscuro + '\">Qué puedes hacer con este rol</div>' +\n  '<p style=\"margin:6px 0 0 0;font-size:15px;line-height:1.6;color:#1E293B\">' + esc(a.resumen) + '</p>' +\n  (secciones ? '<p style=\"margin:10px 0 0 0;font-size:14px;color:#64748B\">Estas son las secciones de tu menú:</p>' + secciones : '');\n\nconst boton = '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:26px 0 6px 0\"><tr><td align=\"center\">' +\n  '<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:0 auto\"><tr><td align=\"center\" bgcolor=\"' + M.primario + '\" style=\"border-radius:12px;background:linear-gradient(135deg,' + M.acento + ',' + M.primario + ')\">' +\n  '<a href=\"' + esc(url) + '\" target=\"_blank\" style=\"display:inline-block;padding:14px 28px;' + FUENTE + ';font-size:15px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:12px\">Entrar al panel</a></td></tr></table></td></tr></table>';\n\nconst html = '<!DOCTYPE html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>' + esc(asunto) + '</title>' +\n  '<style>@media (max-width:620px){.contenedor{width:100%!important;border-radius:0!important}.pad{padding-left:20px!important;padding-right:20px!important}.titulo{font-size:22px!important}}</style></head>' +\n  '<body style=\"margin:0;padding:0;background:#EEF1F6\">' +\n  '<div style=\"display:none;max-height:0;overflow:hidden;opacity:0;color:transparent\">' + esc(asunto) + '</div>' +\n  '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"#EEF1F6\" style=\"background:#EEF1F6\"><tr><td align=\"center\" style=\"padding:28px 12px\">' +\n  '<table role=\"presentation\" class=\"contenedor\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"width:600px;max-width:600px;background:#FFFFFF;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(15,30,70,.10)\">' +\n  '<tr><td class=\"pad\" style=\"padding:20px 32px;border-bottom:1px solid #EEF1F6\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>' +\n  '<td valign=\"middle\"><img src=\"' + M.logo + '\" width=\"' + M.ancho + '\" height=\"' + M.alto + '\" alt=\"' + M.nombre + '\" style=\"display:block;border:0\"></td>' +\n  '<td valign=\"middle\" align=\"right\" style=\"' + FUENTE + '\"><span style=\"display:inline-block;background:' + M.claro + ';color:' + M.primario + ';border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700\">Panel SUPRICOM' + (sede ? ' · ' + esc(sede) : '') + '</span></td></tr></table></td></tr>' +\n  '<tr><td class=\"pad\" bgcolor=\"' + M.primario + '\" style=\"padding:30px 32px 28px 32px;background:linear-gradient(135deg,' + M.oscuro + ' 0%,' + M.primario + ' 60%,' + M.acento + ' 100%);' + FUENTE + '\">' +\n  '<div style=\"font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:rgba(255,255,255,.75);margin-bottom:8px\">' + (cambio ? 'Cambio de rol' : 'Bienvenida') + '</div>' +\n  '<div class=\"titulo\" style=\"font-size:26px;line-height:1.25;font-weight:800;color:#FFFFFF\">' + titulo + '</div>' +\n  '<div style=\"font-size:15px;line-height:1.5;color:rgba(255,255,255,.88);margin-top:8px\">' + bajada + '</div></td></tr>' +\n  '<tr><td class=\"pad\" style=\"padding:28px 32px 10px 32px;' + FUENTE + ';font-size:15px;line-height:1.6;color:#1E293B\">' +\n  '<p style=\"margin:0 0 16px 0\">Hola' + (nombre ? ' ' + esc(nombre) : '') + ',</p>' + datos + comoEntrar + boton + queHace + '</td></tr>' +\n  '<tr><td class=\"pad\" style=\"padding:20px 32px 26px 32px;' + FUENTE + '\"><div style=\"border-top:1px solid #EEF1F6;padding-top:18px;font-size:12px;line-height:1.6;color:#64748B\">' +\n  '<strong style=\"color:' + M.oscuro + '\">' + esc(M.razon) + '</strong>' + (sede ? ' · ' + esc(sede) : '') +\n  '<br>Aviso automático del panel: sale cuando se te asigna un rol' + (a.asignado_por ? ' (lo asignó ' + esc(a.asignado_por) + ')' : '') + '. Si no esperabas este acceso, avísale a tu supervisor.</div></td></tr>' +\n  '</table></td></tr></table></body></html>';\n\nreturn { json: { aviso_id: Number(a.id), para, asunto: asunto.slice(0, 200), html } };\n"
+      },
+      "name": "Armar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.asunto }}",
         "message": "={{ $json.html }}",
         "options": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "senderName": "Panel SUPRICOM"
         }
       },
-      "id": "b2e1d3c4-0004-4d5e-8f60-usuariorol04",
-      "name": "Enviar",
+      "name": "Enviar correo",
       "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
+      "typeVersion": 2.2,
       "position": [
-        720,
+        896,
         0
       ],
       "credentials": {
@@ -82,29 +89,37 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE usuarios_avisos_rol SET enviado_at = NOW() WHERE id = $1",
-        "options": {
-          "queryReplacement": "={{ $('Armar correo').first().json.aviso_id }}"
-        }
+        "query": "=UPDATE usuarios_avisos_rol SET enviado_at = NOW() WHERE id = {{ $('Armar correo').item.json.aviso_id }}",
+        "options": {}
       },
-      "id": "b2e1d3c4-0005-4d5e-8f60-usuariorol05",
       "name": "Marcar enviado",
       "type": "n8n-nodes-base.mySql",
-      "typeVersion": 2.4,
+      "typeVersion": 2.5,
       "position": [
-        960,
+        1120,
         0
       ],
       "credentials": {
         "mySql": {
           "id": "REEMPLAZAR",
-          "name": "MySQL panel"
+          "name": "MySQL account"
         }
       }
     }
   ],
   "connections": {
-    "Webhook": {
+    "Webhook Usuario": {
+      "main": [
+        [
+          {
+            "node": "Validar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar": {
       "main": [
         [
           {
@@ -130,14 +145,14 @@
       "main": [
         [
           {
-            "node": "Enviar",
+            "node": "Enviar correo",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Enviar": {
+    "Enviar correo": {
       "main": [
         [
           {
