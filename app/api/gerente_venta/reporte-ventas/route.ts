@@ -143,6 +143,9 @@ async function leerGET(req: NextRequest) {
       vendedorUserId,
       clienteId,
       marca,
+      // Mismo total que el Dashboard: resta las NC y saca a los vendedores excluidos.
+      conNotasCredito: true,
+      excluirVendedores: true,
     });
 
     return NextResponse.json({ periodo: { desde, hasta }, ...data, sedes });

@@ -9,7 +9,7 @@
  * p.ej. a "yusne" en Valencia, así que con el check marcado las dos pantallas
  * diferían justo en esos cobros.
  */
-const EXCLUSIONES_POR_SEDE: Record<number, string[]> = {
+export const EXCLUSIONES_POR_SEDE: Record<number, string[]> = {
   9: ["asistente", "yusne"],
   10: ["asistente", "adriana"],
   7: ["hercilio"],
