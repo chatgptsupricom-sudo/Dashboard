@@ -46,9 +46,10 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import PanelSupervision from "@/components/agenteia/PanelSupervision";
+import PanelEquipo from "@/components/agenteia/PanelEquipo";
 import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 import remarkGfm from "remark-gfm";
-import { aplicarPasos, partirRespuesta, type Paso } from "@/lib/agenteia/respuesta";
+import { aplicarEquipo, aplicarPasos, equipoVacio, partirRespuesta, type EstadoEquipo, type Paso } from "@/lib/agenteia/respuesta";
 
 interface AttachedFile {
   name: string;
@@ -64,6 +65,8 @@ interface Message {
   proceso?: string;
   // Herramientas que usó para responder (panel "Usó N herramientas").
   pasos?: Paso[];
+  // Lo que hizo cada uno del equipo de Supri (panel lateral del equipo).
+  equipo?: EstadoEquipo;
   files?: AttachedFile[];
 }
 
@@ -1250,6 +1253,8 @@ export default function AgenteIAPage() {
   const [editingTitle, setEditingTitle] = useState("");
   const [archivoAbierto, setArchivoAbierto] = useState<ArchivoRef | null>(null);
   const [memoriaAbierta, setMemoriaAbierta] = useState(false);
+  // Panel lateral con el equipo de Supri trabajando (se abre solo cuando reparte tareas).
+  const [equipoAbierto, setEquipoAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   // ¿Puede usar el agente y es SuperAdmin? (null = cargando)
   const [acceso, setAcceso] = useState<{ puede: boolean; superadmin: boolean; editor: boolean } | null>(null);
@@ -1474,7 +1479,17 @@ export default function AgenteIAPage() {
   // Al abrir un archivo se pliega la lista de chats para dejarle espacio.
   const abrirArchivo = (a: ArchivoRef | null) => {
     setArchivoAbierto(a);
-    if (a) setSidebarOpen(false);
+    if (a) {
+      setSidebarOpen(false);
+      setEquipoAbierto(false);
+    }
+  };
+  const abrirEquipo = (abrir: boolean) => {
+    setEquipoAbierto(abrir);
+    if (abrir) {
+      setArchivoAbierto(null);
+      if (window.innerWidth < 1280) setSidebarOpen(false);
+    }
   };
 
   const createChat = () => {
@@ -1781,6 +1796,10 @@ export default function AgenteIAPage() {
       // Pasos por id, con la hora (en este navegador) en que empezó y terminó cada uno.
       const pasos = new Map<string, Paso>();
       let leidos = 0;
+      // El equipo de Supri: cuando reparte la primera tarea se abre su panel.
+      const equipo = equipoVacio();
+      let leidosEquipo = 0;
+      let equipoMostrado = false;
 
       while (!done) {
         const { value, done: d } = await reader.read();
@@ -1789,6 +1808,12 @@ export default function AgenteIAPage() {
         crudo += decoder.decode(value, { stream: !d }).replace(/\u200B/g, "");
         // Los pasos de herramientas se leen y se sacan del texto.
         leidos = aplicarPasos(crudo, pasos, leidos);
+        leidosEquipo = aplicarEquipo(crudo, equipo, leidosEquipo);
+        if (equipo.usado && !equipoMostrado) {
+          equipoMostrado = true;
+          abrirEquipo(true);
+        }
+        const conEquipo = Object.keys(equipo.agentes).length > 0;
         const partes = partirRespuesta(crudo, d);
         const proceso = partes.proceso;
         accumulated = partes.contenido;
@@ -1802,6 +1827,7 @@ export default function AgenteIAPage() {
               content: accumulated,
               proceso: proceso || undefined,
               pasos: pasos.size ? [...pasos.values()].map((p) => ({ ...p })) : undefined,
+              equipo: conEquipo ? (JSON.parse(JSON.stringify(equipo)) as EstadoEquipo) : undefined,
             };
           return next;
         }, chatId);
@@ -2251,6 +2277,20 @@ export default function AgenteIAPage() {
                 <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </label>
             )}
+            {acceso?.superadmin && (
+              <button
+                type="button"
+                onClick={() => abrirEquipo(!equipoAbierto)}
+                title="Equipo de Supri: verlos trabajar"
+                aria-label="Equipo de Supri"
+                aria-pressed={equipoAbierto}
+                className={`flex items-center justify-center size-8 rounded-lg transition-colors ${
+                  equipoAbierto ? "bg-blue-100 text-blue-700" : "text-slate-600 hover:bg-slate-200/60"
+                }`}
+              >
+                <Users size={16} />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setMemoriaAbierta(true)}
@@ -2634,6 +2674,17 @@ export default function AgenteIAPage() {
           alertas={alertasUso}
           onAlertas={setAlertasUso}
         />}
+
+      {/* ── PANEL LATERAL: el equipo de Supri trabajando ────────────────────── */}
+      {equipoAbierto && !archivoAbierto && (
+        <aside className="fixed inset-0 z-40 md:static md:z-auto md:w-[38%] md:min-w-[22rem] md:max-w-xl md:shrink-0 bg-white md:border-l border-slate-200 flex flex-col">
+          <PanelEquipo
+            equipo={[...messages].reverse().find((m) => m.role === "assistant" && m.equipo)?.equipo ?? null}
+            generando={isGenerating}
+            onCerrar={() => setEquipoAbierto(false)}
+          />
+        </aside>
+      )}
 
       {/* ── PANEL LATERAL: vista previa del archivo abierto ─────────────────── */}
       {archivoAbierto && (

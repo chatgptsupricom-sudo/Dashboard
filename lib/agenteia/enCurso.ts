@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { aplicarPasos, partirRespuesta, type Paso } from "@/lib/agenteia/respuesta";
+import { aplicarEquipo, aplicarPasos, equipoVacio, partirRespuesta, type EstadoEquipo, type Paso } from "@/lib/agenteia/respuesta";
 
 /**
  * Respuestas del agente que siguen corriendo aunque se corte la conexión
@@ -17,6 +17,8 @@ interface Corrida {
   crudo: string;
   pasos: Map<string, Paso>;
   leidos: number;
+  equipo: EstadoEquipo;
+  leidosEquipo: number;
   terminado: boolean;
   control: AbortController;
   fin: number;
@@ -26,6 +28,7 @@ export interface MensajeRecuperado {
   content: string;
   proceso?: string;
   pasos?: Paso[];
+  equipo?: EstadoEquipo;
 }
 
 // En globalThis: cada ruta de Next puede cargar su propia copia del módulo.
@@ -39,7 +42,7 @@ export function iniciarCorrida(uid: string, chatId: string, control: AbortContro
   const ahora = Date.now();
   for (const [k, c] of corridas) if (c.terminado && ahora - c.fin > RETENER_MS) corridas.delete(k);
   corridas.get(clave(uid, chatId))?.control.abort();
-  const c: Corrida = { crudo: "", pasos: new Map(), leidos: 0, terminado: false, control, fin: 0 };
+  const c: Corrida = { crudo: "", pasos: new Map(), leidos: 0, equipo: equipoVacio(), leidosEquipo: 0, terminado: false, control, fin: 0 };
   corridas.set(clave(uid, chatId), c);
   return c;
 }
@@ -47,6 +50,7 @@ export function iniciarCorrida(uid: string, chatId: string, control: AbortContro
 export function anotar(c: Corrida, texto: string) {
   c.crudo += texto;
   if (texto.includes("[[paso:")) c.leidos = aplicarPasos(c.crudo, c.pasos, c.leidos);
+  if (texto.includes("[[equipo:")) c.leidosEquipo = aplicarEquipo(c.crudo, c.equipo, c.leidosEquipo);
 }
 
 export function terminarCorrida(c: Corrida) {
@@ -61,7 +65,12 @@ export function mensajeDe(c: Corrida): MensajeRecuperado {
   const pasos = [...c.pasos.values()].map((p) =>
     p.estado === "corriendo" ? { ...p, estado: "error" as const, fin: p.fin ?? c.fin } : { ...p },
   );
-  return { content: contenido, proceso: proceso || undefined, pasos: pasos.length ? pasos : undefined };
+  return {
+    content: contenido,
+    proceso: proceso || undefined,
+    pasos: pasos.length ? pasos : undefined,
+    equipo: c.equipo.usado ? c.equipo : undefined,
+  };
 }
 
 export function estadoCorrida(uid: string, chatId: string): { estado: "corriendo" | "terminado" | "no_hay"; mensaje?: MensajeRecuperado } {

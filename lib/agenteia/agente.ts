@@ -14,6 +14,14 @@ import { cargarDesglose, normalizar } from "@/lib/gerente_venta/reporteVentas";
 import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { TABLA_OAUTH, tokenMcp } from "@/lib/agenteia/mcpOauth";
 import { instruccionesDe, notasDe, olvidar, recordar, textoMemoria } from "@/lib/agenteia/memoria";
+import {
+  ESPECIALISTAS,
+  HERRAMIENTAS_EQUIPO,
+  ejecutarHerramientaEquipo,
+  esHerramientaEquipo,
+  estacionDe,
+  type Especialista,
+} from "@/lib/agenteia/equipo";
 import type { Uso } from "@/lib/agenteia/consumo";
 import { MODELOS_AGENTE } from "@/lib/agenteia/modelos";
 import {
@@ -337,6 +345,9 @@ function etiquetaAvance(nombre: string): string {
   if (nombre === "consultar_panel") return "Consultando el panel";
   if (nombre === "preparar_cambio_odoo") return "Preparando el cambio";
   if (nombre === "recordar_preferencia" || nombre === "olvidar_preferencia") return "Anotando para la próxima";
+  if (nombre === "consultar_especialista") return "Trabajando con el equipo";
+  if (nombre.startsWith("inventario_")) return "Revisando el inventario";
+  if (nombre.startsWith("finanzas_") || nombre === "clientes_credito") return "Revisando las finanzas";
   if (nombre === "web_search") return "Buscando en internet";
   if (nombre === "web_fetch") return "Leyendo una página web";
   if (nombre === "text_editor_code_execution") return "Escribiendo un archivo";
@@ -351,6 +362,9 @@ function etiquetaAvance(nombre: string): string {
 // respuesta ni vuelve al modelo.
 const PASO = /\[\[paso:[A-Za-z0-9_-]+\]\]/g;
 const paso = (datos: Record<string, unknown>) => `[[paso:${Buffer.from(JSON.stringify(datos)).toString("base64url")}]]`;
+// Lo que hace cada uno del equipo de Supri, para la oficina del panel lateral:
+// [[equipo:<json base64url>]] (formato en lib/agenteia/respuesta.ts).
+const equipo = (datos: Record<string, unknown>) => `[[equipo:${Buffer.from(JSON.stringify(datos)).toString("base64url")}]]`;
 
 /** Una línea legible de lo que pidió la herramienta (SQL, URL, búsqueda…). */
 function resumenPaso(nombre: string, i: any): string {
@@ -943,6 +957,208 @@ export async function titular(pregunta: string): Promise<string> {
  * respuesta. Al final emite una marca `[[confirmar-odoo:<token>]]` por cada
  * cambio preparado, que la pantalla convierte en botón.
  */
+// ── Equipo de Supri (lib/agenteia/equipo.ts) ──────────────────────────────────
+
+const SISTEMA_EQUIPO = `## Tu equipo
+Eres Supri, el coordinador. Tienes especialistas que trabajan al mismo tiempo con \`consultar_especialista\`: Inventario (existencias, quiebres, baja rotación, lo que llega), Compras (qué y cuánto comprar, proveedor y costo), Ventas (clientes, pedidos abiertos, oportunidades) y Finanzas (caja, cuentas por pagar, crédito de clientes). También puedes usar tú sus herramientas (\`inventario_quiebres\`, \`finanzas_caja\`…).
+- Úsalos solo cuando la pregunta cruza áreas o pide un análisis de varios pasos: qué comprar esta semana, si alcanza la caja para una compra, oportunidades por cliente. Una consulta puntual (una cifra, un listado) hazla tú.
+- No ven la conversación: en \`tarea\` escribe todo lo que necesitan (período, sedes, criterio) y pásales lo que encontraron los otros cuando dependa de eso (a Compras la lista de Inventario; a Finanzas la propuesta de Compras).
+- Pide en la misma vuelta lo que no depende de otro resultado, así trabajan a la vez.
+- Cada especialista es otra consulta que cuesta: no le pidas dos veces lo mismo.
+- Junta sus informes en una sola respuesta: lo verificado, la propuesta y lo que el usuario tiene que decidir.`;
+
+function herramientaEspecialista(esps: Especialista[]): Anthropic.Beta.BetaTool {
+  return {
+    name: "consultar_especialista",
+    description:
+      "Le encarga una tarea a un especialista del equipo y devuelve su informe. Varias llamadas en la misma vuelta corren al mismo tiempo.",
+    input_schema: {
+      type: "object",
+      properties: {
+        especialista: {
+          type: "string",
+          enum: esps.map((e) => e.id),
+          description: esps.map((e) => `${e.id} = ${e.nombre}`).join(", "),
+        },
+        tarea: {
+          type: "string",
+          description:
+            "Qué necesitas, completo: el especialista no ve la conversación. Incluye período, sedes, criterio y los datos que te pasaron otros especialistas si los necesita.",
+        },
+      },
+      required: ["especialista", "tarea"],
+    },
+  };
+}
+
+const corto = (t: string, n: number) => {
+  const s = t.replace(/\s+/g, " ").trim();
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+};
+
+/** La primera idea del informe (sin tablas ni títulos), para la pizarra de entregas. */
+function resumenInforme(informe: string): string {
+  const lineas = informe
+    .split("\n")
+    .map((l) => l.replace(/^[#>*\-\s]+/, "").replace(/\*\*/g, "").trim())
+    .filter((l) => l && !l.startsWith("|"));
+  return corto(lineas.slice(0, 2).join(" "), 200) || "Entregó su informe.";
+}
+
+const MODELOS_LEGIBLES: [RegExp, string][] = [
+  [/^stock\.(quant|move)/, "existencias"],
+  [/^purchase\.order/, "órdenes de compra"],
+  [/^product\.supplierinfo/, "precios de proveedor"],
+  [/^product\./, "productos"],
+  [/^sale\.order/, "pedidos de venta"],
+  [/^account\.move/, "facturas"],
+  [/^account\.payment/, "pagos"],
+  [/^res\.partner/, "clientes y proveedores"],
+];
+
+/** Lo que dice el globo del personaje mientras usa una herramienta. */
+function globoDe(nombre: string, i: any): string {
+  const sede = NOMBRE_SEDE[Number(i?.sede)] ? ` de ${NOMBRE_SEDE[Number(i?.sede)]}` : "";
+  if (nombre === "inventario_quiebres") return `Calculando quiebres${sede}`;
+  if (nombre === "inventario_menor_rotacion") return `Buscando lo que no rota${sede}`;
+  if (nombre === "finanzas_caja") return `Revisando la caja${sede}`;
+  if (nombre === "finanzas_por_pagar") return `Revisando lo que se debe${sede}`;
+  if (nombre === "clientes_credito") return `Revisando el crédito${sede}`;
+  if (nombre === "ventas_detalle") return "Calculando ventas";
+  if (nombre === "consultar_panel") return "Leyendo los archivos del panel";
+  if (nombre.startsWith("odoo_")) {
+    const m = String(i?.model ?? "");
+    const legible = MODELOS_LEGIBLES.find(([re]) => re.test(m))?.[1];
+    return legible ? `Leyendo ${legible} en Odoo` : "Consultando Odoo";
+  }
+  return etiquetaAvance(nombre);
+}
+
+interface CtxEquipo {
+  uid: string;
+  alcance: Alcance | null;
+  emitir: (t: string) => void;
+  signal?: AbortSignal;
+  medir?: (modelo: string, uso: Uso) => void;
+  modelo: string;
+  thinking: boolean;
+  fallback: boolean;
+}
+
+/** Herramientas de lectura que puede usar un especialista (las mismas guardas de alcance del agente). */
+async function leerParaEquipo(nombre: string, i: any, alcance: Alcance | null): Promise<string> {
+  if (nombre === "ventas_detalle") return ventasDetalle(i, alcance);
+  if (nombre.startsWith("odoo_")) return leerOdoo(nombre, i, alcance);
+  if (nombre === "consultar_panel") {
+    if (alcance && !alcance.panel) return "Error: este usuario no tiene acceso a las tablas del panel.";
+    return consultarPanel(i?.sql, alcance);
+  }
+  if (esHerramientaEquipo(nombre))
+    return ejecutarHerramientaEquipo(nombre, i, sedesDe(i?.sede != null ? [i.sede] : undefined, alcance), alcance);
+  return `Error: herramienta desconocida ${nombre}`;
+}
+
+const MAX_VUELTAS_ESPECIALISTA = 12;
+
+/** El bucle de un especialista: otra conversación con Claude, con sus instrucciones y herramientas. */
+async function correrEspecialista(esp: Especialista, tarea: string, ctx: CtxEquipo): Promise<string> {
+  const herramientas = [...HERRAMIENTAS, ...HERRAMIENTAS_EQUIPO].filter(
+    (h) =>
+      esp.herramientas.includes(h.name) &&
+      !(ctx.alcance && h.name === "consultar_panel" && !ctx.alcance.panel) &&
+      !(ctx.alcance && h.name === "ventas_detalle" && !ctx.alcance.areas.has("ventas")),
+  );
+  const hoy = new Intl.DateTimeFormat("es-VE", { timeZone: "America/Caracas", dateStyle: "full" }).format(new Date());
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: tarea }];
+  let ultimoTexto = "";
+  for (let vuelta = 0; vuelta < MAX_VUELTAS_ESPECIALISTA; vuelta++) {
+    if (ctx.signal?.aborted) throw new Error("Detenido por el usuario.");
+    ctx.emitir(equipo({ ag: esp.id, est: "escritorio", txt: vuelta ? "Analizando lo que encontró" : "Pensando cómo hacerlo" }));
+    const stream = anthropic().beta.messages.stream(
+      {
+        model: ctx.modelo,
+        max_tokens: 32000,
+        betas: ctx.fallback ? ["server-side-fallback-2026-07-01" as const] : [],
+        ...(ctx.fallback && { fallbacks: "default" as const }),
+        ...(ctx.thinking && { thinking: { type: "adaptive" as const } }),
+        // Esfuerzo bajo: el especialista hace una parte acotada y cada uno es otra consulta que se paga.
+        ...(ctx.thinking && { output_config: { effort: "low" as const } }),
+        system: [
+          { type: "text", text: SISTEMA, cache_control: { type: "ephemeral" } },
+          { type: "text", text: esp.instrucciones },
+          ...(ctx.alcance ? [{ type: "text" as const, text: describirAlcance(ctx.alcance) }] : []),
+          { type: "text", text: `Hoy es ${hoy} (hora de Caracas).` },
+        ],
+        tools: herramientas,
+        messages,
+      },
+      { signal: ctx.signal },
+    );
+    const msg = await stream.finalMessage();
+    ctx.medir?.(msg.model, {
+      entrada: msg.usage.input_tokens || 0,
+      salida: msg.usage.output_tokens || 0,
+      cacheEscritura: msg.usage.cache_creation_input_tokens || 0,
+      cacheLectura: msg.usage.cache_read_input_tokens || 0,
+    });
+    messages.push({ role: "assistant", content: msg.content });
+    const texto = msg.content
+      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+      .trim();
+    if (texto) ultimoTexto = texto;
+    if (msg.stop_reason === "pause_turn") continue;
+    if (msg.stop_reason === "refusal") throw new Error("Claude no quiso hacer esta parte por sus reglas de seguridad.");
+    if (msg.stop_reason !== "tool_use") return texto || ultimoTexto || "(Sin informe.)";
+
+    const resultados: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+    for (const b of msg.content) {
+      if (b.type !== "tool_use") continue;
+      ctx.emitir(paso({ id: b.id, fase: "inicio", nombre: `${esp.nombre} · ${etiquetaAvance(b.name)}` }));
+      ctx.emitir(paso({ id: b.id, fase: "detalle", detalle: resumenPaso(b.name, b.input) }));
+      ctx.emitir(equipo({ ag: esp.id, est: estacionDe(b.name), txt: corto(globoDe(b.name, b.input), 60), consulta: true }));
+      let contenido: string;
+      let esError = false;
+      try {
+        contenido = esp.herramientas.includes(b.name)
+          ? await leerParaEquipo(b.name, b.input, ctx.alcance)
+          : `Error: ${esp.nombre} no tiene la herramienta ${b.name}.`;
+        esError = contenido.startsWith("Error");
+      } catch (e: any) {
+        console.error(`[agenteia] ${esp.nombre} · ${b.name} falló:`, e?.message);
+        contenido = `Error al ejecutar ${b.name}: ${e?.message || e}`;
+        esError = true;
+      }
+      ctx.emitir(paso({ id: b.id, fase: "fin", ok: !esError }));
+      resultados.push({ type: "tool_result", tool_use_id: b.id, content: contenido, is_error: esError });
+    }
+    messages.push({ role: "user", content: resultados });
+  }
+  return `${ultimoTexto}\n\n(${esp.nombre} llegó al máximo de pasos: el informe puede estar incompleto.)`.trim();
+}
+
+/** `consultar_especialista`: encarga la tarea, muestra la entrega en la pizarra y devuelve el informe a Supri. */
+async function delegar(input: any, disponibles: Especialista[], ctx: CtxEquipo): Promise<{ contenido: string; esError: boolean }> {
+  const esp = disponibles.find((e) => e.id === input?.especialista);
+  const tarea = String(input?.tarea ?? "").trim();
+  if (!esp) return { contenido: `Error: especialista desconocido. Disponibles: ${disponibles.map((e) => e.id).join(", ")}`, esError: true };
+  if (!tarea) return { contenido: "Error: falta la tarea.", esError: true };
+  ctx.emitir(equipo({ de: "sup", a: esp.id, txt: corto(tarea, 220) }));
+  ctx.emitir(equipo({ ag: esp.id, est: "mesa", txt: "Recibiendo la tarea" }));
+  try {
+    const informe = await correrEspecialista(esp, tarea, ctx);
+    ctx.emitir(equipo({ ag: esp.id, estado: "listo", est: "mesa", txt: "Entregó su informe" }));
+    ctx.emitir(equipo({ de: esp.id, a: "sup", txt: resumenInforme(informe) }));
+    return { contenido: `Informe de ${esp.nombre}:\n${informe}`, esError: false };
+  } catch (e: any) {
+    if (ctx.signal?.aborted) throw e;
+    console.error(`[agenteia] ${esp.nombre} no terminó:`, e?.message);
+    ctx.emitir(equipo({ ag: esp.id, estado: "listo", est: "mesa", txt: "No pudo terminar" }));
+    return { contenido: `Error: ${esp.nombre} no pudo terminar: ${e?.message || e}`, esError: true };
+  }
+}
+
 export async function responder(
   chat: MensajeChat[],
   uid: string,
@@ -1002,6 +1218,11 @@ export async function responder(
       !(alcance && h.name === "consultar_panel" && !alcance.panel) &&
       !(alcance && h.name === "ventas_detalle" && !alcance.areas.has("ventas")),
   );
+  // Equipo de especialistas: por ahora solo el SuperAdmin (sin alcance).
+  // Para abrirlo a otros roles: especialistasPara(alcance) de lib/agenteia/equipo.ts.
+  const especialistas = alcance ? [] : ESPECIALISTAS;
+  const herramientasEquipo = especialistas.length ? [...HERRAMIENTAS_EQUIPO, herramientaEspecialista(especialistas)] : [];
+  const ctxEquipo: CtxEquipo = { uid, alcance, emitir, signal, medir, modelo: MODELO, thinking: THINKING_ADAPTATIVO, fallback: CON_FALLBACK };
   console.log(`[agenteia] consulta de ${uid} · ${MODELO} · Odoo por ${conMcp ? "MCP + JSON-RPC" : "JSON-RPC (sin MCP)"}`);
 
   // Lo que aprendió de este usuario (lib/agenteia/memoria.ts). Si la MySQL no
@@ -1027,6 +1248,7 @@ export async function responder(
   let terminado = false;
   for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
     if (signal?.aborted) return;
+    emitir(equipo({ ag: "sup", est: "mesa", txt: "Pensando" }));
     const stream = anthropic().beta.messages.stream({
       model: MODELO,
       max_tokens: 64000,
@@ -1046,6 +1268,7 @@ export async function responder(
         ...(conWeb ? [{ type: "text" as const, text: SISTEMA_WEB }] : []),
         ...(soloLectura ? [{ type: "text" as const, text: SISTEMA_SOLO_LECTURA }] : []),
         ...(alcance ? [{ type: "text" as const, text: describirAlcance(alcance) }] : []),
+        ...(especialistas.length ? [{ type: "text" as const, text: SISTEMA_EQUIPO }] : []),
         { type: "text", text: textoMemoria(notas, instrucciones) },
         { type: "text", text: `Hoy es ${hoy} (hora de Caracas).` },
       ],
@@ -1069,6 +1292,7 @@ export async function responder(
         ...(conArchivos ? [{ type: "code_execution_20260521" as const, name: "code_execution" as const }] : []),
         ...herramientasWeb,
         ...herramientasPropias,
+        ...herramientasEquipo,
       ],
       messages,
     }, { signal });
@@ -1094,9 +1318,12 @@ export async function responder(
       // Cada bloque de texto es un párrafo aparte: con el MCP hay varios en
       // una misma vuelta (texto, consulta, texto…) y salían pegados.
       if (b?.type === "text" && hayTexto) emitir("\n\n");
+      if (b?.type === "text") emitir(equipo({ ag: "sup", est: "escritorio", txt: "Escribiendo" }));
       if (b?.type !== "tool_use" && b?.type !== "mcp_tool_use" && b?.type !== "server_tool_use") return;
       const etiqueta = etiquetaAvance(String(b.name));
       emitir(paso({ id: b.id, fase: "inicio", nombre: etiqueta }));
+      const delega = b.name === "consultar_especialista";
+      emitir(equipo({ ag: "sup", est: estacionDe(String(b.name)), txt: delega ? "Repartiendo tareas" : etiqueta, consulta: !delega }));
       if (etiqueta === ultimoAvance) return;
       ultimoAvance = etiqueta;
       emitir(`[[avance:${etiqueta}]]`);
@@ -1160,6 +1387,14 @@ export async function responder(
     }
 
     const resultados: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+    // Los especialistas trabajan al mismo tiempo: Supri puede encargar varias tareas en una vuelta.
+    const delegados = new Map<string, { contenido: string; esError: boolean }>();
+    if (especialistas.length)
+      await Promise.all(
+        msg.content
+          .filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use" && b.name === "consultar_especialista")
+          .map(async (b) => delegados.set(b.id, await delegar(b.input, especialistas, ctxEquipo))),
+      );
     for (const b of msg.content) {
       if (b.type !== "tool_use") continue;
       let contenido: string;
@@ -1167,7 +1402,14 @@ export async function responder(
       // Un fallo de una herramienta (MySQL caída, Odoo sin respuesta) vuelve al
       // modelo como error para que lo explique o reintente; no tumba la consulta.
       try {
-        if (b.name === "ventas_detalle") {
+        const delegado = delegados.get(b.id);
+        if (delegado) {
+          ({ contenido, esError } = delegado);
+        } else if (especialistas.length && esHerramientaEquipo(b.name)) {
+          const i = b.input as any;
+          contenido = await ejecutarHerramientaEquipo(b.name, i, sedesDe(i?.sede != null ? [i.sede] : undefined, alcance), alcance);
+          esError = contenido.startsWith("Error");
+        } else if (b.name === "ventas_detalle") {
           contenido = await ventasDetalle(b.input, alcance);
           esError = contenido.startsWith("Error");
         } else if (b.name.startsWith("odoo_")) {
@@ -1209,6 +1451,7 @@ export async function responder(
     }
     messages.push({ role: "user", content: resultados });
   }
+  if (!signal?.aborted) emitir(equipo({ ag: "sup", estado: "listo", est: "mesa", txt: "Respuesta entregada" }));
   if (!terminado && !signal?.aborted)
     emitir(
       `\n\n⚠️ La consulta necesitó más de ${MAX_VUELTAS} pasos y se detuvo sin terminar. Prueba con una pregunta más acotada (una sede, un período más corto).`,
