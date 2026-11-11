@@ -1,16 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import {
-  AlertTriangle,
-  Building2,
-  MoreVertical,
-  Pencil,
-  Trash2,
-  Warehouse,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, MoreVertical, Package, Pencil, Trash2 } from "lucide-react";
 import type { PopProduct } from "@/lib/adminleads/material-pop/types";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,50 +10,47 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
+import { cn } from "@/lib/utils";
 
-function StockBadge({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: number;
-  icon: React.ElementType;
-}) {
-  const zero = value <= 0;
-  return (
-    <div
-      className={`flex flex-col rounded-lg border px-2.5 py-1.5 ${
-        zero
-          ? "border-red-200 bg-red-50"
-          : "border-slate-200 bg-slate-50"
-      }`}
-    >
-      <span
-        className={`flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide ${
-          zero ? "text-red-600" : "text-slate-500"
-        }`}
-      >
-        <Icon className="h-3 w-3" />
-        {label}
-      </span>
-      <span
-        className={`text-sm font-semibold ${zero ? "text-red-700" : "text-slate-800"}`}
-      >
-        {value}
-      </span>
-    </div>
-  );
+/** Total igual o menor a esto cuenta como stock bajo. */
+export const STOCK_BAJO = 8;
+
+export type NivelStock = "agotado" | "bajo" | "ok";
+
+export function nivelStock(p: PopProduct): NivelStock {
+  if (p.stock_total <= 0) return "agotado";
+  if (p.stock_office <= 0 || p.stock_total <= STOCK_BAJO) return "bajo";
+  return "ok";
+}
+
+// Tinte suave por marca: fondo de la foto y color del acento de la tarjeta.
+const TINTES = [
+  { fondo: "bg-blue-50", acento: "text-blue-600", hover: "hover:bg-blue-600" },
+  { fondo: "bg-violet-50", acento: "text-violet-600", hover: "hover:bg-violet-600" },
+  { fondo: "bg-sky-50", acento: "text-sky-500", hover: "hover:bg-sky-500" },
+];
+const TINTE_SUPRICOM = { fondo: "bg-slate-100", acento: "text-slate-900", hover: "hover:bg-slate-900" };
+
+export function tinteDeMarca(brand: string | null | undefined) {
+  const b = String(brand || "").trim().toUpperCase();
+  if (b === "SUPRICOM") return TINTE_SUPRICOM;
+  let h = 0;
+  for (const c of b) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return TINTES[h % TINTES.length];
 }
 
 export function ProductCard({
   product,
   onEdit,
   onDeleted,
+  onEntrada,
+  onSalida,
 }: {
   product: PopProduct;
   onEdit: () => void;
   onDeleted: () => void;
+  onEntrada: () => void;
+  onSalida: () => void;
 }) {
   const [deleting, setDeleting] = useState(false);
 
@@ -84,13 +73,26 @@ export function ProductCard({
     }
   }
 
+  const nivel = nivelStock(product);
+  const agotado = nivel === "agotado";
+  const tinte = agotado
+    ? { fondo: "bg-red-50", acento: "text-red-600", hover: "hover:bg-red-600" }
+    : tinteDeMarca(product.brand);
+  const total = product.stock_total;
+  const pctOficina = total > 0 ? (product.stock_office / total) * 100 : 0;
+  const pctAlmacen = total > 0 ? (product.stock_warehouse / total) * 100 : 0;
+
   return (
-    <div className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-      {/* Foto: marco 1:1 igual en todas las tarjetas. `object-contain` en vez
-          de `cover` porque las fotos vienen en proporciones muy distintas
-          (un paraguas vertical, un mouse pad apaisado) y recortarlas al
-          cuadrado se comía el producto. */}
-      <div className="relative aspect-square w-full bg-slate-50">
+    <article
+      className={cn(
+        "flex min-w-0 flex-col gap-3 rounded-[22px] border bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,.04),0_10px_30px_rgba(15,23,42,.06)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(15,23,42,.05),0_20px_40px_rgba(15,23,42,.10)] motion-reduce:transition-none motion-reduce:hover:translate-y-0",
+        agotado ? "border-red-200" : "border-slate-200/80",
+      )}
+    >
+      {/* Foto: `object-contain` porque vienen en proporciones muy distintas
+          (un paraguas vertical, un mouse pad apaisado) y recortarlas se comía
+          el producto. */}
+      <div className={cn("relative grid aspect-[4/3] place-items-center rounded-2xl", tinte.fondo, tinte.acento)}>
         {product.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -99,92 +101,112 @@ export function ProductCard({
             className="h-full w-full object-contain p-3"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-slate-300">
-            <span className="text-[11px] font-medium uppercase tracking-wider">
-              Sin foto
-            </span>
-          </div>
+          <Package className="h-14 w-14 opacity-80" strokeWidth={1.6} />
         )}
 
-        {product.has_alert && (
-          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-lg bg-red-600/90 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur">
-            <AlertTriangle className="h-3 w-3" />
-            Agotado
-          </span>
-        )}
-
-        <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="secondary"
-                size="icon"
-                className="h-8 w-8 bg-white/90 backdrop-blur hover:bg-white"
-              >
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Editar
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleDelete}
-                disabled={deleting}
-                className="text-red-600 focus:text-red-600"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Desactivar
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {/* Info */}
-      <div className="flex flex-1 flex-col gap-3 p-4">
-        <div>
-          <span className="inline-block rounded-md bg-violet-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-violet-700">
-            {product.code}
-          </span>
-          <h3 className="mt-1.5 line-clamp-2 text-sm font-semibold text-slate-900">
-            {product.name}
-          </h3>
-          {product.brand && (
-            <p className="mt-0.5 text-xs font-medium text-slate-600">{product.brand}</p>
+        <span
+          className={cn(
+            "absolute left-2.5 top-2.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+            nivel === "agotado" && "bg-red-600 text-white",
+            nivel === "bajo" && "bg-amber-50 text-amber-700",
+            nivel === "ok" && "bg-white text-emerald-700",
           )}
-          <p className="mt-0.5 text-xs text-slate-500">
-            {product.category_name || "Sin categoría"}
-            {product.uom_name ? ` · ${product.uom_name}` : ""}
-          </p>
-        </div>
+        >
+          {nivel === "agotado" ? "Agotado" : nivel === "bajo" ? "Stock bajo" : "Disponible"}
+        </span>
 
-        <div className="mt-auto grid grid-cols-3 gap-2">
-          <StockBadge label="Total" value={product.stock_total} icon={PackageIcon} />
-          <StockBadge label="Oficina" value={product.stock_office} icon={Building2} />
-          <StockBadge label="Almacén" value={product.stock_warehouse} icon={Warehouse} />
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Más acciones de ${product.name}`}
+              className="absolute right-2.5 top-2.5 grid h-8 w-8 place-items-center rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={handleDelete}
+              disabled={deleting}
+              className="text-red-600 focus:text-red-600"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Desactivar
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-    </div>
-  );
-}
 
-function PackageIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="m7.5 4.27 9 5.15" />
-      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-      <path d="m3.3 7 8.7 5 8.7-5" />
-      <path d="M12 22V12" />
-    </svg>
+      <div>
+        <span className="inline-block rounded-md bg-violet-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-violet-700">
+          {product.code}
+        </span>
+        <h3 className="mt-1 line-clamp-2 text-[15px] font-semibold leading-snug text-slate-900">
+          {product.name}
+        </h3>
+        <p className="text-xs text-slate-500">
+          {[product.brand, product.category_name || "Sin categoría", product.uom_name]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      </div>
+
+      <div className="mt-auto flex items-baseline justify-between">
+        <b
+          className={cn(
+            "text-[26px] font-bold tabular-nums tracking-tight",
+            agotado ? "text-red-600" : "text-slate-900",
+          )}
+        >
+          {total}
+        </b>
+        <span className="text-xs text-slate-400">unidades totales</span>
+      </div>
+
+      <div className="flex h-1.5 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+        <i className="block h-full bg-violet-600 transition-[width] duration-500" style={{ width: `${pctOficina}%` }} />
+        <i className="block h-full bg-sky-500 transition-[width] duration-500" style={{ width: `${pctAlmacen}%` }} />
+      </div>
+      <div className="flex justify-between text-xs text-slate-500">
+        <span className={product.stock_office <= 0 ? "text-red-600" : ""}>
+          Oficina <b className={product.stock_office <= 0 ? "text-red-600" : "text-slate-900"}>{product.stock_office}</b>
+        </span>
+        <span>
+          Almacén <b className="text-slate-900">{product.stock_warehouse}</b>
+        </span>
+      </div>
+      {product.stock_reserved > 0 && (
+        <p className="-mt-1.5 text-[11px] text-slate-400">
+          Reservado {product.stock_reserved} · disponible {product.stock_available}
+        </p>
+      )}
+
+      <div className="grid grid-cols-2 gap-1.5">
+        {(
+          [
+            ["Entrada", ArrowDown, onEntrada],
+            ["Salida", ArrowUp, onSalida],
+          ] as const
+        ).map(([etiqueta, Icono, accion]) => (
+          <button
+            key={etiqueta}
+            type="button"
+            onClick={accion}
+            className={cn(
+              "inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-900 transition-colors hover:border-transparent hover:text-white",
+              tinte.hover,
+            )}
+          >
+            <Icono className="h-3.5 w-3.5" />
+            {etiqueta}
+          </button>
+        ))}
+      </div>
+    </article>
   );
 }
