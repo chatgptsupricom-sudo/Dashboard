@@ -960,8 +960,9 @@ export async function titular(pregunta: string): Promise<string> {
 // ── Equipo de Supri (lib/agenteia/equipo.ts) ──────────────────────────────────
 
 const SISTEMA_EQUIPO = `## Tu equipo
-Eres Supri, el coordinador. Tienes especialistas que trabajan al mismo tiempo con \`consultar_especialista\`: Inventario (existencias, quiebres, baja rotación, lo que llega), Compras (qué y cuánto comprar, proveedor y costo), Ventas (clientes, pedidos abiertos, oportunidades) y Finanzas (caja, cuentas por pagar, crédito de clientes). También puedes usar tú sus herramientas (\`inventario_quiebres\`, \`finanzas_caja\`…).
-- Úsalos solo cuando la pregunta cruza áreas o pide un análisis de varios pasos: qué comprar esta semana, si alcanza la caja para una compra, oportunidades por cliente. Una consulta puntual (una cifra, un listado) hazla tú.
+Eres Supri, el coordinador. Tienes especialistas que trabajan al mismo tiempo con \`consultar_especialista\`: Inventario (existencias, quiebres, baja rotación, lo que llega), Compras (qué y cuánto comprar, proveedor y costo), Ventas (clientes, pedidos abiertos, oportunidades) y Finanzas (caja, cuentas por pagar, crédito de clientes). Los cálculos de quiebres, reposición, caja, cuentas por pagar y crédito los tienen solo ellos: tú no.
+- **Usa el equipo** cuando la pregunta pide decidir o planificar cruzando áreas: qué comprar o reponer, si alcanza la caja para una compra, qué pedidos o clientes priorizar, revisar la situación de una sede. Ahí no la resuelvas tú: encarga cada parte a su especialista (ej. qué comprar = Inventario + Compras + Finanzas, y Ventas si hay pedidos esperando).
+- **No uses el equipo** para una consulta puntual que respondes con tus herramientas (una cifra de ventas, un listado de facturas, datos de un cliente).
 - No ven la conversación: en \`tarea\` escribe todo lo que necesitan (período, sedes, criterio) y pásales lo que encontraron los otros cuando dependa de eso (a Compras la lista de Inventario; a Finanzas la propuesta de Compras).
 - Pide en la misma vuelta lo que no depende de otro resultado, así trabajan a la vez.
 - Cada especialista es otra consulta que cuesta: no le pidas dos veces lo mismo.
@@ -1221,7 +1222,9 @@ export async function responder(
   // Equipo de especialistas: por ahora solo el SuperAdmin (sin alcance).
   // Para abrirlo a otros roles: especialistasPara(alcance) de lib/agenteia/equipo.ts.
   const especialistas = alcance ? [] : ESPECIALISTAS;
-  const herramientasEquipo = especialistas.length ? [...HERRAMIENTAS_EQUIPO, herramientaEspecialista(especialistas)] : [];
+  // Supri solo delega: los cálculos del equipo (quiebres, caja…) son de los especialistas,
+  // si no los hace él mismo y nunca reparte.
+  const herramientasEquipo = especialistas.length ? [herramientaEspecialista(especialistas)] : [];
   const ctxEquipo: CtxEquipo = { uid, alcance, emitir, signal, medir, modelo: MODELO, thinking: THINKING_ADAPTATIVO, fallback: CON_FALLBACK };
   console.log(`[agenteia] consulta de ${uid} · ${MODELO} · Odoo por ${conMcp ? "MCP + JSON-RPC" : "JSON-RPC (sin MCP)"}`);
 
@@ -1405,10 +1408,6 @@ export async function responder(
         const delegado = delegados.get(b.id);
         if (delegado) {
           ({ contenido, esError } = delegado);
-        } else if (especialistas.length && esHerramientaEquipo(b.name)) {
-          const i = b.input as any;
-          contenido = await ejecutarHerramientaEquipo(b.name, i, sedesDe(i?.sede != null ? [i.sede] : undefined, alcance), alcance);
-          esError = contenido.startsWith("Error");
         } else if (b.name === "ventas_detalle") {
           contenido = await ventasDetalle(b.input, alcance);
           esError = contenido.startsWith("Error");
