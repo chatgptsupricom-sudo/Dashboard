@@ -100,6 +100,11 @@ export default function RmaCasoDetailPage() {
   const [guiaFile, setGuiaFile] = useState<File | null>(null);
   const [subiendoGuia, setSubiendoGuia] = useState(false);
   const [errorGuia, setErrorGuia] = useState<string | null>(null);
+  // Lo que el servidor rechaza (nota de crédito en curso, envío con varios
+  // productos…): se muestra en el diálogo o junto a "Guardar cambios" en vez
+  // de quedarse sin hacer nada.
+  const [errorEstado, setErrorEstado] = useState<string | null>(null);
+  const [errorEdicion, setErrorEdicion] = useState<string | null>(null);
 
   useEffect(() => {
     if (caseId) fetchCase();
@@ -142,24 +147,28 @@ export default function RmaCasoDetailPage() {
 
     try {
       setSaving(true);
+      setErrorEstado(null);
+      // El autor del historial lo pone el servidor con la sesión.
       const res = await fetch(`/api/rma/${caseId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: newStatus,
-          changed_by: "Usuario Actual",
           change_notes: changeNotes,
         }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setStatusDialogOpen(false);
-        setNewStatus("");
-        setChangeNotes("");
-        fetchCase();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        setErrorEstado(data.error || "No se pudo cambiar el estado.");
+        return;
       }
+      setStatusDialogOpen(false);
+      setNewStatus("");
+      setChangeNotes("");
+      fetchCase();
     } catch (error) {
       console.error("Error:", error);
+      setErrorEstado("No se pudo cambiar el estado. Revisa la conexión e inténtalo de nuevo.");
     } finally {
       setSaving(false);
     }
@@ -230,6 +239,7 @@ export default function RmaCasoDetailPage() {
   const handleSaveEdit = async () => {
     try {
       setSaving(true);
+      setErrorEdicion(null);
       const res = await fetch(`/api/rma/${caseId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -247,13 +257,16 @@ export default function RmaCasoDetailPage() {
           status: editForm.status,
         }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setEditing(false);
-        fetchCase();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        setErrorEdicion(data.error || "No se pudieron guardar los cambios.");
+        return;
       }
+      setEditing(false);
+      fetchCase();
     } catch (error) {
       console.error("Error:", error);
+      setErrorEdicion("No se pudieron guardar los cambios. Revisa la conexión e inténtalo de nuevo.");
     } finally {
       setSaving(false);
     }
@@ -340,7 +353,13 @@ export default function RmaCasoDetailPage() {
             </Badge>
           )}
           {!varios && (
-          <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+          <Dialog
+            open={statusDialogOpen}
+            onOpenChange={(open) => {
+              setStatusDialogOpen(open);
+              if (!open) setErrorEstado(null);
+            }}
+          >
             <DialogTrigger asChild>
               <Button className="bg-blue-600 hover:bg-blue-700 text-white">
                 <CheckCircle2 className="w-4 h-4 mr-2" />
@@ -383,6 +402,11 @@ export default function RmaCasoDetailPage() {
                       rows={3}
                     />
                   </div>
+                  {errorEstado && (
+                    <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      {errorEstado}
+                    </p>
+                  )}
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>{t("cancel")}</Button>
@@ -394,7 +418,13 @@ export default function RmaCasoDetailPage() {
               </DialogContent>
             </Dialog>
           )}
-          <Button variant="outline" onClick={() => setEditing(!editing)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setEditing(!editing);
+              setErrorEdicion(null);
+            }}
+          >
             {editing ? t("cancel") : t("edit")}
           </Button>
           <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -623,7 +653,12 @@ export default function RmaCasoDetailPage() {
           {/* Falla y diagnóstico (con varios productos, va en cada uno; lo que
               queda acá es solo el botón de guardar la edición del cliente) */}
           {varios && editing && (
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {errorEdicion && (
+                <p role="alert" className="text-sm text-red-600">
+                  {errorEdicion}
+                </p>
+              )}
               <Button onClick={handleSaveEdit} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
                 {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                 {t("save_changes")}
@@ -667,7 +702,12 @@ export default function RmaCasoDetailPage() {
                 </div>
               )}
               {editing && (
-                <div className="flex justify-end">
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  {errorEdicion && (
+                    <p role="alert" className="text-sm text-red-600">
+                      {errorEdicion}
+                    </p>
+                  )}
                   <Button onClick={handleSaveEdit} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
                     {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                     {t("save_changes")}

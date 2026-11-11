@@ -114,7 +114,6 @@ export async function POST(request: NextRequest) {
       serial_quantity,
       reported_fault,
       company_id,
-      created_by,
       notes,
       // Opcional: crear el caso con origen='portal' (con su propio
       // tracking_token) en vez del default interno. Sirve para armar
@@ -126,6 +125,10 @@ export async function POST(request: NextRequest) {
     } = body;
     const origenFinal = origen === "portal" ? "portal" : undefined;
     const trackingToken = origenFinal === "portal" ? randomBytes(32).toString("hex") : null;
+
+    // Quién crea el caso sale de la sesión, no de lo que mande la pantalla
+    // (el historial es la constancia de quién hizo cada cosa).
+    const created_by = String(auth.payload?.name || auth.payload?.email || body.created_by || "").trim();
 
     if (!client_name || !reported_fault || !created_by) {
       return NextResponse.json(
