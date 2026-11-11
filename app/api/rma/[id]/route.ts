@@ -152,9 +152,11 @@ export async function PUT(
       diagnosis,
       notes,
       company_id,
-      changed_by,
       change_notes,
     } = body;
+    // El autor del historial sale de la sesión: antes la pantalla mandaba el
+    // texto fijo "Usuario Actual" y eso quedaba como autor del cambio.
+    const changedBy = String(auth.payload?.name || auth.payload?.email || "Sistema");
 
     const existing = await query(
       `SELECT id, status, case_number, origen, company_id, odoo_partner_id,
@@ -185,7 +187,7 @@ export async function PUT(
       }
       await marcarProductosDespachados(casoActual.id, undefined, ids);
       await sincronizarEnvio(casoActual.id, {
-        changedBy: auth.payload?.name || "Sistema",
+        changedBy,
         origenPeticion: getPublicOrigin(request),
       });
       return NextResponse.json({ success: true });
@@ -270,7 +272,7 @@ export async function PUT(
       await query(
         `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes)
          VALUES (?, ?, ?, ?, ?)`,
-        [id, oldStatus, status, changed_by || "Sistema", change_notes || null]
+        [id, oldStatus, status, changedBy, change_notes || null]
       );
     }
 

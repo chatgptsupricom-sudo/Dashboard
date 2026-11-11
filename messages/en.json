@@ -476,7 +476,7 @@
     "nc_cambiar_caso": "Change case",
     "nc_caso_no_encontrado": "Case not found.",
     "nc_no_externo": "That case is for equipment Supricom didn't sell: no credit note applies.",
-    "nc_no_solicitable": "Only for equipment still under review (received or re-entered).",
+    "nc_no_solicitable": "Only for equipment still under review (received, in diagnosis, in repair or re-entered).",
     "nc_motivo": "Why the credit note applies",
     "nc_motivo_placeholder": "E.g.: the unit is under warranty, there is no replacement and the customer asks for a credit.",
     "nc_no_reparable": "Why can't it be repaired?",

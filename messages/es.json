@@ -458,7 +458,7 @@
     "nc_cambiar_caso": "Cambiar caso",
     "nc_caso_no_encontrado": "No se encontró el caso.",
     "nc_no_externo": "Ese caso es de un equipo que Supricom no vendió: no lleva nota de crédito.",
-    "nc_no_solicitable": "Solo se pide de un equipo que sigue en revisión (recibido o reingresado).",
+    "nc_no_solicitable": "Solo se pide de un equipo que sigue en revisión (recibido, en diagnóstico, en reparación o reingresado).",
     "nc_motivo": "Por qué corresponde la nota de crédito",
     "nc_motivo_placeholder": "Ej.: el equipo está en garantía, no hay uno igual para cambiarlo y el cliente pide que se le acredite.",
     "nc_no_reparable": "¿Por qué no se puede reparar?",
