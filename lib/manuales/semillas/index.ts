@@ -1,5 +1,6 @@
 import type { Contenido } from "@/lib/manuales/datos";
 import type { TipoManual } from "@/lib/manuales/permisos";
+import { MANUAL_ADMINISTRACION, TUTORIAL_ADMINISTRACION } from "@/lib/manuales/semillas/administracion";
 import { MANUAL_ALMACEN, TUTORIAL_ALMACEN } from "@/lib/manuales/semillas/almacen";
 import { MANUAL_CXC, TUTORIAL_CXC } from "@/lib/manuales/semillas/cxc";
 import { MANUAL_SEGURIDAD, TUTORIAL_SEGURIDAD } from "@/lib/manuales/semillas/seguridad";
@@ -34,4 +35,6 @@ export const SEMILLAS: Semilla[] = [
   TUTORIAL_SEGURIDAD,
   MANUAL_CXC,
   TUTORIAL_CXC,
+  MANUAL_ADMINISTRACION,
+  TUTORIAL_ADMINISTRACION,
 ];
