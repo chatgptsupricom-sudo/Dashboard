@@ -400,7 +400,7 @@ export function SellerPopPage() {
                     <article
                       key={p.id}
                       className={cn(
-                        "grid min-w-0 gap-2.5 rounded-[22px] border bg-white p-3 transition duration-200 motion-reduce:transition-none",
+                        "grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5 rounded-[22px] border bg-white p-3 transition duration-200 motion-reduce:transition-none",
                         SOMBRA,
                         linea
                           ? "border-violet-300 ring-2 ring-violet-100"
@@ -408,10 +408,11 @@ export function SellerPopPage() {
                         sinStock ? "opacity-60" : "hover:-translate-y-0.5",
                       )}
                     >
-                      <div className={cn("relative grid aspect-[4/3] place-items-center rounded-2xl", tinte.fondo, tinte.acento)}>
+                      <div className={cn("relative grid aspect-[4/3] w-full place-items-center overflow-hidden rounded-2xl", tinte.fondo, tinte.acento)}>
                         {p.image_url ? (
+                          // Absoluta: en flujo, el tamaño propio de la foto estiraba la tarjeta y se montaba sobre las vecinas.
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={p.image_url} alt={p.name} loading="lazy" className="h-full w-full object-contain p-3" />
+                          <img src={p.image_url} alt={p.name} loading="lazy" className="absolute inset-0 h-full w-full object-contain p-3" />
                         ) : (
                           <Package className="h-12 w-12 opacity-80" strokeWidth={1.6} />
                         )}

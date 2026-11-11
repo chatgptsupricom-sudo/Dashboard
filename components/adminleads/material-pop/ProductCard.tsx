@@ -92,13 +92,14 @@ export function ProductCard({
       {/* Foto: `object-contain` porque vienen en proporciones muy distintas
           (un paraguas vertical, un mouse pad apaisado) y recortarlas se comía
           el producto. */}
-      <div className={cn("relative grid aspect-[4/3] place-items-center rounded-2xl", tinte.fondo, tinte.acento)}>
+      <div className={cn("relative grid aspect-[4/3] w-full place-items-center overflow-hidden rounded-2xl", tinte.fondo, tinte.acento)}>
         {product.image_url ? (
+          // Absoluta: en flujo, el tamaño propio de la foto estiraba la tarjeta y se montaba sobre las vecinas.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={product.image_url}
             alt={product.name}
-            className="h-full w-full object-contain p-3"
+            className="absolute inset-0 h-full w-full object-contain p-3"
           />
         ) : (
           <Package className="h-14 w-14 opacity-80" strokeWidth={1.6} />
