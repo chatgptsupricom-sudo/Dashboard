@@ -32,6 +32,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  GraduationCap,
   Boxes,
   BrainCircuit,
   Network,
@@ -192,6 +193,9 @@ export function Sidebar({
   // Notas de crédito (lib/notas-credito): quien es responsable de un paso, por
   // correo, y el SuperAdmin. `pendientes` = las que esperan a la sesión.
   const [notasCredito, setNotasCredito] = useState({ puede: false, pendientes: 0 });
+  // Manual y Tutorial del rol (lib/manuales): salen en el menú cuando Procesos
+  // publicó al menos uno para el rol de la sesión.
+  const [manualesRol, setManualesRol] = useState({ manual: 0, tutorial: 0 });
 
   // Solicitudes de nota de crédito de RMA enviadas al Super Admin (contador
   // del menú RMA).
@@ -223,6 +227,10 @@ export function Sidebar({
         const c = await fetch("/api/notas-credito?conteo=1").then((r) => r.json()).catch(() => ({}));
         setNotasCredito({ puede: true, pendientes: Number(c?.pendientes) || 0 });
       })
+      .catch(() => {});
+    fetch("/api/manuales?resumen=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j && setManualesRol({ manual: Number(j.manual) || 0, tutorial: Number(j.tutorial) || 0 }))
       .catch(() => {});
   }, [user]);
 
@@ -298,6 +306,8 @@ export function Sidebar({
   if (!soloSecciones && notasCredito.puede && !allowedSections.includes("notas_credito")) {
     allowedSections.push("notas_credito");
   }
+  if (!soloSecciones && manualesRol.manual > 0) allowedSections.push("manual_rol");
+  if (!soloSecciones && manualesRol.tutorial > 0) allowedSections.push("tutorial_rol");
 
   // Definición del menú base
   const menuItems = [
@@ -320,6 +330,9 @@ export function Sidebar({
     { id: "bi_rotacion_productos", label: "Rotación productos", icon: Boxes, slug: "/adminleads/dashboard", absoluteHref: true },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
+    // Manual y Tutorial de cada rol: lo que Procesos publicó para él (lib/manuales).
+    { id: "manual_rol", label: "Manual", icon: BookOpen, slug: "/manuales", absoluteHref: true },
+    { id: "tutorial_rol", label: "Tutorial", icon: GraduationCap, slug: "/manuales/tutorial", absoluteHref: true },
     // Organigrama con las actividades de cada cargo (SuperAdmin, Procesos y RRHH).
     { id: "organigrama", label: "Organigrama", icon: Network, slug: "/organigrama", absoluteHref: true },
     // Flujogramas de procesos (SuperAdmin, Procesos y RRHH).

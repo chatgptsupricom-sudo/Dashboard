@@ -1,6 +1,8 @@
 "use client";
 
 import { VistaManual } from "@/components/manuales/VistaManual";
+import { VistaTutorial } from "@/components/manuales/VistaTutorial";
+import type { TipoManual } from "@/lib/manuales/permisos";
 import type { Contenido, Manual, Paso } from "@/lib/manuales/datos";
 import { ArrowDown, ArrowLeft, ArrowUp, Eye, FileUp, ImagePlus, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
@@ -14,6 +16,7 @@ const VACIO: Form = {
   titulo: "",
   area: "",
   version: "1.0",
+  tipo: "manual",
   roles: [],
   publicado: false,
   contenido: {
@@ -27,7 +30,29 @@ const VACIO: Form = {
   },
 };
 
-const PASO_VACIO: Paso = { titulo: "", responsable: "", descripcion: "", imagenes: [], nota: "" };
+const PASO_VACIO: Paso = { titulo: "", responsable: "", descripcion: "", imagenes: [], nota: "", enlace: "" };
+
+// Lo que cambia en el editor según sea el procedimiento o el recorrido por el panel.
+const TEXTOS: Record<TipoManual, Record<"datos" | "objetivo" | "alcance" | "pasos" | "paso" | "documentos" | "definiciones", string>> = {
+  manual: {
+    datos: "Datos del procedimiento",
+    objetivo: "Objetivo",
+    alcance: "Alcance",
+    pasos: "Procedimiento",
+    paso: "Título del paso",
+    documentos: "Documentos y registros",
+    definiciones: "Definiciones",
+  },
+  tutorial: {
+    datos: "Datos del tutorial",
+    objetivo: "Bienvenida (qué va a aprender)",
+    alcance: "Antes de empezar",
+    pasos: "Pantallas del recorrido",
+    paso: "Nombre de la pantalla",
+    documentos: "Si algo no sale como esperas",
+    definiciones: "Palabras que vas a ver",
+  },
+};
 
 const campo = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 const etiqueta = "mb-1 block text-xs font-semibold text-slate-600";
@@ -54,10 +79,10 @@ const mover = <T,>(arr: T[], i: number, dir: number) => {
 };
 
 /** Crear (id = null) o editar un manual. Solo rol Procesos (middleware y API). */
-export function EditorManual({ id }: { id: number | null }) {
+export function EditorManual({ id, tipoInicial = "manual" }: { id: number | null; tipoInicial?: TipoManual }) {
   const { locale } = useParams<{ locale: string }>();
   const router = useRouter();
-  const [form, setForm] = useState<Form>(VACIO);
+  const [form, setForm] = useState<Form>({ ...VACIO, tipo: tipoInicial });
   const [roles, setRoles] = useState<{ rol: string; nombre: string }[]>([]);
   const [cargando, setCargando] = useState(Boolean(id));
   const [guardando, setGuardando] = useState(false);
@@ -160,6 +185,7 @@ export function EditorManual({ id }: { id: number | null }) {
   if (cargando) return <Loader2 className="mx-auto mt-10 h-6 w-6 animate-spin text-slate-400" />;
 
   const c = form.contenido;
+  const tx = TEXTOS[form.tipo];
 
   return (
     <div className="space-y-4 p-4 sm:p-8">
@@ -208,11 +234,32 @@ export function EditorManual({ id }: { id: number | null }) {
       </div>
 
       {previa ? (
-        <VistaManual manual={{ ...form, id: id ?? 0, updatedBy: null, updatedAt: null }} />
+        form.tipo === "tutorial" ? (
+          <VistaTutorial manual={{ ...form, id: id ?? 0, updatedBy: null, updatedAt: null }} />
+        ) : (
+          <VistaManual manual={{ ...form, id: id ?? 0, updatedBy: null, updatedAt: null }} />
+        )
       ) : (
         <div className="mx-auto max-w-4xl space-y-4">
-          <Bloque titulo="Datos del procedimiento">
+          <Bloque titulo={tx.datos}>
             <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className={etiqueta}>Tipo</label>
+                <div className="flex flex-wrap gap-2">
+                  {(["manual", "tutorial"] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => set("tipo", t)}
+                      className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${
+                        form.tipo === t ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      {t === "manual" ? "Manual (procedimiento)" : "Tutorial (cómo se usa el panel)"}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="sm:col-span-2">
                 <label className={etiqueta}>Título *</label>
                 <input className={campo} value={form.titulo} onChange={(e) => set("titulo", e.target.value)} placeholder="Ej: Egreso de mercancía" />
@@ -232,7 +279,7 @@ export function EditorManual({ id }: { id: number | null }) {
             </div>
           </Bloque>
 
-          <Bloque titulo="Quién lo ve" ayuda="Roles que leerán el manual cuando Manuales se abra a ellos (por ahora solo entra el rol Procesos). Además tendrá que estar publicado.">
+          <Bloque titulo="Quién lo ve" ayuda={'Cada rol marcado lo ve en su menú ("Manual" o "Tutorial") cuando está publicado. Un borrador solo lo ve Procesos.'}>
             <div className="grid gap-2 sm:grid-cols-3">
               {roles.map((r) => (
                 <label key={r.rol} className="flex items-center gap-2 text-sm text-slate-700">
@@ -254,17 +301,18 @@ export function EditorManual({ id }: { id: number | null }) {
             </label>
           </Bloque>
 
-          <Bloque titulo="Objetivo y alcance" ayuda='Las líneas que empiezan con "- " salen como viñetas.'>
+          <Bloque titulo={form.tipo === "tutorial" ? "Bienvenida" : "Objetivo y alcance"} ayuda='Las líneas que empiezan con "- " salen como viñetas.'>
             <div>
-              <label className={etiqueta}>Objetivo</label>
+              <label className={etiqueta}>{tx.objetivo}</label>
               <textarea className={campo} rows={3} value={c.objetivo} onChange={(e) => setC("objetivo", e.target.value)} />
             </div>
             <div>
-              <label className={etiqueta}>Alcance</label>
+              <label className={etiqueta}>{tx.alcance}</label>
               <textarea className={campo} rows={3} value={c.alcance} onChange={(e) => setC("alcance", e.target.value)} />
             </div>
           </Bloque>
 
+          {form.tipo === "manual" && (
           <Bloque titulo="Responsables">
             {c.responsables.map((r, i) => (
               <div key={i} className="flex gap-2">
@@ -279,8 +327,9 @@ export function EditorManual({ id }: { id: number | null }) {
               <Plus className="h-4 w-4" /> Agregar responsable
             </button>
           </Bloque>
+          )}
 
-          <Bloque titulo="Definiciones">
+          <Bloque titulo={tx.definiciones}>
             {c.definiciones.map((d, i) => (
               <div key={i} className="flex gap-2">
                 <input className={`${campo} sm:w-48`} value={d.termino} placeholder="Término" onChange={(e) => setC("definiciones", c.definiciones.map((x, j) => (j === i ? { ...x, termino: e.target.value } : x)))} />
@@ -295,12 +344,21 @@ export function EditorManual({ id }: { id: number | null }) {
             </button>
           </Bloque>
 
-          <Bloque titulo="Procedimiento" ayuda={id ? "Cada paso con quién lo hace, qué hacer y sus capturas." : "Guarda el manual una vez para poder subir capturas."}>
+          <Bloque
+            titulo={tx.pasos}
+            ayuda={
+              !id
+                ? "Guarda una vez para poder subir capturas."
+                : form.tipo === "tutorial"
+                  ? "Una pantalla por paso: para qué sirve, cómo se usa, su enlace y sus capturas."
+                  : "Cada paso con quién lo hace, qué hacer y sus capturas."
+            }
+          >
             {c.pasos.map((p, i) => (
               <div key={i} className="space-y-2 rounded-xl border border-slate-200 p-4">
                 <div className="flex items-center gap-2">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{i + 1}</span>
-                  <input className={campo} value={p.titulo} placeholder="Título del paso" onChange={(e) => setPaso(i, { titulo: e.target.value })} />
+                  <input className={campo} value={p.titulo} placeholder={tx.paso} onChange={(e) => setPaso(i, { titulo: e.target.value })} />
                   <button onClick={() => setC("pasos", mover(c.pasos, i, -1))} disabled={i === 0} className="text-slate-400 hover:text-slate-700 disabled:opacity-30" aria-label="Subir paso">
                     <ArrowUp className="h-4 w-4" />
                   </button>
@@ -311,7 +369,20 @@ export function EditorManual({ id }: { id: number | null }) {
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
-                <input className={campo} value={p.responsable} placeholder="Responsable (ej: Almacén)" onChange={(e) => setPaso(i, { responsable: e.target.value })} />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    className={campo}
+                    value={p.responsable}
+                    placeholder={form.tipo === "tutorial" ? "Dónde está en el menú (opcional)" : "Responsable (ej: Almacén)"}
+                    onChange={(e) => setPaso(i, { responsable: e.target.value })}
+                  />
+                  <input
+                    className={`${campo} font-mono`}
+                    value={p.enlace || ""}
+                    placeholder="Pantalla del panel, ej: /vendedores/leads (opcional)"
+                    onChange={(e) => setPaso(i, { enlace: e.target.value })}
+                  />
+                </div>
                 <textarea className={campo} rows={5} value={p.descripcion} placeholder="Qué hacer, botones y campos" onChange={(e) => setPaso(i, { descripcion: e.target.value })} />
                 <textarea className={campo} rows={2} value={p.nota} placeholder="Nota o advertencia (opcional)" onChange={(e) => setPaso(i, { nota: e.target.value })} />
                 <div className="flex flex-wrap items-start gap-2">
@@ -351,7 +422,10 @@ export function EditorManual({ id }: { id: number | null }) {
             </button>
           </Bloque>
 
-          <Bloque titulo="Documentos y registros" ayuda="Formatos, reportes o pantallas donde queda constancia del proceso.">
+          <Bloque
+            titulo={tx.documentos}
+            ayuda={form.tipo === "tutorial" ? "Problemas comunes y a quién avisar." : "Formatos, reportes o pantallas donde queda constancia del proceso."}
+          >
             <textarea className={campo} rows={3} value={c.documentos} onChange={(e) => setC("documentos", e.target.value)} />
           </Bloque>
 

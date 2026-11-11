@@ -1,7 +1,8 @@
 "use client";
 
 import type { Manual } from "@/lib/manuales/datos";
-import { Info, User } from "lucide-react";
+import { ExternalLink, Info, User } from "lucide-react";
+import { useParams } from "next/navigation";
 
 const fmtFecha = (iso: string | null) => {
   if (!iso) return "—";
@@ -52,6 +53,7 @@ function Seccion({ n, id, titulo, children }: { n: number; id: string; titulo: s
 
 /** El manual en formato de procedimiento, de solo lectura. */
 export function VistaManual({ manual }: { manual: Manual }) {
+  const { locale } = useParams<{ locale: string }>();
   const c = manual.contenido;
   const secciones = [
     { id: "objetivo", titulo: "Objetivo", visible: Boolean(c.objetivo) },
@@ -160,6 +162,16 @@ export function VistaManual({ manual }: { manual: Manual }) {
                         )}
                       </div>
                       <Texto texto={p.descripcion} />
+                      {p.enlace && (
+                        <a
+                          href={`/${locale}${p.enlace}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:underline print:hidden"
+                        >
+                          Abrir la pantalla del panel <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
                       {p.imagenes.map((img) => (
                         <a key={img} href={`/api/manuales/imagenes/${img}`} target="_blank" rel="noreferrer">
                           <img
