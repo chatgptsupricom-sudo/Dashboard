@@ -22,6 +22,39 @@ async function getUserFromRequest(request: Request) {
   }
 }
 
+/**
+ * Sede de quien no es SuperAdmin: su cids o, si no tiene, su compañía en Odoo
+ * (mismo criterio con el que POST crea la regla). null = no se pudo saber.
+ */
+async function sedeDelUsuario(payload: Record<string, unknown>): Promise<number | null> {
+  const cids = Number(payload.cids);
+  if (Number.isInteger(cids) && cids > 0) return cids;
+  const uid = parseInt(String(payload.uid ?? ""), 10);
+  if (!uid) return null;
+  try {
+    const users = await callOdooRPC<any[]>("res.users", "read", [[uid]], { fields: ["company_id"] });
+    return users?.[0]?.company_id?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Para editar o borrar: el SuperAdmin cualquier regla; los gerentes solo las
+ * de su sede. Antes PATCH/DELETE actuaban por id sin mirar la sede, así que
+ * un gerente podía tocar las reglas de otra sede llamando a la API.
+ */
+async function errorReglaAjena(payload: Record<string, unknown>, id: unknown): Promise<NextResponse | null> {
+  const { rows } = await query("SELECT company_id FROM spiff_rules WHERE id = ?", [id]);
+  const regla = (rows as any[])[0];
+  if (!regla) return NextResponse.json({ error: "Regla no encontrada" }, { status: 404 });
+  if (payload.role === "superAdmin") return null;
+  const sede = await sedeDelUsuario(payload);
+  if (!sede || Number(regla.company_id) !== sede)
+    return NextResponse.json({ error: "Esa regla es de otra sede" }, { status: 403 });
+  return null;
+}
+
 export async function GET(request: Request) {
   const payload = await getUserFromRequest(request);
   if (!payload) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -31,13 +64,15 @@ export async function GET(request: Request) {
     const companyId = searchParams.get("company_id");
 
     const role = payload.role as string;
-    const userCids = payload.cids as number;
 
     let targetCompanyId: number | null = null;
     if (veTodasLasSedes(role)) {
       targetCompanyId = companyId ? parseInt(companyId) : null;
     } else {
-      targetCompanyId = userCids;
+      // Sin sede conocida no se listan todas: antes, un usuario sin cids veía
+      // las reglas de las tres sedes.
+      targetCompanyId = await sedeDelUsuario(payload);
+      if (!targetCompanyId) return NextResponse.json([]);
     }
 
     let result;
@@ -80,11 +115,7 @@ export async function POST(request: Request) {
       : Number(payload.cids);
 
     if (!effectiveCompanyId || effectiveCompanyId === 0) {
-      const uid = parseInt(payload.uid as string);
-      try {
-        const [user] = await callOdooRPC<any[]>("res.users", "read", [[uid]], { fields: ["company_id"] });
-        if (user?.company_id) effectiveCompanyId = user.company_id[0];
-      } catch (_) {}
+      effectiveCompanyId = await sedeDelUsuario(payload);
     }
 
     if (!effectiveCompanyId || effectiveCompanyId === 0) {
@@ -133,6 +164,8 @@ export async function PATCH(request: Request) {
     const { id, brand_name, target_amount, spiff_amount, active, tipo, product_name, product_id, modo, fecha_inicio, fecha_fin } = body;
 
     if (!id) return NextResponse.json({ error: "Falta id" }, { status: 400 });
+    const ajena = await errorReglaAjena(payload, id);
+    if (ajena) return ajena;
 
     const updates: string[] = [];
     const params: any[] = [];
@@ -174,6 +207,8 @@ export async function DELETE(request: Request) {
     const body = await request.json();
     const { id } = body;
     if (!id) return NextResponse.json({ error: "Falta id" }, { status: 400 });
+    const ajena = await errorReglaAjena(payload, id);
+    if (ajena) return ajena;
 
     await query("DELETE FROM spiff_rules WHERE id = ?", [id]);
     return NextResponse.json({ ok: true });
