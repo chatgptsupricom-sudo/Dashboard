@@ -5,6 +5,9 @@ import { ROL_MARKETING_ELECTRO } from "@/lib/auth/marketingElectro";
 import { filtroBancoGerente } from "@/lib/gerente-marca/banco";
 import { ROL_GERENTE_MARCA } from "@/lib/gerente-marca/tipos";
 import { NextRequest, NextResponse } from "next/server";
+import { marcarItemsHechos, reabrirItems } from "@/lib/banco-imagenes/solicitudes";
+import { avisarAvance } from "@/lib/banco-imagenes/avisoSolicitud";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 // Vendedores solo consultan (GET, desde /vendedores/banco-imagenes); subir y
 // borrar es cosa de adminleads/gerente de operaciones (y superadmin, que
@@ -89,6 +92,23 @@ export async function GET(request: NextRequest) {
       params.push(category);
     }
 
+    const brand = url.searchParams.get("brand") || "";
+    if (brand) {
+      where += " AND pi.brand = ?";
+      params.push(brand);
+    }
+    const precio = url.searchParams.get("precio");
+    if (precio === "con") where += " AND pi.price > 0";
+    if (precio === "sin") where += " AND (pi.price IS NULL OR pi.price <= 0)";
+
+    const ORDENES: Record<string, string> = {
+      new: "pi.created_at DESC",
+      az: "pi.model ASC",
+      pa: "(pi.price IS NULL OR pi.price <= 0), pi.price ASC",
+      pd: "pi.price DESC",
+    };
+    const orden = ORDENES[url.searchParams.get("orden") || "new"] || ORDENES.new;
+
     const deSusMarcas = await filtroBancoGerente(auth.payload);
     if (deSusMarcas) {
       where += ` AND ${deSusMarcas.sql}`;
@@ -105,7 +125,7 @@ export async function GET(request: NextRequest) {
     const result = await query(
       `SELECT pi.id, pi.odoo_product_id, pi.product_code, pi.model, pi.brand, pi.category, pi.price, pi.created_by, pi.created_at,
               CONCAT('/api/adminleads/banco-imagenes/image/', pi.id) AS image_path
-       FROM product_images pi ${where} ORDER BY pi.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+       FROM product_images pi ${where} ORDER BY ${orden}, pi.id DESC LIMIT ${limit} OFFSET ${offset}`,
       params
     );
 
@@ -195,7 +215,25 @@ export async function POST(request: NextRequest) {
       await query(`UPDATE product_images SET image_path = ? WHERE id = ?`, [imagePath, newId]);
     }
 
-    return NextResponse.json({ success: true, image_path: imagePath }, { status: 201 });
+    // Lo que los vendedores pedían de este producto queda hecho. Si falla, el
+    // flyer igual quedó guardado: se ve en el log y el ítem sigue pendiente.
+    let solicitudes = 0;
+    if (newId) {
+      try {
+        const r = await marcarItemsHechos({
+          productImageId: Number(newId),
+          odooProductId: Number(odoo_product_id) || null,
+          productCode: product_code,
+          usuario: created_by,
+        });
+        avisarAvance(r, getPublicOrigin(request));
+        solicitudes = r.conAvance.length + r.completadas.length;
+      } catch (e: any) {
+        console.error("banco-imagenes: no se marcaron las solicitudes:", e?.message);
+      }
+    }
+
+    return NextResponse.json({ success: true, id: newId, image_path: imagePath, solicitudes }, { status: 201 });
   } catch (error: any) {
     console.error("Error POST banco-imagenes:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -216,6 +254,13 @@ export async function DELETE(request: NextRequest) {
     }
 
     await query(`DELETE FROM product_images WHERE id = ?`, [id]);
+
+    // Lo que este flyer había completado vuelve a pendiente.
+    try {
+      await reabrirItems(Number(id), String(auth.payload?.name || ""));
+    } catch (e: any) {
+      console.error("banco-imagenes: no se reabrieron las solicitudes:", e?.message);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

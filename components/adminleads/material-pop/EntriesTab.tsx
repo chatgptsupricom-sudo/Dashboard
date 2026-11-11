@@ -36,8 +36,11 @@ export function EntriesTab({
   products,
   onDone,
   onGoToCatalog,
+  preseleccion,
 }: {
   products: PopProduct[];
+  /** Producto elegido desde la tarjeta del catálogo (botón Entrada/Salida). */
+  preseleccion?: { id: number } | null;
   onDone: () => Promise<void> | void;
   onGoToCatalog: () => void;
 }) {
@@ -45,6 +48,12 @@ export function EntriesTab({
   const [mode, setMode] = useState<Mode>("entry");
 
   const [lines, setLines] = useState<MovementLine[]>([lineaVacia()]);
+
+  useEffect(() => {
+    if (!preseleccion) return;
+    setMode("entry");
+    setLines([{ productId: preseleccion.id, quantity: "" }]);
+  }, [preseleccion]);
   const [location, setLocation] = useState<"office" | "warehouse">("office");
   const [source, setSource] = useState<"office" | "warehouse">("office");
   const [target, setTarget] = useState<"office" | "warehouse">("warehouse");
