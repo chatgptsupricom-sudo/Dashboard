@@ -22,7 +22,12 @@ export async function GET(request: NextRequest) {
     const dbRolesList = rolesListResult?.rows || [];
 
     // Mapeo estructurado para el select del Modal y Filtros
-    const availableRoles = dbRolesList.map((r: any) => ({
+    // "brandManagement" («Gerencia de Marca») es el rol viejo de la plantilla y
+    // se confundía con «Gerente de Marca»: ya no se ofrece. Quien todavía lo
+    // tenga entra como Gerente de Marca (app/api/auth/login/route.ts).
+    const availableRoles = dbRolesList
+      .filter((r: any) => String(r.name ?? "").toLowerCase().trim() !== "brandmanagement")
+      .map((r: any) => ({
       key: r.id.toString(), // ID numérico para guardar en el POST
       name: r.name,
       displayName: r.display_name || r.name,

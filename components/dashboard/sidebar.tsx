@@ -134,9 +134,15 @@ function SortableItem({ id, isActive, accentColor, bgColor, children }: {
 export function Sidebar({
   open,
   onToggle,
+  soloSecciones,
 }: {
   open: boolean;
   onToggle: () => void;
+  /**
+   * Reemplaza las secciones del rol por estas (ej. el Gerente de Marca sin
+   * marcas asignadas ve solo `gm_sin_marcas`). Sin esto, las del rol.
+   */
+  soloSecciones?: string[];
 }) {
   const { user, logout } = useAuthStore();
   const pathname = usePathname();
@@ -278,18 +284,18 @@ export function Sidebar({
   if (!permissions) return null;
 
   // Extraemos las secciones permitidas de forma segura
-  const allowedSections = [...(permissions.sections || [])];
+  const allowedSections = soloSecciones ? [...soloSecciones] : [...(permissions.sections || [])];
 
   // "Reportes Comerciales" no se resuelve solo por rol: la encargada es una
   // vendedora concreta (lista blanca por correo). El servidor decide; aquí solo
   // se agrega la sección si respondió que sí (ver /api/reportes-comerciales/acceso).
-  if (puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
+  if (!soloSecciones && puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
     allowedSections.push("reportes_comerciales");
   }
-  if (puedeAgenteIA && !allowedSections.includes("agenteia")) {
+  if (!soloSecciones && puedeAgenteIA && !allowedSections.includes("agenteia")) {
     allowedSections.push("agenteia");
   }
-  if (notasCredito.puede && !allowedSections.includes("notas_credito")) {
+  if (!soloSecciones && notasCredito.puede && !allowedSections.includes("notas_credito")) {
     allowedSections.push("notas_credito");
   }
 
@@ -472,6 +478,8 @@ export function Sidebar({
     { id: "gm_antiguedad", label: "Antigüedad de inventario", icon: Timer, slug: "/antiguedad" },
     { id: "gm_ventas", label: "Ventas por marca", icon: TrendingUp, slug: "/ventas" },
     { id: "gm_banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
+    // Única sección del Gerente de Marca mientras no tiene marcas asignadas.
+    { id: "gm_sin_marcas", label: "Mis marcas", icon: Award, slug: "" },
     // SuperAdmin: lo que ve cada Gerente de Marca y a quién se le asigna cada marca.
     { id: "gerencia_marca", label: "Gerencia de Marca", icon: Award, slug: "/gerente_marca", absoluteHref: true },
   ];
