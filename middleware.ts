@@ -166,7 +166,7 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/reportes-comerciales") ||
     // Agente IA de los roles habilitados por el SuperAdmin (lib/agenteia/acceso.ts).
     pathname.includes("/agente-ia") ||
-    // Manuales de procedimiento (por ahora, solo el rol Procesos).
+    // Manuales y tutoriales de cada rol (escribe Procesos, lib/manuales/).
     pathname.includes("/manuales") ||
     // Organigrama con las actividades de cada cargo (SuperAdmin, Procesos y RRHH).
     pathname.includes("/organigrama") ||
@@ -418,9 +418,9 @@ export default async function middleware(request: NextRequest) {
         );
       }
 
-      // 10b. Manuales: por ahora solo el rol Procesos (crea, edita y lee); ni
-      // el SuperAdmin entra. Cada manual ya guarda qué roles lo leerán.
-      if (pathname.includes("/manuales") && !isProcesos) {
+      // 10b. Manuales: cualquier rol lee los manuales y tutoriales publicados
+      // para él (lo filtra /api/manuales); crear y editar, solo Procesos.
+      if (/\/manuales\/(nuevo|[^/]+\/editar)(\/|$)/.test(pathname) && !isProcesos) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 

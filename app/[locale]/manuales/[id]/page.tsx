@@ -1,6 +1,7 @@
 "use client";
 
 import { VistaManual } from "@/components/manuales/VistaManual";
+import { VistaTutorial } from "@/components/manuales/VistaTutorial";
 import type { Manual } from "@/lib/manuales/datos";
 import { esProcesos } from "@/lib/manuales/permisos";
 import { useAuthStore } from "@/lib/stores/auth.store";
@@ -23,11 +24,15 @@ export default function ManualPage() {
       .catch((e) => setError(e.message));
   }, [id]);
 
+  const tutorial = manual?.tipo === "tutorial";
+  // Procesos vuelve a su lista de todo; los demás, a su Manual o su Tutorial.
+  const volver = puedeEditar ? { href: "/manuales", texto: "Manuales" } : tutorial ? { href: "/manuales/tutorial", texto: "Tutorial" } : { href: "/manuales", texto: "Manual" };
+
   return (
     <div className="space-y-4 p-4 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-        <Link href={`/${locale}/manuales`} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-          <ArrowLeft className="h-4 w-4" /> Manuales
+        <Link href={`/${locale}${volver.href}`} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
+          <ArrowLeft className="h-4 w-4" /> {volver.texto}
         </Link>
         {manual && (
           <div className="flex gap-2">
@@ -50,7 +55,7 @@ export default function ManualPage() {
       </div>
       {error && <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {!manual && !error && <Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-400" />}
-      {manual && <VistaManual manual={manual} />}
+      {manual && (tutorial ? <VistaTutorial manual={manual} /> : <VistaManual manual={manual} />)}
     </div>
   );
 }
