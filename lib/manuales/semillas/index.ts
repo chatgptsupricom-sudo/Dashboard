@@ -1,6 +1,12 @@
 import type { Contenido } from "@/lib/manuales/datos";
 import type { TipoManual } from "@/lib/manuales/permisos";
+import { MANUAL_ADMINISTRACION, TUTORIAL_ADMINISTRACION } from "@/lib/manuales/semillas/administracion";
 import { MANUAL_ALMACEN, TUTORIAL_ALMACEN } from "@/lib/manuales/semillas/almacen";
+import { MANUAL_COMPRAS, TUTORIAL_COMPRAS } from "@/lib/manuales/semillas/compras";
+import { MANUAL_CXC, TUTORIAL_CXC } from "@/lib/manuales/semillas/cxc";
+import { MANUAL_GERENCIA_VENTAS, TUTORIAL_GERENCIA_VENTAS } from "@/lib/manuales/semillas/gerenciaVentas";
+import { MANUAL_RMA, TUTORIAL_RMA } from "@/lib/manuales/semillas/rma";
+import { MANUAL_SEGURIDAD, TUTORIAL_SEGURIDAD } from "@/lib/manuales/semillas/seguridad";
 import { MANUAL_VENDEDOR, TUTORIAL_VENDEDOR } from "@/lib/manuales/semillas/vendedor";
 
 /**
@@ -23,4 +29,21 @@ export type Semilla = {
   contenido: Contenido;
 };
 
-export const SEMILLAS: Semilla[] = [MANUAL_VENDEDOR, TUTORIAL_VENDEDOR, MANUAL_ALMACEN, TUTORIAL_ALMACEN];
+export const SEMILLAS: Semilla[] = [
+  MANUAL_VENDEDOR,
+  TUTORIAL_VENDEDOR,
+  MANUAL_ALMACEN,
+  TUTORIAL_ALMACEN,
+  MANUAL_SEGURIDAD,
+  TUTORIAL_SEGURIDAD,
+  MANUAL_CXC,
+  TUTORIAL_CXC,
+  MANUAL_ADMINISTRACION,
+  TUTORIAL_ADMINISTRACION,
+  MANUAL_RMA,
+  TUTORIAL_RMA,
+  MANUAL_COMPRAS,
+  TUTORIAL_COMPRAS,
+  MANUAL_GERENCIA_VENTAS,
+  TUTORIAL_GERENCIA_VENTAS,
+];
