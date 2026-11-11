@@ -937,8 +937,9 @@ const soloDigitos = (s: string) => s.replace(/\D/g, "");
 
 /**
  * Cuando Cuentas por Cobrar registra el pago en Odoo pone el ID de orden en el
- * Memo (`account.payment.ref`). Devuelve cuales de estos IDs ya estan en un pago
- * no anulado de cualquier sede. Se busca por los ultimos 15 digitos y se acepta
+ * Memo (`account.payment.ref`), o en la Referencia de un asiento contable
+ * (`account.move.ref`). Devuelve cuales de estos IDs ya estan en un pago o
+ * asiento no anulado de cualquier sede. Se busca por los ultimos 15 digitos y se acepta
  * si el memo contiene el ID o si el ID termina en el memo: a veces se pierde el
  * primer digito al copiarlo ("62126455275798528"). Un error de Odoo se lanza:
  * mejor no mostrar nada que mostrar como pendiente lo ya registrado.
@@ -949,13 +950,18 @@ export async function ordenesRegistradasEnOdoo(orderIds: string[]): Promise<Set<
   for (let i = 0; i < ids.length; i += 80) {
     const tanda = ids.slice(i, i + 80);
     const terminos = tanda.map((id) => ["ref", "ilike", id.slice(-15)]);
-    const pagos = await callOdooRPCEstricto<{ ref: string | false }[]>(
-      "account.payment",
-      "search_read",
-      [[["state", "!=", "cancel"], ...Array(terminos.length - 1).fill("|"), ...terminos]],
-      { fields: ["ref"], context: { allowed_company_ids: SEDES_ODOO } },
-    );
-    const memos = (pagos || []).map((p) => soloDigitos(String(p.ref || ""))).filter((m) => m.length >= 15);
+    const dominio = [["state", "!=", "cancel"], ...Array(terminos.length - 1).fill("|"), ...terminos];
+    const leer = (modelo: string) =>
+      callOdooRPCEstricto<{ ref: string | false }[]>(modelo, "search_read", [dominio], {
+        fields: ["ref"],
+        context: { allowed_company_ids: SEDES_ODOO },
+      });
+    // Algunos se registran con un asiento contable (Operaciones varias) en vez
+    // de un pago, con el ID en su Referencia (`account.move.ref`; nov-2026, 1726 de Caracas).
+    const [pagos, asientos] = await Promise.all([leer("account.payment"), leer("account.move")]);
+    const memos = [...(pagos || []), ...(asientos || [])]
+      .map((p) => soloDigitos(String(p.ref || "")))
+      .filter((m) => m.length >= 15);
     for (const id of tanda) {
       if (memos.some((m) => m.includes(id) || id.endsWith(m))) registradas.add(id);
     }
