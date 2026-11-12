@@ -9,6 +9,7 @@ import { MANUAL_CXC, TUTORIAL_CXC } from "@/lib/manuales/semillas/cxc";
 import { MANUAL_GERENCIA_VENTAS, TUTORIAL_GERENCIA_VENTAS } from "@/lib/manuales/semillas/gerenciaVentas";
 import { MANUAL_GERENTE_OPERACIONES, TUTORIAL_GERENTE_OPERACIONES } from "@/lib/manuales/semillas/gerenteOperaciones";
 import { MANUAL_BI, TUTORIAL_BI } from "@/lib/manuales/semillas/inteligenciaNegocio";
+import { MANUAL_MARKETING_ELECTRO, TUTORIAL_MARKETING_ELECTRO } from "@/lib/manuales/semillas/marketingElectro";
 import { MANUAL_RMA, TUTORIAL_RMA } from "@/lib/manuales/semillas/rma";
 import { MANUAL_RRHH, TUTORIAL_RRHH } from "@/lib/manuales/semillas/rrhh";
 import { MANUAL_SEGURIDAD, TUTORIAL_SEGURIDAD } from "@/lib/manuales/semillas/seguridad";
@@ -61,4 +62,6 @@ export const SEMILLAS: Semilla[] = [
   TUTORIAL_ASISTENTE_VENTAS,
   MANUAL_BI,
   TUTORIAL_BI,
+  MANUAL_MARKETING_ELECTRO,
+  TUTORIAL_MARKETING_ELECTRO,
 ];
