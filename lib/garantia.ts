@@ -17,6 +17,14 @@
  * - Zona horaria America/Caracas para "hoy". El servidor puede correr en UTC
  *   y eso mueve el límite medio día.
  *
+ * - Por marca Y categoría (nov-2026, Excel "GARANTIA SUPRICOM"): una marca
+ *   puede tener filas por categoría (`categoria` + `palabras` del nombre del
+ *   producto, ej. HAVIT mouse 12 meses y mesas 6) y una fila de toda la marca
+ *   (`categoria = ''`). `elegirFila` toma la categoría cuya palabra más larga
+ *   aparece en el nombre; si ninguna, la de toda la marca; si no hay y todas
+ *   sus categorías dicen lo mismo, ese plazo; si no, indeterminada.
+ *   meses 0 = sin garantía (sale vencida).
+ *
  * - `estado: "indeterminada"` cuando no hay fecha de factura o no se pudo
  *   resolver la marca. NO se inventa que está en garantía ni que está
  *   vencida. El error hacia el cliente (decir que no cubre cuando sí) se
@@ -61,11 +69,74 @@ export interface InputGarantia {
   fechaFactura: string | null | undefined;
 }
 
-/** Entrada de la tabla de garantías. */
-interface GarantiaRow {
+/** Entrada de la tabla de garantías (una por marca + categoría). */
+export interface GarantiaRow {
   marca: string;
+  /** '' = toda la marca. */
+  categoria: string;
   meses: number | null;
   notas: string | null;
+  /** Palabras del nombre del producto que identifican la categoría, separadas por coma. */
+  palabras: string | null;
+}
+
+/** Las filas de una marca. */
+export interface GarantiasMarca {
+  /** Como está escrita en la tabla (para buscarla en el nombre del producto). */
+  marca: string;
+  general: GarantiaRow | null;
+  categorias: GarantiaRow[];
+}
+
+const sinAcentos = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+// Variantes de la misma marca en Odoo (spiff.brand).
+const ALIAS_MARCA: Record<string, string> = { SMARTBIT: "SMARTBITT", KINGSTONE: "KINGSTON" };
+
+/** Clave de una marca: sin mayúsculas, acentos, espacios ni guiones ("TP LINK" = "TP-LINK"). */
+export function claveMarca(marca: string): string {
+  const k = sinAcentos(marca).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return ALIAS_MARCA[k] ?? k;
+}
+
+/** Arma el mapa por marca a partir de las filas de la tabla. */
+export function agruparGarantias(filas: GarantiaRow[]): Map<string, GarantiasMarca> {
+  const mapa = new Map<string, GarantiasMarca>();
+  for (const f of filas) {
+    if (!f.marca) continue;
+    const k = claveMarca(f.marca);
+    const g = mapa.get(k) ?? { marca: f.marca.toUpperCase().trim(), general: null, categorias: [] };
+    if ((f.categoria ?? "").trim()) g.categorias.push(f);
+    else g.general = f;
+    mapa.set(k, g);
+  }
+  return mapa;
+}
+
+const escaparRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * La fila que aplica a un producto de esa marca (ver el encabezado). null =
+ * la marca tiene categorías con plazos distintos y el nombre no dice cuál es.
+ */
+export function elegirFila(g: GarantiasMarca, productoNombre: string | null | undefined): GarantiaRow | null {
+  const nombre = ` ${sinAcentos(productoNombre ?? "").toUpperCase().replace(/[^A-Z0-9+]+/g, " ")} `;
+  let mejor: GarantiaRow | null = null;
+  let largo = 0;
+  for (const f of g.categorias) {
+    for (const p of (f.palabras ?? "").split(",")) {
+      const palabra = sinAcentos(p).toUpperCase().replace(/[^A-Z0-9+]+/g, " ").trim();
+      if (palabra.length <= largo) continue;
+      if (new RegExp(`(^|[^A-Z0-9])${escaparRe(palabra)}([^A-Z0-9]|$)`).test(nombre)) {
+        mejor = f;
+        largo = palabra.length;
+      }
+    }
+  }
+  if (mejor) return mejor;
+  if (g.general) return g.general;
+  const plazos = new Set(g.categorias.map((f) => f.meses));
+  return g.categorias.length && plazos.size === 1 ? g.categorias[0] : null;
 }
 
 /**
@@ -74,14 +145,14 @@ interface GarantiaRow {
  * dedicada, no con frecuencia). Si se necesita invalidar, expongo una
  * función de reset — ver invalidarCacheGarantias() más abajo.
  */
-let cacheGarantias: { value: Map<string, GarantiaRow>; at: number } | null = null;
+let cacheGarantias: { value: Map<string, GarantiasMarca>; at: number } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
 export function invalidarCacheGarantias() {
   cacheGarantias = null;
 }
 
-async function cargarGarantias(): Promise<Map<string, GarantiaRow>> {
+async function cargarGarantias(): Promise<Map<string, GarantiasMarca>> {
   if (cacheGarantias && Date.now() - cacheGarantias.at < CACHE_TTL_MS) {
     return cacheGarantias.value;
   }
@@ -90,17 +161,17 @@ async function cargarGarantias(): Promise<Map<string, GarantiaRow>> {
   // dependencia circular. import() dinamico resuelve eso.
   const { query } = await import("./db");
 
-  const result = await query(
-    `SELECT marca, meses, notas FROM rma_garantias`,
-    [],
-  );
-  const rows = ((result as any).rows ?? result) as GarantiaRow[];
-  const map = new Map<string, GarantiaRow>();
-  for (const row of rows) {
-    if (row.marca) {
-      map.set(row.marca.toUpperCase().trim(), row);
-    }
+  // Sin sql/rma_garantias_por_categoria.sql la tabla no tiene categoría: se
+  // lee como antes (una fila por marca).
+  let result: any;
+  try {
+    result = await query(`SELECT marca, categoria, meses, notas, palabras FROM rma_garantias`, []);
+  } catch (e: any) {
+    if (e?.code !== "ER_BAD_FIELD_ERROR") throw e;
+    result = await query(`SELECT marca, '' AS categoria, meses, notas, NULL AS palabras FROM rma_garantias`, []);
   }
+  const rows = ((result as any).rows ?? result) as GarantiaRow[];
+  const map = agruparGarantias(rows);
   cacheGarantias = { value: map, at: Date.now() };
   return map;
 }
@@ -124,7 +195,7 @@ async function cargarGarantias(): Promise<Map<string, GarantiaRow>> {
 export async function resolverMarca(
   marcaOdoo: string | null | undefined,
   productoNombre: string | null | undefined,
-  tabla?: Map<string, GarantiaRow>,
+  tabla?: Map<string, GarantiasMarca>,
 ): Promise<string | null> {
   const marcaUpper = (marcaOdoo || "").toUpperCase().trim();
   if (marcaUpper) return marcaUpper;
@@ -138,7 +209,7 @@ export async function resolverMarca(
 
   // Buscar la marca más larga primero (TARGUS antes que T, NVIDIA antes que
   // N, etc.) para evitar matchear sub-strings de marcas más largas.
-  const marcasOrdenadas = Array.from(garantias.keys()).sort(
+  const marcasOrdenadas = Array.from(garantias.values(), (g) => g.marca).sort(
     (a, b) => b.length - a.length,
   );
 
@@ -275,7 +346,7 @@ function parseFechaLocal(iso: string): Date {
  */
 export async function calcularGarantia(
   input: InputGarantia,
-  garantias?: Map<string, GarantiaRow>,
+  garantias?: Map<string, GarantiasMarca>,
 ): Promise<ResultadoGarantia> {
   const fecha = input.fechaFactura ? parseFechaLocal(input.fechaFactura) : null;
 
@@ -310,7 +381,21 @@ export async function calcularGarantia(
     };
   }
 
-  const fila = garantiasTabla.get(marca);
+  const deLaMarca = garantiasTabla.get(claveMarca(marca));
+  const fila = deLaMarca ? elegirFila(deLaMarca, input.productoNombre) : undefined;
+
+  // La marca tiene plazos distintos por categoría y el nombre no dice cuál:
+  // no se inventa (servicio técnico lo revisa).
+  if (deLaMarca && !fila) {
+    return {
+      estado: "indeterminada",
+      meses_cubiertos: null,
+      fecha_vencimiento: null,
+      dias_restantes: null,
+      marca_resuelta: marca,
+      motivo: "categoria_no_resuelta",
+    };
+  }
 
   // Caso 3: vida útil. Hay que mirarlo ANTES de aplicar el default, y hay que
   // distinguir "la fila existe con meses NULL" (ASTA, cubierto siempre) de "no
@@ -330,10 +415,23 @@ export async function calcularGarantia(
     };
   }
 
-  // Caso 4: marca resuelta pero no está en la tabla → default.
+  // Caso 4: la categoría no tiene garantía (N/A en la tabla, ej. mouse pad):
+  // vencida desde el día de la compra, también si se compró hoy.
+  if (fila && fila.meses === 0) {
+    return {
+      estado: "vencida",
+      meses_cubiertos: 0,
+      fecha_vencimiento: fecha.toISOString(),
+      dias_restantes: differenceInCalendarDays(fecha, hoyCaracas()),
+      marca_resuelta: marca,
+      motivo: "sin_garantia",
+    };
+  }
+
+  // Caso 5: marca resuelta pero no está en la tabla → default.
   const mesesCubiertos = fila?.meses ?? GARANTIA_DEFAULT_MESES;
 
-  // Caso 5: cálculo normal.
+  // Caso 6: cálculo normal.
   const vencimiento = addMonths(fecha, mesesCubiertos);
   const hoy = hoyCaracas();
   const diasRestantes = differenceInCalendarDays(vencimiento, hoy);
