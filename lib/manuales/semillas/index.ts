@@ -3,6 +3,7 @@ import type { TipoManual } from "@/lib/manuales/permisos";
 import { MANUAL_ADMINISTRACION, TUTORIAL_ADMINISTRACION } from "@/lib/manuales/semillas/administracion";
 import { MANUAL_ADMINLEADS, TUTORIAL_ADMINLEADS } from "@/lib/manuales/semillas/adminLeads";
 import { MANUAL_ALMACEN, TUTORIAL_ALMACEN } from "@/lib/manuales/semillas/almacen";
+import { MANUAL_ASISTENTE_VENTAS, TUTORIAL_ASISTENTE_VENTAS } from "@/lib/manuales/semillas/asistenteVentas";
 import { MANUAL_COMPRAS, TUTORIAL_COMPRAS } from "@/lib/manuales/semillas/compras";
 import { MANUAL_CXC, TUTORIAL_CXC } from "@/lib/manuales/semillas/cxc";
 import { MANUAL_GERENCIA_VENTAS, TUTORIAL_GERENCIA_VENTAS } from "@/lib/manuales/semillas/gerenciaVentas";
@@ -55,4 +56,6 @@ export const SEMILLAS: Semilla[] = [
   TUTORIAL_ADMINLEADS,
   MANUAL_RRHH,
   TUTORIAL_RRHH,
+  MANUAL_ASISTENTE_VENTAS,
+  TUTORIAL_ASISTENTE_VENTAS,
 ];
