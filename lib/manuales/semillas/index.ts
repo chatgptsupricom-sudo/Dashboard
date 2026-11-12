@@ -16,6 +16,7 @@ import { MANUAL_MARKETING_ELECTRO, TUTORIAL_MARKETING_ELECTRO } from "@/lib/manu
 import { MANUAL_RMA, TUTORIAL_RMA } from "@/lib/manuales/semillas/rma";
 import { MANUAL_RRHH, TUTORIAL_RRHH } from "@/lib/manuales/semillas/rrhh";
 import { MANUAL_SEGURIDAD, TUTORIAL_SEGURIDAD } from "@/lib/manuales/semillas/seguridad";
+import { MANUAL_SUPERADMIN, TUTORIAL_SUPERADMIN } from "@/lib/manuales/semillas/superAdmin";
 import { MANUAL_VENDEDOR, TUTORIAL_VENDEDOR } from "@/lib/manuales/semillas/vendedor";
 
 /**
@@ -73,4 +74,6 @@ export const SEMILLAS: Semilla[] = [
   TUTORIAL_DISENADOR,
   MANUAL_IT,
   TUTORIAL_IT,
+  MANUAL_SUPERADMIN,
+  TUTORIAL_SUPERADMIN,
 ];
