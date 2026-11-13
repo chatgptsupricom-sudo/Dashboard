@@ -69,7 +69,7 @@ export interface ValorReal {
   valor: number;
   /** Meta en las mismas unidades (la del mes si `acumulado`). null = sin meta. */
   meta: number | null;
-  unidad: "%" | "$" | "" | "dias";
+  unidad: "%" | "$" | "" | "dias" | "horas";
   /** Se va sumando en el mes (facturado, clientes, visitas): a hoy se espera la parte prorrateada. */
   acumulado?: boolean;
   /** Mejor cuanto más bajo (la meta es un tope). */
