@@ -325,12 +325,15 @@ export async function GET(
       <tr>
         <th>Accesorios &iacute;ntegros</th>
         <th>Sin manipulaci&oacute;n</th>
+        ${i.otro_verificacion ? `<th>Otro: ${esc(i.otro_verificacion)}</th>` : ""}
       </tr>
       <tr>
         <td>${check(i.accesorios_integros)}</td>
         <td>${check(i.sin_manipulacion)}</td>
+        ${i.otro_verificacion ? `<td>${check(i.otro_verificacion_ok)}</td>` : ""}
       </tr>
     </table>
+    ${i.observacion_seguridad ? `<h2>Nota u observaci&oacute;n de Seguridad</h2><table><tr><td class="falla">${esc(i.observacion_seguridad)}</td></tr></table>` : ""}
 
     <table style="margin-top:12px">
       <tr><th>Garant&iacute;a (del ticket de RMA)</th><td>${garantiaTexto}</td></tr>

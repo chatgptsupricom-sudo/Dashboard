@@ -33,6 +33,10 @@ type Ingreso = {
   descripcion_falla: string | null;
   accesorios_integros: number;
   sin_manipulacion: number;
+  /** «Otro» control, si aplicó (columnas que se agregan solas: pueden faltar). */
+  otro_verificacion?: string | null;
+  otro_verificacion_ok?: number | null;
+  observacion_seguridad?: string | null;
   recibido_por: string;
   recibido_seguridad_nombre: string | null;
   recibido_rma_nombre: string | null;
@@ -391,7 +395,27 @@ export default function IngresoDetailPage() {
               yes={tf("yes")}
               no={tf("no")}
             />
+            {ingreso.otro_verificacion && (
+              <div className="sm:col-span-2">
+                <CheckField
+                  label={`${tf("check_otro")}: ${ingreso.otro_verificacion}`}
+                  value={Number(ingreso.otro_verificacion_ok)}
+                  yes={tf("yes")}
+                  no={tf("no")}
+                />
+              </div>
+            )}
           </div>
+          {ingreso.observacion_seguridad && (
+            <div className="mt-4">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
+                {td("section_observacion")}
+              </p>
+              <p className="text-slate-800 whitespace-pre-wrap text-sm bg-slate-50/60 border border-slate-200 rounded-[10px] p-3">
+                {ingreso.observacion_seguridad}
+              </p>
+            </div>
+          )}
         </section>
 
         {/* Garantía — CONGELADA en el ticket del portal al momento del reporte
