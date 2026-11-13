@@ -22,11 +22,13 @@ import type { Banda, DatosCxPAdmin } from "@/lib/administracion/cxp";
 import { DetalleDocumentoCxP } from "@/components/administracion/DetalleDocumentoCxP";
 import { CalendarioPagosCxP } from "@/components/administracion/CalendarioPagosCxP";
 import type { DocumentoCxP } from "@/lib/administracion/cxp";
-import { CalendarDays, ChevronDown, ChevronRight, Eye, Receipt } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye, Receipt } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 
 type Respuesta = DatosCxPAdmin & { success: true; hoy: string };
 type Vista = "proveedores" | "documentos" | "borradores" | "pagos";
+/** Pestañas de arriba: el calendario es la principal. */
+type Seccion = "calendario" | "deuda";
 
 const ETIQUETA_BANDA: Record<Banda, string> = {
   corriente: "Por vencer",
@@ -48,6 +50,7 @@ export default function CuentasPorPagarPage() {
   const [empresa, setEmpresa] = useState("");
   const [mes, setMes] = useState(mesActual);
   const [sinIntercompania, setSinIntercompania] = useState(true);
+  const [seccion, setSeccion] = useState<Seccion>("calendario");
   const [vista, setVista] = useState<Vista>("proveedores");
   const [buscar, setBuscar] = useState("");
   const [soloVencidos, setSoloVencidos] = useState(false);
@@ -197,6 +200,15 @@ export default function CuentasPorPagarPage() {
         }
       />
 
+      <Pestanas<Seccion>
+        valor={seccion}
+        onChange={setSeccion}
+        opciones={[
+          { value: "calendario", label: "Calendario de pagos" },
+          { value: "deuda", label: "Deuda con proveedores", contador: datos?.proveedores.length },
+        ]}
+      />
+
       <label className="flex items-center gap-2 text-sm text-gray-600 w-fit cursor-pointer">
         <input
           type="checkbox"
@@ -209,7 +221,27 @@ export default function CuentasPorPagarPage() {
 
       <EstadoCarga cargando={cargando} error={error} />
 
-      {!cargando && datos && (
+      {!cargando && datos && seccion === "calendario" && (
+        <Card className="shadow-sm">
+          <CardContent className="p-0">
+            <CalendarioPagosCxP
+              mes={mes}
+              setMes={setMes}
+              hoy={datos.hoy}
+              empresa={empresa}
+              documentos={datos.documentos}
+              pagos={datos.pagosDelMes}
+              fijos={datos.pagosFijos}
+              fijosError={datos.pagosFijosError}
+              docAbierto={docId !== null}
+              onVerDocumento={setDocId}
+              onCambio={actualizar}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {!cargando && datos && seccion === "deuda" && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <Tarjeta
@@ -242,29 +274,6 @@ export default function CuentasPorPagarPage() {
               tono="verde"
             />
           </div>
-
-          <Card className="border-blue-100 shadow-sm">
-            <CardHeader className="pb-0">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <CalendarDays className="h-5 w-5 text-blue-600" /> Calendario de pagos
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <CalendarioPagosCxP
-                mes={mes}
-                setMes={setMes}
-                hoy={datos.hoy}
-                empresa={empresa}
-                documentos={datos.documentos}
-                pagos={datos.pagosDelMes}
-                fijos={datos.pagosFijos}
-                fijosError={datos.pagosFijosError}
-                docAbierto={docId !== null}
-                onVerDocumento={setDocId}
-                onCambio={actualizar}
-              />
-            </CardContent>
-          </Card>
 
           {datos.resumen.pagosSinAplicar > 0.01 && (
             <Aviso>
