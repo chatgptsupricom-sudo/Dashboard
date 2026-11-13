@@ -20,6 +20,7 @@ import {
 } from "@/components/administracion/comunes";
 import type { Banda, DatosCxPAdmin } from "@/lib/administracion/cxp";
 import { DetalleDocumentoCxP } from "@/components/administracion/DetalleDocumentoCxP";
+import { CalendarioPagosCxP } from "@/components/administracion/CalendarioPagosCxP";
 import type { DocumentoCxP } from "@/lib/administracion/cxp";
 import { ChevronDown, ChevronRight, Eye, Receipt } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
@@ -61,7 +62,7 @@ export default function CuentasPorPagarPage() {
       return next;
     });
 
-  const { datos, cargando, error } = useDatosAdmin<Respuesta>(
+  const { datos, cargando, error, recargar } = useDatosAdmin<Respuesta>(
     "/api/administracion/cuentas-por-pagar",
     empresa,
     mes,
@@ -97,7 +98,6 @@ export default function CuentasPorPagarPage() {
   }, [datos]);
 
   const totalBandas = datos ? BANDAS.reduce((s, b) => s + Math.max(0, datos.bandas[b]), 0) : 0;
-  const maxSemana = datos ? Math.max(1, ...datos.calendario.map((s) => s.monto)) : 1;
 
   return (
     <div className="space-y-6">
@@ -109,6 +109,7 @@ export default function CuentasPorPagarPage() {
         setEmpresa={setEmpresa}
         mes={mes}
         setMes={setMes}
+        mesesAdelante={3}
         acciones={
           datos && (
             <BotonExcel
@@ -162,7 +163,23 @@ export default function CuentasPorPagarPage() {
                     Sede: NOMBRE_SEDE[p.sede] || p.sede,
                     Proveedor: p.proveedor,
                     Diario: p.diario,
+                    Referencia: p.referencia,
                     Monto: p.monto,
+                  })),
+                },
+                {
+                  nombre: "Pagos fijos",
+                  filas: datos.pagosFijos.map((f) => ({
+                    Pago: f.nombre,
+                    Sede: NOMBRE_SEDE[f.sede] || f.sede,
+                    Proveedor: f.proveedor,
+                    Dia: f.dia,
+                    Fecha: f.fecha,
+                    Monto: f.monto,
+                    Estado: f.estado === "pagado" ? "Pagado" : f.estado === "vencido" ? "Sin pagar (día pasado)" : "Por pagar",
+                    "Pagado el": f.pagadoEl || "",
+                    "Monto pagado": f.montoPagado ?? "",
+                    Notas: f.notas,
                   })),
                 },
               ]}
@@ -377,27 +394,18 @@ export default function CuentasPorPagarPage() {
               )}
 
               {vista === "calendario" && (
-                <div className="p-4 space-y-3">
-                  <p className="text-sm text-gray-500">
-                    Facturas por semana de vencimiento. Lo ya vencido ({money(datos.resumen.vencido, 2)}) no entra aquí:
-                    está en la tarjeta "Vencido".
-                  </p>
-                  {datos.calendario.map((s, i) => (
-                    <div key={s.desde} className="flex items-center gap-3 text-sm">
-                      <div className="w-36 sm:w-44 shrink-0 text-gray-600">
-                        {i === 0 ? "Esta semana" : `${fechaCorta(s.desde)} – ${fechaCorta(s.hasta)}`}
-                      </div>
-                      <div className="flex-1 h-6 bg-slate-100 rounded-md overflow-hidden">
-                        <div
-                          className="h-full bg-blue-500/80"
-                          style={{ width: `${(s.monto / maxSemana) * 100}%` }}
-                        />
-                      </div>
-                      <div className="w-28 text-right font-semibold">{money(s.monto, 2)}</div>
-                      <div className="w-14 text-right text-xs text-gray-400 hidden sm:block">{s.documentos} fact.</div>
-                    </div>
-                  ))}
-                </div>
+                <CalendarioPagosCxP
+                  mes={mes}
+                  setMes={setMes}
+                  hoy={datos.hoy}
+                  empresa={empresa}
+                  documentos={datos.documentos}
+                  pagos={datos.pagosDelMes}
+                  fijos={datos.pagosFijos}
+                  fijosError={datos.pagosFijosError}
+                  onVerDocumento={setDocId}
+                  onCambio={recargar}
+                />
               )}
 
               {vista === "documentos" && (
