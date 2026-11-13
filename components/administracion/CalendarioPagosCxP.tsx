@@ -1,12 +1,24 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Aviso, NOMBRE_SEDE, fechaCorta, money } from "@/components/administracion/comunes";
-import type { DocumentoCxP, PagoProveedor } from "@/lib/administracion/cxp";
+import type { DetallePagoCxP, DocumentoCxP, PagoProveedor } from "@/lib/administracion/cxp";
 import type { PagoFijoDelMes } from "@/lib/administracion/pagosFijosCruce";
-import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Repeat, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Repeat,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 /**
@@ -14,7 +26,8 @@ import { useEffect, useMemo, useState } from "react";
  * con los pagos fijos (los registra Administracion, se dan por pagados solos
  * cuando hay un pago en Odoo a ese proveedor en el mes), los pagos a
  * proveedores que se van registrando en Odoo y las facturas abiertas que
- * vencen ese dia.
+ * vencen ese dia. Al tocar un dia se abre su detalle en un modal, y de ahi
+ * cada pago con las facturas que pago (las conciliaciones de Odoo).
  */
 
 type Item =
@@ -62,6 +75,7 @@ export function CalendarioPagosCxP({
   pagos,
   fijos,
   fijosError,
+  docAbierto,
   onVerDocumento,
   onCambio,
 }: {
@@ -73,15 +87,31 @@ export function CalendarioPagosCxP({
   pagos: PagoProveedor[];
   fijos: PagoFijoDelMes[];
   fijosError: boolean;
+  /** El modal de una factura esta abierto: el del dia se esconde mientras tanto. */
+  docAbierto: boolean;
   onVerDocumento: (id: number) => void;
-  onCambio: () => void;
+  /** Vuelve a leer los datos sin vaciar la pantalla. */
+  onCambio: () => Promise<void>;
 }) {
   const [a, m] = mes.split("-").map(Number);
   const diasDelMes = new Date(Date.UTC(a, m, 0)).getUTCDate();
   const blancos = (new Date(Date.UTC(a, m - 1, 1)).getUTCDay() + 6) % 7;
-  const [dia, setDia] = useState<string>(hoy.startsWith(mes) ? hoy : `${mes}-01`);
+  const [dia, setDia] = useState<string | null>(null);
+  const [pagoVer, setPagoVer] = useState<number | null>(null);
   const [editando, setEditando] = useState<PagoFijoDelMes | "nuevo" | null>(null);
-  useEffect(() => setDia(hoy.startsWith(mes) ? hoy : `${mes}-01`), [mes, hoy]);
+  const [actualizando, setActualizando] = useState(false);
+  const [actualizadoA, setActualizadoA] = useState(() => new Date());
+  useEffect(() => setActualizadoA(new Date()), [pagos, fijos]);
+
+  const abrirDia = (fecha: string, pagoId: number | null = null) => {
+    setDia(fecha);
+    setPagoVer(pagoId);
+  };
+  const actualizar = async () => {
+    setActualizando(true);
+    await onCambio();
+    setActualizando(false);
+  };
 
   const porDia = useMemo(() => {
     const mapa = new Map<string, Item[]>();
@@ -115,14 +145,14 @@ export function CalendarioPagosCxP({
     year: "numeric",
     timeZone: "UTC",
   });
-  const delDia = porDia.get(dia) || [];
+  const delDia = dia ? porDia.get(dia) || [] : [];
 
   const quitar = async (f: PagoFijoDelMes) => {
     if (!confirm(`¿Quitar el pago fijo "${f.nombre}"? Deja de salir desde este mes; los meses anteriores lo conservan.`)) return;
     const res = await fetch(`/api/administracion/cuentas-por-pagar/pagos-fijos?id=${f.id}`, { method: "DELETE" });
     const json = await res.json().catch(() => ({}));
     if (!json.success) return alert(json.error || "No se pudo quitar");
-    onCambio();
+    await onCambio();
   };
 
   return (
@@ -181,9 +211,18 @@ export function CalendarioPagosCxP({
             </Button>
           )}
         </div>
-        <Button size="sm" onClick={() => setEditando("nuevo")} disabled={fijosError}>
-          <Plus className="h-4 w-4 mr-1" /> Nuevo pago fijo
-        </Button>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-400 hidden sm:inline">
+            Odoo leído a las {actualizadoA.toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" })} · se
+            actualiza solo cada 3 min
+          </span>
+          <Button variant="outline" size="sm" onClick={actualizar} disabled={actualizando}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${actualizando ? "animate-spin" : ""}`} /> Actualizar
+          </Button>
+          <Button size="sm" onClick={() => setEditando("nuevo")} disabled={fijosError}>
+            <Plus className="h-4 w-4 mr-1" /> Nuevo pago fijo
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
@@ -204,7 +243,7 @@ export function CalendarioPagosCxP({
         </div>
         <div className="grid grid-cols-7">
           {Array.from({ length: blancos }, (_, i) => (
-            <div key={`b${i}`} className="bg-slate-50/60 border-b border-r min-h-14 md:min-h-28" />
+            <div key={`b${i}`} className="bg-slate-50/60 border-b border-r min-h-16 md:min-h-32" />
           ))}
           {Array.from({ length: diasDelMes }, (_, i) => {
             const fecha = `${mes}-${String(i + 1).padStart(2, "0")}`;
@@ -212,25 +251,34 @@ export function CalendarioPagosCxP({
             // El pago de Odoo que ya cubre un pago fijo no se repite en la celda.
             const visibles = items.filter((it) => !(it.tipo === "pago" && it.deFijo));
             const elegido = fecha === dia;
+            const totalDia = visibles.reduce(
+              (sum, it) => sum + (it.tipo === "fijo" ? it.fijo.monto : it.tipo === "pago" ? it.pago.monto : it.doc.saldo),
+              0,
+            );
             const esHoy = fecha === hoy;
             const finDeSemana = (blancos + i) % 7 >= 5;
             return (
               <button
                 key={fecha}
                 type="button"
-                onClick={() => setDia(fecha)}
-                className={`text-left border-b border-r min-h-14 md:min-h-28 p-1 md:p-1.5 flex flex-col gap-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                onClick={() => abrirDia(fecha)}
+                className={`text-left border-b border-r min-h-16 md:min-h-32 p-1 md:p-1.5 flex flex-col gap-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                   elegido ? "bg-blue-50/70" : finDeSemana ? "bg-slate-50/60 hover:bg-slate-100" : "bg-white hover:bg-slate-50"
                 }`}
                 aria-label={`${fechaCorta(fecha)}: ${items.length} movimientos`}
                 aria-pressed={elegido}
               >
-                <span
-                  className={`text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full ${
-                    esHoy ? "bg-blue-600 text-white" : elegido ? "text-blue-700" : "text-gray-600"
-                  }`}
-                >
-                  {i + 1}
+                <span className="flex items-center justify-between gap-1">
+                  <span
+                    className={`text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full ${
+                      esHoy ? "bg-blue-600 text-white" : elegido ? "text-blue-700" : "text-gray-600"
+                    }`}
+                  >
+                    {i + 1}
+                  </span>
+                  {totalDia > 0 && (
+                    <span className="hidden xl:inline text-[10px] font-semibold text-gray-500">{money(totalDia)}</span>
+                  )}
                 </span>
                 {/* Celular: puntos. Pantalla grande: los movimientos. */}
                 <div className="flex flex-wrap gap-0.5 md:hidden">
@@ -239,45 +287,78 @@ export function CalendarioPagosCxP({
                   ))}
                 </div>
                 <div className="hidden md:flex flex-col gap-0.5 min-w-0 w-full">
-                  {visibles.slice(0, 3).map((it, k) => (
+                  {visibles.slice(0, 4).map((it, k) => (
                     <Chip key={k} item={it} hoy={hoy} />
                   ))}
-                  {visibles.length > 3 && <span className="text-[10px] text-gray-500 pl-1">+{visibles.length - 3} más</span>}
+                  {visibles.length > 4 && <span className="text-[10px] text-blue-600 pl-1">+{visibles.length - 4} más</span>}
                 </div>
               </button>
             );
           })}
           {Array.from({ length: (7 - ((blancos + diasDelMes) % 7)) % 7 }, (_, i) => (
-            <div key={`f${i}`} className="bg-slate-50/60 border-b border-r min-h-14 md:min-h-28" />
+            <div key={`f${i}`} className="bg-slate-50/60 border-b border-r min-h-16 md:min-h-32" />
           ))}
         </div>
       </div>
 
-      <div className="rounded-lg border">
-        <div className="px-3 py-2 border-b bg-slate-50 flex items-center justify-between">
-          <span className="text-sm font-semibold capitalize">
-            {new Date(dia + "T12:00:00Z").toLocaleDateString("es-VE", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              timeZone: "UTC",
-            })}
-          </span>
-          <span className="text-xs text-gray-500">{delDia.length} movimientos</span>
-        </div>
-        {delDia.length === 0 ? (
-          <p className="text-sm text-gray-500 p-3">Nada este día.</p>
-        ) : (
-          <ul className="divide-y">
-            {delDia.map((it, k) => (
-              <li key={k} className="px-3 py-2 flex items-start gap-3 text-sm">
-                <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${PUNTO[estiloDe(it, hoy)]}`} />
-                <DetalleItem item={it} empresa={empresa} hoy={hoy} onVer={onVerDocumento} onEditar={setEditando} onQuitar={quitar} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {/* Se esconde mientras esta abierta una factura o el formulario: dos modales a la vez se cierran entre si. */}
+      <Dialog
+        open={dia !== null && !docAbierto && !editando}
+        onOpenChange={(abierto) => {
+          if (!abierto) {
+            setDia(null);
+            setPagoVer(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          {pagoVer !== null ? (
+            <DetallePago
+              id={pagoVer}
+              empresa={empresa}
+              volver={() => setPagoVer(null)}
+              onVerDocumento={onVerDocumento}
+              fijo={fijos.find((f) => f.pagoId === pagoVer)?.nombre ?? null}
+            />
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="capitalize">
+                  {dia &&
+                    new Date(dia + "T12:00:00Z").toLocaleDateString("es-VE", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                      timeZone: "UTC",
+                    })}
+                </DialogTitle>
+                <DialogDescription>
+                  {delDia.length === 0 ? "Nada este día." : `${delDia.length} movimientos`}
+                </DialogDescription>
+              </DialogHeader>
+              {delDia.length > 0 && (
+                <ul className="divide-y rounded-lg border">
+                  {delDia.map((it, k) => (
+                    <li key={k} className="px-3 py-2.5 flex items-start gap-3 text-sm">
+                      <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${PUNTO[estiloDe(it, hoy)]}`} />
+                      <DetalleItem
+                        item={it}
+                        empresa={empresa}
+                        hoy={hoy}
+                        onVer={onVerDocumento}
+                        onVerPago={setPagoVer}
+                        onEditar={setEditando}
+                        onQuitar={quitar}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <div className="rounded-lg border">
         <div className="px-3 py-2 border-b bg-slate-50 flex items-center gap-2">
@@ -294,7 +375,15 @@ export function CalendarioPagosCxP({
             {fijos.map((f) => (
               <li key={f.id} className="px-3 py-2 flex items-start gap-3 text-sm">
                 <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${PUNTO[f.estado]}`} />
-                <DetalleItem item={{ tipo: "fijo", fijo: f }} empresa={empresa} hoy={hoy} onVer={onVerDocumento} onEditar={setEditando} onQuitar={quitar} />
+                <DetalleItem
+                  item={{ tipo: "fijo", fijo: f }}
+                  empresa={empresa}
+                  hoy={hoy}
+                  onVer={onVerDocumento}
+                  onVerPago={(id) => abrirDia(f.pagadoEl || f.fecha, id)}
+                  onEditar={setEditando}
+                  onQuitar={quitar}
+                />
               </li>
             ))}
           </ul>
@@ -307,9 +396,9 @@ export function CalendarioPagosCxP({
           empresa={empresa}
           mes={mes}
           onClose={() => setEditando(null)}
-          onGuardado={() => {
+          onGuardado={async () => {
+            await onCambio();
             setEditando(null);
-            onCambio();
           }}
         />
       )}
@@ -364,6 +453,7 @@ function DetalleItem({
   empresa,
   hoy,
   onVer,
+  onVerPago,
   onEditar,
   onQuitar,
 }: {
@@ -371,6 +461,7 @@ function DetalleItem({
   empresa: string;
   hoy: string;
   onVer: (id: number) => void;
+  onVerPago: (id: number) => void;
   onEditar: (f: PagoFijoDelMes) => void;
   onQuitar: (f: PagoFijoDelMes) => void;
 }) {
@@ -402,6 +493,11 @@ function DetalleItem({
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <span className="font-semibold mr-1">{money(f.monto, 2)}</span>
+          {f.pagoId && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onVerPago(f.pagoId!)}>
+              Ver pago
+            </Button>
+          )}
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEditar(f)} aria-label="Editar pago fijo">
             <Pencil className="h-3.5 w-3.5" />
           </Button>
@@ -425,7 +521,12 @@ function DetalleItem({
           </div>
           {item.deFijo && <div className="text-xs text-emerald-700">Cubre el pago fijo «{item.deFijo}»</div>}
         </div>
-        <span className="font-semibold shrink-0">{money(p.monto, 2)}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="font-semibold">{money(p.monto, 2)}</span>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onVerPago(p.id)}>
+            Ver pago
+          </Button>
+        </div>
       </div>
     );
   }
@@ -647,5 +748,176 @@ function FormPagoFijo({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const ESTADO_PAGO_DOC: Record<string, string> = {
+  paid: "Pagada",
+  in_payment: "Pagada (por conciliar)",
+  partial: "Pago parcial",
+  not_paid: "Sin pagar",
+  reversed: "Revertida",
+};
+const ESTADO_PAGO: Record<string, string> = { posted: "Publicado", draft: "Borrador", canceled: "Anulado", cancel: "Anulado" };
+
+/** Un pago de Odoo con las facturas que pago (dentro del modal del dia). */
+function DetallePago({
+  id,
+  empresa,
+  fijo,
+  volver,
+  onVerDocumento,
+}: {
+  id: number;
+  empresa: string;
+  fijo: string | null;
+  volver: () => void;
+  onVerDocumento: (id: number) => void;
+}) {
+  const [pago, setPago] = useState<DetallePagoCxP | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let vigente = true;
+    setPago(null);
+    setError("");
+    fetch(`/api/administracion/cuentas-por-pagar/pago?id=${id}&empresa=${empresa}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((json) => {
+        if (!vigente) return;
+        if (json.success) setPago(json.pago);
+        else setError(json.error || "No se pudo leer el pago");
+      })
+      .catch(() => vigente && setError("No se pudo leer el pago"));
+    return () => {
+      vigente = false;
+    };
+  }, [id, empresa]);
+
+  return (
+    <>
+      <DialogHeader>
+        <button type="button" onClick={volver} className="flex items-center gap-1 text-xs text-blue-700 hover:underline w-fit">
+          <ArrowLeft className="h-3.5 w-3.5" /> Volver al día
+        </button>
+        <DialogTitle className="flex flex-wrap items-center gap-2 pr-6">
+          Pago {pago?.numero || ""}
+          {fijo && (
+            <span className="text-xs font-normal rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5">
+              Pago fijo «{fijo}»
+            </span>
+          )}
+        </DialogTitle>
+        <DialogDescription>{pago ? pago.proveedor : " "}</DialogDescription>
+      </DialogHeader>
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {!pago && !error && (
+        <div className="flex items-center gap-2 text-sm text-gray-500 py-6 justify-center">
+          <Loader2 className="h-4 w-4 animate-spin" /> Leyendo el pago en Odoo…
+        </div>
+      )}
+
+      {pago && (
+        <div className="space-y-4 text-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <Dato titulo="Fecha" valor={fechaCorta(pago.fecha)} />
+            <Dato
+              titulo="Monto"
+              valor={
+                pago.moneda !== "USD"
+                  ? `${pago.moneda} ${pago.monto.toLocaleString("es-VE", { minimumFractionDigits: 2 })} · ${money(pago.montoUsd, 2)}`
+                  : money(pago.montoUsd, 2)
+              }
+            />
+            <Dato titulo="Estado" valor={ESTADO_PAGO[pago.estado] || pago.estado} />
+            <Dato titulo="Diario" valor={pago.diario || "—"} />
+            <Dato titulo="Método" valor={pago.metodo || "—"} />
+            <Dato titulo="Memo / referencia" valor={pago.referencia || "—"} />
+            <Dato titulo="Registrado por" valor={pago.registradoPor || "—"} />
+            <Dato titulo="Registrado el" valor={fechaCorta(pago.registradoEl)} />
+            {!empresa && <Dato titulo="Sede" valor={NOMBRE_SEDE[pago.sede] || pago.sede} />}
+          </div>
+
+          <div>
+            <div className="font-semibold mb-1.5">Facturas que pagó</div>
+            {pago.documentos.length === 0 ? (
+              <p className="text-gray-500 rounded-lg border p-3">
+                Este pago no está aplicado a ninguna factura en Odoo (anticipo o pago sin conciliar).
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Documento</th>
+                      <th className="px-2 py-2 text-center font-medium hidden sm:table-cell">Fecha</th>
+                      <th className="px-2 py-2 text-right font-medium hidden sm:table-cell">Total</th>
+                      <th className="px-2 py-2 text-right font-medium">Aplicado</th>
+                      <th className="px-2 py-2 text-right font-medium">Saldo</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {pago.documentos.map((d) => (
+                      <tr key={d.id}>
+                        <td className="px-3 py-2">
+                          <div className="font-mono text-xs">
+                            {d.numero}
+                            {d.tipo === "nota_credito" && <span className="ml-1 text-[10px] text-red-600">NC</span>}
+                          </div>
+                          <div className="text-[11px] text-gray-400">
+                            {d.referencia && `Ref. ${d.referencia} · `}
+                            {ESTADO_PAGO_DOC[d.estadoPago] || (d.tipo === "otro" ? "Asiento" : d.estadoPago)}
+                          </div>
+                        </td>
+                        <td className="px-2 py-2 text-center text-xs hidden sm:table-cell">{fechaCorta(d.fecha)}</td>
+                        <td className="px-2 py-2 text-right text-xs text-gray-500 hidden sm:table-cell">{money(d.total, 2)}</td>
+                        <td className="px-2 py-2 text-right font-semibold">{money(d.aplicado, 2)}</td>
+                        <td className={`px-2 py-2 text-right ${d.saldo > 0.01 ? "text-amber-700" : "text-gray-400"}`}>
+                          {money(d.saldo, 2)}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {d.tipo !== "otro" && (
+                            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onVerDocumento(d.id)}>
+                              Ver factura
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {pago.sinAplicar > 0.01 && (
+              <p className="text-xs text-amber-700 mt-1.5">
+                {money(pago.sinAplicar, 2)} de este pago no están aplicados a ninguna factura.
+              </p>
+            )}
+          </div>
+
+          {pago.urlOdoo.startsWith("http") && (
+            <a
+              href={pago.urlOdoo}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> Abrir el pago en Odoo
+            </a>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function Dato({ titulo, valor }: { titulo: string; valor: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] text-gray-500">{titulo}</div>
+      <div className="font-medium break-words">{valor}</div>
+    </div>
   );
 }

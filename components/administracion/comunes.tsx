@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { AlertTriangle, Download, Loader2, WifiOff } from "lucide-react";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import * as XLSX from "xlsx";
 
@@ -118,7 +118,9 @@ export function useDatosAdmin<T>(ruta: string, empresa: string, mes: string, ext
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<{ mensaje: string; odooCaido: boolean } | null>(null);
 
+  const urlVigente = useRef("");
   const cargar = useCallback(async () => {
+    urlVigente.current = `${ruta}?empresa=${empresa}&mes=${mes}${extra}`;
     setCargando(true);
     setError(null);
     try {
@@ -141,7 +143,20 @@ export function useDatosAdmin<T>(ruta: string, empresa: string, mes: string, ext
     cargar();
   }, [cargar]);
 
-  return { datos, cargando, error, recargar: cargar };
+  /** Vuelve a pedir los datos sin vaciar la pantalla; si falla, quedan los de antes. */
+  const actualizar = useCallback(async () => {
+    try {
+      const url = `${ruta}?empresa=${empresa}&mes=${mes}${extra}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const json = await res.json();
+      // Si mientras tanto cambiaron sede o mes, esta respuesta ya no sirve.
+      if (json.success && urlVigente.current === url) setDatos(json as T);
+    } catch {
+      // Se reintenta en la proxima actualizacion.
+    }
+  }, [ruta, empresa, mes, extra]);
+
+  return { datos, cargando, error, recargar: cargar, actualizar };
 }
 
 export function EncabezadoAdmin({

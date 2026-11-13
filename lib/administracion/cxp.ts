@@ -308,6 +308,16 @@ export async function fetchCxPAdmin(
     }))
     .sort((a, b) => b.diasEnBorrador - a.diasEnBorrador);
 
+  // Empresa de cada proveedor pagado: un pago a un contacto hijo (sucursal,
+  // persona) cuenta para el pago fijo de la empresa.
+  const idsPartner = Array.from(new Set(pagosRaw.map((p: any) => idM2o(p.partner_id)).filter(Boolean))) as number[];
+  const empresaDe = new Map<number, number>(
+    (idsPartner.length
+      ? await leerTodo("res.partner", [["id", "in", idsPartner], ["active", "in", [true, false]]], ["commercial_partner_id"], companyIds)
+      : []
+    ).map((x: any) => [x.id, idM2o(x.commercial_partner_id) ?? x.id]),
+  );
+
   const pagosDelMes: PagoProveedor[] = pagosRaw
     .filter((p: any) => !(sinIntercompania && RE_INTERCOMPANIA.test(nombreM2o(p.partner_id))))
     .map((p: any) => ({
@@ -347,7 +357,7 @@ export async function fetchCxPAdmin(
       pagosRaw.map((p: any) => ({
         id: p.id,
         fecha: p.date || "",
-        proveedorId: idM2o(p.partner_id),
+        proveedorId: empresaDe.get(idM2o(p.partner_id) || 0) ?? idM2o(p.partner_id),
         monto: Math.abs(Number(p.amount_company_currency_signed) || 0),
         sede: empresaDeCompanyId(idM2o(p.company_id) || 0),
       })),
@@ -539,5 +549,156 @@ export async function fetchDocumentoCxP(id: number, companyIds: number[]): Promi
     retencionIva: nombreM2o(m.wh_iva_id),
     retencionIslr: nombreM2o(m.islr_wh_doc_id),
     urlOdoo: `${(process.env.NEXT_PUBLIC_ODOO_URL || "").replace(/\/$/, "")}/web#id=${m.id}&model=account.move&view_type=form`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Detalle de un pago a proveedor (al abrirlo desde el calendario)
+// ---------------------------------------------------------------------------
+
+export interface DocumentoDelPago {
+  id: number;
+  numero: string;
+  referencia: string;
+  /** factura / nota_credito de proveedor; otro = asiento, retencion, anticipo... */
+  tipo: "factura" | "nota_credito" | "otro";
+  fecha: string;
+  vence: string;
+  total: number;
+  saldo: number;
+  /** Lo que este pago le aplico (USD). */
+  aplicado: number;
+  estadoPago: string;
+}
+
+export interface DetallePagoCxP {
+  id: number;
+  numero: string;
+  fecha: string;
+  proveedor: string;
+  sede: string;
+  diario: string;
+  metodo: string;
+  referencia: string;
+  estado: string;
+  moneda: string;
+  /** Monto en la moneda del pago. */
+  monto: number;
+  montoUsd: number;
+  /** Parte del pago que no se aplico a ningun documento (USD). */
+  sinAplicar: number;
+  registradoPor: string;
+  registradoEl: string;
+  documentos: DocumentoDelPago[];
+  urlOdoo: string;
+}
+
+/**
+ * Un pago a proveedor con los documentos que pago: las conciliaciones de su
+ * linea por pagar (`account.partial.reconcile`), igual que Pagos entre sedes.
+ * null = no existe o es de otra sede.
+ */
+export async function fetchPagoCxP(id: number, companyIds: number[]): Promise<DetallePagoCxP | null> {
+  const [p] = await leerTodo(
+    "account.payment",
+    [
+      ["id", "=", id],
+      ["company_id", "in", companyIds],
+      ["partner_type", "=", "supplier"],
+    ],
+    [
+      "name",
+      "date",
+      "partner_id",
+      "company_id",
+      "journal_id",
+      "payment_method_line_id",
+      "ref",
+      "state",
+      "currency_id",
+      "amount",
+      "amount_company_currency_signed",
+      "create_uid",
+      "create_date",
+    ],
+    companyIds,
+  );
+  if (!p) return null;
+
+  const lineas = await leerTodo(
+    "account.move.line",
+    [
+      ["payment_id", "=", id],
+      ["account_id.account_type", "=", "liability_payable"],
+    ],
+    ["matched_debit_ids", "matched_credit_ids", "amount_residual"],
+    companyIds,
+  );
+  const propias = new Set(lineas.map((l: any) => l.id));
+  const parcialIds = Array.from(new Set(lineas.flatMap((l: any) => [...l.matched_debit_ids, ...l.matched_credit_ids])));
+  const parciales = parcialIds.length
+    ? await leerTodo("account.partial.reconcile", [["id", "in", parcialIds]], ["amount", "debit_move_id", "credit_move_id"], companyIds)
+    : [];
+  // Linea de la otra parte -> monto aplicado.
+  const aplicadoPorLinea = new Map<number, number>();
+  parciales.forEach((x: any) => {
+    const debe = idM2o(x.debit_move_id);
+    const otra = debe && propias.has(debe) ? idM2o(x.credit_move_id) : debe;
+    if (otra) aplicadoPorLinea.set(otra, (aplicadoPorLinea.get(otra) || 0) + (Number(x.amount) || 0));
+  });
+  const otras = aplicadoPorLinea.size
+    ? await leerTodo("account.move.line", [["id", "in", Array.from(aplicadoPorLinea.keys())]], ["move_id"], companyIds)
+    : [];
+  const aplicadoPorAsiento = new Map<number, number>();
+  otras.forEach((l: any) => {
+    const m = idM2o(l.move_id);
+    if (m) aplicadoPorAsiento.set(m, (aplicadoPorAsiento.get(m) || 0) + (aplicadoPorLinea.get(l.id) || 0));
+  });
+  const asientos = aplicadoPorAsiento.size
+    ? await leerTodo(
+        "account.move",
+        [["id", "in", Array.from(aplicadoPorAsiento.keys())]],
+        ["name", "ref", "move_type", "invoice_date", "invoice_date_due", "date", "amount_total_signed", "amount_residual_signed", "payment_state"],
+        companyIds,
+      )
+    : [];
+
+  const odoo = (process.env.NEXT_PUBLIC_ODOO_URL || "").replace(/\/$/, "");
+  return {
+    id: p.id,
+    numero: p.name || "",
+    fecha: p.date || "",
+    proveedor: nombreM2o(p.partner_id, "Sin proveedor"),
+    sede: empresaDeCompanyId(idM2o(p.company_id) || 0),
+    diario: nombreM2o(p.journal_id),
+    metodo: nombreM2o(p.payment_method_line_id),
+    referencia: p.ref || "",
+    estado: p.state || "",
+    moneda: nombreM2o(p.currency_id, "USD"),
+    monto: redondear(Math.abs(Number(p.amount) || 0)),
+    montoUsd: redondear(Math.abs(Number(p.amount_company_currency_signed) || 0)),
+    sinAplicar: redondear(lineas.reduce((s: number, l: any) => s + Math.abs(Number(l.amount_residual) || 0), 0)),
+    registradoPor: nombreM2o(p.create_uid),
+    registradoEl: String(p.create_date || "").slice(0, 10),
+    documentos: asientos
+      .map((a: any) => ({
+        id: a.id,
+        numero: a.name || "",
+        referencia: a.ref || "",
+        tipo:
+          a.move_type === "in_invoice"
+            ? ("factura" as const)
+            : a.move_type === "in_refund"
+              ? ("nota_credito" as const)
+              : ("otro" as const),
+        fecha: a.invoice_date || a.date || "",
+        vence: a.invoice_date_due || "",
+        total: redondear(Math.abs(Number(a.amount_total_signed) || 0)),
+        saldo: redondear(Math.abs(Number(a.amount_residual_signed) || 0)),
+        aplicado: redondear(aplicadoPorAsiento.get(a.id) || 0),
+        estadoPago: a.payment_state || "",
+      }))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha)),
+    urlOdoo: `${odoo}/web#id=${p.id}&model=account.payment&view_type=form`,
   };
 }
