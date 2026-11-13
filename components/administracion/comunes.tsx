@@ -329,7 +329,7 @@ export function Pestanas<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex gap-1 overflow-x-auto border-b">
+    <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b">
       {opciones.map((o) => (
         <button
           key={o.value}
