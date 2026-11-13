@@ -2,6 +2,8 @@
 // React — extraídas de components/superadmin/StoplightReport.tsx (audit #23)
 // para que el componente no cargue con ~130 líneas de reglas de negocio.
 
+import { KPIS_DEPTO_CERO, KPIS_DEPTO_MAS, KPIS_DEPTO_MENOS } from "./departamentos/definiciones";
+
 // Semáforo sobre el % de meta cumplida: verde al llegar (>=100), amarillo
 // cuando ya está cerca (70–99), rojo cuando falta bastante (<70).
 export const getCellColor = (value: string) => {
@@ -15,14 +17,34 @@ export const getCellColor = (value: string) => {
 
 // KPIs cuyo valor mostrado es la métrica cruda (no un "% de meta"): más alto
 // mejor, o más bajo mejor. El resto muestra directamente "% de meta cumplida".
+// Los de los departamentos salen de sus definiciones (lib/stoplight/departamentos).
 export const KPI_MAS_ES_MEJOR = ["efectividad_cobranza", "recuperacion_vencidos", "pagos_a_tiempo", "procesamiento_oportuno",
-  "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate"];
-export const KPI_MENOS_ES_MEJOR = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc", "ciclo_reposicion"];
+  "usuarios_totales", "sesiones", "paginas_vistas", "clicks_sc", "impresiones_sc", "ctr_sc", "email_open_rate",
+  // Cantidad de propuestas (no un % de la meta): sin esto 2 de 3 contaba como 2 %.
+  "propuestas_calificadas",
+  ...KPIS_DEPTO_MAS];
+export const KPI_MENOS_ES_MEJOR = ["cartera_vencida", "dso", "cuentas_pagar_vencidas", "dpo", "tasa_rebote", "posicion_sc", "ciclo_reposicion",
+  ...KPIS_DEPTO_MENOS];
+/**
+ * KPIs cuya meta es 0 casos (incidentes, precios fuera de política): 0 =
+ * verde, cualquier caso = rojo. Con la regla general una meta 0 es "sin
+ * meta" y quedarían neutros.
+ */
+export const KPI_META_CERO = [...KPIS_DEPTO_CERO];
+
+/** Primer número de un valor mostrado ("16.5%", "52 días", "$2.64", "36 h"); NaN si no hay. */
+export const numeroDe = (v: string | number | null | undefined): number => {
+  const m = String(v ?? "").match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : NaN;
+};
 
 export const getKpiCellColor = (kpiId: string, value: string | null, goal: string) => {
   if (!value) return "";
-  const numVal = parseFloat(value.replace("%", "").replace(" días", "").trim());
+  const numVal = numeroDe(value);
   if (isNaN(numVal)) return "";
+  if (KPI_META_CERO.includes(kpiId)) {
+    return numVal <= 0 ? "bg-emerald-100 text-emerald-800 font-medium" : "bg-red-100 text-red-800 font-medium";
+  }
   const numGoal = parseFloat(goal);
 
   const higherBetter = KPI_MAS_ES_MEJOR;
@@ -48,9 +70,13 @@ export const getKpiCellColor = (kpiId: string, value: string | null, goal: strin
   return getCellColor(value);
 };
 
-/** true cuando el KPI no tiene meta configurada (>0). */
-export const sinMeta = (goal: string | number | null | undefined): boolean => {
+/**
+ * true cuando el KPI no tiene meta configurada (>0). Con `kpiId` de un KPI de
+ * meta 0 casos (KPI_META_CERO), la meta 0 sí cuenta.
+ */
+export const sinMeta = (goal: string | number | null | undefined, kpiId?: string): boolean => {
   const n = parseFloat(String(goal ?? ""));
+  if (kpiId && KPI_META_CERO.includes(kpiId)) return !Number.isFinite(n) || n < 0;
   return !Number.isFinite(n) || n <= 0;
 };
 
@@ -83,8 +109,9 @@ export const cumplimientoKpi = (
   pisoMinimo?: number,
 ): number | null => {
   if (!average) return null;
-  const numVal = parseFloat(String(average).replace("%", "").replace(" días", "").replace(/N\/?A/i, "").trim());
+  const numVal = numeroDe(average);
   if (isNaN(numVal)) return null;
+  if (KPI_META_CERO.includes(kpiId)) return numVal <= 0 ? 100 : 0;
   const numGoal = parseFloat(String(goal ?? ""));
   if (!Number.isFinite(numGoal) || numGoal <= 0) return null;
   if (pisoMinimo !== undefined && numVal < pisoMinimo) return 0;

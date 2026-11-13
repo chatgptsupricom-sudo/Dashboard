@@ -17,6 +17,7 @@ import { metaVisitasMes, metaVisitasSemana } from "@/lib/stoplight/visitas";
 import { sinIntercompania } from "@/lib/intercompania";
 import { sinRetirados } from "@/lib/vendedores/retirados";
 import { metaClientesNuevosDe } from "@/lib/vendedores/metaClientesNuevos";
+import { METAS_COMPRAS, METAS_COMPRAS_DESDE } from "@/lib/stoplight/departamentos/definiciones";
 
 const JWT_SECRET = jwtSecretBytes();
 
@@ -359,6 +360,14 @@ export async function GET(request: NextRequest) {
       const p = pesoDeFila(r.peso);
       if (p !== null) pesosMap[r.kpi_key] = p;
     });
+    // Metas de Compras de la propuesta por departamento: valen mientras no se
+    // guarde otra (antes cuatro de los seis no tenían y el bloque daba 0%).
+    const metasComprasPropuesta = mes >= METAS_COMPRAS_DESDE;
+    if (metasComprasPropuesta) {
+      for (const [k, v] of Object.entries(METAS_COMPRAS)) {
+        if (!(metasMap[k] > 0)) metasMap[k] = v;
+      }
+    }
 
     const metaCuota = metasMap["cumplimiento_cuota_ventas"] || 0;
     const effectiveCuotaMensual = metaCuota > 0 ? metaCuota : totalCuotaMensual;
@@ -778,7 +787,19 @@ export async function GET(request: NextRequest) {
 
     // 10.5. KPIs del Departamento de Compras (semanal)
     const comprasRaw = await computeComprasKpis(companyId, semanas);
-    const semanaVarCosto = fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto, false);
+    // Variación del costo: el cálculo da positivo = se compró más barato. Con
+    // la meta de la propuesta (≤ 2 % de aumento) la semana vale 100 % si el
+    // costo subió la meta o menos, y meta ÷ aumento si subió más.
+    const metaVarCosto = metasMap["variacion_costo_compra"] || 0;
+    const semanaVarCosto = metasComprasPropuesta && metaVarCosto > 0
+      ? semanas.map((semana, i) => {
+          if (semana.inicio > now) return null;
+          const raw = savedMap["variacion_costo_compra"]?.[i]?.valor ?? comprasRaw.semanaVarCosto[i];
+          if (raw === null || raw === undefined) return null;
+          const aumento = -raw;
+          return `${aumento <= metaVarCosto ? 100 : Math.round((metaVarCosto / aumento) * 100)}%`;
+        })
+      : fromSavedOrComputed("variacion_costo_compra", comprasRaw.semanaVarCosto, false);
     const semanaRotacion = fromSavedOrComputed("rotacion_saludable", comprasRaw.semanaRotacion, false);
     const semanaQuiebre = fromSavedOrComputed("quiebre_inventario", comprasRaw.semanaQuiebre, true);
     const semanaInv90 = fromSavedOrComputed("inventario_90_dias", comprasRaw.semanaInv90, true);
@@ -863,7 +884,10 @@ export async function GET(request: NextRequest) {
         .filter((v): v is number => v != null && Number.isFinite(v));
       if (vals.length) reales[key] = { valor: vals.reduce((a, b) => a + b, 0) / vals.length, meta: metaONull(metasMap[key] || 0), unidad: "%", menosEsMejor };
     };
-    comprasMes("variacion_costo_compra", comprasRaw.semanaVarCosto, false);
+    // Con el tope de aumento de la propuesta, la fila es "% de la meta" semana a
+    // semana (cada semana con su tope): un promedio del aumento crudo no
+    // coincidiría con ese puntaje, así que la tarjeta muestra el % de la meta.
+    if (!metasComprasPropuesta) comprasMes("variacion_costo_compra", comprasRaw.semanaVarCosto, false);
     comprasMes("rotacion_saludable", comprasRaw.semanaRotacion, false);
     comprasMes("quiebre_inventario", comprasRaw.semanaQuiebre, true);
     comprasMes("inventario_90_dias", comprasRaw.semanaInv90, true);
@@ -956,7 +980,8 @@ export async function POST(request: NextRequest) {
 
     if (type === "save_meta") {
       const { kpi_key, company_id, meta_mensual, mes } = body;
-      if (!kpi_key || !company_id || !mes) {
+      // company_id 0 = bloque global del Stoplight (lib/stoplight/departamentos).
+      if (!kpi_key || company_id === undefined || company_id === null || company_id === "" || !mes) {
         return NextResponse.json({ error: "Faltan campos" }, { status: 400 });
       }
       await query(
@@ -973,7 +998,7 @@ export async function POST(request: NextRequest) {
     // company_id + mes, con los valores previos como fallback.
     if (type === "save_peso") {
       const { kpi_key, company_id, peso, mes } = body;
-      if (!kpi_key || !company_id || !mes) {
+      if (!kpi_key || company_id === undefined || company_id === null || company_id === "" || !mes) {
         return NextResponse.json({ error: "Faltan campos" }, { status: 400 });
       }
       await query(

@@ -45,7 +45,16 @@ import {
   contarNiveles,
 } from "@/lib/stoplight/scoring";
 import type { Nivel } from "@/lib/stoplight/scoring";
-import type { SellerData, KpiData, SellerDetail } from "@/lib/stoplight/types";
+import type { SellerData, KpiData, SellerDetail, ValorReal } from "@/lib/stoplight/types";
+import CargaManualKpi from "./stoplight/CargaManualKpi";
+import {
+  BLOQUES,
+  companyDeKpi,
+  sufijoUnidad,
+  usaEstructuraNueva,
+  PESOS_ADMINISTRACION,
+} from "@/lib/stoplight/departamentos/definiciones";
+import type { BloqueDepto, KpiDepto } from "@/lib/stoplight/departamentos/datos";
 
 // biMode: Inteligencia de Negocio ve el Stoplight del SuperAdmin y elige sede,
 // pero no edita metas ni pesos (isSuperAdmin queda en false).
@@ -94,6 +103,9 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
   const [cxcError, setCxcError] = useState<string | null>(null);
   const [cppData, setCppData] = useState<any>(null);
   const [cppLoading, setCppLoading] = useState(false);
+  // KPIs por departamento (lib/stoplight/departamentos), desde ESTRUCTURA_NUEVA_DESDE.
+  const [deptosData, setDeptosData] = useState<{ bloques: BloqueDepto[]; avisos: string[] } | null>(null);
+  const [deptosLoading, setDeptosLoading] = useState(false);
   const [cxcModalOpen, setCxcModalOpen] = useState(false);
   const [cxcModalKpi, setCxcModalKpi] = useState<string>("");
 
@@ -221,6 +233,28 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
   useEffect(() => { fetchCppData(); }, [fetchCppData]);
 
+  const fetchDeptosData = useCallback(async () => {
+    if (!muestraTodosLosGrupos || !usaEstructuraNueva(selectedMes)) {
+      setDeptosData(null);
+      return;
+    }
+    setDeptosLoading(true);
+    try {
+      const res = await fetch(`/api/superadmin/stoplight/departamentos?mes=${selectedMes}&company_id=${selectedCompanyId}`);
+      const json = await res.json().catch(() => ({}));
+      setDeptosData(
+        json.success
+          ? { bloques: json.bloques || [], avisos: json.avisos || [] }
+          : { bloques: [], avisos: [json.error || `Error ${res.status}: no se pudieron leer los departamentos`] },
+      );
+    } catch (e: any) {
+      setDeptosData({ bloques: [], avisos: [e?.message || "No se pudieron leer los departamentos"] });
+    }
+    setDeptosLoading(false);
+  }, [selectedMes, selectedCompanyId, muestraTodosLosGrupos]);
+
+  useEffect(() => { fetchDeptosData(); }, [fetchDeptosData]);
+
   const fetchMonthlyHistory = useCallback(async (numMonths: number) => {
     setMonthlyHistLoading(true);
     const [y, m] = selectedMes.split("-").map(Number);
@@ -233,21 +267,25 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     const empresa = empresaMap[selectedCompanyId] || "valencia";
     const results = await Promise.all(months.map(async (mes) => {
       const [mesY, mesM] = mes.split("-").map(Number);
-      const [ventasRes, cxcRes, cppRes] = await Promise.all([
+      const [ventasRes, cxcRes, cppRes, deptosRes] = await Promise.all([
         fetch(`${apiPrefix}?mes=${mes}&company_id=${selectedCompanyId}`).then(r => r.json()).catch(() => ({ success: false })),
         fetch(`/api/superadmin/cuentas-por-cobrar?empresa=${empresa}&month=${mesM}&year=${mesY}`).then(r => r.json()).catch(() => ({ success: false })),
         fetch(`/api/superadmin/stoplight/cuentas-pagar?empresa=${empresa}&month=${mesM}&year=${mesY}`).then(r => r.json()).catch(() => ({ success: false })),
+        muestraTodosLosGrupos && usaEstructuraNueva(mes)
+          ? fetch(`/api/superadmin/stoplight/departamentos?mes=${mes}&company_id=${selectedCompanyId}`).then(r => r.json()).catch(() => ({ success: false }))
+          : Promise.resolve({ success: false }),
       ]);
       return {
         mes,
         ventas: ventasRes.success ? ventasRes.data : null,
         cxc: cxcRes.success ? cxcRes.data : null,
         cpp: cppRes.success ? cppRes.data : null,
+        deptos: deptosRes.success ? deptosRes : null,
       };
     }));
     setMonthlyHistory(results);
     setMonthlyHistLoading(false);
-  }, [selectedMes, selectedCompanyId, apiPrefix]);
+  }, [selectedMes, selectedCompanyId, apiPrefix, muestraTodosLosGrupos]);
 
   useEffect(() => {
     if (activeTab === "Monthly" || activeTab === "Quarterly" || activeTab === "Annual") {
@@ -285,12 +323,14 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         body: JSON.stringify({
           type: "save_meta",
           kpi_key: kpiKey,
-          company_id: selectedCompanyId,
+          // Los bloques por país o globales guardan con su company_id (9/7 o 0).
+          company_id: companyDeKpi(kpiKey, selectedCompanyId),
           meta_mensual: value,
           mes: selectedMes,
         }),
       });
       fetchData(true);
+      fetchDeptosData();
     } catch (e) {
       console.error("Error saving meta:", e);
     }
@@ -302,7 +342,8 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
   const handleGoalBlur = (kpiId: string, value: string) => {
     const numVal = parseFloat(value) || 0;
-    const currentMeta = kpiData?.metas?.[kpiId];
+    const currentMeta =
+      kpiData?.metas?.[kpiId] ?? deptosData?.bloques.flatMap((b) => b.kpis).find((k) => k.key === kpiId)?.meta;
     if (numVal !== (currentMeta ?? 0)) {
       saveMeta(kpiId, numVal);
     }
@@ -314,7 +355,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       // Los KPIs de marketing no tienen compañía propia: su route los lee bajo
       // company_id 9 (ver #110). El resto van por la sucursal seleccionada.
       const KPIS_MARKETING = ["usuarios_totales", "sesiones", "paginas_vistas", "tasa_rebote", "clicks_sc", "impresiones_sc", "ctr_sc", "posicion_sc", "email_open_rate"];
-      const cid = KPIS_MARKETING.includes(kpiKey) ? 9 : selectedCompanyId;
+      const cid = KPIS_MARKETING.includes(kpiKey) ? 9 : companyDeKpi(kpiKey, selectedCompanyId);
       const res = await fetch(`${apiPrefix}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -336,7 +377,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         console.error("[peso] guardado distinto de lo enviado", { kpiKey, enviado: value, guardado, cid, mes: selectedMes });
         alert(`El peso no quedó guardado (se envió ${value ?? "vacío"} y la base devolvió ${guardado ?? "vacío"}). Avísale a soporte con este mensaje.`);
       }
-      await Promise.all([fetchData(true), fetchMarketingData(), fetchCxCData(), fetchCppData()]);
+      await Promise.all([fetchData(true), fetchMarketingData(), fetchCxCData(), fetchCppData(), fetchDeptosData()]);
       // Ya está guardado: se muestra lo que devuelve el servidor.
       setPesoValues((prev) => { const n = { ...prev }; delete n[kpiKey]; return n; });
       return;
@@ -417,7 +458,22 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return opts;
   };
 
-  const getMonthlyValue = (kpiId: string, h: { ventas: any; cxc: any; cpp: any }): string => {
+  // Valor de un KPI por departamento como lo muestra la tabla.
+  const numDepto = (n: number) => String(Math.round(n * 100) / 100);
+  const textoDepto = (k: KpiDepto): string => {
+    if (k.valor == null) return "N/A";
+    if (k.acumula) return k.pctEsperado == null ? "N/A" : `${k.pctEsperado}%`;
+    const v = numDepto(k.valor);
+    switch (k.unidad) {
+      case "%": return `${v}%`;
+      case "$": return `$${v}`;
+      case "dias": return `${v} días`;
+      case "horas": return `${v} h`;
+      default: return v;
+    }
+  };
+
+  const getMonthlyValue = (kpiId: string, h: { ventas: any; cxc: any; cpp: any; deptos?: any }): string => {
     const d = h.ventas;
     const cxc = h.cxc;
     const cpp = h.cpp;
@@ -443,7 +499,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       case "cuentas_pagar_vencidas": return cpp ? `${cpp.cuentasVencidasPct ?? 0}%` : "-";
       case "procesamiento_oportuno": return cpp ? `${cpp.procesamientoOportunoPct ?? 0}%` : "-";
       case "dpo": return cpp ? `${cpp.dpo ?? 0}` : "-";
-      default: return "-";
+      default: {
+        // KPIs por departamento (meses desde la estructura nueva).
+        const k = ((h.deptos?.bloques || []) as BloqueDepto[]).flatMap((b) => b.kpis).find((x) => x.key === kpiId);
+        return k && k.valor != null ? textoDepto(k) : "-";
+      }
     }
   };
 
@@ -490,6 +550,13 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     return g !== undefined && Number.isFinite(Number(g)) && Number(g) >= 0 ? Number(g) : fallback;
   };
   const pesoDe = (id: string, fallback: number) => `${getPesoNum(id, fallback)}%`;
+
+  // Desde ESTRUCTURA_NUEVA_DESDE (lib/stoplight/departamentos/definiciones):
+  // CxC y CxP van juntos en Administración con los pesos de la propuesta (los
+  // que no trae quedan en 0, informativos) y la web de Marketing pasa a 0.
+  const estructuraNueva = usaEstructuraNueva(selectedMes);
+  const pesoAdm = (id: string, anterior: number) => (estructuraNueva ? PESOS_ADMINISTRACION[id] ?? anterior : anterior);
+  const pesoWeb = (anterior: number) => (estructuraNueva ? 0 : anterior);
 
   // Nueva ponderacion de comisiones de Ventas, vigente desde el 01/10/2026
   // (tabla real que dio el usuario). Antes de esa fecha se mantienen los
@@ -784,7 +851,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "usuarios_totales",
         title: t("kpi_usuarios_ga4"),
-        peso: pesoDe("usuarios_totales", 13),
+        peso: pesoDe("usuarios_totales", pesoWeb(13)),
         average: String(md?.ga4?.totalUsers || 0),
         weeks: toWeekly(ga4W?.totalUsers),
         goalDefault: String(metaDe("usuarios_totales", 500)),
@@ -794,7 +861,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "sesiones",
         title: t("kpi_sesiones_ga4"),
-        peso: pesoDe("sesiones", 13),
+        peso: pesoDe("sesiones", pesoWeb(13)),
         average: String(md?.ga4?.sessions || 0),
         weeks: toWeekly(ga4W?.sessions),
         goalDefault: String(metaDe("sesiones", 1000)),
@@ -804,7 +871,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "paginas_vistas",
         title: t("kpi_paginas_ga4"),
-        peso: pesoDe("paginas_vistas", 9),
+        peso: pesoDe("paginas_vistas", pesoWeb(9)),
         average: String(md?.ga4?.pageviews || 0),
         weeks: toWeekly(ga4W?.pageviews),
         goalDefault: String(metaDe("paginas_vistas", 5000)),
@@ -814,7 +881,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "tasa_rebote",
         title: t("kpi_rebote_ga4"),
-        peso: pesoDe("tasa_rebote", 9),
+        peso: pesoDe("tasa_rebote", pesoWeb(9)),
         average: `${md?.ga4?.bounceRate || 0}%`,
         weeks: toWeeklyPct(ga4W?.bounceRate),
         goalDefault: String(metaDe("tasa_rebote", 40)),
@@ -824,7 +891,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "clicks_sc",
         title: t("kpi_clicks_sc"),
-        peso: pesoDe("clicks_sc", 13),
+        peso: pesoDe("clicks_sc", pesoWeb(13)),
         average: String(md?.totals?.totalClicks || 0),
         weeks: toWeekly(weekClicks),
         goalDefault: String(metaDe("clicks_sc", 500)),
@@ -834,7 +901,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "impresiones_sc",
         title: t("kpi_impresiones_sc"),
-        peso: pesoDe("impresiones_sc", 9),
+        peso: pesoDe("impresiones_sc", pesoWeb(9)),
         average: String(md?.totals?.totalImpressions || 0),
         weeks: toWeekly(weekImpressions),
         goalDefault: String(metaDe("impresiones_sc", 10000)),
@@ -844,7 +911,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "ctr_sc",
         title: t("kpi_ctr_sc"),
-        peso: pesoDe("ctr_sc", 9),
+        peso: pesoDe("ctr_sc", pesoWeb(9)),
         average: `${md?.totals?.overallCtr || 0}%`,
         weeks: scWeeksPct(weekClicks, weekImpressions),
         goalDefault: String(metaDe("ctr_sc", 3)),
@@ -854,7 +921,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "posicion_sc",
         title: t("kpi_posicion_sc"),
-        peso: pesoDe("posicion_sc", 13),
+        peso: pesoDe("posicion_sc", pesoWeb(13)),
         average: String(md?.totals?.avgPosition || 0),
         weeks: toWeekly(md?.weekly?.position),
         goalDefault: String(metaDe("posicion_sc", 5)),
@@ -864,7 +931,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "email_open_rate",
         title: t("kpi_email"),
-        peso: pesoDe("email_open_rate", 12),
+        peso: pesoDe("email_open_rate", pesoWeb(12)),
         average: md?.emailMarketing?.openRate != null ? `${md.emailMarketing.openRate}%` : "0%",
         weeks: (md?.emailMarketing?.weeklyOpenRate || defWeeks).map((v: number | null) => v != null ? `${v}%` : null),
         goalDefault: String(metaDe("email_open_rate", 20)),
@@ -881,7 +948,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "efectividad_cobranza",
         title: t("kpi_efectividad_cobranza"),
-        peso: pesoDe("efectividad_cobranza", 35),
+        peso: pesoDe("efectividad_cobranza", pesoAdm("efectividad_cobranza", 35)),
         average: k.efectividad.value !== null ? `${k.efectividad.value}%` : "N/A",
         weeks: cxcData.semanaEfectividad || Array(5).fill(null),
         goalDefault: String(k.efectividad.meta),
@@ -892,7 +959,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "cartera_vencida",
         title: t("kpi_cartera_vencida"),
-        peso: pesoDe("cartera_vencida", 30),
+        peso: pesoDe("cartera_vencida", pesoAdm("cartera_vencida", 30)),
         average: k.carteraVencida.value !== null ? `${k.carteraVencida.value}%` : "N/A",
         // Serie semanal reconstruyendo el saldo de cada factura al cierre de
         // cada semana (lib/cxc/seriesSemanales.ts). Se lee como "cómo estaba la
@@ -906,7 +973,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "recuperacion_vencidos",
         title: t("kpi_recuperacion"),
-        peso: pesoDe("recuperacion_vencidos", 25),
+        peso: pesoDe("recuperacion_vencidos", pesoAdm("recuperacion_vencidos", 25)),
         // Recuperación del mes contra el saldo vencido al iniciarlo
         // (lib/cxc/recuperacion.ts, issue #189). Sin desglose semanal: el
         // denominador es una foto al inicio del mes, no una serie.
@@ -923,7 +990,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "dso",
         title: t("kpi_dso"),
-        peso: pesoDe("dso", 10),
+        peso: pesoDe("dso", pesoAdm("dso", 10)),
         average: k.dso.value !== null ? `${k.dso.value}${t("suffix_dias")}` : "N/A",
         weeks: [k.dso.value !== null ? String(k.dso.value) : null, null, null, null, null],
         // Ventana móvil de 90 días: no es una métrica semanal.
@@ -942,7 +1009,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "pagos_a_tiempo",
         title: t("kpi_pagos_tiempo"),
-        peso: pesoDe("pagos_a_tiempo", 35),
+        peso: pesoDe("pagos_a_tiempo", pesoAdm("pagos_a_tiempo", 35)),
         average: cppData.pagosATiempoPct == null ? "N/A" : `${cppData.pagosATiempoPct}%`,
         weeks: cppData.semanaPagosATiempo || Array(5).fill(null),
         goalDefault: String(metas["pagos_a_tiempo"] ?? 95),
@@ -954,7 +1021,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "cuentas_pagar_vencidas",
         title: t("kpi_cxpagar_vencidas"),
-        peso: pesoDe("cuentas_pagar_vencidas", 30),
+        peso: pesoDe("cuentas_pagar_vencidas", pesoAdm("cuentas_pagar_vencidas", 30)),
         average: cppData.cuentasVencidasPct == null ? "N/A" : `${cppData.cuentasVencidasPct}%`,
         weeks: cppData.semanaVencidas || Array(5).fill(null),
         goalDefault: String(metas["cuentas_pagar_vencidas"] ?? 5),
@@ -966,7 +1033,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "procesamiento_oportuno",
         title: t("kpi_procesamiento"),
-        peso: pesoDe("procesamiento_oportuno", 20),
+        peso: pesoDe("procesamiento_oportuno", pesoAdm("procesamiento_oportuno", 20)),
         average: cppData.procesamientoOportunoPct == null ? "N/A" : `${cppData.procesamientoOportunoPct}%`,
         weeks: cppData.semanaProcesamiento || Array(5).fill(null),
         goalDefault: String(metas["procesamiento_oportuno"] ?? 95),
@@ -978,7 +1045,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
       {
         id: "dpo",
         title: t("kpi_dpo"),
-        peso: pesoDe("dpo", 15),
+        peso: pesoDe("dpo", pesoAdm("dpo", 15)),
         average: cppData.dpo == null ? "N/A" : `${cppData.dpo}${t("suffix_dias")}`,
         weeks: cppData.semanaDpo || Array(5).fill(null),
         // El DPO es una ventana móvil de 90 días: no tiene lectura por semana.
@@ -994,7 +1061,107 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
 
   const weekHeaders = kpiData?.weekHeaders || [];
 
-  const allGroups = [
+  // --- KPIs por departamento (lib/stoplight/departamentos) -----------------
+  // Son del mes (sin lectura semanal). Los que se van sumando en un período
+  // (`acumula`) muestran "% de lo esperado a la fecha"; el resto, su valor.
+  const kpisDepto = new Map<string, KpiDepto>();
+  for (const b of deptosData?.bloques || []) for (const k of b.kpis) kpisDepto.set(k.key, k);
+  const realesDeptos: Record<string, ValorReal> = {};
+  const filaDepto = (k: KpiDepto) => {
+    const average = textoDepto(k);
+    if (k.valor != null) {
+      // Los que se van sumando se leen contra lo esperado a la fecha (la meta
+      // del período prorrateada), lo mismo que usan el % y el color de la fila.
+      const meta = k.acumula ? k.esperado : k.meta;
+      realesDeptos[k.key] = {
+        valor: k.valor,
+        meta: meta != null && meta > 0 ? meta : null,
+        unidad: k.unidad === "dia_habil" ? "" : k.unidad,
+        menosEsMejor: k.sentido === "menos",
+      };
+    }
+    const origen =
+      k.valor == null
+        ? k.fuente === "manual"
+          ? "Falta cargar el valor del mes"
+          : k.detalle || (k.fuente === "mixto" ? "Sin dato del panel: se puede cargar a mano" : null)
+        : k.origen === "manual"
+        ? `Cargado a mano${k.manualMes?.nota ? ` · ${k.manualMes.nota}` : ""}`
+        : k.detalle;
+    const periodo =
+      k.acumula && k.acumula !== "mes" && k.valor != null
+        ? `Lleva ${numDepto(k.valor)} de ${numDepto(k.meta)} (a la fecha se esperaba ${numDepto(k.esperado ?? 0)})`
+        : null;
+    return {
+      id: k.key,
+      title: k.titulo,
+      peso: pesoDe(k.key, k.peso),
+      average,
+      hint: [periodo, origen].filter(Boolean).join(" · ") || undefined,
+      weeks: Array(numWeeks).fill(null),
+      sinSemana: true,
+      isClickable: false,
+      goalDefault: String(k.meta),
+      goalSuffix: k.unidad === "$" ? " $" : sufijoUnidad(k.unidad),
+      // Meta "0 casos": no hay nada que editar.
+      metaFija: k.sentido === "cero",
+      cumple: nivelSemaforo(k.key, average, String(k.meta)) === "verde",
+    };
+  };
+  const filasDepto: Record<string, any[]> = {};
+  for (const b of deptosData?.bloques || []) filasDepto[b.id] = b.kpis.map(filaDepto);
+  const realesTodos: Record<string, ValorReal> = { ...(kpiData?.reales || {}), ...realesDeptos };
+  const avisosDeptos = deptosData?.avisos || [];
+  const grupoDepto = (id: string, extra: any[] = []) => {
+    const def = BLOQUES.find((b) => b.id === id);
+    const kpis = [...(filasDepto[id] || []), ...extra];
+    // Sin bloques (la API falló) el aviso va en todos; si no, en el bloque del KPI.
+    const aviso = avisosDeptos
+      .filter((a) => (deptosData?.bloques.length ? def?.kpis.some((k) => a.startsWith(k.titulo)) : true))
+      .join(" · ");
+    return {
+      id: `group-${id}`,
+      title: def?.titulo ?? id,
+      count: kpis.length,
+      kpis,
+      weekHeaders,
+      estado: { cargando: deptosLoading, error: null as string | null },
+      aviso: aviso || undefined,
+    };
+  };
+
+  // El grupo de CxC va SIEMPRE (para superadmin / CxC / gerente de ops): si
+  // la carga falla, se muestra con el aviso de error en vez de esconderse.
+  const grupoCxc = { id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders, estado: { cargando: cxcLoading, error: cxcError } };
+
+  // Administración: CxC + CxP + los controles contables, en el orden de la propuesta.
+  const ORDEN_ADMINISTRACION = [
+    "efectividad_cobranza", "cartera_vencida", "dso", "pagos_a_tiempo", "dpo",
+    "adm_cierre_contable", "adm_conciliaciones",
+    "recuperacion_vencidos", "cuentas_pagar_vencidas", "procesamiento_oportuno",
+  ];
+  const grupoAdministracion = (() => {
+    const g = grupoDepto("administracion", [...cxcKpis, ...cppKpis]);
+    const pos = (id: string) => { const i = ORDEN_ADMINISTRACION.indexOf(id); return i === -1 ? 99 : i; };
+    g.kpis.sort((a: any, b: any) => pos(a.id) - pos(b.id));
+    const avisos = [cxcError ? `${t("group_cxc")}: ${cxcError}` : null, g.aviso].filter(Boolean);
+    return { ...g, estado: { cargando: cxcLoading || cppLoading || deptosLoading, error: cxcError }, aviso: avisos.join(" · ") || undefined };
+  })();
+
+  const gruposNuevos = [
+    { id: "group-ventas", title: t("group_ventas"), count: ventasKpis.length, kpis: ventasKpis, weekHeaders },
+    { id: "group-compras", title: t("group_compras"), count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
+    grupoAdministracion,
+    grupoDepto("logistica"),
+    grupoDepto("auditoria"),
+    grupoDepto("rrhh"),
+    grupoDepto("servicios_generales"),
+    // Marketing B2B (leads) + la web, que queda informativa (peso 0).
+    grupoDepto("marketing", marketingKpis),
+    grupoDepto("expansion"),
+  ];
+
+  const gruposAnteriores = [
     { id: "group-ventas", title: t("group_ventas"), count: ventasKpis.length, kpis: ventasKpis, weekHeaders },
     { id: "group-compras", title: t("group_compras"), count: comprasKpis.length, kpis: comprasKpis, weekHeaders },
     // El grupo de CxC va SIEMPRE (para superadmin / CxC / gerente de ops): si
@@ -1005,14 +1172,15 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     // DPO en CxP) van marcados `sinSemana` a nivel KPI y salen como "métrica
     // mensual". Sólo la efectividad de cobranza de CxC tiene serie semanal real
     // (`semanaEfectividad`, bucketeada por fecha de vencimiento).
-    { id: "group-cxc", title: t("group_cxc"), count: cxcKpis.length, kpis: cxcKpis, weekHeaders, estado: { cargando: cxcLoading, error: cxcError } },
+    grupoCxc,
     ...(cppKpis.length > 0 ? [{ id: "group-cpp", title: t("group_cpp"), count: cppKpis.length, kpis: cppKpis, weekHeaders }] : []),
     ...(marketingKpis.length > 0 ? [{ id: "group-marketing", title: t("group_marketing"), count: marketingKpis.length, kpis: marketingKpis, weekHeaders }] : []),
   ];
+  const allGroups: any[] = estructuraNueva ? gruposNuevos : gruposAnteriores;
   const gruposBase = comprasMode
     ? allGroups.filter((g) => g.id === "group-compras")
     : cxCMode
-    ? allGroups.filter((g) => g.id === "group-cxc")
+    ? [grupoCxc]
     : vendorMode || gerenteVentaMode
     ? allGroups
         .filter((g) => g.id === "group-ventas")
@@ -1065,7 +1233,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
     const grupo = gruposBase.find((g: any) => (g.kpis || []).some((k: any) => k.id === kpiId)) as any;
     return {
       kpi,
-      lectura: leerKpi(kpi, kpiData?.reales, avanceMes),
+      lectura: leerKpi(kpi, realesTodos, avanceMes),
       weekHeaders: grupo?.weekHeaders || [],
       locale,
       mes: selectedMes,
@@ -1482,6 +1650,11 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
               />
             </button>
 
+            {/* Aviso del grupo con KPIs (p. ej. un cálculo de departamento que falló). */}
+            {expandedGroups[group.id] && (group as any).aviso && group.kpis.length > 0 && (
+              <div className="border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">{(group as any).aviso}</div>
+            )}
+
             {/* Estado del grupo cuando no llegó ningún KPI (p. ej. CxC no cargó). */}
             {expandedGroups[group.id] && group.kpis.length === 0 && (
               <div className="p-8 text-center text-sm border-t border-slate-100 animate-in fade-in duration-200">
@@ -1517,7 +1690,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <KpiCard
                     key={kpi.id}
                     kpi={kpi}
-                    lectura={leerKpi(kpi, kpiData?.reales, avanceMes)}
+                    lectura={leerKpi(kpi, realesTodos, avanceMes)}
                     weekHeaders={(group as any).weekHeaders || []}
                     locale={locale}
                     onAbrir={abrirDetalle(kpi)}
@@ -1550,7 +1723,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                   <tbody>
                     {group.kpis.map((kpi: any) => {
                       const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
-                      const kpiSinMeta = sinMeta(kpi.goalDefault);
+                      const kpiSinMeta = sinMeta(kpi.goalDefault, kpi.id);
                       return (
                       <tr
                         key={kpi.id}
@@ -1679,7 +1852,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                         <tr key={kpi.id} className="border-t border-slate-100 hover:bg-slate-50/70">
                           <td className="py-3 px-4 text-slate-800 font-medium">
                             {kpi.title}
-                            {sinMeta(kpi.goalDefault) && (
+                            {sinMeta(kpi.goalDefault, kpi.id) && (
                               <span className="ml-2 text-[10px] font-normal text-slate-400 bg-slate-100 rounded px-1 py-px align-middle">
                                 {t("sin_meta")}
                               </span>
@@ -1691,7 +1864,7 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
                             const c = getKpiCellColor(kpi.id, val, kpi.goalDefault);
                             return (
                               <td key={h.mes} className="py-3 px-2 text-center align-top">
-                                {val && val !== "-" && !sinMeta(kpi.goalDefault) ? (
+                                {val && val !== "-" && !sinMeta(kpi.goalDefault, kpi.id) ? (
                                   <span className={`inline-block min-w-[3rem] px-1.5 py-1 rounded-md text-xs tabular-nums ${c || "text-slate-600"}`}>
                                     {val}
                                   </span>
@@ -1827,6 +2000,12 @@ export default function StoplightReportSuperadmin({ vendorMode = false, comprasM
         resumen={detalleKpi ? resumenDe(detalleKpi) : null}
         subtitulo={`${empresaLabel} · ${mesTitulo}`}
         onClose={() => setDetalleKpi(null)}
+        extra={(() => {
+          const k = detalleKpi ? kpisDepto.get(detalleKpi) : undefined;
+          return k ? (
+            <CargaManualKpi kpi={k} mes={selectedMes} companyId={selectedCompanyId} editable={isSuperAdmin} onGuardado={fetchDeptosData} />
+          ) : null;
+        })()}
       />
 
       <KpiInfoModal
