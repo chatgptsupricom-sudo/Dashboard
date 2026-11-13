@@ -16,12 +16,15 @@ import {
   armarEstado,
   cruzarBanco,
   leerFilasExcel,
+  mismaReferencia,
   type ComprobanteBanco,
   type EstadoLeido,
   type FilaEstado,
   type Movimiento,
   type PagoOdoo,
+  type VerificacionApi,
 } from "@/lib/administracion/bancosCruce";
+import { claveTransferencia, credencialesMercantil, verificarEnMercantil } from "@/lib/administracion/mercantil";
 
 /**
  * Conciliacion bancaria (rol Administracion), como la de Binance pero por
@@ -107,6 +110,23 @@ async function ensureTablas() {
       INDEX (archivo_sha)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  // Columnas que llegaron despues: la verificacion en el banco por la API
+  // (Mercantil) y el cobro de Odoo registrado desde el panel.
+  const { rows: cols } = await query("SHOW COLUMNS FROM banco_comprobantes");
+  const hay = new Set(cols.map((c: any) => c.Field));
+  const nuevas: [string, string][] = [
+    ["api_estado", "VARCHAR(20) NULL"],
+    ["api_detalle", "TEXT NULL"],
+    ["api_clave", "VARCHAR(100) NULL"],
+    ["api_at", "DATETIME NULL"],
+    ["odoo_pago_id", "INT NULL"],
+    ["odoo_registrado_por", "VARCHAR(190) NULL"],
+    ["odoo_registrado_at", "DATETIME NULL"],
+  ];
+  for (const [col, tipo] of nuevas) {
+    if (!hay.has(col)) await db.execute(`ALTER TABLE banco_comprobantes ADD COLUMN ${col} ${tipo}`);
+  }
+  if (!hay.has("api_clave")) await db.execute("ALTER TABLE banco_comprobantes ADD INDEX idx_api_clave (journal_id, api_clave)");
   // Movimiento <-> cobro de Odoo amarrado a mano.
   await db.execute(`
     CREATE TABLE IF NOT EXISTS banco_amarres (
@@ -425,7 +445,12 @@ export async function guardarComprobante(
         email,
       ],
     );
-    return { id: res.insertId as number, referencia, monto, fecha, cliente };
+    const id = res.insertId as number;
+    const api = await verificarComprobante(cuenta, id).catch((e: any) => {
+      console.error("[bancos] verificar en el banco:", e?.message);
+      return null;
+    });
+    return { id, referencia, monto, fecha, cliente, api };
   } catch (e: any) {
     if (e?.code !== "ER_DUP_ENTRY") throw e;
     const { rows } = await query(
@@ -448,6 +473,276 @@ export async function imagenComprobante(cuenta: CuentaBanco, id: number) {
 export async function borrarComprobante(cuenta: CuentaBanco, id: number) {
   await ensureTablas();
   await query("DELETE FROM banco_comprobantes WHERE id = ? AND journal_id = ?", [id, cuenta.id]);
+}
+
+// ---------- Verificacion en el banco (API de Mercantil) ----------
+
+/**
+ * Consulta el comprobante en el banco y guarda la respuesta. Si la misma
+ * transferencia ya la confirmo otro comprobante de la cuenta, queda "duplicado".
+ * null si la cuenta no tiene API.
+ */
+export async function verificarComprobante(cuenta: CuentaBanco, id: number): Promise<VerificacionApi | null> {
+  await ensureTablas();
+  const cred = await credencialesMercantil(cuenta.id, cuenta.sede);
+  if (!cred) return null;
+  const { rows } = await query(
+    `SELECT referencia, monto, moneda, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, banco
+       FROM banco_comprobantes WHERE id = ? AND journal_id = ?`,
+    [id, cuenta.id],
+  );
+  const c: any = rows[0];
+  if (!c) return null;
+  const monto = Number(c.monto);
+  let v = await verificarEnMercantil(cred, { referencia: c.referencia, monto, moneda: c.moneda, fecha: c.fecha, banco: c.banco });
+  const clave = claveTransferencia(v, c.referencia, monto);
+  if (clave) {
+    const { rows: otro } = await query(
+      "SELECT id, referencia, cliente FROM banco_comprobantes WHERE journal_id = ? AND api_clave = ? AND id <> ? LIMIT 1",
+      [cuenta.id, clave, id],
+    );
+    const o: any = otro[0];
+    if (o) v = { ...v, estado: "duplicado", mensaje: `Es la misma transferencia del comprobante ${o.referencia} (${o.cliente || "sin cliente"})` };
+  }
+  await query(
+    "UPDATE banco_comprobantes SET api_estado = ?, api_detalle = ?, api_clave = ?, api_at = NOW() WHERE id = ? AND journal_id = ?",
+    [v.estado, JSON.stringify(v), v.estado === "confirmado" ? clave : null, id, cuenta.id],
+  );
+  return v;
+}
+
+/** Vuelve a consultar en el banco los comprobantes de la semana que no estan confirmados. */
+export async function verificarPendientes(cuenta: CuentaBanco, lunes: string) {
+  if (!rangoSemana(lunes)) throw new Error("Semana inválida");
+  await ensureTablas();
+  const { rows } = await query(
+    `SELECT id FROM banco_comprobantes
+      WHERE journal_id = ? AND fecha BETWEEN ? AND ?
+        AND (api_estado IS NULL OR api_estado IN ('no_encontrado', 'error'))
+      ORDER BY fecha, id`,
+    [cuenta.id, lunes, sumarDias(lunes, 6)],
+  );
+  const resultado: Record<string, number> = {};
+  for (const r of rows as any[]) {
+    const v = await verificarComprobante(cuenta, r.id);
+    if (!v) break;
+    resultado[v.estado] = (resultado[v.estado] || 0) + 1;
+    // Mercantil caido: no tiene sentido seguir con los demas.
+    if (v.estado === "error") break;
+  }
+  return { revisados: rows.length, resultado };
+}
+
+// ---------- Registrar el cobro en Odoo ----------
+
+export type ClienteOdoo = { id: number; nombre: string; rif: string; vendedor: string; vendedorId: number | null };
+
+const aCliente = (p: any): ClienteOdoo => ({
+  id: p.id,
+  nombre: String(p.name || ""),
+  rif: String(p.vat || ""),
+  vendedor: Array.isArray(p.user_id) ? String(p.user_id[1]) : "",
+  vendedorId: Array.isArray(p.user_id) ? p.user_id[0] : null,
+});
+
+/** Clientes de la sede por nombre o RIF (para elegir a quien va el cobro). */
+export async function buscarClientes(cuenta: CuentaBanco, texto: string): Promise<ClienteOdoo[]> {
+  const t = texto.trim();
+  if (t.length < 3) return [];
+  const digitos = t.replace(/\D/g, "");
+  // Fichas principales (no contactos); un cliente persona natural no es is_company.
+  const dominio: any[] = [
+    ["parent_id", "=", false],
+    "|",
+    ["name", "ilike", t],
+    ["vat", "ilike", digitos.length >= 5 ? digitos.replace(/^0+/, "") : t],
+  ];
+  const filas = await callOdooRPCEstricto<any[]>("res.partner", "search_read", [dominio], {
+    fields: ["name", "vat", "user_id"],
+    limit: 15,
+    order: "customer_rank desc, name",
+    context: { allowed_company_ids: [cuenta.sede] },
+  });
+  return (filas || []).map(aCliente);
+}
+
+/** Bolivares por dolar (BCV) del dia o del ultimo dia antes con tasa, de la sede de la cuenta. */
+async function tasaBcv(sede: number, fecha: string): Promise<number> {
+  const filas = await callOdooRPCEstricto<any[]>(
+    "res.currency.rate",
+    "search_read",
+    [[["company_id", "=", sede], ["currency_id.name", "=", "USD"], ["name", "<=", fecha]]],
+    { fields: ["inverse_rate"], order: "name desc", limit: 1, context: { allowed_company_ids: [sede] } },
+  );
+  return Math.round((Number(filas?.[0]?.inverse_rate) || 0) * 100) / 100;
+}
+
+/** Cobro de Odoo ya registrado en el diario con esa referencia y monto (para no registrarlo dos veces). */
+async function cobroExistente(cuenta: CuentaBanco, referencia: string, monto: number, fecha: string) {
+  const pagos = await callOdooRPCEstricto<any[]>(
+    "account.payment",
+    "search_read",
+    [
+      [
+        ["journal_id", "=", cuenta.id],
+        ["payment_type", "=", "inbound"],
+        ["state", "!=", "cancel"],
+        ["amount", "=", monto],
+        ["date", ">=", sumarDias(fecha, -30)],
+      ],
+    ],
+    { fields: ["name", "ref", "state"], context: { allowed_company_ids: [cuenta.sede] } },
+  );
+  return (pagos || []).find((p) => mismaReferencia(String(p.ref || ""), referencia)) || null;
+}
+
+type ComprobanteRegistro = {
+  id: number;
+  referencia: string;
+  monto: number;
+  fecha: string;
+  motivo: string;
+  cliente: string;
+  api: VerificacionApi;
+  odooPagoId: number | null;
+};
+
+/** El comprobante si se puede registrar en Odoo, o el motivo por el que no. */
+async function comprobanteParaRegistrar(cuenta: CuentaBanco, id: number): Promise<ComprobanteRegistro | { error: string }> {
+  await ensureTablas();
+  const { rows } = await query(
+    `SELECT id, referencia, monto, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, motivo, cliente, api_estado, api_detalle, odoo_pago_id
+       FROM banco_comprobantes WHERE id = ? AND journal_id = ?`,
+    [id, cuenta.id],
+  );
+  const r: any = rows[0];
+  if (!r) return { error: "Ese comprobante no existe en esta cuenta" };
+  if (r.odoo_pago_id !== null) return { error: "Este comprobante ya se registró en Odoo desde el panel" };
+  if (r.api_estado !== "confirmado") return { error: "Solo se registra un comprobante que el banco confirmó" };
+  const api = JSON.parse(r.api_detalle || "{}") as VerificacionApi;
+  const monto = Number(r.monto);
+  const fecha = api.fecha || r.fecha;
+  const existente = await cobroExistente(cuenta, r.referencia, monto, fecha);
+  if (existente) return { error: `Ya está en Odoo: ${existente.name} (ref ${existente.ref})` };
+  return { id: r.id, referencia: r.referencia, monto, fecha, motivo: r.motivo, cliente: r.cliente, api, odooPagoId: null };
+}
+
+/**
+ * Lo que se va a registrar en Odoo, para que lo revisen antes: los mismos campos
+ * que llena Cuentas por Cobrar a mano en los cobros de Mercantil (diario, metodo
+ * Manual, referencia del banco, tasa propia, descripcion y el vendedor del cliente).
+ */
+export async function vistaPreviaRegistro(cuenta: CuentaBanco, id: number) {
+  const c = await comprobanteParaRegistrar(cuenta, id);
+  if ("error" in c) return c;
+  // Clientes sugeridos: por la cedula/RIF de quien pago (segun el banco) y por el nombre del archivo.
+  const porRif = c.api.pagadorId ? await buscarClientes(cuenta, c.api.pagadorId.replace(/^[A-Z]0*/i, "")) : [];
+  const porNombre = c.cliente ? await buscarClientes(cuenta, c.cliente) : [];
+  const vistos = new Set<number>();
+  const sugeridos = [...porRif, ...porNombre].filter((p) => !vistos.has(p.id) && vistos.add(p.id)).slice(0, 10);
+  return {
+    comprobante: c,
+    diario: cuenta.nombre,
+    moneda: cuenta.moneda,
+    metodo: "Manual",
+    tasaBcv: await tasaBcv(cuenta.sede, c.fecha),
+    sugeridos,
+    descripcion: c.motivo,
+  };
+}
+
+const escaparHtml = (s: string) => s.replace(/[&<>"]/g, (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[x]!);
+
+/**
+ * Registra el cobro en Odoo y lo confirma, con una nota en el chatter de quien
+ * lo aprobo en el panel (en Odoo queda a nombre del usuario de la API). Se marca
+ * el comprobante antes de crear (odoo_pago_id = 0): dos clics no crean dos cobros.
+ */
+export async function registrarCobro(
+  cuenta: CuentaBanco,
+  id: number,
+  datos: { partnerId: number; tasa: number; descripcion: string },
+  autor: { nombre: string; email: string },
+) {
+  const c = await comprobanteParaRegistrar(cuenta, id);
+  if ("error" in c) return c;
+  const [res]: any = await db.execute(
+    "UPDATE banco_comprobantes SET odoo_pago_id = 0, odoo_registrado_por = ? WHERE id = ? AND journal_id = ? AND odoo_pago_id IS NULL",
+    [autor.email, id, cuenta.id],
+  );
+  if (!res.affectedRows) return { error: "Otra persona lo está registrando" };
+  const soltar = () =>
+    query("UPDATE banco_comprobantes SET odoo_pago_id = NULL, odoo_registrado_por = NULL WHERE id = ? AND odoo_pago_id = 0", [id]);
+  const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
+  let pagoId: number;
+  try {
+    const cliente = (await callOdooRPCEstricto<any[]>("res.partner", "read", [[datos.partnerId], ["name", "user_id"]], { context: ctx }))?.[0];
+    if (!cliente) throw new Error("El cliente no existe en Odoo");
+    const diario = (await callOdooRPCEstricto<any[]>("account.journal", "read", [[cuenta.id], ["currency_id"]], { context: ctx }))?.[0];
+    const metodos = await callOdooRPCEstricto<any[]>(
+      "account.payment.method.line",
+      "search_read",
+      [[["journal_id", "=", cuenta.id], ["payment_type", "=", "inbound"]]],
+      { fields: ["name"], context: ctx },
+    );
+    const metodo = metodos?.find((m) => /manual/i.test(m.name)) || metodos?.[0];
+    if (!metodo) throw new Error("El diario no tiene método de pago de entrada");
+    const montoUsd = Math.round((c.monto / datos.tasa) * 100) / 100;
+    pagoId = (await callOdooRPCEstricto<number>(
+      "account.payment",
+      "create",
+      [
+        {
+          payment_type: "inbound",
+          partner_type: "customer",
+          partner_id: datos.partnerId,
+          journal_id: cuenta.id,
+          payment_method_line_id: metodo.id,
+          ...(Array.isArray(diario?.currency_id) ? { currency_id: diario.currency_id[0] } : {}),
+          amount: c.monto,
+          date: c.fecha,
+          ref: c.referencia,
+          // Como los registra CxC: tasa propia del cobro y su equivalente en dolares.
+          custom_rate: true,
+          tax_today: datos.tasa,
+          amount_local: montoUsd,
+          amount_ref: c.monto,
+          amount_total_pagar: c.monto,
+          payment_description: `<p>${escaparHtml(datos.descripcion)}</p>`,
+          ...(Array.isArray(cliente.user_id) ? { salesperson_id: cliente.user_id[0] } : {}),
+        },
+      ],
+      { context: ctx },
+    )) as number;
+    if (!pagoId) throw new Error("Odoo no devolvió el cobro creado");
+  } catch (e: any) {
+    await soltar();
+    throw e;
+  }
+  await query("UPDATE banco_comprobantes SET odoo_pago_id = ?, odoo_registrado_at = NOW() WHERE id = ?", [pagoId, id]);
+  let confirmado = true;
+  let aviso: string | undefined;
+  try {
+    await callOdooRPCEstricto("account.payment", "action_post", [[pagoId]], { context: ctx });
+  } catch (e: any) {
+    confirmado = false;
+    aviso = `El cobro quedó en borrador en Odoo: ${String(e?.message || "error").slice(0, 200)}`;
+  }
+  const a = c.api;
+  try {
+    await callOdooRPCEstricto("account.payment", "message_post", [[pagoId]], {
+      body:
+        `Cobro registrado desde el panel (Conciliación bancaria) por ${escaparHtml(autor.nombre || autor.email)} (${escaparHtml(autor.email)}). ` +
+        `Verificado en Mercantil: transferencia del ${a.fecha} ${a.hora || ""} de ${escaparHtml(a.pagador || "—")} (${escaparHtml(a.pagadorId || "—")}), ` +
+        `ref ${escaparHtml(c.referencia)}, estatus ${a.estatus || "—"}.`,
+      message_type: "comment",
+      subtype_xmlid: "mail.mt_note",
+    });
+  } catch (e: any) {
+    console.warn("[bancos] sin nota en el chatter:", e?.message);
+  }
+  const pago = (await callOdooRPCEstricto<any[]>("account.payment", "read", [[pagoId], ["name", "state"]], { context: ctx }).catch(() => null))?.[0];
+  return { id: pagoId, nombre: String(pago?.name || ""), estado: String(pago?.state || ""), confirmado, aviso };
 }
 
 /** Amarra a mano un comprobante con un movimiento (null = soltarlo). */
@@ -508,13 +803,14 @@ export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
     ),
     query(
       `SELECT id, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, referencia, monto, moneda, cuenta_origen, banco, motivo,
-              cliente, movimiento_huella, archivo_nombre, subido_por
+              cliente, movimiento_huella, archivo_nombre, subido_por, api_detalle, odoo_pago_id
          FROM banco_comprobantes WHERE journal_id = ? AND fecha BETWEEN ? AND ? ORDER BY fecha, id`,
       [cuenta.id, desde, hasta],
     ),
     query("SELECT huella, pago_odoo_id FROM banco_amarres WHERE journal_id = ?", [cuenta.id]),
     cobrosOdoo(cuenta, desde, hasta),
   ]);
+  const mercantil = !!(await credencialesMercantil(cuenta.id, cuenta.sede));
   const movimientos: Movimiento[] = movs.rows.map((r: any) => ({
     id: r.huella,
     fecha: r.fecha,
@@ -536,6 +832,9 @@ export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
     movimientoId: r.movimiento_huella,
     archivoNombre: r.archivo_nombre,
     subidoPor: r.subido_por,
+    api: r.api_detalle ? (JSON.parse(r.api_detalle) as VerificacionApi) : null,
+    // 0 (registrandose en este momento) va como null.
+    odooPagoId: r.odoo_pago_id ? Number(r.odoo_pago_id) : null,
   }));
   const manuales = new Map<string, number>(amarres.rows.map((r: any) => [r.huella, Number(r.pago_odoo_id)]));
   const cubierto = (dia: string) => estados.rows.some((e: any) => dia >= e.desde && dia <= e.hasta);
@@ -543,7 +842,10 @@ export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
 
   const enSemana = (dia: string) => dia >= lunes && dia <= domingo;
   const pagosTomados = new Set(cruce.movimientos.filter((m) => m.pago).map((m) => m.pago!.id));
+  for (const id of cruce.pagosConfirmadosApi) pagosTomados.add(id);
   return {
+    /** La cuenta consulta los comprobantes en el banco (API de Mercantil). */
+    mercantil,
     movimientos: cruce.movimientos.filter((m) => enSemana(m.fecha)),
     /** Lo que salio de la cuenta en la semana (no se concilia, solo el total). */
     salidas: movimientos.filter((m) => m.monto < 0 && enSemana(m.fecha)).reduce((s, m) => s + m.monto, 0),
