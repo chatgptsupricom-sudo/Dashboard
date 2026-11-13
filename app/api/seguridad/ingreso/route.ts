@@ -63,6 +63,33 @@ function asegurarColumnasGarantiaNullables(): Promise<void> {
   return columnasGarantiaAjustadas;
 }
 
+// «Otro» control de la verificación de estado (si aplica: qué se revisó y si
+// está bien) y la nota u observación de Seguridad. Se agregan solas; la
+// referencia para phpMyAdmin es sql/seguridad_ingreso_otro_observacion.sql.
+const COLUMNAS_VERIFICACION: [string, string][] = [
+  ["otro_verificacion", "VARCHAR(200) DEFAULT NULL"],
+  ["otro_verificacion_ok", "TINYINT(1) DEFAULT NULL"],
+  ["observacion_seguridad", "TEXT DEFAULT NULL"],
+];
+let columnasVerificacion: Promise<void> | null = null;
+function asegurarColumnasVerificacion(): Promise<void> {
+  if (!columnasVerificacion) {
+    columnasVerificacion = (async () => {
+      const r = await query("SHOW COLUMNS FROM seguridad_ingresos");
+      const hay = new Set((r.rows as any[]).map((c) => String(c.Field)));
+      for (const [col, tipo] of COLUMNAS_VERIFICACION) {
+        if (hay.has(col)) continue;
+        await query(`ALTER TABLE seguridad_ingresos ADD COLUMN ${col} ${tipo}`);
+      }
+    })().catch((e) => {
+      // Que se reintente en el próximo ingreso en vez de quedar marcado.
+      columnasVerificacion = null;
+      throw e;
+    });
+  }
+  return columnasVerificacion;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireSeguridad(request);
@@ -268,6 +295,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // «Otro», si aplica: con texto hay que declarar Sí o No; sin texto no se
+    // guarda nada. La observación de Seguridad es opcional.
+    const otroVerificacion = String(body.otro_verificacion ?? "").trim().slice(0, 200) || null;
+    const otroVerificacionOk = otroVerificacion ? body.otro_verificacion_ok : null;
+    if (otroVerificacion && typeof otroVerificacionOk !== "boolean") {
+      errors.push("Marca Sí o No en «Otro» (otro_verificacion_ok)");
+    }
+    const observacionSeguridad = String(body.observacion_seguridad ?? "").trim().slice(0, 1000) || null;
+
     // Clave de idempotencia de la cola offline del mostrador (#39). Opcional:
     // los envios con conexion no la mandan.
     const idempotencyKey = truncate(body.idempotency_key, MAX.idempotency_key);
@@ -344,6 +380,10 @@ export async function POST(request: NextRequest) {
     // Crea las columnas recibido_seguridad_nombre / recibido_rma_nombre si esta
     // base todavía no las tiene (#50).
     await asegurarEsquemaPersonal();
+    // Solo hace falta si vienen: así un ingreso sin «Otro» ni nota no se
+    // frena si la base todavía no deja agregar las columnas.
+    const conVerificacionExtra = !!(otroVerificacion || observacionSeguridad);
+    if (conVerificacionExtra) await asegurarColumnasVerificacion();
 
     const result = await query(
       `INSERT INTO seguridad_ingresos
@@ -351,8 +391,8 @@ export async function POST(request: NextRequest) {
          descripcion_falla, accesorios_integros, sin_manipulacion,
          recibido_por, recibido_seguridad_nombre, recibido_rma_nombre,
          foto_estado_url, idempotency_key,
-         nd_numero, cids)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         nd_numero, cids${conVerificacionExtra ? ", otro_verificacion, otro_verificacion_ok, observacion_seguridad" : ""})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${conVerificacionExtra ? ", ?, ?, ?" : ""})`,
       [
         rmaCaseId,
         fechaEntrega,
@@ -370,6 +410,9 @@ export async function POST(request: NextRequest) {
         idempotencyKey,
         guia,
         cidsActa,
+        ...(conVerificacionExtra
+          ? [otroVerificacion, otroVerificacion ? (otroVerificacionOk ? 1 : 0) : null, observacionSeguridad]
+          : []),
       ],
     );
 

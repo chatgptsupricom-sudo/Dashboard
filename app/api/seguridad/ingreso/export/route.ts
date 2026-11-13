@@ -46,6 +46,9 @@ export async function GET(request: NextRequest) {
       { header: "Falla reportada", key: "descripcion_falla", width: 46 },
       { header: "Accesorios íntegros", key: "accesorios_integros", width: 18, valor: (f) => siNo(f.accesorios_integros) },
       { header: "Sin manipulación", key: "sin_manipulacion", width: 17, valor: (f) => siNo(f.sin_manipulacion) },
+      { header: "Otro (si aplica)", key: "otro_verificacion", width: 26, valor: (f) => f.otro_verificacion || "" },
+      { header: "Otro: ¿bien?", key: "otro_verificacion_ok", width: 12, valor: (f) => (f.otro_verificacion ? siNo(f.otro_verificacion_ok) : "") },
+      { header: "Observación de Seguridad", key: "observacion_seguridad", width: 40, valor: (f) => f.observacion_seguridad || "" },
       // Estos dos checks salieron del formulario de ingreso (#48): la garantía
       // ahora vive congelada en el ticket de RMA. Las columnas quedan por el
       // histórico — en filas nuevas salen en blanco.
