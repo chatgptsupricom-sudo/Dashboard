@@ -189,6 +189,29 @@ export type ComprobanteBanco = {
   movimientoId: string | null;
   archivoNombre: string;
   subidoPor: string;
+  /** Lo que respondio la API del banco (Busqueda de Transferencias de Mercantil), o null si no se consulto. */
+  api?: VerificacionApi | null;
+  /** Cobro de Odoo que se registro desde el panel con este comprobante. */
+  odooPagoId?: number | null;
+};
+
+export type EstadoApi = "confirmado" | "no_encontrado" | "duplicado" | "no_aplica" | "error";
+export type VerificacionApi = {
+  estado: EstadoApi;
+  /** Cuando se consulto (ISO). */
+  el: string;
+  /** Texto para la pantalla: por que no se encontro, el error del banco... */
+  mensaje?: string;
+  fecha?: string;
+  hora?: string;
+  /** A aprobada, L pendiente por liquidar, P pendiente, R rechazada. */
+  estatus?: string;
+  pagador?: string;
+  pagadorId?: string;
+  bancoId?: number;
+  canal?: string;
+  /** El banco dice que esa transferencia ya se habia consultado antes (por el panel o por Odoo). */
+  yaConsultada?: boolean;
 };
 
 /** Como se amarro el movimiento con el cobro de Odoo. */
@@ -249,8 +272,11 @@ const DIAS_POR_MONTO = 3;
  * de la descripcion) + monto; la referencia del cobro de Odoo que ya se amarro
  * (Banesco Panama guarda en Odoo el nro. del comprobante); los ultimos digitos
  * de la cuenta de origen dentro de la descripcion + monto; o un solo movimiento
- * de ese monto en +-2 dias ("por_revisar"). Sin movimiento: "no_encontrado" si el
- * estado de cuenta cubre su dia (`cubierto`), si no "sin_estado".
+ * de ese monto en +-2 dias ("por_revisar"). Sin movimiento: si el banco lo
+ * confirmo por la API, se busca su cobro en Odoo (el registrado desde el panel,
+ * o misma referencia + monto en +-7 dias): "conciliado" o "sin_registrar"; si la
+ * API no lo encontro, "no_encontrado"; si no, "no_encontrado" si el estado de
+ * cuenta cubre su dia (`cubierto`), si no "sin_estado".
  */
 export function cruzarBanco(
   movimientos: Movimiento[],
@@ -279,6 +305,8 @@ export function cruzarBanco(
   const movDePago = new Map([...pagoDe].map(([movId, { pago }]) => [pago.id, movId]));
   const porMovId = new Map(entradas.map((m) => [m.id, m]));
   const movsUsados = new Set<string>();
+  // Cobros de Odoo que tomo un comprobante confirmado por la API del banco: la plata esta en el banco.
+  const usadosApi = new Set<number>();
   const salidaComp: ComprobanteCruzado[] = comprobantes.map((c) => {
     const libre = (m: Movimiento) => !movsUsados.has(m.id) && mismoMonto(m.monto, c.monto);
     const digitos = (s: string) => s.replace(/\D/g, "");
@@ -309,7 +337,22 @@ export function cruzarBanco(
         revisar = true;
       }
     }
-    if (!mov) return { ...c, estado: cubierto(c.fecha) ? "no_encontrado" : "sin_estado", movimiento: null, pago: null };
+    if (!mov && c.api?.estado === "confirmado") {
+      const libreApi = (p: PagoOdoo | undefined) => p && !usados.has(p.id) && !usadosApi.has(p.id);
+      const registrado = porId.get(c.odooPagoId ?? -1);
+      const pago = libreApi(registrado)
+        ? registrado!
+        : pagos
+            .filter((p) => libreApi(p) && mismoMonto(p.monto, c.monto) && mismaReferencia(p.ref, c.referencia))
+            .sort((a, b) => dias(a.fecha, c.fecha) - dias(b.fecha, c.fecha))
+            .find((p) => dias(p.fecha, c.fecha) <= DIAS_POR_REFERENCIA);
+      if (pago) usadosApi.add(pago.id);
+      return { ...c, estado: pago ? "conciliado" : "sin_registrar", movimiento: null, pago: pago ?? null };
+    }
+    if (!mov) {
+      const noEsta = c.api?.estado === "no_encontrado" || cubierto(c.fecha);
+      return { ...c, estado: noEsta ? "no_encontrado" : "sin_estado", movimiento: null, pago: null };
+    }
     movsUsados.add(mov.id);
     const pago = pagoDe.get(mov.id)?.pago ?? null;
     const estado: EstadoComprobante = !pago ? "sin_registrar" : revisar ? "por_revisar" : "conciliado";
@@ -331,6 +374,60 @@ export function cruzarBanco(
     movimientos: salidaMovs,
     comprobantes: salidaComp,
     /** Cobros de Odoo que no estan en el estado de cuenta, en dias que el estado cubre. */
-    pagosSinMovimiento: pagos.filter((p) => !usados.has(p.id) && cubierto(p.fecha)),
+    pagosSinMovimiento: pagos.filter((p) => !usados.has(p.id) && !usadosApi.has(p.id) && cubierto(p.fecha)),
+    /** Cobros de Odoo cuyo comprobante confirmo el banco por la API (no estan en el estado de cuenta). */
+    pagosConfirmadosApi: usadosApi,
   };
 }
+
+// ---------- Bancos de Venezuela (codigo SUDEBAN, para la API de Mercantil) ----------
+
+/** Codigos en el orden en que se prueban cuando el comprobante no dice el banco (los mas usados primero). */
+export const BANCOS_VE: { codigo: number; nombre: string; patron: RegExp }[] = [
+  { codigo: 134, nombre: "Banesco", patron: /banesco/ },
+  { codigo: 104, nombre: "Venezolano de Crédito", patron: /venezolano/ },
+  { codigo: 102, nombre: "Banco de Venezuela", patron: /\bbdv\b|venezuela/ },
+  { codigo: 105, nombre: "Mercantil", patron: /mercantil/ },
+  { codigo: 108, nombre: "Provincial", patron: /provincial|bbva/ },
+  { codigo: 191, nombre: "BNC", patron: /\bbnc\b|nacional de credito/ },
+  { codigo: 172, nombre: "Bancamiga", patron: /bancamiga/ },
+  { codigo: 114, nombre: "Bancaribe", patron: /caribe/ },
+  { codigo: 174, nombre: "Banplus", patron: /banplus/ },
+  { codigo: 151, nombre: "BFC Fondo Común", patron: /\bbfc\b|fondo comun/ },
+  { codigo: 175, nombre: "Banco Digital de los Trabajadores", patron: /bicentenario|trabajadores|\bbdt\b/ },
+  { codigo: 115, nombre: "Exterior", patron: /exterior/ },
+  { codigo: 171, nombre: "Activo", patron: /activo/ },
+  { codigo: 163, nombre: "Tesoro", patron: /tesoro/ },
+  { codigo: 128, nombre: "Caroní", patron: /caroni/ },
+  { codigo: 138, nombre: "Plaza", patron: /plaza/ },
+  { codigo: 156, nombre: "100% Banco", patron: /100\s*%|100 banco|cien por ciento/ },
+  { codigo: 168, nombre: "Bancrecer", patron: /bancrecer/ },
+  { codigo: 169, nombre: "R4", patron: /\br4\b|mi ?banco/ },
+  { codigo: 177, nombre: "Banfanb", patron: /banfanb|fuerza armada/ },
+  { codigo: 137, nombre: "Sofitasa", patron: /sofitasa/ },
+  { codigo: 157, nombre: "DelSur", patron: /del ?sur/ },
+  { codigo: 178, nombre: "N58", patron: /\bn58\b/ },
+  { codigo: 166, nombre: "Agrícola", patron: /agricola/ },
+  { codigo: 146, nombre: "Bangente", patron: /bangente/ },
+  { codigo: 173, nombre: "Internacional de Desarrollo", patron: /internacional de desarrollo/ },
+];
+
+/**
+ * Codigo del banco desde el texto del comprobante ("Banesco", "BANCO DE
+ * VENEZUELA", "0134"...). null si no se reconoce: se prueban todos.
+ */
+export function codigoBanco(texto: string): number | null {
+  const t = String(texto || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+  const num = /\b0?(1\d\d)\b/.exec(t);
+  if (num && BANCOS_VE.some((b) => b.codigo === Number(num[1]))) return Number(num[1]);
+  return BANCOS_VE.find((b) => b.patron.test(t))?.codigo ?? null;
+}
+
+/** Los ultimos 8 digitos de la referencia, como los pide Mercantil ("99912345678" -> "12345678"). */
+export const referenciaMercantil = (ref: string) => String(ref || "").replace(/\D/g, "").slice(-8);
+
+/** Moneda del comprobante que se puede buscar en una cuenta en bolivares ('' = no se leyo: se asume Bs). */
+export const esBolivares = (moneda: string) => /^(|VES|VEF|BS|BSS|BSD|BS\.?)$/i.test(String(moneda || "").trim());

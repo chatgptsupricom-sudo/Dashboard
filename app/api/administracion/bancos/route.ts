@@ -12,6 +12,11 @@ import {
   esExcel,
   guardarComprobante,
   guardarEstado,
+  buscarClientes,
+  registrarCobro,
+  verificarComprobante,
+  verificarPendientes,
+  vistaPreviaRegistro,
   type CuentaBanco,
 } from "@/lib/administracion/bancos";
 import { respuestaSedeNoPermitida, SEDES_VALIDAS } from "@/lib/auth/sedeRol";
@@ -116,12 +121,30 @@ export async function POST(request: NextRequest) {
 // PATCH /api/administracion/bancos
 //   {cuenta, movimiento, pago_id}      — movimiento <-> cobro de Odoo a mano (pago_id null = soltar)
 //   {cuenta, comprobante, movimiento}  — comprobante <-> movimiento a mano (movimiento null = soltar)
+//   {cuenta, verificar: id}            — volver a consultar un comprobante en el banco (API de Mercantil)
+//   {cuenta, verificar: "pendientes", semana} — los de la semana que el banco no confirmo
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
   const b = await request.json().catch(() => ({}));
   const cuenta = await cuentaPedida(auth.payload, b?.cuenta);
   if (cuenta instanceof NextResponse) return cuenta;
+  if (b?.verificar !== undefined) {
+    try {
+      if (b.verificar === "pendientes") {
+        if (!rangoSemana(String(b?.semana || ""))) return NextResponse.json({ error: "Semana inválida" }, { status: 400 });
+        return NextResponse.json({ success: true, ...(await verificarPendientes(cuenta, b.semana)) });
+      }
+      const id = Number(b.verificar);
+      if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Comprobante inválido" }, { status: 400 });
+      const api = await verificarComprobante(cuenta, id);
+      if (!api) return NextResponse.json({ error: "Esta cuenta no tiene la API del banco" }, { status: 400 });
+      return NextResponse.json({ success: true, api });
+    } catch (e: any) {
+      console.error("[bancos] verificar:", e?.message);
+      return NextResponse.json({ error: "No se pudo consultar el banco" }, { status: 502 });
+    }
+  }
   const movimiento = b?.movimiento ?? null;
   if (movimiento !== null && !HUELLA.test(String(movimiento))) {
     return NextResponse.json({ error: "Movimiento inválido" }, { status: 400 });
@@ -142,6 +165,46 @@ export async function PATCH(request: NextRequest) {
   } catch (e: any) {
     console.error("[bancos] amarrar:", e?.message);
     return NextResponse.json({ error: "No se pudo guardar" }, { status: 500 });
+  }
+}
+
+// PUT /api/administracion/bancos — registrar en Odoo el cobro de un comprobante que el banco confirmo.
+//   {cuenta, comprobante}                                   — vista previa (no crea nada)
+//   {cuenta, comprobante, buscar}                           — clientes de Odoo por nombre o RIF
+//   {cuenta, comprobante, aprobar: true, partner_id, tasa, descripcion} — lo crea y lo confirma en Odoo
+export async function PUT(request: NextRequest) {
+  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  if (auth.error) return auth.error;
+  const b = await request.json().catch(() => ({}));
+  const cuenta = await cuentaPedida(auth.payload, b?.cuenta);
+  if (cuenta instanceof NextResponse) return cuenta;
+  const id = Number(b?.comprobante);
+  if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Comprobante inválido" }, { status: 400 });
+  try {
+    if (typeof b?.buscar === "string") {
+      return NextResponse.json({ success: true, clientes: await buscarClientes(cuenta, b.buscar.slice(0, 80)) });
+    }
+    if (b?.aprobar !== true) {
+      const vista = await vistaPreviaRegistro(cuenta, id);
+      if ("error" in vista) return NextResponse.json({ error: vista.error }, { status: 409 });
+      return NextResponse.json({ success: true, ...vista });
+    }
+    const partnerId = Number(b?.partner_id);
+    const tasa = Number(b?.tasa);
+    const descripcion = String(b?.descripcion || "").trim().slice(0, 500);
+    if (!Number.isInteger(partnerId) || partnerId <= 0) return NextResponse.json({ error: "Elige el cliente" }, { status: 400 });
+    if (!(tasa > 0 && tasa < 1e7)) return NextResponse.json({ error: "La tasa debe ser mayor que 0" }, { status: 400 });
+    if (!descripcion) return NextResponse.json({ error: "Escribe la descripción (las facturas que paga)" }, { status: 400 });
+    const p = auth.payload as any;
+    const r = await registrarCobro(cuenta, id, { partnerId, tasa, descripcion }, {
+      nombre: String(p?.name || p?.nombre || ""),
+      email: String(p?.email || ""),
+    });
+    if ("error" in r) return NextResponse.json({ error: r.error }, { status: 409 });
+    return NextResponse.json({ success: true, ...r });
+  } catch (e: any) {
+    console.error("[bancos] registrar en Odoo:", e?.message);
+    return NextResponse.json({ error: `Odoo no lo aceptó: ${String(e?.message || "error").slice(0, 300)}` }, { status: 502 });
   }
 }
 

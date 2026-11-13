@@ -10,7 +10,7 @@ const fuente = fs.readFileSync(path.join(__dirname, "..", "lib/administracion/ba
 const js = ts.transpileModule(fuente, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const m = { exports: {} };
 new Function("require", "module", "exports", js)(require, m, m.exports);
-const { leerFilasExcel, armarEstado, montoDeCelda, fechaDeCelda, mismaReferencia, cruzarBanco } = m.exports;
+const { leerFilasExcel, armarEstado, montoDeCelda, fechaDeCelda, mismaReferencia, cruzarBanco, codigoBanco, referenciaMercantil, esBolivares } = m.exports;
 
 // Montos y fechas
 assert.strictEqual(montoDeCelda("+1.394.295,35"), 1394295.35);
@@ -120,5 +120,32 @@ assert.deepStrictEqual(
   manual.movimientos.filter((x) => x.id[0] === "c").map((x) => [x.estado, x.pago.id]),
   [["manual", 4]],
 );
+
+// Sin estado de cuenta, con la API del banco (Mercantil)
+const api = (estado) => ({ estado, el: "2026-11-13T00:00:00Z" });
+const conApi = [
+  { ...comp(20, "2026-10-10", "0000888888", 7000), api: api("confirmado") }, // confirmado + cobro 5 por ref y monto
+  { ...comp(21, "2026-10-10", "777777", 7000), api: api("confirmado") }, // confirmado, sin cobro en Odoo
+  { ...comp(22, "2026-10-10", "666666", 1), api: api("no_encontrado") }, // el banco no lo encontro
+  { ...comp(23, "2026-10-10", "555555", 1), api: api("error") }, // error: como si no se hubiera consultado
+  { ...comp(24, "2026-10-01", "QWE111111", 50), api: api("confirmado"), odooPagoId: 4 }, // registrado desde el panel
+];
+const ra = cruzarBanco([], pagos, conApi, new Map(), () => false);
+assert.deepStrictEqual(
+  ra.comprobantes.map((c) => [c.estado, c.pago?.id ?? null]),
+  [["conciliado", 5], ["sin_registrar", null], ["no_encontrado", null], ["sin_estado", null], ["conciliado", 4]],
+);
+assert.deepStrictEqual([...ra.pagosConfirmadosApi].sort(), [4, 5]);
+
+// Bancos y referencias para la API de Mercantil
+assert.strictEqual(codigoBanco("BANESCO BANCO UNIVERSAL"), 134);
+assert.strictEqual(codigoBanco("Banco de Venezuela"), 102);
+assert.strictEqual(codigoBanco("Venezolano de Crédito"), 104);
+assert.strictEqual(codigoBanco("0191 - BNC"), 191);
+assert.strictEqual(codigoBanco("Banco Nacional de Crédito"), 191);
+assert.strictEqual(codigoBanco("BBVA Provincial"), 108);
+assert.strictEqual(codigoBanco("Pago móvil"), null);
+assert.strictEqual(referenciaMercantil("13427068326"), "27068326");
+assert.ok(esBolivares("") && esBolivares("VES") && esBolivares("Bs") && !esBolivares("USD"));
 
 console.log("check-bancos: OK");
