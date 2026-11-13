@@ -59,6 +59,8 @@ export async function GET(request: NextRequest) {
       { header: "Serial", key: "ingreso_serial", width: 22 },
       { header: "Facturas", key: "facturas_json", width: 30, valor: (f) => facturas(f.facturas_json) },
       { header: "Accesorios íntegros", key: "accesorios_integros", width: 18, valor: (f) => siNo(f.accesorios_integros) },
+      { header: "Otro (si aplica)", key: "otro_verificacion", width: 26, valor: (f) => f.otro_verificacion || "" },
+      { header: "Otro: ¿bien?", key: "otro_verificacion_ok", width: 12, valor: (f) => (f.otro_verificacion ? siNo(f.otro_verificacion_ok) : "") },
       { header: "Observaciones", key: "observaciones", width: 46 },
       { header: "Firmado", key: "firma_url", width: 10, valor: (f) => siNo(!!f.firma_url) },
       { header: "Ingreso", key: "ingreso_id", width: 10 },

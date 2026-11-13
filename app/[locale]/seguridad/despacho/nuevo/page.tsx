@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Loader2, Lock, MapPin, Package, Send, Store, Truck, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, KeyRound, Loader2, Lock, MapPin, Package, Send, Store, Truck, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { GarantiaBadge } from "@/components/seguridad/GarantiaIngreso";
 import { SignaturePad } from "@/components/seguridad/SignaturePad";
-import { CheckRow, Dato, FirmaCampo, PersonaSelect, type Persona } from "@/components/seguridad/FormActa";
+import { CheckOtro, CheckRow, Dato, FirmaCampo, PersonaSelect, type Persona } from "@/components/seguridad/FormActa";
 import {
   firmasRequeridasDespacho,
   type MetodoEntrega,
@@ -64,7 +64,9 @@ type Detalle = {
   }[];
 };
 
-type Firma = { nombre: string; data: string | null };
+/** Firma de cada rol: el trazo, o la clave personal en el caso de Seguridad. */
+type Firma = { nombre: string; data: string | null; clave?: string };
+const claveValida = (v: string | undefined) => /^d{4,6}$/.test(v || "");
 
 const TERMINADOS = ["reparado", "nota_credito", "no_procesado"];
 const ESTADO: Record<string, { texto: string; clase: string }> = {
@@ -99,6 +101,9 @@ export default function NuevoDespachoPage() {
 
   const [salen, setSalen] = useState<number[]>([]);
   const [accesorios, setAccesorios] = useState<boolean | null>(null);
+  // «Otro» control, si aplica: qué se revisó y si está bien.
+  const [otroDetalle, setOtroDetalle] = useState("");
+  const [otroOk, setOtroOk] = useState<boolean | null>(null);
   const [observaciones, setObservaciones] = useState("");
   const [clienteRetira, setClienteRetira] = useState("");
   const [firmas, setFirmas] = useState<Partial<Record<RolFirmaDespacho, Firma>>>({});
@@ -198,13 +203,19 @@ export default function NuevoDespachoPage() {
       setError(tf("error_accesorios"));
       return;
     }
+    if (otroDetalle.trim() && otroOk === null) {
+      setError(tfi("error_otro_sin_respuesta"));
+      return;
+    }
     if (!clienteRetira.trim()) {
       setError(tf("error_cliente_retira"));
       return;
     }
     const faltan = requeridas.filter((r) => {
       const f = firmas[r.rol];
-      return !f?.data || (r.rol !== "cliente" && !f.nombre);
+      // Seguridad firma con su clave, no con un trazo.
+      const firmo = r.rol === "seguridad" ? claveValida(f?.clave) : !!f?.data;
+      return !firmo || (r.rol !== "cliente" && !f?.nombre);
     });
     if (faltan.length) {
       setError(tf("error_firmas", { quienes: faltan.map((r) => tf(`firma_${r.rol}`)).join(", ") }));
@@ -216,12 +227,16 @@ export default function NuevoDespachoPage() {
       ingreso_id: detalle.ingreso.id,
       fecha_despacho: fechaDespacho,
       accesorios_integros: accesorios,
+      otro_verificacion: otroDetalle.trim() ? otroDetalle.trim().slice(0, 200) : null,
+      otro_verificacion_ok: otroDetalle.trim() ? otroOk : null,
       observaciones: observaciones.trim().slice(0, 5000) || undefined,
       cliente_retira: clienteRetira.trim().slice(0, 200),
       firmas: Object.fromEntries(
         requeridas.map((r) => [
           r.rol,
-          { nombre: r.rol === "cliente" ? clienteRetira.trim() : firmas[r.rol]?.nombre, data: firmas[r.rol]?.data },
+          r.rol === "seguridad"
+            ? { nombre: firmas[r.rol]?.nombre, clave: firmas[r.rol]?.clave }
+            : { nombre: r.rol === "cliente" ? clienteRetira.trim() : firmas[r.rol]?.nombre, data: firmas[r.rol]?.data },
         ]),
       ),
     };
@@ -461,6 +476,17 @@ export default function NuevoDespachoPage() {
                 yes={tf("yes")}
                 no={tf("no")}
               />
+              <CheckOtro
+                detalle={otroDetalle}
+                onDetalle={setOtroDetalle}
+                value={otroOk}
+                onChange={setOtroOk}
+                label={tfi("check_otro")}
+                siAplica={tfi("check_otro_si_aplica")}
+                placeholder={tfi("check_otro_placeholder")}
+                yes={tf("yes")}
+                no={tf("no")}
+              />
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                   {tf("field_observaciones")} <span className="text-slate-400 font-normal">({tfi("opcional")})</span>
@@ -502,9 +528,40 @@ export default function NuevoDespachoPage() {
                         gestionarLabel={tfi("recibido_gestionar")}
                       />
                     )}
-                    <FirmaCampo etiqueta={tf(`firma_${r.rol}`)} firmada={!!firmas[r.rol]?.data}>
-                      <SignaturePad onChange={(d) => setFirma(r.rol, { data: d })} height={130} />
-                    </FirmaCampo>
+                    {r.rol === "seguridad" ? (
+                      // Seguridad firma con su clave personal (Personal de
+                      // Seguridad), como en el despacho de mercancía.
+                      <div>
+                        <label
+                          htmlFor="clave-seguridad-despacho"
+                          className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-1.5"
+                        >
+                          <KeyRound className="w-3.5 h-3.5" />
+                          {tfi("clave_seguridad")} <span className="text-red-500">*</span>
+                          {claveValida(firmas.seguridad?.clave) && (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" aria-hidden />
+                          )}
+                        </label>
+                        <input
+                          id="clave-seguridad-despacho"
+                          type="password"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          maxLength={6}
+                          value={firmas.seguridad?.clave || ""}
+                          onChange={(e) => setFirma("seguridad", { clave: e.target.value.replace(/D/g, "").slice(0, 6) })}
+                          placeholder="••••"
+                          className={`w-full h-12 px-3 border rounded-[10px] text-lg tracking-[0.4em] focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100 ${
+                            claveValida(firmas.seguridad?.clave) ? "border-slate-200" : "border-amber-300"
+                          }`}
+                        />
+                        <p className="mt-1.5 text-[11px] text-slate-500">{tfi("clave_seguridad_ayuda")}</p>
+                      </div>
+                    ) : (
+                      <FirmaCampo etiqueta={tf(`firma_${r.rol}`)} firmada={!!firmas[r.rol]?.data}>
+                        <SignaturePad onChange={(d) => setFirma(r.rol, { data: d })} height={130} />
+                      </FirmaCampo>
+                    )}
                   </div>
                 ))}
               </div>

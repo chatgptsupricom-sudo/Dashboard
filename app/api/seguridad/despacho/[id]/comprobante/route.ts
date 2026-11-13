@@ -117,6 +117,9 @@ export async function GET(
   }
 
   const accesoriosOk = d.accesorios_integros === 1 || d.accesorios_integros === true;
+  // «Otro» control, si aplicó (columnas que se agregan solas: pueden faltar).
+  const otroDetalle: string | null = (d as any).otro_verificacion || null;
+  const otroOk = Number((d as any).otro_verificacion_ok) === 1;
 
   // Productos del envío que salieron en este despacho (issue #331).
   const productos = await leerProductosDespacho(Number(d.id)).catch(() => []);
@@ -160,7 +163,9 @@ export async function GET(
       return `
     <div class="sig">
       <div class="trazo">${
-        f ? `<img src="${f.data_url}" alt="Firma de ${esc(f.firmante_nombre)}">` : ""
+        !f ? "" : f.por_clave
+          ? `<span class="con-clave">Firmado con clave personal</span>`
+          : `<img src="${f.data_url}" alt="Firma de ${esc(f.firmante_nombre)}">`
       }</div>
       <div class="name">${esc(titulo)}</div>
       ${cargo ? `<div class="cargo">${esc(cargo)}</div>` : ""}
@@ -290,6 +295,7 @@ export async function GET(
     justify-content: center;
   }
   .sig .trazo img { max-height: 62px; max-width: 100%; }
+  .sig .trazo .con-clave { font-size: 11px; font-style: italic; color: #475569; padding-bottom: 4px; }
   .sig .cargo { color: #555; font-size: 10px; }
   .sig .cuando { color: #888; font-size: 9px; margin-top: 2px; }
   .sig {
@@ -341,6 +347,13 @@ export async function GET(
         </span>
       </span>
     </div>
+    ${otroDetalle ? `
+    <div class="field">
+      <span class="label">Otro: ${esc(otroDetalle)}</span>
+      <span class="value">
+        <span class="badge ${otroOk ? "" : "no"}">${otroOk ? "SI" : "NO"}</span>
+      </span>
+    </div>` : ""}
     ${ingreso ? `
     <div class="field">
       <span class="label">Cliente (ingreso original)</span>

@@ -15,6 +15,8 @@ import {
   type ProductoDespacho,
 } from "@/lib/seguridad/productosEnvio";
 import { guiaDeIngreso, siguienteGuia } from "@/lib/seguridad/guia";
+import { CLAVE_MAX, CLAVE_MIN, esClaveValida, verificarClaveSeguridad } from "@/lib/seguridad/clavePersonal";
+import { asegurarColumnasVerificacion, leerOtroVerificacion } from "@/lib/seguridad/verificacionOtro";
 
 
 
@@ -242,16 +244,31 @@ export async function POST(request: NextRequest) {
     if (typeof body.accesorios_integros !== "boolean") {
       errors.push("accesorios_integros es obligatorio (true o false)");
     }
+    // «Otro» control, si aplica (lib/seguridad/verificacionOtro.ts).
+    const otro = leerOtroVerificacion(body);
+    if (otro.error) errors.push(otro.error);
 
     // Firmas del acta, todas obligatorias: cliente que retira, RMA y
     // Seguridad (retiro físico o por ruta / encomienda, igual). Sin
-    // Seguridad, el cliente y RMA.
+    // Seguridad, el cliente y RMA. Seguridad no dibuja: firma con su clave
+    // personal (Personal de Seguridad, como en el despacho de mercancía) y
+    // queda sin imagen, firma_mime 'clave'.
     const firmas: { rol: string; nombre: string; png: { buffer: Buffer; mime: string } }[] = [];
+    let claveSeguridad: { nombre: string; clave: string } | null = null;
     for (const req of firmasRequeridasDespacho(sinSeguridad)) {
       const f = body.firmas?.[req.rol];
       const nombre = req.rol === "cliente" ? clienteRetira : truncate(f?.nombre, MAX.almacenista_nombre);
       if (!nombre?.trim()) {
         errors.push(`Falta el nombre de ${req.etiqueta}`);
+        continue;
+      }
+      if (req.rol === "seguridad") {
+        if (!esClaveValida(f?.clave)) {
+          errors.push(`Escribe la clave personal de ${req.etiqueta} (${CLAVE_MIN} a ${CLAVE_MAX} números)`);
+          continue;
+        }
+        claveSeguridad = { nombre: nombre.trim(), clave: f.clave };
+        firmas.push({ rol: req.rol, nombre: nombre.trim(), png: { buffer: Buffer.alloc(0), mime: "clave" } });
         continue;
       }
       const png = typeof f?.data === "string" ? decodificarFirmaPng(f.data) : null;
@@ -310,11 +327,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
     }
 
+    // La clave de Seguridad, lo último antes de registrar: así solo cuenta
+    // como fallo una clave equivocada (5 en 15 minutos bloquean a esa persona
+    // ese rato). Contra el catálogo de la sede de la sesión.
+    if (claveSeguridad) {
+      const v = await verificarClaveSeguridad(claveSeguridad.nombre, cids, claveSeguridad.clave);
+      if (!v.ok) return NextResponse.json({ error: v.motivo }, { status: v.status });
+    }
+
+    // Las columnas de «Otro» solo hacen falta si viene: un despacho sin él
+    // no se frena si la base todavía no deja agregarlas.
+    if (otro.detalle) await asegurarColumnasVerificacion("seguridad_despachos");
+
     const result = await query(
       `INSERT INTO seguridad_despachos
         (ingreso_id, rma_case_id, fecha_despacho, almacenista_nombre, facturas_json,
-         cliente_retira, accesorios_integros, observaciones, firma_url, nd_numero, cids)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         cliente_retira, accesorios_integros, observaciones, firma_url, nd_numero, cids${
+           otro.detalle ? ", otro_verificacion, otro_verificacion_ok" : ""
+         })
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${otro.detalle ? ", ?, ?" : ""})`,
       [
         ingresoId,
         rmaCaseId,
@@ -330,6 +361,7 @@ export async function POST(request: NextRequest) {
         // sucursal. Ya no se escribe a mano.
         (ingresoId !== null ? await guiaDeIngreso(ingresoId) : null) || (await siguienteGuia(cidsActa)),
         cidsActa,
+        ...(otro.detalle ? [otro.detalle, otro.ok] : []),
       ],
     );
 

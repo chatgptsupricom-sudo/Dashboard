@@ -602,6 +602,9 @@ function DialogoEntrega({
 }) {
   const [salen, setSalen] = useState<number[]>(porEntregar.map((i) => i.id));
   const [accesorios, setAccesorios] = useState<boolean | null>(null);
+  // «Otro» control (si aplica), como en el despacho de Seguridad.
+  const [otroDetalle, setOtroDetalle] = useState("");
+  const [otroOk, setOtroOk] = useState<boolean | null>(null);
   // Lo que eligió el cliente en el portal, si eligió; se puede cambiar.
   const [salePor, setSalePor] = useState<SalePor>(
     ["ruta", "agencia"].includes(caso.entrega_metodo) ? caso.entrega_metodo : "sucursal",
@@ -619,6 +622,7 @@ function DialogoEntrega({
     const faltan: string[] = [];
     if (porEntregar.length && !salen.length) faltan.push("elige qué productos salen");
     if (accesorios === null) faltan.push("responde si los accesorios están íntegros");
+    if (otroDetalle.trim() && otroOk === null) faltan.push("Sí o No en «Otro» (o borra lo que escribiste)");
     if (salePor === "agencia" && !agencia.trim()) faltan.push("la agencia");
     if (!retira.trim()) faltan.push(salePor === "sucursal" ? "quién retira" : "quién se lleva el equipo");
     if (!firmaCliente) faltan.push("la firma de quien retira");
@@ -637,6 +641,8 @@ function DialogoEntrega({
       agencia: salePor === "agencia" ? agencia.trim() : null,
       cliente_retira: retira.trim(),
       accesorios_integros: accesorios,
+      otro_verificacion: otroDetalle.trim() ? otroDetalle.trim().slice(0, 200) : null,
+      otro_verificacion_ok: otroDetalle.trim() ? otroOk : null,
       observaciones: observaciones.trim() || null,
       firmas: {
         cliente: { data: firmaCliente },
@@ -683,6 +689,7 @@ function DialogoEntrega({
           )}
 
           <CheckRow label="Accesorios íntegros" value={accesorios} onChange={setAccesorios} yes="Sí" no="No" />
+          <CheckOtro detalle={otroDetalle} onDetalle={setOtroDetalle} value={otroOk} onChange={setOtroOk} />
 
           <div className="space-y-2">
             <p className="text-sm font-semibold text-slate-800">Cómo sale</p>

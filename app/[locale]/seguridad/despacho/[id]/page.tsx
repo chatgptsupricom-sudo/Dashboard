@@ -35,6 +35,9 @@ type Despacho = {
   cliente_retira: string | null;
   nd_numero: string | null;
   accesorios_integros: number;
+  /** «Otro» control, si aplicó (columnas que se agregan solas: pueden faltar). */
+  otro_verificacion?: string | null;
+  otro_verificacion_ok?: number | null;
   observaciones: string | null;
   firma_url: string | null;
   firma_cliente_nombre: string | null;
@@ -367,6 +370,25 @@ export default function DespachoDetailPage() {
                 {accesoriosOk ? tfl("yes") : tfl("no")}
               </span>
             </div>
+            {despacho.otro_verificacion && (
+              <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-[10px] border border-slate-200 px-3 py-2.5">
+                <span className="text-sm font-medium text-slate-700">
+                  {tfl("check_otro")}: {despacho.otro_verificacion}
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1 text-xs font-bold ${
+                    Number(despacho.otro_verificacion_ok) === 1 ? "text-emerald-700" : "text-red-600"
+                  }`}
+                >
+                  {Number(despacho.otro_verificacion_ok) === 1 ? (
+                    <CheckCircle2 className="w-4 h-4" />
+                  ) : (
+                    <XCircle className="w-4 h-4" />
+                  )}
+                  {Number(despacho.otro_verificacion_ok) === 1 ? tfl("yes") : tfl("no")}
+                </span>
+              </div>
+            )}
             <div className="sm:col-span-2">
               <dt className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
                 {td("label_observaciones")}
@@ -406,6 +428,8 @@ export default function DespachoDetailPage() {
           // Seguridad firma la suya y, si el cliente retira en persona, la del
           // cliente en esta computadora. RMA y Almacén firman en su panel.
           puedeFirmar={["seguridad", "cliente"]}
+          // Seguridad firma con su clave personal, no con un trazo.
+          porClave={["seguridad"]}
         />
 
         <ProductosEnvioLista

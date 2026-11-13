@@ -17,6 +17,7 @@ import { getPublicOrigin } from "@/lib/publicOrigin";
 import { siguienteGuia } from "@/lib/seguridad/guia";
 import { decodificarFirmaPng } from "@/lib/seguridad/firmas";
 import { CLAVE_MAX, CLAVE_MIN, esClaveValida, verificarClaveSeguridad } from "@/lib/seguridad/clavePersonal";
+import { asegurarColumnasVerificacion, leerOtroVerificacion } from "@/lib/seguridad/verificacionOtro";
 
 /** Tope de cada firma (PNG en base64), igual que /api/seguridad/firmas. */
 const MAX_FIRMA_BYTES = 1024 * 1024;
@@ -62,33 +63,6 @@ function asegurarColumnasGarantiaNullables(): Promise<void> {
     })();
   }
   return columnasGarantiaAjustadas;
-}
-
-// «Otro» control de la verificación de estado (si aplica: qué se revisó y si
-// está bien) y la nota u observación de Seguridad. Se agregan solas; la
-// referencia para phpMyAdmin es sql/seguridad_ingreso_otro_observacion.sql.
-const COLUMNAS_VERIFICACION: [string, string][] = [
-  ["otro_verificacion", "VARCHAR(200) DEFAULT NULL"],
-  ["otro_verificacion_ok", "TINYINT(1) DEFAULT NULL"],
-  ["observacion_seguridad", "TEXT DEFAULT NULL"],
-];
-let columnasVerificacion: Promise<void> | null = null;
-function asegurarColumnasVerificacion(): Promise<void> {
-  if (!columnasVerificacion) {
-    columnasVerificacion = (async () => {
-      const r = await query("SHOW COLUMNS FROM seguridad_ingresos");
-      const hay = new Set((r.rows as any[]).map((c) => String(c.Field)));
-      for (const [col, tipo] of COLUMNAS_VERIFICACION) {
-        if (hay.has(col)) continue;
-        await query(`ALTER TABLE seguridad_ingresos ADD COLUMN ${col} ${tipo}`);
-      }
-    })().catch((e) => {
-      // Que se reintente en el próximo ingreso en vez de quedar marcado.
-      columnasVerificacion = null;
-      throw e;
-    });
-  }
-  return columnasVerificacion;
 }
 
 export async function GET(request: NextRequest) {
@@ -308,11 +282,9 @@ export async function POST(request: NextRequest) {
 
     // «Otro», si aplica: con texto hay que declarar Sí o No; sin texto no se
     // guarda nada. La observación de Seguridad es opcional.
-    const otroVerificacion = String(body.otro_verificacion ?? "").trim().slice(0, 200) || null;
-    const otroVerificacionOk = otroVerificacion ? body.otro_verificacion_ok : null;
-    if (otroVerificacion && typeof otroVerificacionOk !== "boolean") {
-      errors.push("Marca Sí o No en «Otro» (otro_verificacion_ok)");
-    }
+    const otro = leerOtroVerificacion(body);
+    if (otro.error) errors.push(otro.error);
+    const otroVerificacion = otro.detalle;
     const observacionSeguridad = String(body.observacion_seguridad ?? "").trim().slice(0, 1000) || null;
 
     // Clave de idempotencia de la cola offline del mostrador (#39). Opcional:
@@ -403,7 +375,7 @@ export async function POST(request: NextRequest) {
     // Solo hace falta si vienen: así un ingreso sin «Otro» ni nota no se
     // frena si la base todavía no deja agregar las columnas.
     const conVerificacionExtra = !!(otroVerificacion || observacionSeguridad);
-    if (conVerificacionExtra) await asegurarColumnasVerificacion();
+    if (conVerificacionExtra) await asegurarColumnasVerificacion("seguridad_ingresos");
 
     const result = await query(
       `INSERT INTO seguridad_ingresos
@@ -431,7 +403,7 @@ export async function POST(request: NextRequest) {
         guia,
         cidsActa,
         ...(conVerificacionExtra
-          ? [otroVerificacion, otroVerificacion ? (otroVerificacionOk ? 1 : 0) : null, observacionSeguridad]
+          ? [otroVerificacion, otro.ok, observacionSeguridad]
           : []),
       ],
     );
