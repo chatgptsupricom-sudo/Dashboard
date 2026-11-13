@@ -8,10 +8,13 @@ import {
   sumarDias,
 } from "@/lib/administracion/lectura";
 import { empresaDeCompanyId } from "@/lib/administracion/empresas";
+import { listarPagosFijos } from "@/lib/administracion/pagosFijos";
+import { cruzarPagosFijos, type PagoFijoDelMes } from "@/lib/administracion/pagosFijosCruce";
 
 /**
  * Cuentas por Pagar del rol Administracion: lo que se le debe a proveedores,
- * por antiguedad y por semana de vencimiento, mas lo que esta en borrador.
+ * por antiguedad, el calendario del mes (vencimientos, pagos de Odoo y pagos
+ * fijos) y lo que esta en borrador.
  *
  * Montos SIEMPRE en la moneda de la empresa (USD): `*_signed`. Caracas tiene
  * facturas de proveedor en bolivares y `amount_residual` las sumaria como
@@ -57,13 +60,6 @@ export interface ProveedorCxP {
   venceMasViejo: string;
 }
 
-export interface SemanaCxP {
-  desde: string;
-  hasta: string;
-  monto: number;
-  documentos: number;
-}
-
 export interface BorradorCxP {
   id: number;
   numero: string;
@@ -79,6 +75,9 @@ export interface PagoProveedor {
   id: number;
   fecha: string;
   proveedor: string;
+  proveedorId: number | null;
+  /** Memo del pago en Odoo. */
+  referencia: string;
   diario: string;
   monto: number;
   sede: string;
@@ -104,7 +103,10 @@ export interface DatosCxPAdmin {
   };
   bandas: Record<Banda, number>;
   proveedores: ProveedorCxP[];
-  calendario: SemanaCxP[];
+  /** Pagos fijos del mes, ya cruzados con los pagos de Odoo del mes. */
+  pagosFijos: PagoFijoDelMes[];
+  /** No se pudieron leer los pagos fijos (la MySQL no respondio). */
+  pagosFijosError: boolean;
   documentos: DocumentoCxP[];
   borradores: BorradorCxP[];
   pagosDelMes: PagoProveedor[];
@@ -125,13 +127,6 @@ const bandasEnCero = (): Record<Banda, number> => ({
   "61_90": 0,
   "91_mas": 0,
 });
-
-/** Lunes de la semana de `fecha`. */
-function lunesDe(fecha: string): string {
-  const d = new Date(fecha + "T12:00:00Z");
-  const dia = d.getUTCDay() || 7;
-  return sumarDias(fecha, 1 - dia);
-}
 
 /**
  * Pagos y anticipos a proveedores que todavia no se aplicaron a una factura:
@@ -169,7 +164,7 @@ export async function fetchCxPAdmin(
   hasta: string,
   sinIntercompania = false,
 ): Promise<DatosCxPAdmin> {
-  const [abiertos, borradoresRaw, pagosRaw, pagosSinAplicar] = await Promise.all([
+  const [abiertos, borradoresRaw, pagosRaw, pagosSinAplicar, fijos] = await Promise.all([
     leerTodo(
       "account.move",
       [
@@ -215,11 +210,16 @@ export async function fetchCxPAdmin(
         ["date", ">=", desde],
         ["date", "<=", hasta],
       ],
-      ["date", "partner_id", "journal_id", "amount_company_currency_signed", "company_id"],
+      ["date", "partner_id", "journal_id", "amount_company_currency_signed", "company_id", "ref"],
       companyIds,
       "date desc, id desc",
     ),
     sumarPagosSinAplicar(companyIds, sinIntercompania),
+    // Si la MySQL falla, el resto (que es de Odoo) sale igual.
+    listarPagosFijos(companyIds).catch((e) => {
+      console.error("Pagos fijos de CxP:", e?.message || e);
+      return null;
+    }),
   ]);
 
   const documentos: DocumentoCxP[] = abiertos
@@ -289,25 +289,6 @@ export async function fetchCxPAdmin(
     }))
     .sort((a, b) => b.saldo - a.saldo);
 
-  // Calendario: 8 semanas desde la actual. Lo vencido va aparte (resumen).
-  const lunes = lunesDe(hoy);
-  const calendario: SemanaCxP[] = Array.from({ length: 8 }, (_, i) => ({
-    desde: sumarDias(lunes, i * 7),
-    hasta: sumarDias(lunes, i * 7 + 6),
-    monto: 0,
-    documentos: 0,
-  }));
-  documentos
-    .filter((d) => d.tipo === "factura" && d.vence >= hoy)
-    .forEach((d) => {
-      const semana = calendario.find((s) => d.vence >= s.desde && d.vence <= s.hasta);
-      if (semana) {
-        semana.monto += d.saldo;
-        semana.documentos++;
-      }
-    });
-  calendario.forEach((s) => (s.monto = redondear(s.monto)));
-
   const suma = (lista: DocumentoCxP[]) => redondear(lista.reduce((s, d) => s + d.saldo, 0));
   const en7 = sumarDias(hoy, 7);
   const en30 = sumarDias(hoy, 30);
@@ -327,12 +308,24 @@ export async function fetchCxPAdmin(
     }))
     .sort((a, b) => b.diasEnBorrador - a.diasEnBorrador);
 
+  // Empresa de cada proveedor pagado: un pago a un contacto hijo (sucursal,
+  // persona) cuenta para el pago fijo de la empresa.
+  const idsPartner = Array.from(new Set(pagosRaw.map((p: any) => idM2o(p.partner_id)).filter(Boolean))) as number[];
+  const empresaDe = new Map<number, number>(
+    (idsPartner.length
+      ? await leerTodo("res.partner", [["id", "in", idsPartner], ["active", "in", [true, false]]], ["commercial_partner_id"], companyIds)
+      : []
+    ).map((x: any) => [x.id, idM2o(x.commercial_partner_id) ?? x.id]),
+  );
+
   const pagosDelMes: PagoProveedor[] = pagosRaw
     .filter((p: any) => !(sinIntercompania && RE_INTERCOMPANIA.test(nombreM2o(p.partner_id))))
     .map((p: any) => ({
     id: p.id,
     fecha: p.date || "",
     proveedor: nombreM2o(p.partner_id, "Sin proveedor"),
+    proveedorId: idM2o(p.partner_id),
+    referencia: p.ref || "",
     diario: nombreM2o(p.journal_id),
     // Salida de dinero: viene negativa; se muestra en positivo.
     monto: redondear(Math.abs(Number(p.amount_company_currency_signed) || 0)),
@@ -356,7 +349,21 @@ export async function fetchCxPAdmin(
     },
     bandas: Object.fromEntries(BANDAS.map((b) => [b, redondear(bandas[b])])) as Record<Banda, number>,
     proveedores,
-    calendario,
+    // Se cruza con todos los pagos del mes: un pago fijo a otra sede del grupo
+    // tambien se da por pagado aunque la pantalla oculte la intercompania.
+    pagosFijosError: fijos === null,
+    pagosFijos: cruzarPagosFijos(
+      fijos || [],
+      pagosRaw.map((p: any) => ({
+        id: p.id,
+        fecha: p.date || "",
+        proveedorId: empresaDe.get(idM2o(p.partner_id) || 0) ?? idM2o(p.partner_id),
+        monto: Math.abs(Number(p.amount_company_currency_signed) || 0),
+        sede: empresaDeCompanyId(idM2o(p.company_id) || 0),
+      })),
+      desde.slice(0, 7),
+      hoy,
+    ),
     documentos,
     borradores,
     pagosDelMes,
@@ -542,5 +549,156 @@ export async function fetchDocumentoCxP(id: number, companyIds: number[]): Promi
     retencionIva: nombreM2o(m.wh_iva_id),
     retencionIslr: nombreM2o(m.islr_wh_doc_id),
     urlOdoo: `${(process.env.NEXT_PUBLIC_ODOO_URL || "").replace(/\/$/, "")}/web#id=${m.id}&model=account.move&view_type=form`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Detalle de un pago a proveedor (al abrirlo desde el calendario)
+// ---------------------------------------------------------------------------
+
+export interface DocumentoDelPago {
+  id: number;
+  numero: string;
+  referencia: string;
+  /** factura / nota_credito de proveedor; otro = asiento, retencion, anticipo... */
+  tipo: "factura" | "nota_credito" | "otro";
+  fecha: string;
+  vence: string;
+  total: number;
+  saldo: number;
+  /** Lo que este pago le aplico (USD). */
+  aplicado: number;
+  estadoPago: string;
+}
+
+export interface DetallePagoCxP {
+  id: number;
+  numero: string;
+  fecha: string;
+  proveedor: string;
+  sede: string;
+  diario: string;
+  metodo: string;
+  referencia: string;
+  estado: string;
+  moneda: string;
+  /** Monto en la moneda del pago. */
+  monto: number;
+  montoUsd: number;
+  /** Parte del pago que no se aplico a ningun documento (USD). */
+  sinAplicar: number;
+  registradoPor: string;
+  registradoEl: string;
+  documentos: DocumentoDelPago[];
+  urlOdoo: string;
+}
+
+/**
+ * Un pago a proveedor con los documentos que pago: las conciliaciones de su
+ * linea por pagar (`account.partial.reconcile`), igual que Pagos entre sedes.
+ * null = no existe o es de otra sede.
+ */
+export async function fetchPagoCxP(id: number, companyIds: number[]): Promise<DetallePagoCxP | null> {
+  const [p] = await leerTodo(
+    "account.payment",
+    [
+      ["id", "=", id],
+      ["company_id", "in", companyIds],
+      ["partner_type", "=", "supplier"],
+    ],
+    [
+      "name",
+      "date",
+      "partner_id",
+      "company_id",
+      "journal_id",
+      "payment_method_line_id",
+      "ref",
+      "state",
+      "currency_id",
+      "amount",
+      "amount_company_currency_signed",
+      "create_uid",
+      "create_date",
+    ],
+    companyIds,
+  );
+  if (!p) return null;
+
+  const lineas = await leerTodo(
+    "account.move.line",
+    [
+      ["payment_id", "=", id],
+      ["account_id.account_type", "=", "liability_payable"],
+    ],
+    ["matched_debit_ids", "matched_credit_ids", "amount_residual"],
+    companyIds,
+  );
+  const propias = new Set(lineas.map((l: any) => l.id));
+  const parcialIds = Array.from(new Set(lineas.flatMap((l: any) => [...l.matched_debit_ids, ...l.matched_credit_ids])));
+  const parciales = parcialIds.length
+    ? await leerTodo("account.partial.reconcile", [["id", "in", parcialIds]], ["amount", "debit_move_id", "credit_move_id"], companyIds)
+    : [];
+  // Linea de la otra parte -> monto aplicado.
+  const aplicadoPorLinea = new Map<number, number>();
+  parciales.forEach((x: any) => {
+    const debe = idM2o(x.debit_move_id);
+    const otra = debe && propias.has(debe) ? idM2o(x.credit_move_id) : debe;
+    if (otra) aplicadoPorLinea.set(otra, (aplicadoPorLinea.get(otra) || 0) + (Number(x.amount) || 0));
+  });
+  const otras = aplicadoPorLinea.size
+    ? await leerTodo("account.move.line", [["id", "in", Array.from(aplicadoPorLinea.keys())]], ["move_id"], companyIds)
+    : [];
+  const aplicadoPorAsiento = new Map<number, number>();
+  otras.forEach((l: any) => {
+    const m = idM2o(l.move_id);
+    if (m) aplicadoPorAsiento.set(m, (aplicadoPorAsiento.get(m) || 0) + (aplicadoPorLinea.get(l.id) || 0));
+  });
+  const asientos = aplicadoPorAsiento.size
+    ? await leerTodo(
+        "account.move",
+        [["id", "in", Array.from(aplicadoPorAsiento.keys())]],
+        ["name", "ref", "move_type", "invoice_date", "invoice_date_due", "date", "amount_total_signed", "amount_residual_signed", "payment_state"],
+        companyIds,
+      )
+    : [];
+
+  const odoo = (process.env.NEXT_PUBLIC_ODOO_URL || "").replace(/\/$/, "");
+  return {
+    id: p.id,
+    numero: p.name || "",
+    fecha: p.date || "",
+    proveedor: nombreM2o(p.partner_id, "Sin proveedor"),
+    sede: empresaDeCompanyId(idM2o(p.company_id) || 0),
+    diario: nombreM2o(p.journal_id),
+    metodo: nombreM2o(p.payment_method_line_id),
+    referencia: p.ref || "",
+    estado: p.state || "",
+    moneda: nombreM2o(p.currency_id, "USD"),
+    monto: redondear(Math.abs(Number(p.amount) || 0)),
+    montoUsd: redondear(Math.abs(Number(p.amount_company_currency_signed) || 0)),
+    sinAplicar: redondear(lineas.reduce((s: number, l: any) => s + Math.abs(Number(l.amount_residual) || 0), 0)),
+    registradoPor: nombreM2o(p.create_uid),
+    registradoEl: String(p.create_date || "").slice(0, 10),
+    documentos: asientos
+      .map((a: any) => ({
+        id: a.id,
+        numero: a.name || "",
+        referencia: a.ref || "",
+        tipo:
+          a.move_type === "in_invoice"
+            ? ("factura" as const)
+            : a.move_type === "in_refund"
+              ? ("nota_credito" as const)
+              : ("otro" as const),
+        fecha: a.invoice_date || a.date || "",
+        vence: a.invoice_date_due || "",
+        total: redondear(Math.abs(Number(a.amount_total_signed) || 0)),
+        saldo: redondear(Math.abs(Number(a.amount_residual_signed) || 0)),
+        aplicado: redondear(aplicadoPorAsiento.get(a.id) || 0),
+        estadoPago: a.payment_state || "",
+      }))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha)),
+    urlOdoo: `${odoo}/web#id=${p.id}&model=account.payment&view_type=form`,
   };
 }

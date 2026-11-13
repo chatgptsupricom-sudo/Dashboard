@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { AlertTriangle, Download, Loader2, WifiOff } from "lucide-react";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import * as XLSX from "xlsx";
 
@@ -85,10 +85,11 @@ export function mesActual(): string {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function mesesRecientes(cantidad = 12) {
+/** Los ultimos `cantidad` meses, mas `adelante` meses futuros al principio. */
+export function mesesRecientes(cantidad = 12, adelante = 0) {
   const now = new Date();
-  return Array.from({ length: cantidad }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+  return Array.from({ length: cantidad + adelante }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + adelante - i, 1);
     return {
       value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
       label: d.toLocaleDateString("es-VE", { month: "long", year: "numeric" }),
@@ -117,7 +118,9 @@ export function useDatosAdmin<T>(ruta: string, empresa: string, mes: string, ext
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<{ mensaje: string; odooCaido: boolean } | null>(null);
 
+  const urlVigente = useRef("");
   const cargar = useCallback(async () => {
+    urlVigente.current = `${ruta}?empresa=${empresa}&mes=${mes}${extra}`;
     setCargando(true);
     setError(null);
     try {
@@ -140,7 +143,20 @@ export function useDatosAdmin<T>(ruta: string, empresa: string, mes: string, ext
     cargar();
   }, [cargar]);
 
-  return { datos, cargando, error, recargar: cargar };
+  /** Vuelve a pedir los datos sin vaciar la pantalla; si falla, quedan los de antes. */
+  const actualizar = useCallback(async () => {
+    try {
+      const url = `${ruta}?empresa=${empresa}&mes=${mes}${extra}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const json = await res.json();
+      // Si mientras tanto cambiaron sede o mes, esta respuesta ya no sirve.
+      if (json.success && urlVigente.current === url) setDatos(json as T);
+    } catch {
+      // Se reintenta en la proxima actualizacion.
+    }
+  }, [ruta, empresa, mes, extra]);
+
+  return { datos, cargando, error, recargar: cargar, actualizar };
 }
 
 export function EncabezadoAdmin({
@@ -152,6 +168,7 @@ export function EncabezadoAdmin({
   mes,
   setMes,
   conMes = true,
+  mesesAdelante = 0,
   acciones,
 }: {
   icono: ReactNode;
@@ -162,6 +179,8 @@ export function EncabezadoAdmin({
   mes?: string;
   setMes?: (v: string) => void;
   conMes?: boolean;
+  /** Meses futuros que ofrece el selector (ej. un calendario de pagos). */
+  mesesAdelante?: number;
   acciones?: ReactNode;
 }) {
   return (
@@ -182,7 +201,7 @@ export function EncabezadoAdmin({
             className="border rounded-lg px-3 py-2 text-sm capitalize flex-1 lg:flex-none bg-white"
             aria-label="Mes"
           >
-            {mesesRecientes().map((m) => (
+            {mesesRecientes(12, mesesAdelante).map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
               </option>
@@ -310,7 +329,7 @@ export function Pestanas<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex gap-1 overflow-x-auto border-b">
+    <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b">
       {opciones.map((o) => (
         <button
           key={o.value}

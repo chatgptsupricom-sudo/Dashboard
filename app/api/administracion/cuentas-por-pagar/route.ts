@@ -5,7 +5,8 @@ import { fetchCxPAdmin } from "@/lib/administracion/cxp";
 
 // GET /api/administracion/cuentas-por-pagar?empresa=&mes=YYYY-MM
 //   &sin_intercompania=1 deja fuera a las otras empresas del grupo.
-// Solo lectura. `mes` solo afecta "pagado en el mes"; el saldo es el de hoy.
+// Solo lectura. `mes` afecta los pagos del mes y el calendario; el saldo es el de hoy.
+// Los pagos fijos se editan en ./pagos-fijos.
 export async function GET(request: NextRequest) {
   const auth = await guardAdministracion(request);
   if (auth.error) return auth.error;
