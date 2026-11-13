@@ -35,6 +35,25 @@ type Item =
   | { tipo: "pago"; pago: PagoProveedor; deFijo: string | null }
   | { tipo: "factura"; doc: DocumentoCxP };
 
+/** Tarjetas de arriba: cada una abre su lista en el mismo modal del dia. */
+type ResumenClave = "fijos" | "porPagar" | "pagado" | "facturas";
+const TITULO_RESUMEN: Record<ResumenClave, string> = {
+  fijos: "Pagos fijos del mes",
+  porPagar: "Pagos fijos por pagar",
+  pagado: "Pagado en Odoo",
+  facturas: "Facturas que vencen",
+};
+
+const montoDe = (it: Item) => (it.tipo === "fijo" ? it.fijo.monto : it.tipo === "pago" ? it.pago.monto : it.doc.saldo);
+const fechaDe = (it: Item) => (it.tipo === "fijo" ? it.fijo.fecha : it.tipo === "pago" ? it.pago.fecha : it.doc.vence);
+const textoDe = (it: Item) =>
+  (it.tipo === "fijo"
+    ? `${it.fijo.nombre} ${it.fijo.proveedor}`
+    : it.tipo === "pago"
+      ? `${it.pago.proveedor} ${it.pago.referencia} ${it.pago.diario}`
+      : `${it.doc.proveedor} ${it.doc.numero} ${it.doc.referencia}`
+  ).toLowerCase();
+
 const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const SEDES = ["valencia", "caracas", "panama"];
 
@@ -97,6 +116,8 @@ export function CalendarioPagosCxP({
   const diasDelMes = new Date(Date.UTC(a, m, 0)).getUTCDate();
   const blancos = (new Date(Date.UTC(a, m - 1, 1)).getUTCDay() + 6) % 7;
   const [dia, setDia] = useState<string | null>(null);
+  const [resumen, setResumen] = useState<ResumenClave | null>(null);
+  const [filtro, setFiltro] = useState("");
   const [pagoVer, setPagoVer] = useState<number | null>(null);
   const [editando, setEditando] = useState<PagoFijoDelMes | "nuevo" | null>(null);
   const [actualizando, setActualizando] = useState(false);
@@ -104,8 +125,20 @@ export function CalendarioPagosCxP({
   useEffect(() => setActualizadoA(new Date()), [pagos, fijos]);
 
   const abrirDia = (fecha: string, pagoId: number | null = null) => {
+    setResumen(null);
     setDia(fecha);
     setPagoVer(pagoId);
+  };
+  const abrirResumen = (clave: ResumenClave) => {
+    setDia(null);
+    setPagoVer(null);
+    setFiltro("");
+    setResumen(clave);
+  };
+  const cerrarModal = () => {
+    setDia(null);
+    setResumen(null);
+    setPagoVer(null);
   };
   const actualizar = async () => {
     setActualizando(true);
@@ -145,7 +178,28 @@ export function CalendarioPagosCxP({
     year: "numeric",
     timeZone: "UTC",
   });
-  const delDia = dia ? porDia.get(dia) || [] : [];
+  const listaResumen = useMemo((): Item[] => {
+    if (!resumen) return [];
+    const fijoDePago = new Map(fijos.filter((f) => f.pagoId).map((f) => [f.pagoId!, f.nombre]));
+    const lista: Item[] =
+      resumen === "fijos"
+        ? fijos.map((f) => ({ tipo: "fijo", fijo: f }))
+        : resumen === "porPagar"
+          ? fijos.filter((f) => f.estado !== "pagado").map((f) => ({ tipo: "fijo", fijo: f }))
+          : resumen === "pagado"
+            ? pagos.map((p) => ({ tipo: "pago", pago: p, deFijo: fijoDePago.get(p.id) ?? null }))
+            : documentos
+                .filter((d) => d.tipo === "factura" && d.vence.startsWith(mes))
+                .map((d) => ({ tipo: "factura", doc: d }));
+    return lista.sort((x, y) => fechaDe(x).localeCompare(fechaDe(y)) || montoDe(y) - montoDe(x));
+  }, [resumen, fijos, pagos, documentos, mes]);
+
+  const texto = filtro.toLowerCase().trim();
+  const delModal = resumen
+    ? listaResumen.filter((it) => !texto || textoDe(it).includes(texto))
+    : dia
+      ? porDia.get(dia) || []
+      : [];
 
   const quitar = async (f: PagoFijoDelMes) => {
     if (!confirm(`¿Quitar el pago fijo "${f.nombre}"? Deja de salir desde este mes; los meses anteriores lo conservan.`)) return;
@@ -163,24 +217,28 @@ export function CalendarioPagosCxP({
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-sm">
         <Resumen
+          onClick={() => abrirResumen("fijos")}
           titulo="Pagos fijos del mes"
           valor={money(totales.fijos, 2)}
           detalle={`${totales.fijosPagados} de ${fijos.length} pagados`}
           punto={PUNTO.pendiente}
         />
         <Resumen
+          onClick={() => abrirResumen("porPagar")}
           titulo="Fijos por pagar"
           valor={money(totales.fijosPorPagar, 2)}
           detalle={totales.fijosVencidos ? `${totales.fijosVencidos} con el día pasado` : "ninguno atrasado"}
           punto={totales.fijosVencidos ? PUNTO.vencido : PUNTO.pendiente}
         />
         <Resumen
+          onClick={() => abrirResumen("pagado")}
           titulo="Pagado en Odoo"
           valor={money(totales.pagado, 2)}
           detalle={`${pagos.length} pagos a proveedores`}
           punto={PUNTO.pago}
         />
         <Resumen
+          onClick={() => abrirResumen("facturas")}
           titulo="Facturas que vencen"
           valor={money(totales.facturas, 2)}
           detalle={`${totales.nFacturas} abiertas este mes`}
@@ -303,13 +361,8 @@ export function CalendarioPagosCxP({
 
       {/* Se esconde mientras esta abierta una factura o el formulario: dos modales a la vez se cierran entre si. */}
       <Dialog
-        open={dia !== null && !docAbierto && !editando}
-        onOpenChange={(abierto) => {
-          if (!abierto) {
-            setDia(null);
-            setPagoVer(null);
-          }
-        }}
+        open={(dia !== null || resumen !== null) && !docAbierto && !editando}
+        onOpenChange={(abierto) => !abierto && cerrarModal()}
       >
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           {pagoVer !== null ? (
@@ -323,24 +376,61 @@ export function CalendarioPagosCxP({
           ) : (
             <>
               <DialogHeader>
-                <DialogTitle className="capitalize">
-                  {dia &&
+                <DialogTitle className={resumen ? "" : "capitalize"}>
+                  {resumen ? (
+                    <>
+                      {TITULO_RESUMEN[resumen]} <span className="font-normal text-gray-500 capitalize">· {nombreMes}</span>
+                    </>
+                  ) : (
+                    dia &&
                     new Date(dia + "T12:00:00Z").toLocaleDateString("es-VE", {
                       weekday: "long",
                       day: "numeric",
                       month: "long",
                       year: "numeric",
                       timeZone: "UTC",
-                    })}
+                    })
+                  )}
                 </DialogTitle>
                 <DialogDescription>
-                  {delDia.length === 0 ? "Nada este día." : `${delDia.length} movimientos`}
+                  {delModal.length === 0
+                    ? resumen === "fijos"
+                      ? "No hay pagos fijos este mes. Regístralos con «Nuevo pago fijo»."
+                      : resumen
+                        ? "Nada que mostrar."
+                        : "Nada este día."
+                    : `${delModal.length} ${resumen === "facturas" ? "facturas" : resumen === "pagado" ? "pagos" : "movimientos"} · ${money(
+                        delModal.reduce((sum, it) => sum + montoDe(it), 0),
+                        2,
+                      )}`}
                 </DialogDescription>
               </DialogHeader>
-              {delDia.length > 0 && (
+              {resumen && listaResumen.length > 8 && (
+                <Input
+                  value={filtro}
+                  onChange={(e) => setFiltro(e.target.value)}
+                  placeholder="Buscar proveedor, número o referencia"
+                  className="h-9"
+                  aria-label="Buscar en la lista"
+                />
+              )}
+              {delModal.length > 0 && (
                 <ul className="divide-y rounded-lg border">
-                  {delDia.map((it, k) => (
+                  {delModal.map((it, k) => (
                     <li key={k} className="px-3 py-2.5 flex items-start gap-3 text-sm">
+                      {resumen ? (
+                        <button
+                          type="button"
+                          onClick={() => abrirDia(fechaDe(it))}
+                          className="shrink-0 w-12 text-center rounded-md border bg-slate-50 hover:bg-blue-50 py-1 leading-tight"
+                          title="Ver el día"
+                        >
+                          <div className="text-sm font-semibold">{fechaDe(it).slice(8, 10)}</div>
+                          <div className="text-[10px] text-gray-500 uppercase">
+                            {new Date(fechaDe(it) + "T12:00:00Z").toLocaleDateString("es-VE", { weekday: "short", timeZone: "UTC" })}
+                          </div>
+                        </button>
+                      ) : null}
                       <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${PUNTO[estiloDe(it, hoy)]}`} />
                       <DetalleItem
                         item={it}
@@ -406,16 +496,33 @@ export function CalendarioPagosCxP({
   );
 }
 
-function Resumen({ titulo, valor, detalle, punto }: { titulo: string; valor: string; detalle: string; punto: string }) {
+function Resumen({
+  titulo,
+  valor,
+  detalle,
+  punto,
+  onClick,
+}: {
+  titulo: string;
+  valor: string;
+  detalle: string;
+  punto: string;
+  onClick: () => void;
+}) {
   return (
-    <div className="rounded-lg border bg-white p-3">
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-left rounded-lg border bg-white p-3 transition hover:border-blue-300 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+    >
       <div className="flex items-center gap-1.5 text-xs text-gray-500">
         <span className={`h-2 w-2 rounded-full ${punto}`} />
         {titulo}
       </div>
       <div className="text-lg font-bold text-gray-800 mt-0.5">{valor}</div>
       <div className="text-[11px] text-gray-500">{detalle}</div>
-    </div>
+      <div className="text-[11px] text-blue-600 mt-1">Ver detalle</div>
+    </button>
   );
 }
 
@@ -541,7 +648,7 @@ function DetalleItem({
           {sede(d.sede)}
         </div>
         <div className={`text-xs ${d.vence < hoy ? "text-orange-700" : "text-amber-700"}`}>
-          {d.vence < hoy ? `Venció hace ${d.diasVencido} días y sigue abierta` : "Vence este día"}
+          {d.vence < hoy ? `Venció hace ${d.diasVencido} días y sigue abierta` : `Vence el ${fechaCorta(d.vence)}`}
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
@@ -798,7 +905,7 @@ function DetallePago({
     <>
       <DialogHeader>
         <button type="button" onClick={volver} className="flex items-center gap-1 text-xs text-blue-700 hover:underline w-fit">
-          <ArrowLeft className="h-3.5 w-3.5" /> Volver al día
+          <ArrowLeft className="h-3.5 w-3.5" /> Volver
         </button>
         <DialogTitle className="flex flex-wrap items-center gap-2 pr-6">
           Pago {pago?.numero || ""}
