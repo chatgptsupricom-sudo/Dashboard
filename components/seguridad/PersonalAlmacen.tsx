@@ -33,6 +33,8 @@ export default function PersonalAlmacen({ volverA }: { volverA: string }) {
           icon={Users}
           endpoint="/api/seguridad/mercancia/catalogo/almacenistas"
           listKey="almacenistas"
+          // Cada almacenista firma con su clave al abrir y cerrar contenedores.
+          conClave
           namespace="seguridad.mercancia.almacenistas_catalogo"
           titulo={ta("titulo")}
           subtitulo={ta("subtitulo")}

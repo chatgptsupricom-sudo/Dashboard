@@ -2,7 +2,9 @@
 
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, type LucideIcon, Plus, Search, User, Users, XCircle } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, type LucideIcon, Plus, Search, User, Users, XCircle } from "lucide-react";
+import { useAuthStore } from "@/lib/stores/auth.store";
+import { EditorClave } from "./CatalogoPersonal";
 import {
   PageHeader,
   Card,
@@ -27,7 +29,7 @@ import {
  * que se acaba de agregar queda resaltado unos segundos, para ver que entro.
  */
 
-type Item = { id: number; nombre: string };
+type Item = { id: number; nombre: string; tiene_clave?: number };
 
 // Con pocos nombres el buscador estorba mas de lo que ayuda.
 const BUSCADOR_DESDE = 7;
@@ -45,6 +47,7 @@ export default function MercanciaCatalogoNombre({
   volverA,
   embebido = false,
   icon: Icono = Users,
+  conClave = false,
 }: {
   endpoint: string;
   listKey: string;
@@ -66,6 +69,12 @@ export default function MercanciaCatalogoNombre({
    */
   embebido?: boolean;
   icon?: LucideIcon;
+  /**
+   * Con clave personal (almacenistas): cada uno la asigna o la cambia con
+   * PATCH `<endpoint>/<id>` y firma con ella al abrir y cerrar contenedores
+   * en la recepción (lib/seguridad/clavePersonal.ts).
+   */
+  conClave?: boolean;
 }) {
   const t = useTranslations(namespace);
   const tui = useTranslations("seguridad.mercancia.catalogo_ui");
@@ -78,6 +87,26 @@ export default function MercanciaCatalogoNombre({
   // El recien agregado, resaltado unos segundos.
   const [nuevo, setNuevo] = useState<string | null>(null);
   const campo = useRef<HTMLInputElement>(null);
+  // Clave personal: a quién se le está poniendo, y a quién se le acaba de guardar.
+  const tp = useTranslations("seguridad.personal");
+  const { user } = useAuthStore();
+  const esSuperadmin = (user?.role || "").toLowerCase().trim() === "superadmin";
+  const [editandoClave, setEditandoClave] = useState<Item | null>(null);
+  const [claveGuardada, setClaveGuardada] = useState<number | null>(null);
+  const sinClave = conClave ? items.filter((it) => !Number(it.tiene_clave)) : [];
+
+  const guardarClave = async (persona: Item, clave: string, claveActual?: string) => {
+    const res = await fetch(`${endpoint}/${persona.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clave, ...(claveActual ? { clave_actual: claveActual } : {}) }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || tp("error"));
+    setEditandoClave(null);
+    setClaveGuardada(persona.id);
+    await cargar();
+  };
 
   const cargar = useCallback(async () => {
     try {
@@ -183,6 +212,18 @@ export default function MercanciaCatalogoNombre({
           )}
         </div>
 
+        {conClave && !cargando && (
+          <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
+            <KeyRound className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" />
+            {t("con_clave_ayuda")}
+          </p>
+        )}
+        {conClave && !cargando && sinClave.length > 0 && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {t("aviso_sin_clave", { count: sinClave.length })}
+          </p>
+        )}
+
         {items.length >= BUSCADOR_DESDE && (
           <Buscador valor={busqueda} onChange={setBusqueda} placeholder={tui("buscar")} limpiar={tui("limpiar")} />
         )}
@@ -221,10 +262,45 @@ export default function MercanciaCatalogoNombre({
                       {tui("nuevo")}
                     </span>
                   )}
+                  {conClave && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClaveGuardada(null);
+                        setEditandoClave(it);
+                      }}
+                      title={tp(Number(it.tiene_clave) ? "cambiar_clave" : "asignar_clave")}
+                      aria-label={`${tp(Number(it.tiene_clave) ? "cambiar_clave" : "asignar_clave")}: ${it.nombre}`}
+                      className={`shrink-0 inline-flex items-center gap-1 h-8 px-2 rounded-lg text-[11px] font-semibold ${
+                        claveGuardada === it.id
+                          ? "bg-emerald-50 text-emerald-700"
+                          : Number(it.tiene_clave)
+                            ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            : "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                      }`}
+                    >
+                      {claveGuardada === it.id ? <CheckCircle2 className="w-3.5 h-3.5" /> : <KeyRound className="w-3.5 h-3.5" />}
+                      {tp(Number(it.tiene_clave) ? "con_clave" : "sin_clave")}
+                    </button>
+                  )}
                 </li>
               );
             })}
           </ul>
+        )}
+
+        {/* Clave de la persona elegida, debajo de la lista (las tarjetas son chicas). */}
+        {conClave && editandoClave && (
+          <div>
+            <p className="text-sm font-semibold text-slate-800">{editandoClave.nombre}</p>
+            <EditorClave
+              tiene={!!Number(editandoClave.tiene_clave)}
+              pideActual={!!Number(editandoClave.tiene_clave) && !esSuperadmin}
+              onCancelar={() => setEditandoClave(null)}
+              onGuardar={(nueva, actual) => guardarClave(editandoClave, nueva, actual)}
+              t={tp}
+            />
+          </div>
         )}
       </div>
     </Card>

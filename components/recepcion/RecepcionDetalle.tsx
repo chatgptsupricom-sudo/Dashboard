@@ -58,6 +58,15 @@ import {
 import FotoCaptura, { type ArchivoRecepcion } from "./FotoCaptura";
 import EscenaRecepcion from "./EscenaRecepcion";
 import CruceOdoo from "./CruceOdoo";
+import {
+  FirmaAlmacen,
+  FirmaContenedorVista,
+  FIRMA_VACIA,
+  cuerpoFirma,
+  firmaLista,
+  type AlmacenistaClave,
+  type FirmaForm,
+} from "./FirmaAlmacen";
 import SerialesOdoo from "./SerialesOdoo";
 import SubirSeriales from "./SubirSeriales";
 import RepartoSedes from "./RepartoSedes";
@@ -244,6 +253,24 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Por contenedor: el precinto que se lee al llegar y la nota al terminarlo.
   const [precintos, setPrecintos] = useState<Record<number, string[]>>({});
   const [notasCont, setNotasCont] = useState<Record<number, string>>({});
+  // Firma de Almacén al abrir y al cerrar cada contenedor (con su clave),
+  // por "<contenedor>:llegada" / "<contenedor>:cierre"; y el catálogo de
+  // almacenistas de donde se elige quién firma.
+  const [firmasCont, setFirmasCont] = useState<Record<string, FirmaForm>>({});
+  const [almacenistas, setAlmacenistas] = useState<AlmacenistaClave[]>([]);
+  const firmaDe = (cid: number, momento: "llegada" | "cierre") => firmasCont[`${cid}:${momento}`] ?? FIRMA_VACIA;
+  const cambiarFirma = (cid: number, momento: "llegada" | "cierre", cambios: Partial<FirmaForm>) =>
+    setFirmasCont((p) => ({
+      ...p,
+      [`${cid}:${momento}`]: { ...(p[`${cid}:${momento}`] ?? FIRMA_VACIA), ...cambios },
+    }));
+  useEffect(() => {
+    if (!esAlmacen) return;
+    fetch("/api/seguridad/mercancia/catalogo/almacenistas")
+      .then((r) => (r.ok ? r.json() : { almacenistas: [] }))
+      .then((j) => setAlmacenistas(j.almacenistas || []))
+      .catch(() => setAlmacenistas([]));
+  }, [esAlmacen]);
   const [notas, setNotas] = useState("");
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
@@ -1152,6 +1179,17 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       );
                     })()}
 
+                    {/* Quién lo abrió (con su clave) y lo que anotó al abrirlo. */}
+                    {c.etapa !== "por_llegar" && (
+                      <FirmaContenedorVista
+                        momento="llegada"
+                        almacenista={c.llegada_almacenista}
+                        otro={c.llegada_otro}
+                        otroOk={c.llegada_otro_ok}
+                        nota={c.llegada_nota}
+                      />
+                    )}
+
                     {(enLlegada || c.etapa !== "por_llegar") && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <FotoCaptura
@@ -1233,20 +1271,34 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                               </button>
                             )}
                           </div>
+                          <FirmaAlmacen
+                            momento="llegada"
+                            valor={firmaDe(c.id, "llegada")}
+                            onChange={(cambios) => cambiarFirma(c.id, "llegada", cambios)}
+                            almacenistas={almacenistas}
+                            conNota
+                          />
                           <BotonPrimario
-                            onClick={() =>
-                              void accionar(
+                            onClick={async () => {
+                              const ok = await accionar(
                                 "registrar_llegada",
-                                { contenedor_id: c.id, precintos_recibidos: leidos },
+                                {
+                                  contenedor_id: c.id,
+                                  precintos_recibidos: leidos,
+                                  ...cuerpoFirma(firmaDe(c.id, "llegada"), true),
+                                },
                                 // Llega otro contenedor a mitad del conteo: no se pisa lo contado.
                                 false,
-                              )
-                            }
+                              );
+                              // La clave no se queda escrita en pantalla.
+                              cambiarFirma(c.id, "llegada", ok ? FIRMA_VACIA : { clave: "" });
+                            }}
                             disabled={
                               enviando ||
                               leidos.length === 0 ||
                               fotosLlegada.length === 0 ||
-                              fotosPrecinto.length === 0
+                              fotosPrecinto.length === 0 ||
+                              !firmaLista(firmaDe(c.id, "llegada"))
                             }
                             icon={Truck}
                             className="w-full h-12"
@@ -1295,19 +1347,31 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                               placeholder={t("notas_contenedor")}
                               className={inputClases}
                             />
+                            <FirmaAlmacen
+                              momento="cierre"
+                              valor={firmaDe(c.id, "cierre")}
+                              onChange={(cambios) => cambiarFirma(c.id, "cierre", cambios)}
+                              almacenistas={almacenistas}
+                              conNota={false}
+                            />
                             <BotonSecundario
-                              onClick={() => {
+                              onClick={async () => {
                                 const rs = resumenCont(c.id);
                                 if (rs.difs && !window.confirm(t("contenedor_confirmar_diferencias", { count: rs.difs }))) {
                                   return;
                                 }
-                                void accionar(
+                                const ok = await accionar(
                                   "cerrar_contenedor",
-                                  { contenedor_id: c.id, notas_cierre: notasCont[c.id] || null },
+                                  {
+                                    contenedor_id: c.id,
+                                    notas_cierre: notasCont[c.id] || null,
+                                    ...cuerpoFirma(firmaDe(c.id, "cierre"), false),
+                                  },
                                   false,
                                 );
+                                cambiarFirma(c.id, "cierre", ok ? FIRMA_VACIA : { clave: "" });
                               }}
-                              disabled={enviando || fotosCierre.length === 0}
+                              disabled={enviando || fotosCierre.length === 0 || !firmaLista(firmaDe(c.id, "cierre"))}
                               icon={CheckCircle2}
                               className="w-full"
                             >
@@ -1315,7 +1379,15 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                             </BotonSecundario>
                           </>
                         ) : (
-                          c.notas_cierre && <p className="text-xs text-slate-600">{c.notas_cierre}</p>
+                          <>
+                            <FirmaContenedorVista
+                              momento="cierre"
+                              almacenista={c.cierre_almacenista}
+                              otro={c.cierre_otro}
+                              otroOk={c.cierre_otro_ok}
+                            />
+                            {c.notas_cierre && <p className="text-xs text-slate-600">{c.notas_cierre}</p>}
+                          </>
                         )}
                       </div>
                     )}

@@ -3144,7 +3144,9 @@
         "agregar_select": "Agregar de la lista de almacenistas",
         "select_placeholder": "-- Seleccionar almacenista --",
         "gestionar": "Gestionar almacenistas",
-        "contador": "{count, plural, =1 {# almacenista} other {# almacenistas}}"
+        "contador": "{count, plural, =1 {# almacenista} other {# almacenistas}}",
+        "con_clave_ayuda": "Cada almacenista firma con su clave personal (4 a 6 números) al abrir y al cerrar un contenedor en la recepción.",
+        "aviso_sin_clave": "{count, plural, =1 {# almacenista todavía no tiene clave: no podrá abrir ni cerrar contenedores en la recepción.} other {# almacenistas todavía no tienen clave: no podrán abrir ni cerrar contenedores en la recepción.}}"
       },
       "choferes_catalogo": {
         "titulo": "Choferes",
@@ -3561,6 +3563,23 @@
     }
   },
   "recepcion": {
+    "firma_almacen": {
+      "titulo_llegada": "Firma de quien abre el contenedor",
+      "titulo_cierre": "Firma de quien cierra el contenedor",
+      "quien": "Quién de Almacén",
+      "elegir": "Elige a la persona…",
+      "sin_catalogo": "No hay almacenistas registrados.",
+      "gestionar": "Personal de Almacén",
+      "sin_clave_aviso": "{nombre} todavía no tiene clave: regístrala en Personal de Almacén.",
+      "clave": "Clave personal",
+      "clave_ayuda": "La clave de 4 a 6 números que registró en Personal de Almacén.",
+      "nota": "Nota u observación",
+      "nota_ph": "Algo que quieras dejar anotado del contenedor (opcional)",
+      "abrio": "Abrió",
+      "cerro": "Cerró",
+      "con_clave": "firmado con clave",
+      "falta_firma": "Elige quién de Almacén firma, escribe su clave y responde «Otro» si lo escribiste."
+    },
     "titulo": "Recepción por packing list",
     "titulo_compras": "Packing lists",
     "sub_almacen": "Contenedores por recibir y verificar",

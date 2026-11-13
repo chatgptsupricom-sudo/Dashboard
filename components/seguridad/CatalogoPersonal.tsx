@@ -634,13 +634,20 @@ function Acciones({
   );
 }
 
-function EditorClave({
+/**
+ * Asignar o cambiar una clave personal. Se usa también en Personal de Almacén
+ * (MercanciaCatalogoNombre), con los textos de `seguridad.personal`.
+ * `pideActual` (por defecto, si ya tiene): el SuperAdmin la repone sin la actual.
+ */
+export function EditorClave({
   tiene,
+  pideActual = tiene,
   onCancelar,
   onGuardar,
   t,
 }: {
   tiene: boolean;
+  pideActual?: boolean;
   onCancelar: () => void;
   onGuardar: (nueva: string, actual?: string) => Promise<void>;
   t: ReturnType<typeof useTranslations>;
@@ -652,7 +659,7 @@ function EditorClave({
   const [error, setError] = useState<string | null>(null);
 
   const guardar = async () => {
-    if (!CLAVE_OK.test(nueva) || (tiene && !CLAVE_OK.test(actual))) {
+    if (!CLAVE_OK.test(nueva) || (pideActual && !CLAVE_OK.test(actual))) {
       setError(t("clave_invalida"));
       return;
     }
@@ -663,7 +670,7 @@ function EditorClave({
     setGuardando(true);
     setError(null);
     try {
-      await onGuardar(nueva, tiene ? actual : undefined);
+      await onGuardar(nueva, pideActual ? actual : undefined);
     } catch (e: any) {
       setError(e?.message || t("error"));
     } finally {
@@ -674,8 +681,8 @@ function EditorClave({
   return (
     <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/40 p-3 sm:p-4 space-y-3">
       <p className="text-xs font-semibold text-slate-700">{t(tiene ? "cambiar_clave" : "asignar_clave")}</p>
-      <div className={`grid grid-cols-1 gap-3 ${tiene ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-        {tiene && <CampoClave valor={actual} onChange={setActual} etiqueta={t("clave_actual")} t={t} />}
+      <div className={`grid grid-cols-1 gap-3 ${pideActual ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+        {pideActual && <CampoClave valor={actual} onChange={setActual} etiqueta={t("clave_actual")} t={t} />}
         <CampoClave valor={nueva} onChange={setNueva} etiqueta={t("clave_nueva")} autoComplete="new-password" t={t} />
         <CampoClave
           valor={repetir}

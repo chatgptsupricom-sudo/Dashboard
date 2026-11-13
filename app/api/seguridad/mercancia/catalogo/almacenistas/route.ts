@@ -4,6 +4,7 @@ import {
   requireAlmacenOSeguridad,
   resolverCidsSesion,
 } from "@/lib/seguridad/auth";
+import { asegurarColumnaClaveAlmacen } from "@/lib/seguridad/clavePersonal";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -26,8 +27,18 @@ export async function GET(request: NextRequest) {
     const { cids, error: cidsError } = resolverCidsSesion(auth.payload);
     if (cidsError) return cidsError;
 
+    // Si tiene clave personal (lib/seguridad/clavePersonal.ts), nunca el hash.
+    // Si la columna no se puede agregar, la lista sale igual, sin ese dato.
+    let conClave = true;
+    try {
+      await asegurarColumnaClaveAlmacen();
+    } catch (e: any) {
+      conClave = false;
+      console.warn("[almacenistas] no se pudo agregar clave_hash:", e?.message);
+    }
     const res = await query(
-      `SELECT id, nombre FROM seguridad_catalogo_almacenistas
+      `SELECT id, nombre${conClave ? ", (clave_hash IS NOT NULL) AS tiene_clave" : ""}
+         FROM seguridad_catalogo_almacenistas
         ${cids !== null ? "WHERE cids = ?" : ""}
         ORDER BY nombre ASC`,
       cids !== null ? [cids] : [],

@@ -3155,7 +3155,9 @@
         "agregar_select": "Add from the list of warehouse workers",
         "select_placeholder": "-- Select warehouse worker --",
         "gestionar": "Manage warehouse workers",
-        "contador": "{count, plural, =1 {# warehouse worker} other {# warehouse workers}}"
+        "contador": "{count, plural, =1 {# warehouse worker} other {# warehouse workers}}",
+        "con_clave_ayuda": "Each warehouse worker signs with their personal key (4 to 6 digits) when opening and closing a container at reception.",
+        "aviso_sin_clave": "{count, plural, =1 {# warehouse worker has no key yet: they cannot open or close containers at reception.} other {# warehouse workers have no key yet: they cannot open or close containers at reception.}}"
       },
       "choferes_catalogo": {
         "titulo": "Drivers",
@@ -3572,6 +3574,23 @@
     }
   },
   "recepcion": {
+    "firma_almacen": {
+      "titulo_llegada": "Signature of who opens the container",
+      "titulo_cierre": "Signature of who closes the container",
+      "quien": "Warehouse staff member",
+      "elegir": "Choose the person…",
+      "sin_catalogo": "No warehouse workers registered.",
+      "gestionar": "Warehouse staff",
+      "sin_clave_aviso": "{nombre} has no key yet: register it in Warehouse staff.",
+      "clave": "Personal key",
+      "clave_ayuda": "The 4 to 6 digit key registered in Warehouse staff.",
+      "nota": "Note or remark",
+      "nota_ph": "Anything you want to note about the container (optional)",
+      "abrio": "Opened by",
+      "cerro": "Closed by",
+      "con_clave": "signed with key",
+      "falta_firma": "Choose who from the warehouse signs, type their key and answer \"Other\" if you filled it in."
+    },
     "titulo": "Packing list reception",
     "titulo_compras": "Packing lists",
     "sub_almacen": "Containers to receive and verify",

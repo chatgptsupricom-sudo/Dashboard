@@ -11,6 +11,11 @@ import { contenedorDeConteo, ponerCantidad, recalcularTotales } from "@/lib/rece
 import { avisarObservaciones } from "@/lib/recepcion/avisoObservaciones";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import {
+  asegurarColumnasFirmaContenedor,
+  leerFirmaContenedor,
+  verificarFirma,
+} from "@/lib/recepcion/firmaContenedor";
+import {
   cargarRecepcion,
   emitirRecepcion,
   fueraDeAlcance,
@@ -25,12 +30,17 @@ export const dynamic = "force-dynamic";
  * POST /api/recepcion/[id]/etapa  { accion, ...datos }   — solo Almacen
  *
  * Por contenedor (pueden llegar en dias distintos):
- *  registrar_llegada  { contenedor_id, precintos_recibidos: string[] }
+ *  registrar_llegada  { contenedor_id, precintos_recibidos: string[], almacenista, clave,
+ *                       otro_verificacion?, otro_verificacion_ok?, nota? }
  *                     contenedor por_llegar -> descargando (fotos llegada + precintos;
  *                     puede tener varios precintos, coincide si son los mismos)
  *                     y el packing list pasa a descargando con el primero
- *  cerrar_contenedor  { contenedor_id, notas_cierre }
+ *  cerrar_contenedor  { contenedor_id, notas_cierre, almacenista, clave,
+ *                       otro_verificacion?, otro_verificacion_ok? }
  *                     contenedor descargando -> cerrado (foto de como quedo)
+ *                     Abrir y cerrar un contenedor los firma quien lo hace en
+ *                     Almacén con su clave personal, con «Otro» (si aplica)
+ *                     y una nota (lib/recepcion/firmaContenedor.ts).
  *
  * Del packing list entero:
  *  guardar_conteo     guarda el avance, no avanza. Cada renglon trae solo lo
@@ -323,6 +333,12 @@ export async function POST(
         if (faltan.length) {
           return NextResponse.json({ error: `Falta ${faltan.join(", ")}` }, { status: 400 });
         }
+        // Firma de quien abre el contenedor: su clave de Almacén, al final.
+        const llegada = leerFirmaContenedor(body);
+        if (llegada.error) return NextResponse.json({ error: llegada.error }, { status: 400 });
+        await asegurarColumnasFirmaContenedor();
+        const claveLlegada = await verificarFirma(llegada.firma, Number(rec.cids) || null, body?.clave);
+        if (!claveLlegada.ok) return NextResponse.json({ error: claveLlegada.motivo }, { status: claveLlegada.status });
         // Coincide solo si son exactamente los mismos; sin esperados, NULL.
         const cmp = compararPrecintos(contenedor.precintos_esperados, precintos);
         const coincide = cmp.coincide === null ? null : cmp.coincide ? 1 : 0;
@@ -330,9 +346,21 @@ export async function POST(
         const res = await query(
           `UPDATE recepcion_packing_contenedores
               SET etapa = 'descargando', llegada_at = NOW(), llegada_por = ?,
-                  precinto_recibido = ?, precintos_recibidos = ?, precinto_coincide = ?
+                  precinto_recibido = ?, precintos_recibidos = ?, precinto_coincide = ?,
+                  llegada_almacenista = ?, llegada_otro = ?, llegada_otro_ok = ?, llegada_nota = ?
             WHERE id = ? AND recepcion_id = ? AND etapa = 'por_llegar'`,
-          [sesion!.nombre, precintos[0], JSON.stringify(precintos), coincide, contenedor.id, id],
+          [
+            sesion!.nombre,
+            precintos[0],
+            JSON.stringify(precintos),
+            coincide,
+            llegada.firma.almacenista,
+            llegada.firma.otro,
+            llegada.firma.otroOk,
+            llegada.firma.nota,
+            contenedor.id,
+            id,
+          ],
         );
         if (Number((res.rows as any)?.affectedRows || 0) !== 1) return conflicto();
 
@@ -374,11 +402,26 @@ export async function POST(
             { status: 400 },
           );
         }
+        // Firma de quien cierra el contenedor: su clave de Almacén, al final.
+        const cierre = leerFirmaContenedor(body);
+        if (cierre.error) return NextResponse.json({ error: cierre.error }, { status: 400 });
+        await asegurarColumnasFirmaContenedor();
+        const claveCierre = await verificarFirma(cierre.firma, Number(rec.cids) || null, body?.clave);
+        if (!claveCierre.ok) return NextResponse.json({ error: claveCierre.motivo }, { status: claveCierre.status });
         const res = await query(
           `UPDATE recepcion_packing_contenedores
-              SET etapa = 'cerrado', cerrado_at = NOW(), cerrado_por = ?, notas_cierre = ?
+              SET etapa = 'cerrado', cerrado_at = NOW(), cerrado_por = ?, notas_cierre = ?,
+                  cierre_almacenista = ?, cierre_otro = ?, cierre_otro_ok = ?
             WHERE id = ? AND recepcion_id = ? AND etapa = 'descargando'`,
-          [sesion!.nombre, texto(body?.notas_cierre, MAX.notas), contenedor.id, id],
+          [
+            sesion!.nombre,
+            texto(body?.notas_cierre, MAX.notas),
+            cierre.firma.almacenista,
+            cierre.firma.otro,
+            cierre.firma.otroOk,
+            contenedor.id,
+            id,
+          ],
         );
         if (Number((res.rows as any)?.affectedRows || 0) !== 1) return conflicto();
         emitirRecepcion({

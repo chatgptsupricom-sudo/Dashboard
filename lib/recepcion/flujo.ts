@@ -75,6 +75,15 @@ export type Contenedor = {
   notas_cierre: string | null;
   /** Correcciones de los precintos recibidos, de la mas vieja a la mas nueva. */
   precintos_correcciones: CorreccionPrecintos[];
+  /** Quien de Almacen lo abrio y lo cerro, con su clave, y lo que anoto
+   *  (lib/recepcion/firmaContenedor.ts; columnas que se agregan solas). */
+  llegada_almacenista?: string | null;
+  llegada_otro?: string | null;
+  llegada_otro_ok?: number | null;
+  llegada_nota?: string | null;
+  cierre_almacenista?: string | null;
+  cierre_otro?: string | null;
+  cierre_otro_ok?: number | null;
 };
 
 export type RolRecepcion = "compras" | "almacen";
