@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useId } from "react";
 import { PenLine } from "lucide-react";
 
 /**
@@ -169,6 +170,91 @@ export function CheckRow({
           {no}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * «Otro» control de la verificación de estado, si aplica: se escribe qué se
+ * revisó y se marca Sí / No. Vacío = no aplica (los botones quedan apagados);
+ * con texto hay que responder, como en los otros controles.
+ */
+export function CheckOtro({
+  detalle,
+  onDetalle,
+  value,
+  onChange,
+  label = "Otro",
+  siAplica = "si aplica",
+  placeholder = "¿Qué otro control? Ej.: pantalla sin rayones",
+  yes = "Sí",
+  no = "No",
+}: {
+  detalle: string;
+  onDetalle: (v: string) => void;
+  value: boolean | null;
+  onChange: (v: boolean | null) => void;
+  label?: string;
+  siAplica?: string;
+  placeholder?: string;
+  yes?: string;
+  no?: string;
+}) {
+  const conTexto = !!detalle.trim();
+  const id = useId();
+  return (
+    <div
+      className={`rounded-[10px] border px-3 py-2.5 ${
+        conTexto && value === null ? "border-amber-300 bg-amber-50" : "border-slate-200"
+      }`}
+    >
+      <label htmlFor={id} className="block text-sm font-medium text-slate-700 mb-2">
+        {label} <span className="text-xs font-normal text-slate-400">({siAplica})</span>
+      </label>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <input
+            id={id}
+            type="text"
+            value={detalle}
+            maxLength={200}
+            placeholder={placeholder}
+            onChange={(e) => {
+              onDetalle(e.target.value);
+              if (!e.target.value.trim()) onChange(null);
+            }}
+            className="flex-1 min-w-0 h-12 px-3 border border-slate-200 rounded-[10px] text-sm font-normal bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+          />
+          <span
+            role="group"
+            aria-label={label}
+            className={`inline-flex shrink-0 self-end sm:self-auto rounded-[10px] border border-slate-200 overflow-hidden text-sm font-semibold ${
+              conTexto ? "" : "opacity-40 pointer-events-none"
+            }`}
+          >
+            <button
+              type="button"
+              disabled={!conTexto}
+              onClick={() => onChange(true)}
+              aria-pressed={value === true}
+              className={`min-w-[56px] px-4 h-12 transition-colors ${
+                value === true ? "bg-emerald-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              {yes}
+            </button>
+            <button
+              type="button"
+              disabled={!conTexto}
+              onClick={() => onChange(false)}
+              aria-pressed={value === false}
+              className={`min-w-[56px] px-4 h-12 border-l border-slate-200 transition-colors ${
+                value === false ? "bg-red-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              {no}
+            </button>
+          </span>
+        </div>
     </div>
   );
 }

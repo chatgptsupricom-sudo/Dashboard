@@ -60,7 +60,7 @@ export async function firmasDeActa(
 export async function firmasConImagen(
   tipo: TipoActa,
   actaId: number,
-): Promise<Array<FirmaGuardada & { data_url: string }>> {
+): Promise<Array<FirmaGuardada & { data_url: string; por_clave: boolean }>> {
   try {
     const res = await query(
       `SELECT rol, firmante_nombre, created_at, firma_data, firma_mime
@@ -78,6 +78,8 @@ export async function firmasConImagen(
         firmante_nombre: r.firmante_nombre,
         created_at: r.created_at,
         data_url: `data:${r.firma_mime || "image/png"};base64,${buf.toString("base64")}`,
+        // Firmada con la clave personal de Seguridad: no hay imagen.
+        por_clave: r.firma_mime === "clave",
       };
     });
   } catch (e: any) {

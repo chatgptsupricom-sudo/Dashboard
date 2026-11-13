@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { CheckRow, FirmaCampo, PersonaSelect, type Persona } from "@/components/seguridad/FormActa";
+import { CheckOtro, CheckRow, FirmaCampo, PersonaSelect, type Persona } from "@/components/seguridad/FormActa";
 import { SignaturePad } from "@/components/seguridad/SignaturePad";
 import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 import { fechaCorta } from "@/components/rma/estados";
@@ -375,6 +375,11 @@ function DialogoRecepcion({
   );
   const [accesorios, setAccesorios] = useState<boolean | null>(null);
   const [sinManipulacion, setSinManipulacion] = useState<boolean | null>(null);
+  // «Otro» control (si aplica) y nota u observación opcional, como en el
+  // ingreso de Seguridad.
+  const [otroDetalle, setOtroDetalle] = useState("");
+  const [otroOk, setOtroOk] = useState<boolean | null>(null);
+  const [observacion, setObservacion] = useState("");
   const [llegoPor, setLlegoPor] = useState<"cliente" | "encomienda">("cliente");
   const [entrega, setEntrega] = useState<string>(caso.client_name || "");
   const [firmaCliente, setFirmaCliente] = useState<string | null>(null);
@@ -391,6 +396,7 @@ function DialogoRecepcion({
     const faltan: string[] = [];
     if (productos.some((p) => p.recibido === null)) faltan.push("indica si llegó cada producto");
     if (accesorios === null || sinManipulacion === null) faltan.push("responde la verificación");
+    if (otroDetalle.trim() && otroOk === null) faltan.push("Sí o No en «Otro» (o borra lo que escribiste)");
     if (encomienda) {
       if (!foto) faltan.push("la foto de la guía o del paquete");
     } else {
@@ -424,6 +430,9 @@ function DialogoRecepcion({
       firma_rma: firmaRma,
       accesorios_integros: accesorios,
       sin_manipulacion: sinManipulacion,
+      otro_verificacion: otroDetalle.trim() ? otroDetalle.trim().slice(0, 200) : null,
+      otro_verificacion_ok: otroDetalle.trim() ? otroOk : null,
+      observacion_seguridad: observacion.trim() ? observacion.trim().slice(0, 1000) : null,
       ...(productos.length
         ? {
             productos: productos.map((p) => ({
@@ -492,6 +501,24 @@ function DialogoRecepcion({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <CheckRow label="Accesorios íntegros" value={accesorios} onChange={setAccesorios} yes="Sí" no="No" />
             <CheckRow label="Sin manipulación" value={sinManipulacion} onChange={setSinManipulacion} yes="Sí" no="No" />
+            <div className="sm:col-span-2">
+              <CheckOtro detalle={otroDetalle} onDetalle={setOtroDetalle} value={otroOk} onChange={setOtroOk} />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="observacion-recepcion" className="block text-sm font-semibold text-slate-800">
+              Nota u observación <span className="text-xs font-normal text-slate-400">(opcional)</span>
+            </label>
+            <textarea
+              id="observacion-recepcion"
+              value={observacion}
+              maxLength={1000}
+              rows={3}
+              placeholder="Algo que quieras dejar anotado del equipo o de la entrega"
+              onChange={(e) => setObservacion(e.target.value)}
+              className="w-full px-3 py-2.5 border border-slate-200 rounded-[10px] text-sm resize-y focus:outline-none focus:ring-2 focus:ring-violet-100"
+            />
           </div>
 
           <div className="space-y-2">

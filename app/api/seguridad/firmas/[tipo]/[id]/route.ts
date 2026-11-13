@@ -209,11 +209,12 @@ export async function POST(
       );
     }
 
-    // Acta del despacho de mercancía, firma de Seguridad: con la clave
-    // personal, no con un trazo (firmar con el dedo desde la laptop no
-    // funcionaba). Se guarda sin imagen (firma_mime 'clave'); esa acta no
-    // tiene comprobante con imágenes. Las actas de RMA siguen con el trazo.
-    const porClave = p.tipo === "mercancia" && body.rol === "seguridad";
+    // Firma de Seguridad en el acta del despacho de mercancía y en la de
+    // recepción de RMA (ingreso): con la clave personal, no con un trazo
+    // (firmar con el dedo desde la laptop no funcionaba). Se guarda sin
+    // imagen (firma_mime 'clave'); el comprobante dice "Firmado con clave".
+    // El resto de las firmas siguen con el trazo.
+    const porClave = (p.tipo === "mercancia" || p.tipo === "ingreso") && body.rol === "seguridad";
     let decodificada: { buffer: Buffer; mime: string } | null = null;
     if (porClave) {
       decodificada = { buffer: Buffer.alloc(0), mime: "clave" };

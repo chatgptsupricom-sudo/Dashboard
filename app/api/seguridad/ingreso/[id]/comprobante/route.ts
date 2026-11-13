@@ -171,7 +171,9 @@ export async function GET(
       return `
     <div class="sig">
       <div class="trazo">${
-        f ? `<img src="${f.data_url}" alt="Firma de ${esc(f.firmante_nombre)}">` : ""
+        !f ? "" : f.por_clave
+          ? `<span class="con-clave">Firmado con clave personal</span>`
+          : `<img src="${f.data_url}" alt="Firma de ${esc(f.firmante_nombre)}">`
       }</div>
       <div class="name">${esc(titulo)}</div>
       ${cargo ? `<div class="cargo">${esc(cargo)}</div>` : ""}
@@ -276,6 +278,7 @@ export async function GET(
      el papel impreso no deja hueco para firmarla a mano. */
   .sig .trazo { height: 64px; display: flex; align-items: flex-end; justify-content: center; }
   .sig .trazo img { max-height: 62px; max-width: 100%; }
+  .sig .trazo .con-clave { font-size: 11px; font-style: italic; color: #475569; padding-bottom: 4px; }
   .sig .name { border-top: 1px solid #cfc9e6; padding-top: 6px; font-weight: 700; font-size: 12px; }
   .sig .cargo { color: #555; font-size: 10px; }
   .sig .cuando { color: #888; font-size: 9px; margin-top: 2px; }
@@ -333,7 +336,7 @@ export async function GET(
         ${i.otro_verificacion ? `<td>${check(i.otro_verificacion_ok)}</td>` : ""}
       </tr>
     </table>
-    ${i.observacion_seguridad ? `<h2>Nota u observaci&oacute;n de Seguridad</h2><table><tr><td class="falla">${esc(i.observacion_seguridad)}</td></tr></table>` : ""}
+    ${i.observacion_seguridad ? `<h2>Nota u observaci&oacute;n de la recepci&oacute;n</h2><table><tr><td class="falla">${esc(i.observacion_seguridad)}</td></tr></table>` : ""}
 
     <table style="margin-top:12px">
       <tr><th>Garant&iacute;a (del ticket de RMA)</th><td>${garantiaTexto}</td></tr>

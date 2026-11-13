@@ -369,6 +369,8 @@ export default function IngresoDetailPage() {
           // Seguridad firma la suya y, si el cliente retira en persona, la del
           // cliente en esta computadora. RMA y Almacén firman en su panel.
           puedeFirmar={["seguridad", "cliente"]}
+          // Seguridad firma con su clave personal, no con un trazo.
+          porClave={["seguridad"]}
         />
 
         <ProductosEnvioLista

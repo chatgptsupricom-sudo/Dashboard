@@ -16,6 +16,7 @@ import { registrarLlegada } from "@/lib/rma/flujo";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { siguienteGuia } from "@/lib/seguridad/guia";
 import { decodificarFirmaPng } from "@/lib/seguridad/firmas";
+import { CLAVE_MAX, CLAVE_MIN, esClaveValida, verificarClaveSeguridad } from "@/lib/seguridad/clavePersonal";
 
 /** Tope de cada firma (PNG en base64), igual que /api/seguridad/firmas. */
 const MAX_FIRMA_BYTES = 1024 * 1024;
@@ -251,7 +252,9 @@ export async function POST(request: NextRequest) {
 
     // Firmas de quien recibe, por cada lado del mostrador: Seguridad y RMA
     // firman en el mismo formulario, al recibir el equipo. Sin Seguridad,
-    // firman el cliente que lo entrega y RMA.
+    // firman el cliente que lo entrega y RMA. Seguridad no dibuja: firma con
+    // su clave personal (la de Personal de Seguridad, como en el despacho de
+    // mercancía) y queda sin imagen, firma_mime 'clave'.
     const firmas: { rol: "seguridad" | "tecnico" | "cliente"; nombre: string | null; png: { buffer: Buffer; mime: string } | null }[] = [
       ...(porEncomienda
         ? []
@@ -261,9 +264,17 @@ export async function POST(request: NextRequest) {
       { rol: "tecnico", nombre: recibidoRma, png: null },
     ];
     for (const f of firmas) {
-      const dataUrl =
-        f.rol === "seguridad" ? body.firma_seguridad : f.rol === "cliente" ? body.firma_cliente : body.firma_rma;
-      const quien = f.rol === "seguridad" ? "Seguridad" : f.rol === "cliente" ? "quien entrega el equipo" : "RMA";
+      if (f.rol === "seguridad") {
+        // La clave se compara al final, cuando todo lo demás está bien: así
+        // solo cuentan como intento fallido las claves equivocadas.
+        if (!esClaveValida(body.clave_seguridad)) {
+          errors.push(`Escribe la clave personal de Seguridad (${CLAVE_MIN} a ${CLAVE_MAX} números)`);
+        }
+        f.png = { buffer: Buffer.alloc(0), mime: "clave" };
+        continue;
+      }
+      const dataUrl = f.rol === "cliente" ? body.firma_cliente : body.firma_rma;
+      const quien = f.rol === "cliente" ? "quien entrega el equipo" : "RMA";
       if (typeof dataUrl !== "string" || !dataUrl) {
         errors.push(`Falta la firma de ${quien}`);
         continue;
@@ -355,6 +366,15 @@ export async function POST(request: NextRequest) {
         // comprobar la clave.
         console.warn("idempotency_key no disponible:", e?.message);
       }
+    }
+
+    // Clave personal de quien recibe por Seguridad: lo último antes de
+    // registrar, para que solo cuente como fallo una clave equivocada (5 en
+    // 15 minutos bloquean a esa persona ese rato). Se valida contra el
+    // catálogo de la sede de la sesión, el mismo de la lista del formulario.
+    if (!sinSeguridad && recibidoSeguridad) {
+      const v = await verificarClaveSeguridad(recibidoSeguridad, cids, body.clave_seguridad);
+      if (!v.ok) return NextResponse.json({ error: v.motivo }, { status: v.status });
     }
 
     // Datos del acta, tal cual el ticket. Con varios productos (issue #331),

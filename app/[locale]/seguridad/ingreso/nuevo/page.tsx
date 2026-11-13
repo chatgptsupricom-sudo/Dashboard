@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, ClipboardList, Loader2, Lock, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ClipboardList, KeyRound, Loader2, Lock, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { GarantiaBadge, GarantiaIngreso } from "@/components/seguridad/GarantiaIngreso";
 import { SignaturePad } from "@/components/seguridad/SignaturePad";
-import { CheckRow, Dato, FirmaCampo, PersonaSelect, type Persona } from "@/components/seguridad/FormActa";
+import { CheckOtro, CheckRow, Dato, FirmaCampo, PersonaSelect, type Persona } from "@/components/seguridad/FormActa";
 import { fechaCorta } from "@/lib/seguridad/formato";
 
 function todayISO() {
@@ -82,7 +82,9 @@ export default function NuevoIngresoPage() {
   // Quién recibió, por cada lado del mostrador (#50), y su firma.
   const [recibidoSeguridad, setRecibidoSeguridad] = useState("");
   const [recibidoRma, setRecibidoRma] = useState("");
-  const [firmaSeguridad, setFirmaSeguridad] = useState<string | null>(null);
+  // Seguridad no dibuja su firma: escribe su clave personal (la de Personal
+  // de Seguridad, como en el despacho de mercancía).
+  const [claveSeguridad, setClaveSeguridad] = useState("");
   const [firmaRma, setFirmaRma] = useState<string | null>(null);
 
   const [personalSeguridad, setPersonalSeguridad] = useState<Persona[]>([]);
@@ -209,7 +211,7 @@ export default function NuevoIngresoPage() {
       setSubmitError(tf("error_required"));
       return;
     }
-    if (!firmaSeguridad || !firmaRma) {
+    if (!/^d{4,6}$/.test(claveSeguridad) || !firmaRma) {
       setSubmitError(tf("error_firmas"));
       return;
     }
@@ -229,7 +231,7 @@ export default function NuevoIngresoPage() {
       recibido_rma_nombre: recibidoRma,
       // `recibido_por` se conserva por la calificación y los KPIs: es el de Seguridad.
       recibido_por: recibidoSeguridad,
-      firma_seguridad: firmaSeguridad,
+      clave_seguridad: claveSeguridad,
       firma_rma: firmaRma,
     };
     if (productos.length) {
@@ -445,60 +447,18 @@ export default function NuevoIngresoPage() {
                   yes={tf("yes")}
                   no={tf("no")}
                 />
-                {/* «Otro», si aplica: se escribe qué se revisó y se marca Sí/No. */}
-                <div
-                  className={`sm:col-span-2 rounded-[10px] border px-3 py-2.5 ${
-                    otroDetalle.trim() && otroOk === null ? "border-amber-300 bg-amber-50" : "border-slate-200"
-                  }`}
-                >
-                  <label htmlFor="otro-verificacion" className="block text-sm font-medium text-slate-700 mb-2">
-                    {tf("check_otro")}{" "}
-                    <span className="text-xs font-normal text-slate-400">({tf("check_otro_si_aplica")})</span>
-                  </label>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <input
-                      id="otro-verificacion"
-                      type="text"
-                      value={otroDetalle}
-                      maxLength={200}
-                      placeholder={tf("check_otro_placeholder")}
-                      onChange={(e) => {
-                        setOtroDetalle(e.target.value);
-                        if (!e.target.value.trim()) setOtroOk(null);
-                      }}
-                      className="flex-1 min-w-0 h-12 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
-                    />
-                    <div
-                      role="group"
-                      aria-label={tf("check_otro")}
-                      className={`inline-flex shrink-0 self-end sm:self-auto rounded-[10px] border border-slate-200 overflow-hidden text-sm font-semibold ${
-                        otroDetalle.trim() ? "" : "opacity-40 pointer-events-none"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        disabled={!otroDetalle.trim()}
-                        onClick={() => setOtroOk(true)}
-                        aria-pressed={otroOk === true}
-                        className={`min-w-[56px] px-4 h-12 transition-colors ${
-                          otroOk === true ? "bg-emerald-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
-                        }`}
-                      >
-                        {tf("yes")}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!otroDetalle.trim()}
-                        onClick={() => setOtroOk(false)}
-                        aria-pressed={otroOk === false}
-                        className={`min-w-[56px] px-4 h-12 border-l border-slate-200 transition-colors ${
-                          otroOk === false ? "bg-red-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
-                        }`}
-                      >
-                        {tf("no")}
-                      </button>
-                    </div>
-                  </div>
+                <div className="sm:col-span-2">
+                  <CheckOtro
+                    detalle={otroDetalle}
+                    onDetalle={setOtroDetalle}
+                    value={otroOk}
+                    onChange={setOtroOk}
+                    label={tf("check_otro")}
+                    siAplica={tf("check_otro_si_aplica")}
+                    placeholder={tf("check_otro_placeholder")}
+                    yes={tf("yes")}
+                    no={tf("no")}
+                  />
                 </div>
               </div>
             </section>
@@ -539,9 +499,32 @@ export default function NuevoIngresoPage() {
                     gestionarHref={`/${locale}/seguridad/config/personal`}
                     gestionarLabel={tf("recibido_gestionar")}
                   />
-                  <FirmaCampo etiqueta={tf("firma_seguridad")} firmada={!!firmaSeguridad}>
-                    <SignaturePad onChange={setFirmaSeguridad} height={140} />
-                  </FirmaCampo>
+                  <div>
+                    <label
+                      htmlFor="clave-seguridad"
+                      className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-1.5"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      {tf("clave_seguridad")} <span className="text-red-500">*</span>
+                      {/^d{4,6}$/.test(claveSeguridad) && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" aria-hidden />
+                      )}
+                    </label>
+                    <input
+                      id="clave-seguridad"
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={6}
+                      value={claveSeguridad}
+                      onChange={(e) => setClaveSeguridad(e.target.value.replace(/D/g, "").slice(0, 6))}
+                      placeholder="••••"
+                      className={`w-full h-12 px-3 border rounded-[10px] text-lg tracking-[0.4em] focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100 ${
+                        /^d{4,6}$/.test(claveSeguridad) ? "border-slate-200" : "border-amber-300"
+                      }`}
+                    />
+                    <p className="mt-1.5 text-[11px] text-slate-500">{tf("clave_seguridad_ayuda")}</p>
+                  </div>
                 </div>
                 <div className="space-y-3 rounded-[10px] border border-slate-200 p-4">
                   <PersonaSelect
