@@ -22,11 +22,11 @@ import type { Banda, DatosCxPAdmin } from "@/lib/administracion/cxp";
 import { DetalleDocumentoCxP } from "@/components/administracion/DetalleDocumentoCxP";
 import { CalendarioPagosCxP } from "@/components/administracion/CalendarioPagosCxP";
 import type { DocumentoCxP } from "@/lib/administracion/cxp";
-import { ChevronDown, ChevronRight, Eye, Receipt } from "lucide-react";
-import { Fragment, useMemo, useState } from "react";
+import { CalendarDays, ChevronDown, ChevronRight, Eye, Receipt } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 type Respuesta = DatosCxPAdmin & { success: true; hoy: string };
-type Vista = "proveedores" | "calendario" | "documentos" | "borradores" | "pagos";
+type Vista = "proveedores" | "documentos" | "borradores" | "pagos";
 
 const ETIQUETA_BANDA: Record<Banda, string> = {
   corriente: "Por vencer",
@@ -62,12 +62,21 @@ export default function CuentasPorPagarPage() {
       return next;
     });
 
-  const { datos, cargando, error, recargar } = useDatosAdmin<Respuesta>(
+  const { datos, cargando, error, actualizar } = useDatosAdmin<Respuesta>(
     "/api/administracion/cuentas-por-pagar",
     empresa,
     mes,
     sinIntercompania ? "&sin_intercompania=1" : "",
   );
+
+  // Cada 3 minutos se vuelve a leer Odoo sin vaciar la pantalla: un pago que
+  // se registra alla aparece en el calendario (y marca su pago fijo) solo.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") actualizar();
+    }, 3 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [actualizar]);
 
   const texto = buscar.toLowerCase().trim();
   const documentos = useMemo(
@@ -234,6 +243,29 @@ export default function CuentasPorPagarPage() {
             />
           </div>
 
+          <Card className="border-blue-100 shadow-sm">
+            <CardHeader className="pb-0">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-blue-600" /> Calendario de pagos
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <CalendarioPagosCxP
+                mes={mes}
+                setMes={setMes}
+                hoy={datos.hoy}
+                empresa={empresa}
+                documentos={datos.documentos}
+                pagos={datos.pagosDelMes}
+                fijos={datos.pagosFijos}
+                fijosError={datos.pagosFijosError}
+                docAbierto={docId !== null}
+                onVerDocumento={setDocId}
+                onCambio={actualizar}
+              />
+            </CardContent>
+          </Card>
+
           {datos.resumen.pagosSinAplicar > 0.01 && (
             <Aviso>
               Hay <b>{money(datos.resumen.pagosSinAplicar, 2)}</b> en pagos o anticipos a proveedores que en Odoo no se
@@ -287,7 +319,6 @@ export default function CuentasPorPagarPage() {
                   onChange={setVista}
                   opciones={[
                     { value: "proveedores", label: "Por proveedor", contador: datos.proveedores.length },
-                    { value: "calendario", label: "Calendario de pagos" },
                     { value: "documentos", label: "Documentos", contador: datos.documentos.length },
                     { value: "borradores", label: "En borrador", contador: datos.borradores.length },
                     { value: "pagos", label: "Pagos del mes", contador: datos.pagosDelMes.length },
@@ -393,20 +424,6 @@ export default function CuentasPorPagarPage() {
                 </div>
               )}
 
-              {vista === "calendario" && (
-                <CalendarioPagosCxP
-                  mes={mes}
-                  setMes={setMes}
-                  hoy={datos.hoy}
-                  empresa={empresa}
-                  documentos={datos.documentos}
-                  pagos={datos.pagosDelMes}
-                  fijos={datos.pagosFijos}
-                  fijosError={datos.pagosFijosError}
-                  onVerDocumento={setDocId}
-                  onCambio={recargar}
-                />
-              )}
 
               {vista === "documentos" && (
                 <div className="overflow-x-auto">
