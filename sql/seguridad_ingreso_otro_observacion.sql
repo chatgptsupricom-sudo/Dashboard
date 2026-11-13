@@ -26,3 +26,14 @@ ALTER TABLE supricom_panel.seguridad_despachos
 SHOW COLUMNS FROM supricom_panel.seguridad_ingresos LIKE 'otro_verificacion%';
 SHOW COLUMNS FROM supricom_panel.seguridad_ingresos LIKE 'observacion_seguridad';
 SHOW COLUMNS FROM supricom_panel.seguridad_despachos LIKE 'otro_verificacion%';
+
+-- Despacho de mercancía (egreso): «Otro» y la nota de Seguridad al verificar
+-- en el portón.
+SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'otro_verificacion%';
+SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'observacion_seguridad';
+ALTER TABLE supricom_panel.seguridad_mercancia
+  ADD COLUMN otro_verificacion VARCHAR(200) DEFAULT NULL,
+  ADD COLUMN otro_verificacion_ok TINYINT(1) DEFAULT NULL,
+  ADD COLUMN observacion_seguridad TEXT DEFAULT NULL;
+SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'otro_verificacion%';
+SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'observacion_seguridad';

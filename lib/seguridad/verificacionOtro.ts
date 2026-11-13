@@ -2,14 +2,14 @@ import { query } from "@/lib/db";
 
 /**
  * «Otro» control de la verificación de estado en las actas de RMA (ingreso y
- * despacho), si aplica: qué se revisó y si está bien. Vacío = no aplica; con
+ * despacho) y en la verificación del portón del despacho de mercancía, si aplica: qué se revisó y si está bien. Vacío = no aplica; con
  * texto hay que declarar Sí o No, como en los otros controles.
  *
  * Las columnas se agregan solas (`SHOW COLUMNS` + `ALTER`); la referencia para
  * phpMyAdmin es sql/seguridad_ingreso_otro_observacion.sql.
  */
 
-export type TablaActa = "seguridad_ingresos" | "seguridad_despachos";
+export type TablaActa = "seguridad_ingresos" | "seguridad_despachos" | "seguridad_mercancia";
 
 const COLUMNAS: Record<TablaActa, [string, string][]> = {
   seguridad_ingresos: [
@@ -21,6 +21,13 @@ const COLUMNAS: Record<TablaActa, [string, string][]> = {
   seguridad_despachos: [
     ["otro_verificacion", "VARCHAR(200) DEFAULT NULL"],
     ["otro_verificacion_ok", "TINYINT(1) DEFAULT NULL"],
+  ],
+  // Egreso de mercancía: lo que anota Seguridad al verificar en el portón
+  // (`motivo_no_aprobado` es otra cosa: el porqué de no aprobar).
+  seguridad_mercancia: [
+    ["otro_verificacion", "VARCHAR(200) DEFAULT NULL"],
+    ["otro_verificacion_ok", "TINYINT(1) DEFAULT NULL"],
+    ["observacion_seguridad", "TEXT DEFAULT NULL"],
   ],
 };
 

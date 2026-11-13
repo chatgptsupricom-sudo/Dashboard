@@ -46,6 +46,7 @@ import { firmasDeActa } from "@/lib/seguridad/firmas";
 import { pickingValidado, validarPickingEnOdoo } from "@/lib/seguridad/validarOdoo";
 import { unidadEnTaller } from "@/lib/mantenimiento/datos";
 import { NextRequest, NextResponse } from "next/server";
+import { asegurarColumnasVerificacion, leerOtroVerificacion } from "@/lib/seguridad/verificacionOtro";
 
 export const dynamic = "force-dynamic";
 
@@ -545,6 +546,22 @@ async function ejecutar(
         parcial: egresoParcial,
       });
 
+      // «Otro» control (si aplica) y la nota de Seguridad, opcionales, con
+      // cualquier decisión (lib/seguridad/verificacionOtro.ts). Se guardan
+      // siempre que estén las columnas, así una ronda nueva no arrastra lo de
+      // la anterior; si no se pueden agregar y no vino nada, se sigue igual.
+      const otro = leerOtroVerificacion(body);
+      if (otro.error) return NextResponse.json({ error: otro.error }, { status: 400 });
+      const observacionSeguridad = texto(body?.observacion_seguridad, 1000);
+      let conColumnasOtro = false;
+      try {
+        await asegurarColumnasVerificacion("seguridad_mercancia");
+        conColumnasOtro = true;
+      } catch (e: any) {
+        if (otro.detalle || observacionSeguridad) throw e;
+        console.warn("[egreso] no se pudieron agregar las columnas de «Otro»:", e?.message);
+      }
+
       const aprobado = body?.aprobado === true;
       // Aprobar exige cero novedades: con faltas o sobras, lo que corresponde
       // es decidir si se despacha igual, con motivo.
@@ -759,8 +776,19 @@ async function ejecutar(
         `estado = ?, verificado_por = ?, verificado_at = CURRENT_TIMESTAMP,
          aprobado = ?, despachado = ?, motivo_no_aprobado = ?${
            conRonda ? `, verificado_en = ?${devolver ? ", ronda_verificacion = ronda_verificacion + 1" : ""}` : ""
-         }${conDecision ? ", decision_seguridad = ?" : ""}`,
-        [estadoCierre, quien, aprobado || parcial ? 1 : 0, sale ? 1 : 0, motivo, ...(conRonda ? [LOCAL_DESPACHO] : []), ...(conDecision ? [aprobado ? "aprobar" : decision] : [])],
+         }${conDecision ? ", decision_seguridad = ?" : ""}${
+           conColumnasOtro ? ", otro_verificacion = ?, otro_verificacion_ok = ?, observacion_seguridad = ?" : ""
+         }`,
+        [
+          estadoCierre,
+          quien,
+          aprobado || parcial ? 1 : 0,
+          sale ? 1 : 0,
+          motivo,
+          ...(conRonda ? [LOCAL_DESPACHO] : []),
+          ...(conDecision ? [aprobado ? "aprobar" : decision] : []),
+          ...(conColumnasOtro ? [otro.detalle, otro.ok, observacionSeguridad] : []),
+        ],
       );
       if (!ok) return conflicto();
 

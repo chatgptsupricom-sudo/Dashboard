@@ -31,6 +31,7 @@ import {
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
+import { CheckOtro } from "@/components/seguridad/FormActa";
 import NotaPedido from "@/components/seguridad/NotaPedido";
 import { VerAutorizacion } from "@/components/ventas/AutorizacionTransporte";
 import { describirMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
@@ -161,6 +162,11 @@ type Movimiento = {
   /** aprobar | despachar | devolver | cancelar (sql/egreso_decision_seguridad.sql). */
   decision_seguridad?: string | null;
   verificado_en?: string | null;
+  /** «Otro» control y nota de Seguridad al verificar en el portón (opcionales;
+   *  columnas que se agregan solas: pueden faltar). */
+  otro_verificacion?: string | null;
+  otro_verificacion_ok?: number | null;
+  observacion_seguridad?: string | null;
 };
 
 type Calificacion = {
@@ -214,6 +220,8 @@ const num = (v: string | number | null | undefined): number | null =>
 export default function EgresoFlujo({ id }: { id: string }) {
   const tm = useTranslations("seguridad.mercancia");
   const tf = useTranslations("seguridad.mercancia.flujo");
+  // «Otro» y la nota de Seguridad usan los textos del acta de ingreso.
+  const tOtro = useTranslations("seguridad.ingreso.form");
   const tc = useTranslations("seguridad.calificacion");
   const tAlm = useTranslations("seguridad.mercancia.almacenistas_catalogo");
   const tCho = useTranslations("seguridad.mercancia.choferes_catalogo");
@@ -278,6 +286,10 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const editando = (campo: string, itemId: number) => sinGuardar.current.add(`${campo}:${itemId}`);
   const guardado = (campo: string, itemId: number) => sinGuardar.current.delete(`${campo}:${itemId}`);
   const [motivoNoAprobado, setMotivoNoAprobado] = useState("");
+  // Verificación en el portón: «Otro» control (si aplica) y nota, opcionales.
+  const [otroDetalle, setOtroDetalle] = useState("");
+  const [otroOk, setOtroOk] = useState<boolean | null>(null);
+  const [observacionSeguridad, setObservacionSeguridad] = useState("");
   // Despacho parcial en el armado: motivo (de 100 salen 76).
   const [motivoParcial, setMotivoParcial] = useState("");
   // Firma de Seguridad en el acta: obligatoria para aprobar o despachar igual
@@ -712,6 +724,13 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const verificadosDe = (itemId: number) =>
     seriales.filter((x) => Number(x.item_id) === itemId && x.verificado_at).length;
   const faltaMotivoRenglon = items.some((it) => noSalio[it.id] && !motivos[it.id]?.trim());
+  // «Otro» escrito sin responder Sí o No.
+  const faltaOtro = !!otroDetalle.trim() && otroOk === null;
+  const verificacionExtra = {
+    otro_verificacion: otroDetalle.trim() ? otroDetalle.trim().slice(0, 200) : null,
+    otro_verificacion_ok: otroDetalle.trim() ? otroOk : null,
+    observacion_seguridad: observacionSeguridad.trim() ? observacionSeguridad.trim().slice(0, 1000) : null,
+  };
 
   // Seriales: los relee Almacen mientras el egreso es suyo; despues quedan
   // fijos. El estado se calcula igual que en la API (evaluarSeriales).
@@ -1143,6 +1162,26 @@ export default function EgresoFlujo({ id }: { id: string }) {
                     <span className="font-medium">{tf("motivo")}:</span> {mov.motivo_no_aprobado}
                   </p>
                 )}
+                {mov.otro_verificacion && (
+                  <p className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+                    <span>
+                      <span className="font-medium">{tOtro("check_otro")}:</span> {mov.otro_verificacion}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 text-xs font-bold ${
+                        Number(mov.otro_verificacion_ok) === 1 ? "text-emerald-700" : "text-red-600"
+                      }`}
+                    >
+                      {Number(mov.otro_verificacion_ok) === 1 ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                      {Number(mov.otro_verificacion_ok) === 1 ? tOtro("yes") : tOtro("no")}
+                    </span>
+                  </p>
+                )}
+                {mov.observacion_seguridad && (
+                  <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700 whitespace-pre-wrap">
+                    <span className="font-medium">{tOtro("section_observacion")}:</span> {mov.observacion_seguridad}
+                  </p>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 empty:hidden mt-3 first:mt-0">
                   {ASPECTOS.map((a) => {
                     const nota = notaDe(a);
@@ -1334,11 +1373,39 @@ export default function EgresoFlujo({ id }: { id: string }) {
 
                 {mov.etapa === "por_verificar" && (
                   <div className="space-y-3">
+                    {/* «Otro» control y nota de Seguridad: opcionales, van con
+                        cualquier decisión. */}
+                    <CheckOtro
+                      detalle={otroDetalle}
+                      onDetalle={setOtroDetalle}
+                      value={otroOk}
+                      onChange={setOtroOk}
+                      label={tOtro("check_otro")}
+                      siAplica={tOtro("check_otro_si_aplica")}
+                      placeholder={tOtro("check_otro_placeholder")}
+                      yes={tOtro("yes")}
+                      no={tOtro("no")}
+                    />
+                    <div>
+                      <label htmlFor="observacion-seguridad-porton" className={labelClases}>
+                        {tOtro("section_observacion")}{" "}
+                        <span className="font-normal text-slate-400">({tOtro("opcional")})</span>
+                      </label>
+                      <textarea
+                        id="observacion-seguridad-porton"
+                        value={observacionSeguridad}
+                        maxLength={1000}
+                        onChange={(e) => setObservacionSeguridad(e.target.value)}
+                        placeholder={tOtro("observacion_placeholder")}
+                        className={`${inputClases} h-auto min-h-[64px] py-2.5`}
+                      />
+                    </div>
+                    {faltaOtro && <p className="text-xs text-amber-700 text-center">{tOtro("error_otro_sin_respuesta")}</p>}
                     {!noAprobar ? (
                       <>
                         <BotonPrimario
-                          onClick={() => accionar("verificar_seguridad", { aprobado: true })}
-                          disabled={enviando || novedades.length > 0 || faltaMotivoRenglon || !firmoSeguridad}
+                          onClick={() => accionar("verificar_seguridad", { aprobado: true, ...verificacionExtra })}
+                          disabled={enviando || novedades.length > 0 || faltaMotivoRenglon || faltaOtro || !firmoSeguridad}
                           icon={ShieldCheck}
                           className="w-full h-12"
                         >
@@ -1409,6 +1476,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                                 aprobado: false,
                                 decision,
                                 motivo: motivoNoAprobado.trim(),
+                                ...verificacionExtra,
                               })
                             }
                             disabled={
@@ -1416,6 +1484,7 @@ export default function EgresoFlujo({ id }: { id: string }) {
                               decision === null ||
                               !motivoNoAprobado.trim() ||
                               faltaMotivoRenglon ||
+                              faltaOtro ||
                               ((decision === "despachar" || decision === "parcial") && !firmoSeguridad)
                             }
                             className="flex-1"
