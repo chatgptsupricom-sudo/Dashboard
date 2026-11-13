@@ -8,10 +8,13 @@ import {
   sumarDias,
 } from "@/lib/administracion/lectura";
 import { empresaDeCompanyId } from "@/lib/administracion/empresas";
+import { listarPagosFijos } from "@/lib/administracion/pagosFijos";
+import { cruzarPagosFijos, type PagoFijoDelMes } from "@/lib/administracion/pagosFijosCruce";
 
 /**
  * Cuentas por Pagar del rol Administracion: lo que se le debe a proveedores,
- * por antiguedad y por semana de vencimiento, mas lo que esta en borrador.
+ * por antiguedad, el calendario del mes (vencimientos, pagos de Odoo y pagos
+ * fijos) y lo que esta en borrador.
  *
  * Montos SIEMPRE en la moneda de la empresa (USD): `*_signed`. Caracas tiene
  * facturas de proveedor en bolivares y `amount_residual` las sumaria como
@@ -57,13 +60,6 @@ export interface ProveedorCxP {
   venceMasViejo: string;
 }
 
-export interface SemanaCxP {
-  desde: string;
-  hasta: string;
-  monto: number;
-  documentos: number;
-}
-
 export interface BorradorCxP {
   id: number;
   numero: string;
@@ -79,6 +75,9 @@ export interface PagoProveedor {
   id: number;
   fecha: string;
   proveedor: string;
+  proveedorId: number | null;
+  /** Memo del pago en Odoo. */
+  referencia: string;
   diario: string;
   monto: number;
   sede: string;
@@ -104,7 +103,10 @@ export interface DatosCxPAdmin {
   };
   bandas: Record<Banda, number>;
   proveedores: ProveedorCxP[];
-  calendario: SemanaCxP[];
+  /** Pagos fijos del mes, ya cruzados con los pagos de Odoo del mes. */
+  pagosFijos: PagoFijoDelMes[];
+  /** No se pudieron leer los pagos fijos (la MySQL no respondio). */
+  pagosFijosError: boolean;
   documentos: DocumentoCxP[];
   borradores: BorradorCxP[];
   pagosDelMes: PagoProveedor[];
@@ -125,13 +127,6 @@ const bandasEnCero = (): Record<Banda, number> => ({
   "61_90": 0,
   "91_mas": 0,
 });
-
-/** Lunes de la semana de `fecha`. */
-function lunesDe(fecha: string): string {
-  const d = new Date(fecha + "T12:00:00Z");
-  const dia = d.getUTCDay() || 7;
-  return sumarDias(fecha, 1 - dia);
-}
 
 /**
  * Pagos y anticipos a proveedores que todavia no se aplicaron a una factura:
@@ -169,7 +164,7 @@ export async function fetchCxPAdmin(
   hasta: string,
   sinIntercompania = false,
 ): Promise<DatosCxPAdmin> {
-  const [abiertos, borradoresRaw, pagosRaw, pagosSinAplicar] = await Promise.all([
+  const [abiertos, borradoresRaw, pagosRaw, pagosSinAplicar, fijos] = await Promise.all([
     leerTodo(
       "account.move",
       [
@@ -215,11 +210,16 @@ export async function fetchCxPAdmin(
         ["date", ">=", desde],
         ["date", "<=", hasta],
       ],
-      ["date", "partner_id", "journal_id", "amount_company_currency_signed", "company_id"],
+      ["date", "partner_id", "journal_id", "amount_company_currency_signed", "company_id", "ref"],
       companyIds,
       "date desc, id desc",
     ),
     sumarPagosSinAplicar(companyIds, sinIntercompania),
+    // Si la MySQL falla, el resto (que es de Odoo) sale igual.
+    listarPagosFijos(companyIds).catch((e) => {
+      console.error("Pagos fijos de CxP:", e?.message || e);
+      return null;
+    }),
   ]);
 
   const documentos: DocumentoCxP[] = abiertos
@@ -289,25 +289,6 @@ export async function fetchCxPAdmin(
     }))
     .sort((a, b) => b.saldo - a.saldo);
 
-  // Calendario: 8 semanas desde la actual. Lo vencido va aparte (resumen).
-  const lunes = lunesDe(hoy);
-  const calendario: SemanaCxP[] = Array.from({ length: 8 }, (_, i) => ({
-    desde: sumarDias(lunes, i * 7),
-    hasta: sumarDias(lunes, i * 7 + 6),
-    monto: 0,
-    documentos: 0,
-  }));
-  documentos
-    .filter((d) => d.tipo === "factura" && d.vence >= hoy)
-    .forEach((d) => {
-      const semana = calendario.find((s) => d.vence >= s.desde && d.vence <= s.hasta);
-      if (semana) {
-        semana.monto += d.saldo;
-        semana.documentos++;
-      }
-    });
-  calendario.forEach((s) => (s.monto = redondear(s.monto)));
-
   const suma = (lista: DocumentoCxP[]) => redondear(lista.reduce((s, d) => s + d.saldo, 0));
   const en7 = sumarDias(hoy, 7);
   const en30 = sumarDias(hoy, 30);
@@ -333,6 +314,8 @@ export async function fetchCxPAdmin(
     id: p.id,
     fecha: p.date || "",
     proveedor: nombreM2o(p.partner_id, "Sin proveedor"),
+    proveedorId: idM2o(p.partner_id),
+    referencia: p.ref || "",
     diario: nombreM2o(p.journal_id),
     // Salida de dinero: viene negativa; se muestra en positivo.
     monto: redondear(Math.abs(Number(p.amount_company_currency_signed) || 0)),
@@ -356,7 +339,21 @@ export async function fetchCxPAdmin(
     },
     bandas: Object.fromEntries(BANDAS.map((b) => [b, redondear(bandas[b])])) as Record<Banda, number>,
     proveedores,
-    calendario,
+    // Se cruza con todos los pagos del mes: un pago fijo a otra sede del grupo
+    // tambien se da por pagado aunque la pantalla oculte la intercompania.
+    pagosFijosError: fijos === null,
+    pagosFijos: cruzarPagosFijos(
+      fijos || [],
+      pagosRaw.map((p: any) => ({
+        id: p.id,
+        fecha: p.date || "",
+        proveedorId: idM2o(p.partner_id),
+        monto: Math.abs(Number(p.amount_company_currency_signed) || 0),
+        sede: empresaDeCompanyId(idM2o(p.company_id) || 0),
+      })),
+      desde.slice(0, 7),
+      hoy,
+    ),
     documentos,
     borradores,
     pagosDelMes,

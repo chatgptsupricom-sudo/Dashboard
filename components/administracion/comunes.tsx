@@ -85,10 +85,11 @@ export function mesActual(): string {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function mesesRecientes(cantidad = 12) {
+/** Los ultimos `cantidad` meses, mas `adelante` meses futuros al principio. */
+export function mesesRecientes(cantidad = 12, adelante = 0) {
   const now = new Date();
-  return Array.from({ length: cantidad }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+  return Array.from({ length: cantidad + adelante }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + adelante - i, 1);
     return {
       value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
       label: d.toLocaleDateString("es-VE", { month: "long", year: "numeric" }),
@@ -152,6 +153,7 @@ export function EncabezadoAdmin({
   mes,
   setMes,
   conMes = true,
+  mesesAdelante = 0,
   acciones,
 }: {
   icono: ReactNode;
@@ -162,6 +164,8 @@ export function EncabezadoAdmin({
   mes?: string;
   setMes?: (v: string) => void;
   conMes?: boolean;
+  /** Meses futuros que ofrece el selector (ej. un calendario de pagos). */
+  mesesAdelante?: number;
   acciones?: ReactNode;
 }) {
   return (
@@ -182,7 +186,7 @@ export function EncabezadoAdmin({
             className="border rounded-lg px-3 py-2 text-sm capitalize flex-1 lg:flex-none bg-white"
             aria-label="Mes"
           >
-            {mesesRecientes().map((m) => (
+            {mesesRecientes(12, mesesAdelante).map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
               </option>
