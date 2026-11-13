@@ -43,7 +43,7 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import PanelSupervision from "@/components/agenteia/PanelSupervision";
 import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
@@ -927,6 +927,18 @@ function errorHttp(status: number, detalle?: string): string {
 // Los mensajes de error se guardan con ⚠️ al final de la respuesta. Los que
 // quedaron guardados en inglés (de antes) se muestran traducidos.
 const traducirError = (c: string) => c.replace(/⚠️ (network error|failed to fetch|load failed|networkerror[^\n]*)$/i, `⚠️ ${ERROR_RED}`);
+// Cada respuesta en su propio componente memorizado: así escribir en la caja no
+// vuelve a procesar el markdown de toda la conversación (se sentía un retraso
+// entre la tecla y la letra en pantalla en las conversaciones largas).
+const COMPONENTES_MD = { table: TablaConExcel };
+const RespuestaMarkdown = memo(function RespuestaMarkdown({ contenido }: { contenido: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTES_MD}>
+      {traducirError(sinMarcas(contenido))}
+    </ReactMarkdown>
+  );
+});
+
 const terminaEnError = (c: string) => /⚠️[^\n]*$/.test(c.trim());
 
 const SUGERENCIAS: { clave: "sugerencia_1" | "sugerencia_2" | "sugerencia_3" | "sugerencia_4"; icono: LucideIcon }[] = [
@@ -2018,7 +2030,7 @@ export default function AgenteIAPage() {
   useEffect(() => {
     if (messages.length > 0)
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isGenerating, isSpeaking, input]);
+  }, [messages, isGenerating, isSpeaking]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
@@ -2436,9 +2448,7 @@ export default function AgenteIAPage() {
                         )}
                         {msg.content !== "" && (
                           <div data-msg={index} className="agente-md text-[14.5px] leading-7 text-slate-800 break-words">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: TablaConExcel }}>
-                              {traducirError(sinMarcas(msg.content))}
-                            </ReactMarkdown>
+                            <RespuestaMarkdown contenido={msg.content} />
                           </div>
                         )}
                         {archivosDe(msg.content).map((a) => (
