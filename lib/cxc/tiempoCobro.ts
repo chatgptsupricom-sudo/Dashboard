@@ -70,7 +70,8 @@ export interface TiempoCobro {
   resumen: Grupo & { mediana: number };
   tramos: { label: string; facturas: number; monto: number; pct: number }[];
   porPlazo: (Grupo & { plazo: number })[];
-  clientes: (Grupo & { partnerId: number; zona: string })[];
+  /** comercialId = empresa (commercial_partner_id): ahí viven el límite de crédito y el saldo por cobrar. */
+  clientes: (Grupo & { partnerId: number; comercialId: number; zona: string })[];
   vendedores: Grupo[];
   zonas: Grupo[];
   facturas: FacturaCobrada[];
@@ -228,7 +229,7 @@ export async function calcularTiempoCobro(
 
   const [moves, diasPlazo] = await Promise.all([
     leer("account.move", ids, ["id", "name", "partner_id", "invoice_date", "invoice_date_due",
-      "invoice_payment_term_id", "amount_total_signed", "invoice_user_id"]),
+      "invoice_payment_term_id", "amount_total_signed", "invoice_user_id", "commercial_partner_id"]),
     diasPlazoCredito(),
   ]);
   const zonas = await zonasDeClientes([...new Set(moves.map((m) => idDe(m.partner_id)).filter((id): id is number => !!id))]);
@@ -276,6 +277,7 @@ export async function calcularTiempoCobro(
   });
 
   const clientesMap = porClave(facturas, (f) => String(f.partnerId));
+  const comercial = new Map(moves.map((m) => [idDe(m.partner_id) || 0, idDe(m.commercial_partner_id) || 0]));
   return {
     resumen: { ...agrupar("total", facturas), mediana },
     tramos,
@@ -283,7 +285,7 @@ export async function calcularTiempoCobro(
       .map(([k, fs]) => ({ ...agrupar(k === "0" ? "0 días (contado)" : `${k} días`, fs), plazo: Number(k) }))
       .sort((a, b) => a.plazo - b.plazo),
     clientes: [...clientesMap]
-      .map(([k, fs]) => ({ ...agrupar(fs[0].cliente, fs), partnerId: Number(k), zona: fs[0].zona }))
+      .map(([k, fs]) => ({ ...agrupar(fs[0].cliente, fs), partnerId: Number(k), comercialId: comercial.get(Number(k)) || Number(k), zona: fs[0].zona }))
       .sort((a, b) => b.monto - a.monto),
     vendedores: [...porClave(facturas, (f) => f.vendedor)]
       .map(([k, fs]) => agrupar(k, fs))

@@ -13,7 +13,9 @@ import { ColumnHeader } from "@/components/compras/column-header";
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
-type Grupo = { clave: string; zona?: string; facturas: number; monto: number; promedioDias: number; plazoPromedio: number; promedioPonderado: number; aTiempoPct: number; promedioAtraso: number };
+type Grupo = { clave: string; zona?: string; facturas: number; monto: number; promedioDias: number; plazoPromedio: number; promedioPonderado: number; aTiempoPct: number; promedioAtraso: number;
+  /** Solo por cliente: límite de crédito y saldo por cobrar de hoy (Sobregiro); null si Odoo no respondió. */
+  limite?: number | null; consumido?: number | null };
 type Factura = { id: number; name: string; partnerId: number; cliente: string; vendedor: string; zona: string; emision: string; pagada: string; dias: number; plazo: number; monto: number };
 type Data = {
   resumen: Grupo & { mediana: number };
@@ -44,6 +46,8 @@ const AYUDA = {
   atraso:
     "Días que pasaron DESPUÉS del vencimiento hasta el pago completo (pago − vencimiento; 0 si pagó a tiempo). " +
     "«Tarda en pagar» cuenta desde la emisión e incluye el plazo; el atraso es solo lo que se pasó. Promedio por factura.",
+  limite: "Límite de crédito del cliente en Odoo HOY (no el del período). Con varias sedes, la suma de sus límites.",
+  consumido: "Lo que el cliente debe HOY (saldo por cobrar, como en Sobregiro). En rojo si pasa su límite. Con varias sedes, la suma.",
 };
 const atrasoDe = (f: { dias: number; plazo: number }) => Math.max(0, f.dias - f.plazo);
 /** Atraso en rojo/ámbar; a tiempo, un guion verde. */
@@ -66,6 +70,7 @@ const filaGrupo = (titulo: string) => (g: Grupo) => ({
   "Plazo promedio (días)": g.plazoPromedio,
   "Pagadas a tiempo (%)": g.aTiempoPct,
   "Atraso promedio (días después del vencimiento)": g.promedioAtraso,
+  ...(g.limite !== undefined ? { "Límite de crédito hoy": g.limite ?? "", "Consumido hoy": g.consumido ?? "" } : {}),
   Facturas: g.facturas,
   "Monto (con IVA)": g.monto,
 });
@@ -151,11 +156,13 @@ function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onC
     return [...filas].sort((a, b) => {
       const r = col === "clave"
         ? a.clave.localeCompare(b.clave, "es", { numeric: true, sensitivity: "base" })
-        : a[col] - b[col];
+        : (a[col] ?? 0) - (b[col] ?? 0);
       return asc ? r : -r;
     });
   }, [filas, orden]);
   // Nombre empieza A→Z; los números, de mayor a menor.
+  // Límite y consumido solo vienen en la pestaña de clientes.
+  const conCredito = filas.some((g) => g.limite !== undefined);
   const ordenarPor = (col: ColumnaOrden) =>
     setOrden((o) => (o?.col === col ? { col, asc: !o.asc } : { col, asc: col === "clave" }));
 
@@ -181,6 +188,8 @@ function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onC
             <Th col="plazoPromedio" label="Plazo" ayuda={AYUDA.plazo} />
             <Th col="aTiempoPct" label="A tiempo" ayuda={AYUDA.aTiempo} />
             <Th col="promedioAtraso" label="Atraso" ayuda={AYUDA.atraso} />
+            {conCredito && <Th col="limite" label="Límite" ayuda={AYUDA.limite} />}
+            {conCredito && <Th col="consumido" label="Consumido" ayuda={AYUDA.consumido} />}
             <Th col="facturas" label="Facturas" />
             <Th col="monto" label="Monto" className="py-2 pl-3 text-right" />
           </tr>
@@ -201,6 +210,14 @@ function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onC
               <td className="py-2.5 px-3 text-right text-slate-500">{dias(g.plazoPromedio)}</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{g.aTiempoPct}%</td>
               <td className="py-2.5 px-3 text-right font-medium">{g.promedioAtraso > 0 ? <>{celdaAtraso(g.promedioAtraso)} <span className="text-slate-400 font-normal">días</span></> : celdaAtraso(0)}</td>
+              {conCredito && (
+                <td className="py-2.5 px-3 text-right text-slate-500">{g.limite == null ? "—" : g.limite > 0 ? formatCurrency(g.limite) : "Sin límite"}</td>
+              )}
+              {conCredito && (
+                <td className={`py-2.5 px-3 text-right ${g.consumido != null && g.limite != null && g.limite > 0 && g.consumido > g.limite ? "font-semibold text-red-600" : "text-slate-500"}`}>
+                  {g.consumido == null ? "—" : formatCurrency(g.consumido)}
+                </td>
+              )}
               <td className="py-2.5 px-3 text-right text-slate-500">{g.facturas}</td>
               <td className="py-2.5 pl-3 text-right text-slate-700">{formatCurrency(g.monto)}</td>
             </tr>
