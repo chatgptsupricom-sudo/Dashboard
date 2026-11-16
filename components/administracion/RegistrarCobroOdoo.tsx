@@ -16,7 +16,6 @@ type Vista = {
   metodo: string;
   tasaBcv: number;
   sugeridos: ClienteOdoo[];
-  descripcion: string;
 };
 
 const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -71,7 +70,8 @@ export function RegistrarCobroOdoo({
       setOpciones(j.sugeridos);
       setCliente(j.sugeridos[0] ?? null);
       setTasa(j.tasaBcv ? String(j.tasaBcv) : "");
-      setDescripcion(j.descripcion || "");
+      // Vacia: ahi va el numero de las facturas que paga el cliente, como lo escribe CxC.
+      setDescripcion("");
     });
   }, [cuenta, comprobante]);
 
