@@ -252,6 +252,21 @@ async function ejecutar(
         conteos.push({ item, valor });
       }
 
+      // Toda verificacion del armado la firma quien conto, con su clave de
+      // Almacen (lib/seguridad/firmaAlmacen.ts): tambien la que no cuadra y se
+      // queda en pre-despacho. La clave se revisa antes de guardar el conteo,
+      // asi un conteo sin firma valida no queda escrito.
+      const firmaArmado = leerFirmaAlmacen(body);
+      if (firmaArmado.error) return NextResponse.json({ error: firmaArmado.error }, { status: 400 });
+      await asegurarColumnasFirmaArmado();
+      const claveArmado = await verificarFirmaAlmacen(firmaArmado.firma, Number(mov.cids) || cids, body?.clave);
+      if (!claveArmado.ok) return NextResponse.json({ error: claveArmado.motivo }, { status: claveArmado.status });
+      const verificador = firmaArmado.firma.almacenista;
+      // Quien conto por ultima vez y lo que anoto, pase o no.
+      const firmaSet = `armado_contado_por = ?, armado_contado_at = NOW(),
+         armado_con_clave = 1, armado_otro = ?, armado_otro_ok = ?, armado_nota = ?`;
+      const firmaValores = [verificador, firmaArmado.firma.otro, firmaArmado.firma.otroOk, firmaArmado.firma.nota];
+
       // El conteo se guarda aunque no cuadre: si Almacen conto 9 de 10, eso
       // queda escrito y el siguiente intento parte de ahi, no de cero.
       for (const { item, valor } of conteos) {
@@ -294,18 +309,15 @@ async function ejecutar(
       // No cuadra: se queda en pre-despacho hasta que se corrija y se vuelva a
       // contar. Es la regla que pediste: no pasa a despacho con diferencias.
       if (!evaluacion.completo && !parcial) {
+        // Queda escrito quien conto, aunque no pase.
+        await query(
+          `UPDATE seguridad_mercancia SET ${firmaSet} WHERE id = ? AND etapa = 'pre_despacho'`,
+          [...firmaValores, id],
+        );
         return { avanzo: false, extra: { armado: evaluacion } };
       }
 
-      // Pasa: lo firma quien verifico el armado, con su clave de Almacen
-      // (lib/seguridad/firmaAlmacen.ts), y queda como `armado_verificado_por`.
-      // Un conteo que no cuadra (arriba) no avanza y no la pide.
-      const firmaArmado = leerFirmaAlmacen(body);
-      if (firmaArmado.error) return NextResponse.json({ error: firmaArmado.error }, { status: 400 });
-      await asegurarColumnasFirmaArmado();
-      const claveArmado = await verificarFirmaAlmacen(firmaArmado.firma, Number(mov.cids) || cids, body?.clave);
-      if (!claveArmado.ok) return NextResponse.json({ error: claveArmado.motivo }, { status: claveArmado.status });
-      const verificador = firmaArmado.firma.almacenista;
+      // Pasa: quien conto es quien verifico el armado (`armado_verificado_por`).
 
       // Un tipo desconocido (o vacio, de antes) sigue como puerta: directo a
       // despacho, sin empaquetado. Los "ruta" viejos ya son ruta, y siguen el
@@ -315,15 +327,12 @@ async function ejecutar(
         id,
         "pre_despacho",
         etapaTrasArmado(tipo),
-        `armado_verificado_por = ?, armado_verificado_at = NOW(),
-         armado_con_clave = 1, armado_otro = ?, armado_otro_ok = ?, armado_nota = ?${
+        `armado_verificado_por = ?, armado_verificado_at = NOW(), ${firmaSet}${
           parcial ? ", observaciones = CONCAT_WS(' · ', NULLIF(observaciones, ''), ?)" : ""
         }`,
         [
           verificador,
-          firmaArmado.firma.otro,
-          firmaArmado.firma.otroOk,
-          firmaArmado.firma.nota,
+          ...firmaValores,
           ...(parcial ? [`Despacho parcial (${verificador}): ${motivoParcial}`.slice(0, 600)] : []),
         ],
       );

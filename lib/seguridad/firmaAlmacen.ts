@@ -10,8 +10,8 @@ import { leerOtroVerificacion } from "@/lib/seguridad/verificacionOtro";
  * con Sí/No y una nota.
  *
  * La usan la recepción (abrir y cerrar cada contenedor,
- * lib/recepcion/firmaContenedor.ts) y el egreso de mercancía (verificar el
- * armado, aquí abajo). En pantalla: components/recepcion/FirmaAlmacen.tsx.
+ * lib/recepcion/firmaContenedor.ts) y el egreso de mercancía (cada
+ * verificación del armado, aquí abajo). En pantalla: components/recepcion/FirmaAlmacen.tsx.
  */
 
 export type FirmaAlmacen = {
@@ -48,10 +48,14 @@ export function verificarFirmaAlmacen(
 
 // ── Egreso: verificar el armado ─────────────────────────────────────────────
 //
-// Quien verifica el armado queda en `armado_verificado_por` (antes, el nombre
-// del usuario compartido); `armado_con_clave = 1` dice que firmó con su clave.
+// Toda verificación del armado se firma, pase o no: quien contó por última
+// vez queda en `armado_contado_por`/`armado_contado_at` con lo que anotó, y
+// cuando pasa también en `armado_verificado_por` (antes, el nombre del
+// usuario compartido). `armado_con_clave = 1` dice que firmó con su clave.
 
 const COLUMNAS_ARMADO: [string, string][] = [
+  ["armado_contado_por", "VARCHAR(200) DEFAULT NULL"],
+  ["armado_contado_at", "DATETIME DEFAULT NULL"],
   ["armado_con_clave", "TINYINT(1) DEFAULT NULL"],
   ["armado_otro", "VARCHAR(200) DEFAULT NULL"],
   ["armado_otro_ok", "TINYINT(1) DEFAULT NULL"],

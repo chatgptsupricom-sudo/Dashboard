@@ -176,7 +176,10 @@ type Movimiento = {
   otro_verificacion?: string | null;
   otro_verificacion_ok?: number | null;
   observacion_seguridad?: string | null;
-  /** Firma con clave de quien verifico el armado (lib/seguridad/firmaAlmacen.ts). */
+  /** Firma con clave de quien conto el armado por ultima vez, pase o no
+   *  (lib/seguridad/firmaAlmacen.ts). */
+  armado_contado_por?: string | null;
+  armado_contado_at?: string | null;
   armado_con_clave?: number | null;
   armado_otro?: string | null;
   armado_otro_ok?: number | null;
@@ -946,12 +949,18 @@ export default function EgresoFlujo({ id }: { id: string }) {
                   {mov.observaciones}
                 </p>
               )}
-              {/* Quién verificó el armado con su clave y lo que anotó. */}
+              {/* Quién verificó el armado con su clave (la última vez, pase o no) y lo que anotó. */}
               {(Number(mov.armado_con_clave) === 1 || mov.armado_otro || mov.armado_nota) && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
                   <FirmaContenedorVista
                     momento="armado"
-                    almacenista={Number(mov.armado_con_clave) === 1 ? mov.armado_verificado_por : null}
+                    almacenista={
+                      Number(mov.armado_con_clave) === 1
+                        ? [mov.armado_contado_por || mov.armado_verificado_por, hora(mov.armado_contado_at ?? null)]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : null
+                    }
                     otro={mov.armado_otro}
                     otroOk={mov.armado_otro_ok}
                     nota={mov.armado_nota}
