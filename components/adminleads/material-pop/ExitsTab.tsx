@@ -30,8 +30,11 @@ export function ExitsTab({
   products,
   onDone,
   onGoToCatalog,
+  preseleccion,
 }: {
   products: PopProduct[];
+  /** Producto elegido desde la tarjeta del catálogo (botón Entrada/Salida). */
+  preseleccion?: { id: number } | null;
   onDone: () => Promise<void> | void;
   onGoToCatalog: () => void;
 }) {
@@ -39,6 +42,11 @@ export function ExitsTab({
   const [kind, setKind] = useState<ExitKind>("cliente");
 
   const [lines, setLines] = useState<MovementLine[]>([lineaVacia()]);
+
+  useEffect(() => {
+    if (!preseleccion) return;
+    setLines([{ productId: preseleccion.id, quantity: "" }]);
+  }, [preseleccion]);
   const [location, setLocation] = useState<"office" | "warehouse">("office");
   const [useOtherLocation, setUseOtherLocation] = useState(false);
   const [client, setClient] = useState<any>(null);

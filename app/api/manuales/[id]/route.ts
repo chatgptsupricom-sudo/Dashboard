@@ -1,4 +1,5 @@
-import { requireProcesos } from "@/lib/manuales/acceso";
+import { requireLector, requireProcesos } from "@/lib/manuales/acceso";
+import { puedeLeerManual } from "@/lib/manuales/permisos";
 import { borrarManual, guardarManual, obtenerManual } from "@/lib/manuales/datos";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -11,13 +12,14 @@ const idDe = async (ctx: Ctx) => {
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
-// GET / PUT / DELETE de un manual. Solo rol Procesos.
+// GET de un manual: Procesos cualquiera; otro rol, solo si está publicado
+// para su rol (si no, 404, como si no existiera). PUT / DELETE: solo Procesos.
 export async function GET(request: NextRequest, ctx: Ctx) {
-  const auth = await requireProcesos(request);
+  const auth = await requireLector(request);
   if (auth.error) return auth.error;
   const id = await idDe(ctx);
   const manual = id ? await obtenerManual(id) : null;
-  if (!manual)
+  if (!manual || !puedeLeerManual(manual, auth.payload?.role))
     return NextResponse.json({ error: "Manual no encontrado" }, { status: 404 });
   return NextResponse.json({ manual });
 }

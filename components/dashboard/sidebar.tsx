@@ -32,6 +32,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  GraduationCap,
   Boxes,
   BrainCircuit,
   Network,
@@ -135,9 +136,15 @@ function SortableItem({ id, isActive, accentColor, bgColor, children }: {
 export function Sidebar({
   open,
   onToggle,
+  soloSecciones,
 }: {
   open: boolean;
   onToggle: () => void;
+  /**
+   * Reemplaza las secciones del rol por estas (ej. el Gerente de Marca sin
+   * marcas asignadas ve solo `gm_sin_marcas`). Sin esto, las del rol.
+   */
+  soloSecciones?: string[];
 }) {
   const { user, logout } = useAuthStore();
   const pathname = usePathname();
@@ -187,6 +194,9 @@ export function Sidebar({
   // Notas de crédito (lib/notas-credito): quien es responsable de un paso, por
   // correo, y el SuperAdmin. `pendientes` = las que esperan a la sesión.
   const [notasCredito, setNotasCredito] = useState({ puede: false, pendientes: 0 });
+  // Manual y Tutorial del rol (lib/manuales): salen en el menú cuando Procesos
+  // publicó al menos uno para el rol de la sesión.
+  const [manualesRol, setManualesRol] = useState({ manual: 0, tutorial: 0 });
 
   // Solicitudes de nota de crédito de RMA enviadas al Super Admin (contador
   // del menú RMA).
@@ -218,6 +228,10 @@ export function Sidebar({
         const c = await fetch("/api/notas-credito?conteo=1").then((r) => r.json()).catch(() => ({}));
         setNotasCredito({ puede: true, pendientes: Number(c?.pendientes) || 0 });
       })
+      .catch(() => {});
+    fetch("/api/manuales?resumen=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j && setManualesRol({ manual: Number(j.manual) || 0, tutorial: Number(j.tutorial) || 0 }))
       .catch(() => {});
   }, [user]);
 
@@ -279,20 +293,22 @@ export function Sidebar({
   if (!permissions) return null;
 
   // Extraemos las secciones permitidas de forma segura
-  const allowedSections = [...(permissions.sections || [])];
+  const allowedSections = soloSecciones ? [...soloSecciones] : [...(permissions.sections || [])];
 
   // "Reportes Comerciales" no se resuelve solo por rol: la encargada es una
   // vendedora concreta (lista blanca por correo). El servidor decide; aquí solo
   // se agrega la sección si respondió que sí (ver /api/reportes-comerciales/acceso).
-  if (puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
+  if (!soloSecciones && puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
     allowedSections.push("reportes_comerciales");
   }
-  if (puedeAgenteIA && !allowedSections.includes("agenteia")) {
+  if (!soloSecciones && puedeAgenteIA && !allowedSections.includes("agenteia")) {
     allowedSections.push("agenteia");
   }
-  if (notasCredito.puede && !allowedSections.includes("notas_credito")) {
+  if (!soloSecciones && notasCredito.puede && !allowedSections.includes("notas_credito")) {
     allowedSections.push("notas_credito");
   }
+  if (!soloSecciones && manualesRol.manual > 0) allowedSections.push("manual_rol");
+  if (!soloSecciones && manualesRol.tutorial > 0) allowedSections.push("tutorial_rol");
 
   // Definición del menú base
   const menuItems = [
@@ -311,8 +327,13 @@ export function Sidebar({
     { id: "bi_dias_promedio", label: "Días promedio", icon: Timer, slug: "/dias-promedio" },
     // Productos en camino y si ya se vendieron en la sede (lib/inteligencia-negocio/porLlegar.ts).
     { id: "bi_por_llegar", label: "Por llegar", icon: Truck, slug: "/por-llegar" },
+    // El Dashboard de Productos de AdminLeads (rotación de SKUs), para BI fuera del desplegable Leads.
+    { id: "bi_rotacion_productos", label: "Rotación productos", icon: Boxes, slug: "/adminleads/dashboard", absoluteHref: true },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
+    // Manual y Tutorial de cada rol: lo que Procesos publicó para él (lib/manuales).
+    { id: "manual_rol", label: "Manual", icon: BookOpen, slug: "/manuales", absoluteHref: true },
+    { id: "tutorial_rol", label: "Tutorial", icon: GraduationCap, slug: "/manuales/tutorial", absoluteHref: true },
     // Organigrama con las actividades de cada cargo (SuperAdmin, Procesos y RRHH).
     { id: "organigrama", label: "Organigrama", icon: Network, slug: "/organigrama", absoluteHref: true },
     // Flujogramas de procesos (SuperAdmin, Procesos y RRHH).
@@ -447,7 +468,7 @@ export function Sidebar({
     // "Packing List": calendario de lo que llego y va a llegar al almacen, solo
     // fecha y productos.
     // Diseñador y AdminLeads de Valencia; misma pagina para los dos roles.
-    { id: "llegadas_disenador", label: t("llegadas"), icon: PackageCheck, slug: "/disenador/llegadas", absoluteHref: true, cidsOnly: 9 },
+    { id: "llegadas_disenador", label: t("llegadas"), icon: PackageCheck, slug: "/disenador/llegadas", absoluteHref: true, cidsOnly: [9, 10] },
     { id: "catalogo_disenos", label: "KPI de Diseños", icon: Palette, slug: "/disenos" },
     { id: "editor_ia_disenador", label: "Editor con IA", icon: Sparkles, slug: "/editor-ia" },
     // Cantidad de clientes por estado, en 3D; el país sale del cids (API).
@@ -473,6 +494,8 @@ export function Sidebar({
     { id: "gm_antiguedad", label: "Antigüedad de inventario", icon: Timer, slug: "/antiguedad" },
     { id: "gm_ventas", label: "Ventas por marca", icon: TrendingUp, slug: "/ventas" },
     { id: "gm_banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
+    // Única sección del Gerente de Marca mientras no tiene marcas asignadas.
+    { id: "gm_sin_marcas", label: "Mis marcas", icon: Award, slug: "" },
     // SuperAdmin: lo que ve cada Gerente de Marca y a quién se le asigna cada marca.
     { id: "gerencia_marca", label: "Gerencia de Marca", icon: Award, slug: "/gerente_marca", absoluteHref: true },
   ];
@@ -606,7 +629,10 @@ export function Sidebar({
         ((item as any).adminLeadsOnly ? (userRole === "adminLeads" || userRole === "superAdmin") : true) &&
         // cidsOnly: el item se oculta si el rol tiene un cids asignado que no
         // coincide. superAdmin (sin cids) siempre lo ve.
-        ((item as any).cidsOnly == null || userRole === "superAdmin" || Number(userCids) === (item as any).cidsOnly) &&
+        // Acepta un número o una lista de sedes (ej. [9, 10]).
+        ((item as any).cidsOnly == null ||
+          userRole === "superAdmin" ||
+          ([] as unknown[]).concat((item as any).cidsOnly).some((c) => Number(c) === Number(userCids))) &&
         !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads", "recompra_adminleads", "compras_mes_adminleads"].includes(item.id)) &&
         !((userRole === "superAdmin" || isBIRole) && ["banco_imagenes", "banco_imagenes_seller", "vista_custom", "frecuencia_cpm"].includes(item.id)) &&
         // El item del vendedor duplicaria a "material_pop" para superAdmin, y
@@ -628,6 +654,8 @@ export function Sidebar({
         !(isSuperAdminRole &&
           [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...gerenteMarcaSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+        // Gerente de Operaciones: el Semáforo va dentro de su desplegable Ventas.
+        !(showVentasDropdown && isGerenteOperaciones && item.id === "semaforo_clientes") &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") &&
         // El SuperAdmin ya la tiene completa en el desplegable "Administración".
@@ -1467,7 +1495,7 @@ export function Sidebar({
                               permission: "reportes_comerciales",
                             }]
                           : []),
-                        ...((isSuperAdminRole || isBIRole) && allowedSections.includes("semaforo_clientes")
+                        ...((isSuperAdminRole || isBIRole || isGerenteOperaciones) && allowedSections.includes("semaforo_clientes")
                           ? [{
                               label: "Semáforo de clientes",
                               href: `/${locale}/semaforo-clientes`,

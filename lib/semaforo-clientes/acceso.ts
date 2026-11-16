@@ -3,13 +3,14 @@ import { ROL_BI, esRolBI } from "@/lib/auth/inteligenciaNegocio";
 /**
  * Quién ve el Semáforo de clientes y qué parte:
  * - Vendedor: solo su cartera (clientes con él como vendedor en Odoo).
- * - Gerencia de Ventas: la cartera de toda su sede (`cids`), con el resumen por vendedor.
+ * - Gerencia de Ventas y Gerente de Operaciones: la cartera de toda su sede (`cids`), con el resumen por vendedor.
  * - SuperAdmin (dirección) e Inteligencia de Negocio: las tres sedes; solo el
  *   SuperAdmin cambia los umbrales.
  */
 export const ROLES_VENDEDOR = ["vendedor", "seller"];
 export const ROL_GERENCIA_VENTAS = "gerencia de ventas";
-export const ROLES_SEMAFORO = [...ROLES_VENDEDOR, ROL_GERENCIA_VENTAS, ROL_BI];
+export const ROL_GERENTE_OPERACIONES = "gerente de operaciones";
+export const ROLES_SEMAFORO = [...ROLES_VENDEDOR, ROL_GERENCIA_VENTAS, ROL_GERENTE_OPERACIONES, ROL_BI];
 
 const normalizar = (rol: unknown) => String(rol ?? "").toLowerCase().trim();
 

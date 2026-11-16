@@ -6,7 +6,7 @@ import {
   limpiarDanos,
   limpiarPrecintos,
 } from "@/lib/recepcion/flujo";
-import { cargarEnOdoo, ocPendiente, productoPorCodigo } from "@/lib/recepcion/odoo";
+import { ErrorRecepcion, cargarEnOdoo, ponerOcDespues, productoPorCodigo } from "@/lib/recepcion/odoo";
 import { contenedorDeConteo, ponerCantidad, recalcularTotales } from "@/lib/recepcion/conteo";
 import { avisarObservaciones } from "@/lib/recepcion/avisoObservaciones";
 import { getPublicOrigin } from "@/lib/publicOrigin";
@@ -43,10 +43,18 @@ export const dynamic = "force-dynamic";
  *                     lib/recepcion/odoo.ts); si Odoo falla, la recepcion
  *                     queda cerrada igual y con el error a la vista.
  *
+ * En cualquier etapa (solo Compras o el SuperAdmin):
+ *  asignar_oc         { purchase_order_id } pone (o cambia) la OC de Odoo,
+ *                     tambien con la mercancia ya llegando o la recepcion
+ *                     cerrada, si no se cargo nada en Odoo. No carga: sin OC
+ *                     no se carga nada en Odoo, por ella se cruzan los
+ *                     productos y se hace la recepcion.
+ *
  * Despues de cerrar (Almacen o Compras):
  *  cargar_odoo        { purchase_order_id?, saltar_frenos?, validar_oc? } reintenta la
- *                     carga en Odoo; con la OC, para una recepcion que no
- *                     tenia (o tenia otra y no se llego a cargar nada).
+ *                     carga en Odoo; con la OC (solo Compras o el SuperAdmin
+ *                     la eligen), para una recepcion que no tenia (o tenia
+ *                     otra y no se llego a cargar nada).
  *                     `saltar_frenos` solo lo usa el SuperAdmin, despues de
  *                     revisar en Odoo que lo recibido a mano no es esta
  *                     misma mercancia.
@@ -100,6 +108,28 @@ export async function POST(
     }
     const rec = datos.recepcion;
 
+    // Compras pone la OC de Odoo cuando la tenga, aunque el contenedor ya
+    // haya llegado o la recepcion este cerrada. Solo la guarda.
+    if (body?.accion === "asignar_oc") {
+      if (!puedeComo(sesion!, "compras")) {
+        return NextResponse.json({ error: "La OC de Odoo la pone Compras" }, { status: 403 });
+      }
+      if (rec.origen === "factura") {
+        return NextResponse.json({ error: "La recepcion por factura ya tiene su OC" }, { status: 409 });
+      }
+      try {
+        await ponerOcDespues(rec, body?.purchase_order_id, {
+          nombre: sesion!.nombre,
+          esSuperadmin: sesion!.rol === "superadmin",
+        });
+      } catch (e: any) {
+        if (e instanceof ErrorRecepcion) return NextResponse.json({ error: e.message }, { status: e.status });
+        throw e;
+      }
+      emitirRecepcion({ accion: "editado", id, cids: Number(rec.cids), referencia: rec.referencia });
+      return NextResponse.json({ success: true, ...(await cargarRecepcion(id)) });
+    }
+
     // Reintentar la carga en Odoo de una recepcion ya cerrada: Almacen o Compras.
     if (body?.accion === "cargar_odoo") {
       if (rec.etapa !== "cerrado") {
@@ -108,38 +138,16 @@ export async function POST(
       if (rec.odoo_estado === "cargado") return conflicto();
       const poId = Number(body?.purchase_order_id);
       if (Number.isInteger(poId) && poId > 0 && poId !== Number(rec.odoo_purchase_order_id)) {
-        // Cambiar la OC solo si no se llego a cargar nada en la otra. Y si la
-        // carga esta frenada (puede que ya se haya recibido a mano), solo el
-        // SuperAdmin: cambiar de OC no puede servir para cargarla dos veces.
-        const anterior = (() => {
-          try {
-            return JSON.parse(rec.odoo_resultado || "{}");
-          } catch {
-            return {};
-          }
-        })();
-        if ((anterior.recepciones?.length || 0) > 0 || anterior.intento || (anterior.acumulado?.lineas?.length || 0) > 0) {
-          return NextResponse.json(
-            { error: "Ya se cargo una parte en la OC anterior: no se puede cambiar" },
-            { status: 409 },
-          );
+        // La OC la elige Compras; Almacen solo reintenta con la que hay.
+        if (!puedeComo(sesion!, "compras")) {
+          return NextResponse.json({ error: "La OC de Odoo la pone Compras" }, { status: 403 });
         }
-        if (anterior.bloqueo && sesion!.rol !== "superadmin") {
-          return NextResponse.json(
-            { error: "La carga esta frenada: solo el SuperAdmin puede cambiar la OC" },
-            { status: 403 },
-          );
+        try {
+          await ponerOcDespues(rec, poId, { nombre: sesion!.nombre, esSuperadmin: sesion!.rol === "superadmin" });
+        } catch (e: any) {
+          if (e instanceof ErrorRecepcion) return NextResponse.json({ error: e.message }, { status: e.status });
+          throw e;
         }
-        const oc = await ocPendiente(Number(rec.cids), poId);
-        if (!oc) {
-          return NextResponse.json({ error: "Esa OC no es de la sucursal o ya no espera mercancia" }, { status: 400 });
-        }
-        // Sin foto de lo que la OC ya tenia recibido: cualquier recepcion
-        // hecha a mano frena la carga hasta que el SuperAdmin la revise.
-        await query(
-          "UPDATE recepcion_packing SET odoo_purchase_order_id = ?, odoo_oc_nombre = ?, odoo_recepciones_previas = NULL WHERE id = ?",
-          [oc.id, oc.nombre, id],
-        );
       }
       await cargarEnOdoo(id, sesion!.nombre, {
         saltarFrenos: body?.saltar_frenos === true && sesion!.rol === "superadmin",

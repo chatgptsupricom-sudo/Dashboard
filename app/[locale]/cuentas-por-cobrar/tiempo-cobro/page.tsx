@@ -13,14 +13,17 @@ import { ColumnHeader } from "@/components/compras/column-header";
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
-type Grupo = { clave: string; facturas: number; monto: number; promedioDias: number; plazoPromedio: number; promedioPonderado: number; aTiempoPct: number; promedioAtraso: number };
-type Factura = { id: number; name: string; partnerId: number; cliente: string; vendedor: string; emision: string; pagada: string; dias: number; plazo: number; monto: number };
+type Grupo = { clave: string; zona?: string; facturas: number; monto: number; promedioDias: number; plazoPromedio: number; promedioPonderado: number; aTiempoPct: number; promedioAtraso: number;
+  /** Solo por cliente: límite de crédito y saldo por cobrar de hoy (Sobregiro); null si Odoo no respondió. */
+  limite?: number | null; consumido?: number | null };
+type Factura = { id: number; name: string; partnerId: number; cliente: string; vendedor: string; zona: string; emision: string; pagada: string; dias: number; plazo: number; monto: number };
 type Data = {
   resumen: Grupo & { mediana: number };
   tramos: { label: string; facturas: number; monto: number; pct: number }[];
   porPlazo: (Grupo & { plazo: number })[];
-  clientes: (Grupo & { partnerId: number })[];
+  clientes: (Grupo & { partnerId: number; zona: string })[];
   vendedores: Grupo[];
+  zonas: Grupo[];
   facturas: Factura[];
   filters: { desde: string; hasta: string; tipo?: string };
   updatedAt: string;
@@ -43,6 +46,8 @@ const AYUDA = {
   atraso:
     "Días que pasaron DESPUÉS del vencimiento hasta el pago completo (pago − vencimiento; 0 si pagó a tiempo). " +
     "«Tarda en pagar» cuenta desde la emisión e incluye el plazo; el atraso es solo lo que se pasó. Promedio por factura.",
+  limite: "Límite de crédito del cliente en Odoo HOY (no el del período). Con varias sedes, la suma de sus límites.",
+  consumido: "Lo que el cliente debe HOY (saldo por cobrar, como en Sobregiro). En rojo si pasa su límite. Con varias sedes, la suma.",
 };
 const atrasoDe = (f: { dias: number; plazo: number }) => Math.max(0, f.dias - f.plazo);
 /** Atraso en rojo/ámbar; a tiempo, un guion verde. */
@@ -59,17 +64,20 @@ function tono(real: number, plazo: number) {
 // ── Excel ──
 const filaGrupo = (titulo: string) => (g: Grupo) => ({
   [titulo]: g.clave,
+  ...(g.zona !== undefined ? { Zona: g.zona } : {}),
   "Tarda en pagar (días, promedio por factura)": g.promedioDias,
   "Tarda en pagar (días, ponderado por monto)": g.promedioPonderado,
   "Plazo promedio (días)": g.plazoPromedio,
   "Pagadas a tiempo (%)": g.aTiempoPct,
   "Atraso promedio (días después del vencimiento)": g.promedioAtraso,
+  ...(g.limite !== undefined ? { "Límite de crédito hoy": g.limite ?? "", "Consumido hoy": g.consumido ?? "" } : {}),
   Facturas: g.facturas,
   "Monto (con IVA)": g.monto,
 });
 const filaFactura = (f: Factura) => ({
   Factura: f.name,
   Cliente: f.cliente,
+  Zona: f.zona,
   Vendedor: f.vendedor,
   "Fecha de emisión": f.emision,
   "Fecha de pago completo": f.pagada,
@@ -107,7 +115,7 @@ function agruparPorCliente(fs: Factura[]) {
     m.get(k)!.push(f);
   }
   return [...m.entries()]
-    .map(([k, lista]) => ({ ...resumenDe(lista), clave: k, cliente: lista[0].cliente, facturas: lista.sort((a, b) => b.dias - a.dias) }))
+    .map(([k, lista]) => ({ ...resumenDe(lista), clave: k, cliente: lista[0].cliente, zona: lista[0].zona, facturas: lista.sort((a, b) => b.dias - a.dias) }))
     .sort((a, b) => b.monto - a.monto);
 }
 
@@ -136,7 +144,7 @@ function BotonExcel({ onClick, texto = "Excel" }: { onClick: () => void; texto?:
   );
 }
 
-type ColumnaOrden = Exclude<keyof Grupo, "clave"> | "clave";
+type ColumnaOrden = Exclude<keyof Grupo, "clave" | "zona"> | "clave";
 
 function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onClick?: (g: any, i: number) => void }) {
   // Sin orden elegido se respeta el del servidor (por monto). Click en un
@@ -148,11 +156,13 @@ function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onC
     return [...filas].sort((a, b) => {
       const r = col === "clave"
         ? a.clave.localeCompare(b.clave, "es", { numeric: true, sensitivity: "base" })
-        : a[col] - b[col];
+        : (a[col] ?? 0) - (b[col] ?? 0);
       return asc ? r : -r;
     });
   }, [filas, orden]);
   // Nombre empieza A→Z; los números, de mayor a menor.
+  // Límite y consumido solo vienen en la pestaña de clientes.
+  const conCredito = filas.some((g) => g.limite !== undefined);
   const ordenarPor = (col: ColumnaOrden) =>
     setOrden((o) => (o?.col === col ? { col, asc: !o.asc } : { col, asc: col === "clave" }));
 
@@ -178,6 +188,8 @@ function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onC
             <Th col="plazoPromedio" label="Plazo" ayuda={AYUDA.plazo} />
             <Th col="aTiempoPct" label="A tiempo" ayuda={AYUDA.aTiempo} />
             <Th col="promedioAtraso" label="Atraso" ayuda={AYUDA.atraso} />
+            {conCredito && <Th col="limite" label="Límite" ayuda={AYUDA.limite} />}
+            {conCredito && <Th col="consumido" label="Consumido" ayuda={AYUDA.consumido} />}
             <Th col="facturas" label="Facturas" />
             <Th col="monto" label="Monto" className="py-2 pl-3 text-right" />
           </tr>
@@ -189,12 +201,23 @@ function Tabla({ filas, titulo, onClick }: { filas: Grupo[]; titulo: string; onC
               onClick={onClick ? () => onClick(g, i) : undefined}
               className={`border-b border-slate-50 hover:bg-slate-50/60 ${onClick ? "cursor-pointer" : ""}`}
             >
-              <td className={`py-2.5 pr-3 font-medium ${onClick ? "text-blue-600" : "text-slate-800"} max-w-[260px] truncate`}>{g.clave}</td>
+              <td className={`py-2.5 pr-3 font-medium ${onClick ? "text-blue-600" : "text-slate-800"} max-w-[260px] truncate`}>
+                {g.clave}
+                {g.zona !== undefined && <span className="block text-[11px] font-normal text-slate-400 truncate">{g.zona}</span>}
+              </td>
               <td className={`py-2.5 px-3 text-right font-semibold ${tono(g.promedioDias, g.plazoPromedio)}`}>{dias(g.promedioDias)}</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{dias(g.promedioPonderado)}</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{dias(g.plazoPromedio)}</td>
               <td className="py-2.5 px-3 text-right text-slate-500">{g.aTiempoPct}%</td>
               <td className="py-2.5 px-3 text-right font-medium">{g.promedioAtraso > 0 ? <>{celdaAtraso(g.promedioAtraso)} <span className="text-slate-400 font-normal">días</span></> : celdaAtraso(0)}</td>
+              {conCredito && (
+                <td className="py-2.5 px-3 text-right text-slate-500">{g.limite == null ? "—" : g.limite > 0 ? formatCurrency(g.limite) : "Sin límite"}</td>
+              )}
+              {conCredito && (
+                <td className={`py-2.5 px-3 text-right ${g.consumido != null && g.limite != null && g.limite > 0 && g.consumido > g.limite ? "font-semibold text-red-600" : "text-slate-500"}`}>
+                  {g.consumido == null ? "—" : formatCurrency(g.consumido)}
+                </td>
+              )}
               <td className="py-2.5 px-3 text-right text-slate-500">{g.facturas}</td>
               <td className="py-2.5 pl-3 text-right text-slate-700">{formatCurrency(g.monto)}</td>
             </tr>
@@ -229,7 +252,7 @@ export default function TiempoCobroPage() {
   // agrupar: el detalle se muestra por cliente con sus facturas dentro (por plazo, por vendedor).
   const [detalle, setDetalle] = useState<{ titulo: string; facturas: Factura[]; agrupar?: boolean } | null>(null);
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
-  const [tab, setTab] = useState<"clientes" | "vendedores">("clientes");
+  const [tab, setTab] = useState<"clientes" | "vendedores" | "zonas">("clientes");
   const [busqueda, setBusqueda] = useState("");
 
   const fetchData = useCallback(async () => {
@@ -266,13 +289,19 @@ export default function TiempoCobroPage() {
     : modo === "anio" ? `en ${anio}` : `en ${MONTHS[mes - 1]} ${anio}`;
   const q = busqueda.trim().toLowerCase();
   const clientesFiltrados = useMemo(
-    () => (data?.clientes || []).filter((c) => !q || c.clave.toLowerCase().includes(q)),
+    () => (data?.clientes || []).filter((c) => !q || c.clave.toLowerCase().includes(q) || c.zona.toLowerCase().includes(q)),
     [data, q],
   );
   const vendedoresFiltrados = useMemo(
     () => (data?.vendedores || []).filter((v) => !q || v.clave.toLowerCase().includes(q)),
     [data, q],
   );
+  const zonasFiltradas = useMemo(
+    () => (data?.zonas || []).filter((z) => !q || z.clave.toLowerCase().includes(q)),
+    [data, q],
+  );
+  // Buscar en «Por cliente» también encuentra por zona.
+  const filasTab = tab === "clientes" ? clientesFiltrados : tab === "vendedores" ? vendedoresFiltrados : zonasFiltradas;
 
   // Cliente buscado que no sale: el servidor explica por qué (contado, pagó en otro mes…).
   const [ausencias, setAusencias] = useState<{ q: string; items: { cliente: string; motivo: string }[] | null } | null>(null);
@@ -320,6 +349,7 @@ export default function TiempoCobroPage() {
       { nombre: "Por plazo", filas: data.porPlazo.map(filaGrupo("Plazo")) },
       { nombre: "Por cliente", filas: data.clientes.map(filaGrupo("Cliente")) },
       { nombre: "Por vendedor", filas: data.vendedores.map(filaGrupo("Vendedor")) },
+      { nombre: "Por zona", filas: data.zonas.map(filaGrupo("Zona")) },
       { nombre: "Facturas", filas: data.facturas.map(filaFactura) },
     ]);
   };
@@ -400,7 +430,7 @@ export default function TiempoCobroPage() {
             Actualizar
           </button>
           {data && data.resumen.facturas > 0 && (
-            <button onClick={exportarTodo} className="flex items-center gap-1 bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-emerald-700 transition" title="Resumen, tramos, por plazo, por cliente, por vendedor y todas las facturas">
+            <button onClick={exportarTodo} className="flex items-center gap-1 bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-emerald-700 transition" title="Resumen, tramos, por plazo, por cliente, por vendedor, por zona y todas las facturas">
               <Download size={14} />
               Exportar todo
             </button>
@@ -497,13 +527,13 @@ export default function TiempoCobroPage() {
               <div className="bg-white border border-slate-200 rounded-2xl p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <div className="flex items-center bg-slate-100 rounded-lg p-1">
-                    {(["clientes", "vendedores"] as const).map((t) => (
+                    {(["clientes", "vendedores", "zonas"] as const).map((t) => (
                       <button
                         key={t}
                         onClick={() => { setTab(t); setBusqueda(""); }}
                         className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${tab === t ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
                       >
-                        {t === "clientes" ? `Por cliente (${data.clientes.length})` : `Por vendedor (${data.vendedores.length})`}
+                        {t === "clientes" ? `Por cliente (${data.clientes.length})` : t === "vendedores" ? `Por vendedor (${data.vendedores.length})` : `Por zona (${data.zonas.length})`}
                       </button>
                     ))}
                   </div>
@@ -514,7 +544,7 @@ export default function TiempoCobroPage() {
                         type="text"
                         value={busqueda}
                         onChange={(e) => setBusqueda(e.target.value)}
-                        placeholder={tab === "clientes" ? "Buscar cliente..." : "Buscar vendedor..."}
+                        placeholder={tab === "clientes" ? "Buscar cliente o zona..." : tab === "vendedores" ? "Buscar vendedor..." : "Buscar zona..."}
                         className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 w-56"
                       />
                     </div>
@@ -525,6 +555,12 @@ export default function TiempoCobroPage() {
                           descargarDesglose(`Tiempo_de_cobro_por_cliente_${periodo}`,
                             { nombre: "Por cliente", filas: clientesFiltrados.map(filaGrupo("Cliente")) },
                             data.facturas.filter((f) => ids.has(f.partnerId)));
+                        } else if (tab === "zonas") {
+                          const nombres = new Set(zonasFiltradas.map((z) => z.clave));
+                          descargarDesglose(`Tiempo_de_cobro_por_zona_${periodo}`,
+                            { nombre: "Por zona", filas: zonasFiltradas.map(filaGrupo("Zona")) },
+                            data.facturas.filter((f) => nombres.has(f.zona)),
+                            { titulo: "Zona", valor: (f) => f.zona });
                         } else {
                           const nombres = new Set(vendedoresFiltrados.map((v) => v.clave));
                           descargarDesglose(`Tiempo_de_cobro_por_vendedor_${periodo}`,
@@ -543,6 +579,12 @@ export default function TiempoCobroPage() {
                     titulo="Cliente"
                     onClick={(g) => setDetalle({ titulo: g.clave, facturas: data.facturas.filter((f) => f.partnerId === g.partnerId) })}
                   />
+                ) : tab === "zonas" ? (
+                  <Tabla
+                    filas={zonasFiltradas}
+                    titulo="Zona"
+                    onClick={(g) => { setAbiertos(new Set()); setDetalle({ titulo: `Zona ${g.clave}`, facturas: data.facturas.filter((f) => f.zona === g.clave), agrupar: true }); }}
+                  />
                 ) : (
                   <Tabla
                     filas={vendedoresFiltrados}
@@ -550,7 +592,7 @@ export default function TiempoCobroPage() {
                     onClick={(g) => { setAbiertos(new Set()); setDetalle({ titulo: g.clave, facturas: data.facturas.filter((f) => f.vendedor === g.clave), agrupar: true }); }}
                   />
                 )}
-                {(tab === "clientes" ? clientesFiltrados : vendedoresFiltrados).length === 0 && (
+                {filasTab.length === 0 && (
                   <div className="text-center text-sm text-slate-400 py-6 space-y-2">
                     <p>Sin resultados para "{busqueda}"</p>
                     {sinClientes && ausencias?.q === q && (
@@ -574,7 +616,7 @@ export default function TiempoCobroPage() {
 
               <p className="text-[11px] text-slate-400">
                 Cada factura cuenta desde su fecha de emisión hasta la fecha del último pago que la dejó en cero (fecha del pago, no la de registro en Odoo).
-                El plazo es fecha de vencimiento − fecha de la factura. Los promedios son por factura (cada una pesa igual).
+                El plazo es fecha de vencimiento − fecha de la factura. La zona es el estado del cliente en Odoo (si el contacto no lo tiene, el de su empresa). Los promedios son por factura (cada una pesa igual).
                 {tipo === "credito" ? "Solo crédito" : tipo === "contado" ? "Solo contado (plazo 0: a tiempo = pagada el mismo día)" : "Crédito y contado (el contado con plazo 0)"}; sin Supricom, SUPER TECHNO ni facturas vencidas antes de 2025. Las cerradas solo con nota de crédito no cuentan.
               </p>
             </>

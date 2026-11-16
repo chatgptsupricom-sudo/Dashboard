@@ -5,9 +5,12 @@ import { descargarExcel } from "@/lib/excel";
 import { AlertTriangle, Building2, CreditCard, Download, Gauge, RefreshCw, Search, UserX } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { ColumnHeader } from "@/components/compras/column-header";
+import HistorialCredito from "@/components/cxc/HistorialCredito";
 
 // Sobregiro: uso del límite de crédito de cada cliente, por sede
-// (lib/cxc/sobregiro.ts). Es una foto de hoy, no tiene período.
+// (lib/cxc/sobregiro.ts). La pestaña Hoy es una foto de hoy; Historial
+// (lib/cxc/historialCredito.ts) son los cambios de cupo y excesos que el
+// panel registra cada hora.
 
 const COMPANY_MAP: Record<number, string> = { 7: "Panamá", 9: "Valencia", 10: "Caracas" };
 
@@ -123,6 +126,7 @@ export default function SobregiroPage() {
   const [busqueda, setBusqueda] = useState("");
   const [vendedor, setVendedor] = useState("");
   const [orden, setOrden] = useState<{ col: Columna; asc: boolean } | null>(null);
+  const [pestana, setPestana] = useState<"hoy" | "historial">("hoy");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -253,17 +257,39 @@ export default function SobregiroPage() {
               <span className="text-sm text-slate-700">{COMPANY_MAP[userCids!]}</span>
             )}
           </div>
-          <button onClick={fetchData} disabled={loading} className="flex items-center gap-1 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50">
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            Actualizar
-          </button>
-          <button onClick={exportar} disabled={!data} className="flex items-center gap-1 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 hover:bg-emerald-100 disabled:opacity-50">
-            <Download size={14} />
-            Excel
-          </button>
+          {pestana === "hoy" && (
+            <>
+              <button onClick={fetchData} disabled={loading} className="flex items-center gap-1 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50">
+                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                Actualizar
+              </button>
+              <button onClick={exportar} disabled={!data} className="flex items-center gap-1 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 hover:bg-emerald-100 disabled:opacity-50">
+                <Download size={14} />
+                Excel
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 mb-4 w-fit" role="tablist" aria-label="Sobregiro">
+        {([["hoy", "Hoy"], ["historial", "Historial"]] as const).map(([id, label]) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={pestana === id}
+            onClick={() => setPestana(id)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${pestana === id ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {pestana === "historial" ? (
+        <HistorialCredito empresa={empresa} mostrarSede={!empresa && eligeSede} />
+      ) : (
+      <>
       {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {loading && !data ? (
@@ -396,6 +422,8 @@ export default function SobregiroPage() {
           </div>
         </>
       ) : null}
+      </>
+      )}
     </div>
   );
 }

@@ -8,10 +8,12 @@ import { useAuthStore } from "@/lib/stores/auth.store";
 import { SUCURSALES, separarPrecintos, FACTURA_ESPECIAL_SIN_NUMERO } from "@/lib/recepcion/flujo";
 import { leerExcel } from "@/lib/recepcion/leerExcel";
 import { porBulto, type Conversion } from "@/lib/recepcion/unidades";
+import { puedeRepartirse } from "@/lib/recepcion/repartoSedes";
 import {
   PageHeader,
   Card,
   SectionTitle,
+  BotonPrimario,
   BotonSecundario,
   inputClases,
   labelClases,
@@ -65,6 +67,7 @@ function hoyMas(dias: number) {
 
 export default function PackingListForm({ base, id }: { base: string; id?: string }) {
   const t = useTranslations("recepcion");
+  const tRs = useTranslations("recepcion.reparto_sedes");
   const router = useRouter();
   const { user } = useAuthStore();
   const editando = !!id;
@@ -83,6 +86,16 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
   const [renglones, setRenglones] = useState<Renglon[]>([vacio()]);
   const [archivos, setArchivos] = useState<File[]>([]);
   const [existentes, setExistentes] = useState<Array<{ id: number; nombre: string | null; mime: string }>>([]);
+  // Reparto entre sedes (Valencia/Caracas). Al crear arranca apagado: lo
+  // decide Compras. Al editar se lee el estado guardado; si no se pudo leer
+  // (repartoConocido = false) no se manda, para no apagarlo por error.
+  const [repartirSedes, setRepartirSedes] = useState(false);
+  const [repartoConocido, setRepartoConocido] = useState(!editando);
+  const casillaTocada = useRef(false);
+  // Se guardo, pero el reparto entre sedes no se pudo calcular: se avisa y se
+  // ofrece ir al detalle (ahi se reintenta) en vez de navegar sin decir nada.
+  const [guardadoConError, setGuardadoConError] = useState<{ id: number; error: string } | null>(null);
+  const repartible = puedeRepartirse(cids);
 
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -148,6 +161,24 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
       }
     })();
   }, [id, t]);
+
+  // Edicion: si el packing list ya se reparte entre sedes.
+  useEffect(() => {
+    if (!id) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/recepcion/${id}/reparto-sedes`);
+        if (!res.ok) return;
+        const j = await res.json();
+        if (!j?.success) return;
+        // Si ya la tocaron mientras cargaba, vale lo que eligieron.
+        if (!casillaTocada.current) setRepartirSedes(!!j.reparto?.cabecera?.activo);
+        setRepartoConocido(true);
+      } catch {
+        // Sin dato: la casilla queda sin tocar y no se manda.
+      }
+    })();
+  }, [id]);
 
   // Ordenes de compra aprobadas de la sucursal elegida.
   useEffect(() => {
@@ -377,6 +408,8 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           oc_referencia: ocRef || null,
           odoo_purchase_order_id: ocOdoo || null,
           observaciones,
+          // Solo Valencia/Caracas y solo si se sabe lo que hay (undefined = no tocar).
+          repartir_sedes: repartible && repartoConocido ? repartirSedes : undefined,
           items: limpios.map((r) => ({
             codigo: r.codigo,
             producto: r.producto,
@@ -402,6 +435,12 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           const e = await r.json().catch(() => ({}));
           throw new Error(`${f.name}: ${e.error || t("error")}`);
         }
+      }
+      if (j.reparto_sedes_error) {
+        // El packing list quedo guardado: no se vuelve a guardar (crearia otro).
+        setGuardadoConError({ id: Number(recepcionId), error: String(j.reparto_sedes_error) });
+        setGuardando(false);
+        return;
       }
       router.push(`${base}/${recepcionId}`);
     } catch (e: any) {
@@ -437,6 +476,26 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
                   <option key={s.cids} value={s.cids}>{s.nombre}</option>
                 ))}
               </select>
+              {repartible ? (
+                <label className="mt-2 flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={repartirSedes}
+                    onChange={(e) => {
+                      casillaTocada.current = true;
+                      setRepartirSedes(e.target.checked);
+                      setRepartoConocido(true);
+                    }}
+                    className="mt-0.5 w-4 h-4 shrink-0 rounded border-slate-300"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-semibold text-slate-700">{tRs("form_check")}</span>
+                    <span className="block text-xs text-slate-500">{tRs("form_ayuda")}</span>
+                  </span>
+                </label>
+              ) : (
+                repartirSedes && <p className="mt-2 text-xs text-amber-700">{tRs("form_no_aplica")}</p>
+              )}
             </div>
             <div>
               <label className={labelClases}>{t("fecha_estimada")}</label>
@@ -739,6 +798,18 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
 
+        {guardadoConError && (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="flex min-w-0 flex-1 items-start gap-1.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
+              <span>{tRs("form_error_calculo", { error: guardadoConError.error })}</span>
+            </p>
+            <BotonPrimario href={`${base}/${guardadoConError.id}`} className="w-full sm:w-auto sm:shrink-0">
+              {t("ver")}
+            </BotonPrimario>
+          </div>
+        )}
+
         <div className="sticky bottom-0 z-10 pb-4 pt-2 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-[0_4px_16px_rgba(15,23,42,0.08)]">
             <div className="min-w-0 flex-1 text-xs">
@@ -762,8 +833,8 @@ export default function PackingListForm({ base, id }: { base: string; id?: strin
               <button
                 type="button"
                 onClick={guardar}
-                disabled={guardando || !listo}
-                style={guardando || !listo ? undefined : { backgroundColor: "var(--portal-primary,#741DFE)" }}
+                disabled={guardando || !listo || !!guardadoConError}
+                style={guardando || !listo || guardadoConError ? undefined : { backgroundColor: "var(--portal-primary,#741DFE)" }}
                 className="w-full sm:w-auto whitespace-nowrap inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:bg-slate-100 disabled:text-slate-400 disabled:border disabled:border-slate-200 disabled:cursor-not-allowed disabled:hover:opacity-100"
               >
                 {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

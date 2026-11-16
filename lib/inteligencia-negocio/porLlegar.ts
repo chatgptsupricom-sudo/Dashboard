@@ -15,6 +15,9 @@ import {
 } from "@/lib/compras/datosOdoo";
 import { COMPANY_NAMES } from "@/lib/cxc/alcance";
 import { asegurarColumnasOdoo } from "@/lib/recepcion/columnasOdoo";
+import { esFacturaEspecial } from "@/lib/recepcion/flujo";
+import { CARACAS, claveProducto, fraccionDeRenglon } from "@/lib/recepcion/repartoSedes";
+import { fraccionesCaracas } from "@/lib/recepcion/repartoSedesDatos";
 import { HISTORIA_DESDE, SQL_SIN_INTERCOMPANIA, rangoSmartbit } from "@/lib/smartbit";
 
 /**
@@ -30,7 +33,11 @@ import { HISTORIA_DESDE, SQL_SIN_INTERCOMPANIA, rangoSmartbit } from "@/lib/smar
  *   se cerró, con su fecha estimada. Si el producto ya está en una orden de
  *   Odoo se le suma la fecha; si no, entra como renglón propio con la
  *   cantidad del packing list. En Valencia la orden se suele cargar en Odoo
- *   cuando llega, así que casi todo lo que viene está aquí.
+ *   cuando llega, así que casi todo lo que viene está aquí. La Factura
+ *   Especial de Caracas (otra compra que viaja en el mismo embarque) no
+ *   cuenta. Con el reparto entre sedes activo (lib/recepcion/repartoSedesDatos.ts)
+ *   la parte de Caracas de cada producto se le atribuye a Caracas (marcada
+ *   `via: VALENCIA`) y Valencia queda con la suya.
  *
  * Ventas: las de `dominioVentas` (sin IVA, NC restan, sin servicios ni
  * intercompañía) en Odoo desde el corte y en Smartbit antes.
@@ -53,6 +60,11 @@ export interface OrigenLlegada {
   fecha: string | null;
   /** Solo packing list: por_llegar / descargando (llegó, se está contando). */
   etapa?: string;
+  /**
+   * Solo packing list: la sede donde llega cuando es otra (parte del reparto
+   * entre sedes que se despacha después a esta sede).
+   */
+  via?: number;
 }
 
 export interface FilaPorLlegar {
@@ -120,49 +132,113 @@ async function pendientesOdoo(companyId: number): Promise<Map<number, OrigenLleg
 }
 
 interface RenglonPacking {
+  /** Sede a la que le toca (la de llegada, o Caracas por su parte del reparto). */
+  sede: number;
   productId: number | null;
   codigo: string;
   producto: string;
   origen: OrigenLlegada;
 }
 
-/** Packing list de Valencia todavía no cerrados (por llegar o contándose). [] si la MySQL no responde. */
-async function pendientesPacking(): Promise<{ renglones: RenglonPacking[]; error: string | null }> {
+/**
+ * Packing list de Valencia todavía no cerrados (por llegar o contándose), más
+ * los de Caracas que se reparten entre sedes (solo por la parte de Valencia:
+ * lo de Caracas en Caracas sigue saliendo de su OC en Odoo, como antes), sin
+ * la Factura Especial de Caracas, y con el reparto entre sedes aplicado: de un
+ * producto repartido sale un renglón para cada sede. [] si la MySQL no responde.
+ */
+async function pendientesPacking(): Promise<{ renglones: RenglonPacking[]; errores: string[] }> {
   try {
     await asegurarColumnasOdoo();
     const r = await query(
-      `SELECT r.referencia, r.proveedor, r.etapa,
+      `SELECT r.id AS recepcion_id, r.cids, r.referencia, r.proveedor, r.etapa,
               DATE_FORMAT(r.fecha_estimada, '%Y-%m-%d') AS estimada,
-              i.codigo, i.producto, i.odoo_product_id, i.cantidad_esperada
+              i.codigo, i.producto, i.odoo_product_id, i.cantidad_esperada, i.factura_aparte
          FROM recepcion_packing r
          JOIN recepcion_packing_items i ON i.recepcion_id = r.id
-        WHERE r.cids = ? AND r.descartado_at IS NULL AND r.etapa <> 'cerrado'`,
-      [VALENCIA],
-    );
-    const porCodigo = await idsPorCodigo();
-    const renglones: RenglonPacking[] = [];
-    for (const f of r.rows as any[]) {
+        WHERE r.descartado_at IS NULL AND r.etapa <> 'cerrado'
+          AND (r.cids = ?
+               OR (r.cids = ? AND EXISTS (SELECT 1 FROM recepcion_reparto_sedes s
+                                           WHERE s.recepcion_id = r.id AND s.activo = 1)))`,
+      [VALENCIA, CARACAS],
+    ).catch(async (e: any) => {
+      // Sin la tabla del reparto (base nueva): solo los de Valencia, como antes.
+      if (e?.code !== "ER_NO_SUCH_TABLE") throw e;
+      return query(
+        `SELECT r.id AS recepcion_id, r.cids, r.referencia, r.proveedor, r.etapa,
+                DATE_FORMAT(r.fecha_estimada, '%Y-%m-%d') AS estimada,
+                i.codigo, i.producto, i.odoo_product_id, i.cantidad_esperada, i.factura_aparte
+           FROM recepcion_packing r
+           JOIN recepcion_packing_items i ON i.recepcion_id = r.id
+          WHERE r.cids = ? AND r.descartado_at IS NULL AND r.etapa <> 'cerrado'`,
+        [VALENCIA],
+      );
+    });
+    // La Factura Especial de Caracas es otra compra: no es "por llegar" de Valencia.
+    const filas = (r.rows as any[]).filter((f) => !esFacturaEspecial(f));
+
+    // Por packing list + producto (la llave del reparto), para repartir y
+    // redondear una sola vez.
+    const grupos = new Map<string, { f: any; clave: string; cantidad: number }>();
+    for (const f of filas) {
       const cantidad = Number(f.cantidad_esperada) || 0;
       if (cantidad <= 0) continue;
+      const clave = claveProducto(f.codigo, f.producto);
+      const llave = `${f.recepcion_id}|${clave}`;
+      const ya = grupos.get(llave);
+      if (ya) {
+        ya.cantidad += cantidad;
+        if (!Number(ya.f.odoo_product_id) && Number(f.odoo_product_id)) ya.f = f;
+      } else grupos.set(llave, { f, clave, cantidad });
+    }
+
+    const errores: string[] = [];
+    let fracciones = new Map<number, Map<string, number>>();
+    try {
+      fracciones = await fraccionesCaracas([...new Set(filas.map((f) => Number(f.recepcion_id)))]);
+    } catch (e: any) {
+      console.error("[bi-por-llegar] reparto entre sedes:", e?.message);
+      errores.push("No se pudo leer el reparto entre sedes: lo de los packing list sale todo en Valencia");
+    }
+
+    const porCodigo = await idsPorCodigo();
+    const renglones: RenglonPacking[] = [];
+    for (const { f, clave, cantidad } of grupos.values()) {
       const codigo = String(f.codigo || "").trim();
-      renglones.push({
+      const base = {
         productId: Number(f.odoo_product_id) || porCodigo.get(codigo.toUpperCase()) || null,
         codigo,
         producto: String(f.producto || ""),
-        origen: {
-          tipo: "packing",
-          documento: String(f.referencia || ""),
-          proveedor: String(f.proveedor || ""),
-          cantidad,
-          fecha: f.estimada || null,
-          etapa: String(f.etapa || ""),
-        },
+      };
+      const origen = (cant: number, via?: number): OrigenLlegada => ({
+        tipo: "packing",
+        documento: String(f.referencia || ""),
+        proveedor: String(f.proveedor || ""),
+        cantidad: cant,
+        fecha: f.estimada || null,
+        etapa: String(f.etapa || ""),
+        ...(via ? { via } : {}),
       });
+      const llega = Number(f.cids) === CARACAS ? CARACAS : VALENCIA;
+      const fraccion = fraccionDeRenglon(fracciones.get(Number(f.recepcion_id)), f.codigo, f.producto);
+      if (fraccion == null) {
+        if (llega === VALENCIA) renglones.push({ ...base, sede: VALENCIA, origen: origen(cantidad) });
+        continue;
+      }
+      const bruto = cantidad * fraccion;
+      const caracas = Number.isInteger(cantidad) ? Math.round(bruto) : r2(bruto);
+      const valencia = r2(cantidad - caracas);
+      if (llega === VALENCIA) {
+        if (valencia > 0) renglones.push({ ...base, sede: VALENCIA, origen: origen(valencia) });
+        if (caracas > 0) renglones.push({ ...base, sede: CARACAS, origen: origen(caracas, VALENCIA) });
+      } else if (valencia > 0) {
+        renglones.push({ ...base, sede: VALENCIA, origen: origen(valencia, CARACAS) });
+      }
     }
-    return { renglones, error: null };
+    return { renglones, errores };
   } catch (e: any) {
     console.error("[bi-por-llegar] packing list:", e?.message);
-    return { renglones: [], error: "No se pudieron leer los packing list de Valencia" };
+    return { renglones: [], errores: ["No se pudieron leer los packing list de Valencia"] };
   }
 }
 
@@ -179,7 +255,10 @@ export async function porLlegar(companyIds: number[]): Promise<{ filas: FilaPorL
   const todas = Object.keys(COMPANY_NAMES).map(Number);
   const [cat, packing, porSede, ventasTodas] = await Promise.all([
     catalogo(),
-    companyIds.includes(VALENCIA) ? pendientesPacking() : Promise.resolve({ renglones: [], error: null }),
+    // Los packing list llegan a Valencia, pero con el reparto entre sedes una parte es de Caracas.
+    companyIds.includes(VALENCIA) || companyIds.includes(CARACAS)
+      ? pendientesPacking()
+      : Promise.resolve({ renglones: [] as RenglonPacking[], errores: [] as string[] }),
     Promise.all(
       companyIds.map(async (cid) => {
         const [odoo, almacen, vendidas12m] = await Promise.all([
@@ -195,21 +274,33 @@ export async function porLlegar(companyIds: number[]): Promise<{ filas: FilaPorL
   ]);
   const ultima = new Map(ventasTodas);
 
+  // La parte de la otra sede de un packing list repartido está también en la
+  // OC de la sede donde llega, en Odoo (todo entra ahí y se despacha
+  // después): a lo de Odoo de esa sede se le resta, para no contarla en las dos.
+  const llaveDe = (r: { productId: number | null; codigo: string; producto: string }) =>
+    r.productId ? `p${r.productId}` : `c${(r.codigo || r.producto).toUpperCase()}`;
+  const salenDe = new Map<string, number>(); // `${sede donde llega}|${llave}`
+  for (const r of packing.renglones) {
+    if (!r.origen.via) continue;
+    const k = `${r.origen.via}|${llaveDe(r)}`;
+    salenDe.set(k, (salenDe.get(k) ?? 0) + r.origen.cantidad);
+  }
+
   const filas: FilaPorLlegar[] = [];
   for (const { cid, odoo, almacen, vendidas12m } of porSede) {
-    // Renglones por producto: lo de Odoo, más lo del packing list (solo Valencia).
+    // Renglones por producto: lo de Odoo, más lo del packing list que le toca
+    // a la sede (Valencia, y Caracas por su parte del reparto entre sedes).
     const grupos = new Map<string, { productId: number | null; codigo: string; producto: string; origenes: OrigenLlegada[] }>();
     for (const [id, origenes] of odoo) grupos.set(`p${id}`, { productId: id, codigo: "", producto: "", origenes: [...origenes] });
-    if (cid === VALENCIA) {
-      for (const r of packing.renglones) {
-        const llave = r.productId ? `p${r.productId}` : `c${(r.codigo || r.producto).toUpperCase()}`;
-        const g = grupos.get(llave) ?? { productId: r.productId, codigo: r.codigo, producto: r.producto, origenes: [] };
-        g.origenes.push(r.origen);
-        grupos.set(llave, g);
-      }
+    for (const r of packing.renglones) {
+      if (r.sede !== cid) continue;
+      const llave = llaveDe(r);
+      const g = grupos.get(llave) ?? { productId: r.productId, codigo: r.codigo, producto: r.producto, origenes: [] };
+      g.origenes.push(r.origen);
+      grupos.set(llave, g);
     }
 
-    for (const g of grupos.values()) {
+    for (const [llave, g] of grupos) {
       const p = g.productId ? cat.get(g.productId) : undefined;
       const ultimaSede = g.productId ? ultima.get(cid)?.get(g.productId) ?? null : null;
       const otrasSedes = g.productId
@@ -217,7 +308,8 @@ export async function porLlegar(companyIds: number[]): Promise<{ filas: FilaPorL
         : [];
       // Un producto que está en una orden de Odoo y en un packing list suele
       // ser el mismo envío: se toma el mayor, no la suma.
-      const deOdoo = g.origenes.filter((o) => o.tipo === "odoo").reduce((s, o) => s + o.cantidad, 0);
+      const deOdooTotal = g.origenes.filter((o) => o.tipo === "odoo").reduce((s, o) => s + o.cantidad, 0);
+      const deOdoo = Math.max(0, deOdooTotal - (salenDe.get(`${cid}|${llave}`) ?? 0));
       const dePacking = g.origenes.filter((o) => o.tipo === "packing").reduce((s, o) => s + o.cantidad, 0);
       filas.push({
         sede: cid,
@@ -238,7 +330,7 @@ export async function porLlegar(companyIds: number[]): Promise<{ filas: FilaPorL
     }
   }
   filas.sort((a, b) => (a.fecha ?? "9999").localeCompare(b.fecha ?? "9999") || b.cantidad - a.cantidad);
-  return { filas, avisos: packing.error ? [packing.error] : [] };
+  return { filas, avisos: packing.errores };
 }
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 // real de hoy, meta en las mismas unidades, barra con la marca de la meta y
 // cuánto falta. Sin React; el texto lo arma la tarjeta con sus traducciones.
 
-import { KPI_MAS_ES_MEJOR, KPI_MENOS_ES_MEJOR, nivelSemaforo, sinMeta, type Nivel } from "./scoring";
+import { KPI_MAS_ES_MEJOR, KPI_MENOS_ES_MEJOR, KPI_META_CERO, nivelSemaforo, numeroDe, sinMeta, type Nivel } from "./scoring";
 import type { ValorReal } from "./types";
 
 export interface LecturaKpi {
@@ -23,8 +23,7 @@ export interface LecturaKpi {
   brecha: number | null;
 }
 
-const num = (v: string | number | null | undefined) =>
-  parseFloat(String(v ?? "").replace("%", "").replace(/d[ií]as/i, "").trim());
+const num = (v: string | number | null | undefined) => numeroDe(v);
 
 const tope = (n: number) => Math.max(0, Math.min(100, n));
 
@@ -45,7 +44,7 @@ export function valorReal(kpi: any, reales?: Record<string, ValorReal>): ValorRe
   return {
     valor,
     meta: Number.isFinite(meta) && meta > 0 ? meta : null,
-    unidad: /d[ií]as/i.test(texto) ? "dias" : String(kpi.average ?? "").includes("%") ? "%" : "",
+    unidad: /d[ií]as/i.test(texto) ? "dias" : /\d\s*h\b/.test(texto) ? "horas" : String(kpi.average ?? "").includes("%") ? "%" : "",
     menosEsMejor: KPI_MENOS_ES_MEJOR.includes(kpi.id),
   };
 }
@@ -57,11 +56,14 @@ export function valorReal(kpi: any, reales?: Record<string, ValorReal>): ValorRe
 export function leerKpi(kpi: any, reales: Record<string, ValorReal> | undefined, avanceMes: number): LecturaKpi {
   const nivel = nivelSemaforo(kpi.id, kpi.average, kpi.goalDefault);
   const real = valorReal(kpi, reales);
-  const kpiSinMeta = sinMeta(kpi.goalDefault);
+  const kpiSinMeta = sinMeta(kpi.goalDefault, kpi.id);
 
   // % de la meta: el promedio, salvo en los KPIs crudos, donde se calcula.
   let pct: number | null = null;
-  if (!kpiSinMeta) {
+  if (KPI_META_CERO.includes(kpi.id)) {
+    const n = num(kpi.average);
+    pct = Number.isFinite(n) ? (n <= 0 ? 100 : 0) : null;
+  } else if (!kpiSinMeta) {
     const crudo = KPI_MAS_ES_MEJOR.includes(kpi.id) || KPI_MENOS_ES_MEJOR.includes(kpi.id);
     if (!crudo) {
       const p = num(kpi.average);
@@ -129,5 +131,6 @@ export function formatoReal(valor: number, unidad: ValorReal["unidad"], locale: 
   const f = new Intl.NumberFormat(locale, { maximumFractionDigits: decimales }).format(valor);
   if (unidad === "%") return `${f}%`;
   if (unidad === "dias") return `${f} ${diasLabel}`;
+  if (unidad === "horas") return `${f} h`;
   return f;
 }

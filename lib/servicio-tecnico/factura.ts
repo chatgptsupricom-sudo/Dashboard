@@ -582,7 +582,17 @@ async function leerProductos(ids: number[]) {
   return mapa;
 }
 
-/** Movimientos despachados, agrupados por línea de la orden de venta. */
+/**
+ * Lo que el cliente tiene en la mano, agrupado por línea de la orden de venta:
+ * lo que salió hacia él menos lo que devolvió.
+ *
+ * Odoo le pone el mismo `sale_line_id` a la devolución (Cliente → Existencia)
+ * y, con entrega en 2 pasos, al movimiento interno de preparación. Tomar todos
+ * los movimientos de la línea repetía los seriales devueltos (nov-2026: S-04190,
+ * 10 SBNB600 despachados y 2 devueltos en CENT1/IN/00254 se veían como 12, con
+ * …0504 y …0541 dos veces). Mismo criterio que `lib/notas-credito/odoo.ts`:
+ * cuenta la salida hacia una ubicación de cliente y resta la que vuelve de ahí.
+ */
 async function leerMovimientos(saleLineIds: number[]) {
   const mapa = new Map<
     number,
@@ -592,53 +602,99 @@ async function leerMovimientos(saleLineIds: number[]) {
 
   // state = 'done' descarta los despachos cancelados, que existen y aparecen
   // mezclados con los reales.
-  const movimientos = await rpc<any[]>(
-    "stock.move",
-    "search_read",
-    [
-      [
-        ["sale_line_id", "in", saleLineIds],
-        ["state", "=", "done"],
-      ],
-    ],
-    { fields: ["id", "sale_line_id", "picking_id"], limit: 500 },
-  );
+  const conVenta = (extra: any[]) => [
+    ["sale_line_id", "in", saleLineIds],
+    ["state", "=", "done"],
+    extra,
+  ];
+  const campos = ["id", "sale_line_id", "picking_id", "origin_returned_move_id"];
+  const [salidas, devoluciones] = await Promise.all([
+    rpc<any[]>("stock.move", "search_read", [conVenta(["location_dest_id.usage", "=", "customer"])], {
+      fields: campos,
+      limit: 500,
+    }),
+    rpc<any[]>("stock.move", "search_read", [conVenta(["location_id.usage", "=", "customer"])], {
+      fields: campos,
+      limit: 500,
+    }),
+  ]);
 
-  if (!movimientos.length) return mapa;
+  if (!salidas.length) return mapa;
 
-  const porMovimiento = new Map<number, any>(
-    movimientos.map((m) => [m.id, m]),
-  );
+  const porMovimiento = new Map<number, { mov: any; signo: 1 | -1 }>();
+  for (const m of salidas) porMovimiento.set(m.id, { mov: m, signo: 1 });
+  for (const m of devoluciones) porMovimiento.set(m.id, { mov: m, signo: -1 });
 
   const detalles = await rpc<any[]>(
     "stock.move.line",
     "search_read",
     [
       [
-        ["move_id", "in", movimientos.map((m) => m.id)],
+        ["move_id", "in", [...porMovimiento.keys()]],
         ["state", "=", "done"],
       ],
     ],
-    { fields: ["move_id", "lot_id", "lot_name", "quantity"], limit: 1000 },
+    { fields: ["move_id", "lot_id", "lot_name", "quantity"], limit: 2000 },
   );
 
-  for (const detalle of detalles) {
-    const movimiento = porMovimiento.get(m2oId(detalle.move_id)!);
-    if (!movimiento) continue;
+  // Por línea de venta: serial → { neto, despacho de la última salida } y,
+  // sin serial, despacho → cantidad neta.
+  const conSerial = new Map<number, Map<string, { neto: number; despacho: string }>>();
+  const sinSerial = new Map<number, Map<string, number>>();
+  const despachoDe = (id: number | null) =>
+    id != null ? m2oNombre(porMovimiento.get(id)?.mov.picking_id) : "";
 
-    const saleLineId = m2oId(movimiento.sale_line_id);
+  // Las salidas primero, para que una devolución encuentre de dónde restar.
+  const ordenados = [...detalles].sort(
+    (a, b) =>
+      (porMovimiento.get(m2oId(b.move_id)!)?.signo ?? 0) -
+      (porMovimiento.get(m2oId(a.move_id)!)?.signo ?? 0),
+  );
+
+  for (const detalle of ordenados) {
+    const entrada = porMovimiento.get(m2oId(detalle.move_id)!);
+    if (!entrada) continue;
+    const { mov, signo } = entrada;
+
+    const saleLineId = m2oId(mov.sale_line_id);
     if (!saleLineId) continue;
 
     // El serial puede estar como registro de lote o como texto suelto.
     const serial = m2oNombre(detalle.lot_id) || detalle.lot_name || "";
+    const cantidad = Number(detalle.quantity) || 0;
 
-    const lista = mapa.get(saleLineId) ?? [];
-    lista.push({
-      serial,
-      cantidad: Number(detalle.quantity) || 0,
-      despacho: m2oNombre(movimiento.picking_id),
-    });
-    mapa.set(saleLineId, lista);
+    if (serial) {
+      const seriales = conSerial.get(saleLineId) ?? new Map();
+      const actual = seriales.get(serial) ?? { neto: 0, despacho: "" };
+      actual.neto += signo;
+      if (signo > 0) actual.despacho = m2oNombre(mov.picking_id);
+      seriales.set(serial, actual);
+      conSerial.set(saleLineId, seriales);
+      continue;
+    }
+
+    const porDespacho = sinSerial.get(saleLineId) ?? new Map<string, number>();
+    // Una devolución sin serial se resta del despacho que devuelve.
+    const despacho =
+      signo > 0
+        ? m2oNombre(mov.picking_id)
+        : despachoDe(m2oId(mov.origin_returned_move_id)) ||
+          [...porDespacho.keys()][0] ||
+          "";
+    porDespacho.set(despacho, (porDespacho.get(despacho) ?? 0) + signo * cantidad);
+    sinSerial.set(saleLineId, porDespacho);
+  }
+
+  const lista = (id: number) => mapa.get(id) ?? (mapa.set(id, []), mapa.get(id)!);
+  for (const [saleLineId, seriales] of conSerial) {
+    for (const [serial, { neto, despacho }] of seriales) {
+      if (neto > 0) lista(saleLineId).push({ serial, cantidad: 1, despacho });
+    }
+  }
+  for (const [saleLineId, porDespacho] of sinSerial) {
+    for (const [despacho, cantidad] of porDespacho) {
+      if (cantidad > 0) lista(saleLineId).push({ serial: "", cantidad, despacho });
+    }
   }
 
   return mapa;

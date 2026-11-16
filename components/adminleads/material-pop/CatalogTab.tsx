@@ -1,40 +1,39 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, FileSpreadsheet, PackagePlus, Search } from "lucide-react";
-import { ProductCard } from "./ProductCard";
-import { ProductFormDialog } from "./ProductFormDialog";
-import { ExcelImportDialog } from "./ExcelImportDialog";
-import type {
-  PopCategory,
-  PopLocation,
-  PopProduct,
-  PopUom,
-} from "@/lib/adminleads/material-pop/types";
+import { Download, PackagePlus, Search } from "lucide-react";
+import { ProductCard, nivelStock } from "./ProductCard";
+import type { PopCategory, PopLocation, PopProduct } from "@/lib/adminleads/material-pop/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 export function CatalogTab({
   products,
   categories,
-  uoms,
   loading,
   onRefresh,
+  onNew,
+  onImport,
+  onEdit,
+  onEntrada,
+  onSalida,
 }: {
   products: PopProduct[];
   categories: PopCategory[];
-  uoms: PopUom[];
   loading: boolean;
   onRefresh: () => Promise<void> | void;
+  onNew: () => void;
+  onImport: () => void;
+  onEdit: (p: PopProduct) => void;
+  onEntrada: (p: PopProduct) => void;
+  onSalida: (p: PopProduct) => void;
 }) {
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [brandFilter, setBrandFilter] = useState<string>("");
   const [locationFilter, setLocationFilter] = useState<PopLocation | "">("");
   const [onlyAlerts, setOnlyAlerts] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<PopProduct | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
 
   // Las marcas salen del propio catalogo y no del endpoint de Odoo: aqui solo
   // interesa filtrar lo que ya esta en pantalla.
@@ -50,7 +49,7 @@ export function CatalogTab({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return products.filter((p) => {
-      if (onlyAlerts && !p.has_alert) return false;
+      if (onlyAlerts && nivelStock(p) === "ok") return false;
       if (categoryFilter && String(p.category_id) !== categoryFilter) return false;
       if (brandFilter && (p.brand || "").trim() !== brandFilter) return false;
       // Ubicacion = donde hay existencia, no un campo del producto: un producto
@@ -66,108 +65,92 @@ export function CatalogTab({
     });
   }, [products, query, categoryFilter, brandFilter, locationFilter, onlyAlerts]);
 
-  function openNew() {
-    setEditing(null);
-    setFormOpen(true);
-  }
-
-  function openEdit(product: PopProduct) {
-    setEditing(product);
-    setFormOpen(true);
-  }
+  const pill =
+    "h-[34px] rounded-full border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-slate-600";
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-1 flex-wrap items-center gap-2">
-          <div className="relative min-w-[220px] flex-1 lg:max-w-xs">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar por nombre, SKU o marca..."
-              className="pl-9"
-            />
-          </div>
-
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
-          >
-            <option value="">Todas las categorías</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={brandFilter}
-            onChange={(e) => setBrandFilter(e.target.value)}
-            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
-          >
-            <option value="">Todas las marcas</option>
-            {brands.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={locationFilter}
-            onChange={(e) => setLocationFilter(e.target.value as PopLocation | "")}
-            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
-          >
-            <option value="">Todas las ubicaciones</option>
-            <option value="office">Con stock en Oficina</option>
-            <option value="warehouse">Con stock en Almacén</option>
-          </select>
-
-          <Button
-            type="button"
-            variant={onlyAlerts ? "default" : "outline"}
-            size="sm"
-            onClick={() => setOnlyAlerts((v) => !v)}
-            className="h-9"
-          >
-            Solo alertas
-          </Button>
+      {/* Filtros */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <div className="relative min-w-0 flex-[1_1_240px]">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar por nombre, SKU o marca"
+            aria-label="Buscar"
+            className="h-[42px] rounded-full border-slate-200 bg-white pl-10"
+          />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9"
-            onClick={() => setImportOpen(true)}
-          >
-            <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Importar Excel
-          </Button>
-          <Button type="button" size="sm" className="h-9" onClick={openNew}>
-            <PackagePlus className="mr-2 h-4 w-4" />
-            Nuevo producto
-          </Button>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Marca">
+          {["", ...brands].map((b) => (
+            <button
+              key={b || "todas"}
+              type="button"
+              aria-pressed={brandFilter === b}
+              onClick={() => setBrandFilter(b)}
+              className={cn(
+                pill,
+                brandFilter === b && "border-transparent bg-blue-600 text-white",
+              )}
+            >
+              {b || "Todas"}
+            </button>
+          ))}
         </div>
+
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          aria-label="Categoría"
+          className={pill}
+        >
+          <option value="">Todas las categorías</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={locationFilter}
+          onChange={(e) => setLocationFilter(e.target.value as PopLocation | "")}
+          aria-label="Ubicación"
+          className={pill}
+        >
+          <option value="">Todas las ubicaciones</option>
+          <option value="office">Con stock en Oficina</option>
+          <option value="warehouse">Con stock en Almacén</option>
+        </select>
+
+        <button
+          type="button"
+          aria-pressed={onlyAlerts}
+          onClick={() => setOnlyAlerts((v) => !v)}
+          className={cn(pill, onlyAlerts && "border-transparent bg-red-600 text-white")}
+        >
+          Solo alertas
+        </button>
+
+        <span className="w-full text-[13px] text-slate-400 sm:ml-auto sm:w-auto">
+          {filtered.length} {filtered.length === 1 ? "producto" : "productos"}
+        </span>
       </div>
 
       {/* Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] sm:gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
-              className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-slate-50"
+              className="h-80 animate-pulse rounded-[22px] border border-slate-200 bg-white"
             />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-200 py-16 text-center">
+        <div className="flex flex-col items-center justify-center gap-3 rounded-[22px] border-2 border-dashed border-slate-200 bg-white py-16 text-center">
           <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-50 text-slate-300">
             <PackagePlus className="h-5 w-5" />
           </span>
@@ -185,11 +168,11 @@ export function CatalogTab({
           </div>
           {products.length === 0 && (
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+              <Button size="sm" variant="outline" onClick={() => onImport()}>
                 <Download className="mr-2 h-4 w-4" />
                 Importar Excel
               </Button>
-              <Button size="sm" onClick={openNew}>
+              <Button size="sm" onClick={onNew}>
                 <PackagePlus className="mr-2 h-4 w-4" />
                 Nuevo producto
               </Button>
@@ -197,32 +180,20 @@ export function CatalogTab({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] sm:gap-4">
           {filtered.map((product) => (
             <ProductCard
               key={product.id}
               product={product}
-              onEdit={() => openEdit(product)}
+              onEdit={() => onEdit(product)}
               onDeleted={onRefresh}
+              onEntrada={() => onEntrada(product)}
+              onSalida={() => onSalida(product)}
             />
           ))}
         </div>
       )}
 
-      <ProductFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        product={editing}
-        categories={categories}
-        uoms={uoms}
-        onSaved={onRefresh}
-      />
-
-      <ExcelImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImported={onRefresh}
-      />
     </div>
   );
 }

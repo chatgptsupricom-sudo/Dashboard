@@ -115,11 +115,19 @@ export async function POST(req: Request) {
     }
 
     // 4. Normalización
+    // "brandManagement" («Gerencia de Marca») es el rol de la plantilla vieja:
+    // abría /dashboard con datos de ejemplo. Quien lo tenga entra como el
+    // Gerente de Marca real (lib/gerente-marca/). El role_id sigue siendo el
+    // suyo, así que lib/auth/vigencia.ts no corta la sesión.
+    const rolPanel =
+      String(dbUser.role_name ?? "").toLowerCase().trim() === "brandmanagement"
+        ? "gerente de marca"
+        : dbUser.role_name;
     const normalizedUser = {
       id: dbUser.id,
       email: dbUser.email,
       name: userName,
-      role: dbUser.role_name,
+      role: rolPanel,
       role_id: dbUser.role_id,
       odoo_uid: odooUid,
       cids: dbUser.cids,

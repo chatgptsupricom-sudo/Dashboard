@@ -42,7 +42,7 @@ export const AREAS: Record<Area, DefArea> = {
     etiqueta: "Ventas",
     descripcion: "Facturas, notas de crédito, pedidos, cotizaciones, clientes y metas",
     modelos: [/^sale\.(order|order\.line|report)$/, /^account\.(move|move\.line|invoice\.report)$/, /^crm\.team$/, /^res\.partner$/],
-    tablas: /^(ventas_smartbit|ventas_metodo_retiro|metas_venta_marca|kpi_metas_marca|kpi_targets|kpi_weekly_data|sellers|visit_plans|visit_plan_items|weekly_visits|forecast_checklist)$/,
+    tablas: /^(ventas_smartbit|ventas_metodo_retiro|metas_venta_marca|kpi_metas_marca|kpi_targets|kpi_weekly_data|sellers|visit_plans|visit_plan_items|weekly_visits|forecast_checklist|rma_garantias|rma_centros_servicio)$/,
   },
   cobranza: {
     etiqueta: "Cobranza",

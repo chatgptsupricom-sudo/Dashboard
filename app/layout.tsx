@@ -1,15 +1,20 @@
 import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const geistSans = Geist({
-  subsets: ["latin"],
+// Fuentes locales (variables, 100-900): bajarlas de Google en el build rompe el
+// deploy (Turbopack, "next/font/google queries have exactly one entry"), como
+// pasó con Syne y Manrope en los portales.
+const geistSans = localFont({
+  src: "./fonts/geist-latin.woff2",
+  weight: "100 900",
   variable: "--font-geist-sans",
 });
 
-const geistMono = Geist_Mono({
-  subsets: ["latin"],
+const geistMono = localFont({
+  src: "./fonts/geist-mono-latin.woff2",
+  weight: "100 900",
   variable: "--font-geist-mono",
 });
 

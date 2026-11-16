@@ -28,7 +28,24 @@ export async function GET(request: NextRequest) {
       deSusMarcas?.params ?? []
     );
     const categories = (result.rows || []).map((r: any) => r.category);
-    return NextResponse.json({ success: true, categories });
+    // Marcas con su cantidad de flyers, para los filtros de la galería.
+    const marcas = await query(
+      `SELECT brand AS nombre, COUNT(*) AS n FROM product_images pi
+        WHERE brand IS NOT NULL AND brand != ''${deSusMarcas ? ` AND ${deSusMarcas.sql}` : ""}
+        GROUP BY brand ORDER BY brand ASC`,
+      deSusMarcas?.params ?? []
+    );
+    const brands = (marcas.rows || []).map((r: any) => ({ nombre: r.nombre, n: Number(r.n) }));
+    const res = await query(
+      `SELECT COUNT(*) AS total,
+              SUM(created_at >= NOW() - INTERVAL 7 DAY) AS nuevos,
+              SUM(price IS NULL OR price <= 0) AS sin_precio
+         FROM product_images pi${deSusMarcas ? ` WHERE ${deSusMarcas.sql}` : ""}`,
+      deSusMarcas?.params ?? []
+    );
+    const r = res.rows?.[0] || {};
+    const resumen = { total: Number(r.total) || 0, nuevos: Number(r.nuevos) || 0, sinPrecio: Number(r.sin_precio) || 0 };
+    return NextResponse.json({ success: true, categories, brands, resumen });
   } catch (error: any) {
     console.error("Error fetching gallery categories:", error.message);
     return NextResponse.json({ success: false, categories: [] }, { status: 500 });
