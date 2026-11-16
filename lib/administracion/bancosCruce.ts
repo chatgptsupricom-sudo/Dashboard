@@ -195,9 +195,14 @@ export type ComprobanteBanco = {
   odooPagoId?: number | null;
 };
 
-export type EstadoApi = "confirmado" | "no_encontrado" | "duplicado" | "no_aplica" | "error";
+export type EstadoApi = "confirmado" | "no_encontrado" | "duplicado" | "no_aplica" | "sin_telefono" | "error";
 export type VerificacionApi = {
   estado: EstadoApi;
+  /** Como lo encontro el banco. */
+  tipo?: "transferencia" | "pago_movil";
+  /** Pago Movil: codigo de autorizacion y celular de quien pago (58 + 10 digitos). */
+  autorizacion?: string;
+  telefono?: string;
   /** Cuando se consulto (ISO). */
   el: string;
   /** Texto para la pantalla: por que no se encontro, el error del banco... */
@@ -431,3 +436,12 @@ export const referenciaMercantil = (ref: string) => String(ref || "").replace(/\
 
 /** Moneda del comprobante que se puede buscar en una cuenta en bolivares ('' = no se leyo: se asume Bs). */
 export const esBolivares = (moneda: string) => /^(|VES|VEF|BS|BSS|BSD|BS\.?)$/i.test(String(moneda || "").trim());
+
+/** Celular venezolano como lo pide Tpago: 58 + area + numero (12 digitos), o null. */
+export function celular58(texto: string): string | null {
+  const d = String(texto || "").replace(/\D/g, "");
+  if (/^58\d{10}$/.test(d)) return d;
+  if (/^0\d{10}$/.test(d)) return "58" + d.slice(1);
+  if (/^\d{10}$/.test(d)) return "58" + d;
+  return null;
+}

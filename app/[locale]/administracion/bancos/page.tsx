@@ -25,7 +25,7 @@ import type {
   VerificacionApi,
 } from "@/lib/administracion/bancosCruce";
 import { RegistrarCobroOdoo } from "@/components/administracion/RegistrarCobroOdoo";
-import { ArrowLeft, Banknote, FileSpreadsheet, FolderUp, Landmark, Loader2, RefreshCw, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Banknote, FileSpreadsheet, FolderUp, Landmark, Loader2, RefreshCw, Smartphone, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SEDES = [
@@ -92,7 +92,9 @@ function EnElBanco({ api }: { api: VerificacionApi }) {
       <span className="text-xs">
         <span className="font-medium text-emerald-700">Mercantil lo confirma</span> · {api.fecha ? dia(api.fecha) : ""} {api.hora}
         <span className="block text-gray-500">
-          {api.pagador || "—"}
+          {api.tipo === "pago_movil"
+            ? `Pago Móvil desde ${api.telefono ? `0${api.telefono.slice(2, 5)}-${api.telefono.slice(5)}` : "—"} · aut. ${api.autorizacion || "—"}`
+            : api.pagador || "—"}
           {api.estatus && api.estatus !== "A" ? ` · estatus ${api.estatus}` : ""}
         </span>
       </span>
@@ -102,11 +104,12 @@ function EnElBanco({ api }: { api: VerificacionApi }) {
     no_encontrado: "Mercantil no lo encontró",
     duplicado: "Transferencia repetida",
     no_aplica: "No se puede consultar",
+    sin_telefono: "Falta el celular de quien pagó",
     error: "No se pudo consultar",
   };
   return (
     <span className="text-xs" title={api.mensaje}>
-      <span className={api.estado === "error" || api.estado === "no_aplica" ? "text-gray-600" : "text-red-700 font-medium"}>
+      <span className={api.estado === "error" || api.estado === "no_aplica" || api.estado === "sin_telefono" ? "text-amber-700 font-medium" : "text-red-700 font-medium"}>
         {texto[api.estado]}
       </span>
       {api.mensaje && <span className="block text-gray-500 max-w-[16rem] whitespace-normal">{api.mensaje}</span>}
@@ -272,12 +275,12 @@ export default function ConciliacionBancariaPage() {
   };
 
   /** Vuelve a consultar en el banco un comprobante, o todos los de la semana que no confirmo. */
-  const verificar = async (que: number | "pendientes") => {
+  const verificar = async (que: number | "pendientes", telefono?: string) => {
     setVerificando(que);
     const res = await fetch("/api/administracion/bancos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cuenta, verificar: que, semana }),
+      body: JSON.stringify({ cuenta, verificar: que, semana, telefono }),
     });
     const j = await res.json().catch(() => ({}));
     setVerificando(null);
@@ -690,6 +693,21 @@ export default function ConciliacionBancariaPage() {
                             <Button size="sm" className="h-8 mr-1" onClick={() => setRegistrar(c.id)}>
                               <Landmark className="h-4 w-4 mr-1" />
                               Registrar en Odoo
+                            </Button>
+                          )}
+                          {datos.mercantil && (c.api?.estado === "sin_telefono" || c.api?.estado === "no_encontrado") && !c.movimiento && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Buscar como Pago Móvil con el celular de quien pagó"
+                              title="Pago Móvil: buscar con el celular de quien pagó"
+                              disabled={verificando !== null}
+                              onClick={() => {
+                                const tel = prompt("Celular completo de quien hizo el Pago Móvil (ej. 0412-1234567):");
+                                if (tel && tel.trim()) verificar(c.id, tel.trim());
+                              }}
+                            >
+                              <Smartphone className="h-4 w-4 text-gray-500" />
                             </Button>
                           )}
                           {datos.mercantil && c.api?.estado !== "confirmado" && !c.movimiento && (
