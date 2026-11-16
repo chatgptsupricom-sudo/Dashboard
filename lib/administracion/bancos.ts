@@ -750,7 +750,6 @@ export async function vistaPreviaRegistro(cuenta: CuentaBanco, id: number) {
     metodo: "Manual",
     tasaBcv: await tasaBcv(cuenta.sede, c.fecha),
     sugeridos,
-    descripcion: c.motivo,
   };
 }
 
