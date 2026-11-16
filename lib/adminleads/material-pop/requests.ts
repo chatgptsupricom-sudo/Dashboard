@@ -459,43 +459,60 @@ export async function entregarSolicitud(opts: {
       const cantidad = item.approvedQuantity ?? 0;
       if (cantidad <= 0) continue;
 
-      await conn.execute(
-        "INSERT IGNORE INTO pop_stock (product_id, location, quantity) VALUES (?, ?, 0)",
-        [item.productId, opts.location],
-      );
-      const disponible = await leerStock(conn, item.productId, opts.location);
-      if (disponible < cantidad) {
-        throw new ErrorSolicitud(
-          `${item.code}: stock insuficiente en ${opts.location === "office" ? "Oficina" : "Almacén"} (disponible: ${disponible})`,
+      // Sale de la ubicación elegida y lo que falte, de la otra: una solicitud
+      // trae productos que están en Oficina y otros que solo están en Almacén,
+      // y con una sola ubicación la entrega no se podía registrar.
+      const otra = opts.location === "office" ? "warehouse" : "office";
+      for (const loc of [opts.location, otra]) {
+        await conn.execute(
+          "INSERT IGNORE INTO pop_stock (product_id, location, quantity) VALUES (?, ?, 0)",
+          [item.productId, loc],
         );
       }
+      const enElegida = await leerStock(conn, item.productId, opts.location);
+      const enOtra = await leerStock(conn, item.productId, otra);
+      if (enElegida + enOtra < cantidad) {
+        const oficina = opts.location === "office" ? enElegida : enOtra;
+        const almacen = opts.location === "office" ? enOtra : enElegida;
+        throw new ErrorSolicitud(
+          `${item.code}: stock insuficiente para entregar ${cantidad} (Oficina ${oficina}, Almacén ${almacen})`,
+        );
+      }
+      const deElegida = Math.min(cantidad, Math.max(0, enElegida));
+      const partes: [string, number][] = [
+        [opts.location, deElegida],
+        [otra, cantidad - deElegida],
+      ];
 
-      await cambiarStock(conn, item.productId, opts.location, -cantidad);
-      await conn.execute(
-        `INSERT INTO pop_movements
-          (movement_group_id, type, product_id, location, quantity, reason_type, reason_custom,
-           client_id, client_name, client_cids, destination, created_by_user_id, created_by_name,
-           cids, movement_date, notes${conRecipiente ? ", recipient_name" : ""})
-         VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${conRecipiente ? ", ?" : ""})`,
-        [
-          movementGroupId,
-          item.productId,
-          opts.location,
-          cantidad,
-          solicitud.usoInterno ? "uso_interno" : "cliente",
-          `Solicitud ${solicitud.code}`,
-          solicitud.clientId,
-          solicitud.usoInterno ? null : solicitud.clientName,
-          null,
-          destino,
-          opts.revisorId,
-          opts.revisorNombre.slice(0, 255),
-          opts.cids ?? 9,
-          movementDate,
-          `Entrega de la solicitud ${solicitud.code} · vendedor ${solicitud.sellerName}`,
-          ...(conRecipiente ? [solicitud.sellerName.slice(0, 255)] : []),
-        ],
-      );
+      for (const [ubicacion, parte] of partes) {
+        if (parte <= 0) continue;
+        await cambiarStock(conn, item.productId, ubicacion, -parte);
+        await conn.execute(
+          `INSERT INTO pop_movements
+            (movement_group_id, type, product_id, location, quantity, reason_type, reason_custom,
+             client_id, client_name, client_cids, destination, created_by_user_id, created_by_name,
+             cids, movement_date, notes${conRecipiente ? ", recipient_name" : ""})
+           VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${conRecipiente ? ", ?" : ""})`,
+          [
+            movementGroupId,
+            item.productId,
+            ubicacion,
+            parte,
+            solicitud.usoInterno ? "uso_interno" : "cliente",
+            `Solicitud ${solicitud.code}`,
+            solicitud.clientId,
+            solicitud.usoInterno ? null : solicitud.clientName,
+            null,
+            destino,
+            opts.revisorId,
+            opts.revisorNombre.slice(0, 255),
+            opts.cids ?? 9,
+            movementDate,
+            `Entrega de la solicitud ${solicitud.code} · vendedor ${solicitud.sellerName}`,
+            ...(conRecipiente ? [solicitud.sellerName.slice(0, 255)] : []),
+          ],
+        );
+      }
     }
 
     await conn.execute(

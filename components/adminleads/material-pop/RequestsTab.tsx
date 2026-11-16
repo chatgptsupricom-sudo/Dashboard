@@ -429,6 +429,9 @@ export function RequestsTab({ onStockChange }: { onStockChange: () => void }) {
                           <option value="office">Oficina</option>
                           <option value="warehouse">Almacén</option>
                         </select>
+                        <p className="mt-1 text-[11px] text-slate-400">
+                          Lo que no alcance ahí sale de {ubicacion === "office" ? "Almacén" : "Oficina"}.
+                        </p>
                       </div>
                       <Button
                         size="sm"
