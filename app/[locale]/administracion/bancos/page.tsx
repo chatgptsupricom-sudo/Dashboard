@@ -22,8 +22,10 @@ import type {
   EstadoMovimiento,
   MovimientoCruzado,
   PagoOdoo,
+  VerificacionApi,
 } from "@/lib/administracion/bancosCruce";
-import { ArrowLeft, Banknote, FileSpreadsheet, FolderUp, Loader2, Trash2, Upload } from "lucide-react";
+import { RegistrarCobroOdoo } from "@/components/administracion/RegistrarCobroOdoo";
+import { ArrowLeft, Banknote, FileSpreadsheet, FolderUp, Landmark, Loader2, RefreshCw, Smartphone, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SEDES = [
@@ -83,6 +85,38 @@ function carpetaDe(ruta: string) {
   return partes.length > 1 ? partes[partes.length - 2] : "";
 }
 
+/** Lo que respondio el banco por la API (Mercantil) en una linea. */
+function EnElBanco({ api }: { api: VerificacionApi }) {
+  if (api.estado === "confirmado") {
+    return (
+      <span className="text-xs">
+        <span className="font-medium text-emerald-700">Mercantil lo confirma</span> · {api.fecha ? dia(api.fecha) : ""} {api.hora}
+        <span className="block text-gray-500">
+          {api.tipo === "pago_movil"
+            ? `Pago Móvil desde ${api.telefono ? `0${api.telefono.slice(2, 5)}-${api.telefono.slice(5)}` : "—"} · aut. ${api.autorizacion || "—"}`
+            : api.pagador || "—"}
+          {api.estatus && api.estatus !== "A" ? ` · estatus ${api.estatus}` : ""}
+        </span>
+      </span>
+    );
+  }
+  const texto: Record<string, string> = {
+    no_encontrado: "Mercantil no lo encontró",
+    duplicado: "Transferencia repetida",
+    no_aplica: "No se puede consultar",
+    sin_telefono: "Falta el celular de quien pagó",
+    error: "No se pudo consultar",
+  };
+  return (
+    <span className="text-xs" title={api.mensaje}>
+      <span className={api.estado === "error" || api.estado === "no_aplica" || api.estado === "sin_telefono" ? "text-amber-700 font-medium" : "text-red-700 font-medium"}>
+        {texto[api.estado]}
+      </span>
+      {api.mensaje && <span className="block text-gray-500 max-w-[16rem] whitespace-normal">{api.mensaje}</span>}
+    </span>
+  );
+}
+
 /** El cobro de Odoo en una linea: numero, cliente y referencia. */
 function Cobro({ pago }: { pago: PagoOdoo }) {
   return (
@@ -112,6 +146,11 @@ export default function ConciliacionBancariaPage() {
   const [verImagen, setVerImagen] = useState<{ id: number; referencia: string; cliente: string } | null>(null);
   const [paginaComprobantes, setPaginaComprobantes] = useState(0);
   const [paginaMovs, setPaginaMovs] = useState(0);
+  // Una tabla a la vez, como en Conciliacion Binance.
+  const [tabla, setTabla] = useState<"comprobantes" | "estado">("comprobantes");
+  const [registrar, setRegistrar] = useState<number | null>(null);
+  const [verificando, setVerificando] = useState<number | "pendientes" | null>(null);
+  const [avanceVerificar, setAvanceVerificar] = useState<{ hecho: number; total: number } | null>(null);
   const entradas = {
     estado: useRef<HTMLInputElement>(null),
     comprobante: useRef<HTMLInputElement>(null),
@@ -193,7 +232,8 @@ export default function ConciliacionBancariaPage() {
                 (j.saltos ? ` · ojo: el saldo no cuadra en ${j.saltos} fila${j.saltos === 1 ? "" : "s"}` : ""),
             };
       }
-      return { nombre, ok: true, texto: `${j.cliente || "sin cliente"} · ${j.referencia} · ${cifra(j.monto)} · ${dia(j.fecha)}` };
+      const banco = j.api ? ` · ${j.api.estado === "confirmado" ? "Mercantil lo confirma" : j.api.mensaje || j.api.estado}` : "";
+      return { nombre, ok: true, texto: `${j.cliente || "sin cliente"} · ${j.referencia} · ${cifra(j.monto)} · ${dia(j.fecha)}${banco}` };
     } catch {
       return { nombre, ok: false, texto: "No se pudo subir (se cortó la conexión)" };
     }
@@ -237,6 +277,49 @@ export default function ConciliacionBancariaPage() {
     cargar();
   };
 
+  const consultarBanco = async (id: number, telefono?: string) => {
+    const res = await fetch("/api/administracion/bancos", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cuenta, verificar: id, telefono }),
+    });
+    return res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
+  };
+
+  /**
+   * Vuelve a consultar en el banco un comprobante, o los de la semana que no
+   * confirmo. Los pendientes van de a uno desde aqui (cada uno puede llevar
+   * decenas de consultas a Mercantil): una sola peticion con todos se pasaria
+   * del tiempo que espera el servidor.
+   */
+  const verificar = async (que: number | "pendientes", telefono?: string) => {
+    setError(null);
+    if (que !== "pendientes") {
+      setVerificando(que);
+      const j = await consultarBanco(que, telefono);
+      setVerificando(null);
+      if (!j.success) setError(j.error || "No se pudo consultar el banco");
+      return cargar();
+    }
+    const ids = (datos?.comprobantes || [])
+      .filter((c) => !c.movimiento && (!c.api || ["no_encontrado", "error", "sin_telefono"].includes(c.api.estado)))
+      .map((c) => c.id);
+    setVerificando("pendientes");
+    setAvanceVerificar({ hecho: 0, total: ids.length });
+    for (const [n, id] of ids.entries()) {
+      const j = await consultarBanco(id);
+      setAvanceVerificar({ hecho: n + 1, total: ids.length });
+      if (!j.success || j.api?.estado === "error") {
+        // Mercantil caido o el servidor fallo: no tiene sentido seguir con los demas.
+        setError(j.error || j.api?.mensaje || "No se pudo consultar el banco");
+        break;
+      }
+    }
+    setVerificando(null);
+    setAvanceVerificar(null);
+    cargar();
+  };
+
   const movimientos = datos?.movimientos || [];
   const comprobantes = datos?.comprobantes || [];
   const sinMovimiento = datos?.pagosSinMovimiento || [];
@@ -245,6 +328,7 @@ export default function ConciliacionBancariaPage() {
   const sinComprobante = movimientos.filter((m) => !m.comprobante);
   const COMPROBANTES_LISTA = { comprobantes, conciliados, problema: conProblema };
   const moneda = cuentaElegida?.moneda || "";
+  const etiqueta = (e: EstadoComprobante) => (e === "sin_estado" && datos?.mercantil ? "Sin verificar en el banco" : ETIQUETA_COMP[e]);
 
   /** Movimientos para amarrar a mano un comprobante: los que no tienen comprobante, primero los de su monto. */
   const opcionesMovimiento = (c: ComprobanteCruzado) =>
@@ -261,7 +345,8 @@ export default function ConciliacionBancariaPage() {
         Cliente: c.cliente,
         Referencia: c.referencia,
         Monto: c.monto,
-        Estado: ETIQUETA_COMP[c.estado],
+        Estado: etiqueta(c.estado),
+        "Según el banco": c.api ? (c.api.estado === "confirmado" ? `Confirmado ${c.api.pagador || ""}` : c.api.mensaje || c.api.estado) : "",
         "Movimiento del banco": c.movimiento ? `${c.movimiento.fecha} ${c.movimiento.referencia}` : "",
         "Cobro en Odoo": c.pago?.nombre || "",
       })),
@@ -526,7 +611,7 @@ export default function ConciliacionBancariaPage() {
                               <TableCell className="text-right whitespace-nowrap">{cifra(c.monto)}</TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={`border-0 ${CLASE_COMP[c.estado]}`}>
-                                  {ETIQUETA_COMP[c.estado]}
+                                  {etiqueta(c.estado)}
                                 </Badge>
                               </TableCell>
                             </TableRow>
@@ -539,10 +624,48 @@ export default function ConciliacionBancariaPage() {
               </DialogContent>
             </Dialog>
 
+            {cuenta && (
+              <RegistrarCobroOdoo cuenta={cuenta} comprobante={registrar} cerrar={() => setRegistrar(null)} listo={cargar} />
+            )}
+
+            <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Tabla">
+              {(
+                [
+                  ["comprobantes", `Comprobantes (${comprobantes.length})`],
+                  ["estado", `Estado de cuenta (${movimientos.length})`],
+                ] as const
+              ).map(([clave, texto]) => (
+                <button
+                  key={clave}
+                  type="button"
+                  role="tab"
+                  aria-selected={tabla === clave}
+                  onClick={() => setTabla(clave)}
+                  className={`px-4 py-2 text-sm rounded-md ${tabla === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"}`}
+                >
+                  {texto}
+                </button>
+              ))}
+            </div>
+
+            {tabla === "comprobantes" && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
+                  {datos.mercantil && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-9"
+                      disabled={!cuenta || !!subiendo || verificando !== null}
+                      onClick={() => verificar("pendientes")}
+                      title="Consultar en Mercantil los comprobantes de la semana que todavía no confirmó"
+                    >
+                      {verificando === "pendientes" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                      {avanceVerificar ? `Verificando ${avanceVerificar.hecho} de ${avanceVerificar.total}` : "Verificar pendientes"}
+                    </Button>
+                  )}
                   <Button size="sm" className="h-9" disabled={!cuenta || !!subiendo} onClick={() => entradas.comprobante.current?.click()}>
                     {subiendo?.tipo === "comprobante" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
                     {subiendo?.tipo === "comprobante" ? `Leyendo ${subiendo.hecho} de ${subiendo.total}` : "Subir comprobantes"}
@@ -583,12 +706,18 @@ export default function ConciliacionBancariaPage() {
                         <TableCell>{imagen(c)}</TableCell>
                         <TableCell className="text-right whitespace-nowrap">{cifra(c.monto)}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">
-                          {c.movimiento ? `${dia(c.movimiento.fecha)} · ${c.movimiento.referencia || "sin ref."}` : "—"}
+                          {c.movimiento ? (
+                            `${dia(c.movimiento.fecha)} · ${c.movimiento.referencia || "sin ref."}`
+                          ) : c.api ? (
+                            <EnElBanco api={c.api} />
+                          ) : (
+                            "—"
+                          )}
                         </TableCell>
                         <TableCell>{c.pago ? <Cobro pago={c.pago} /> : "—"}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={`border-0 ${CLASE_COMP[c.estado]}`}>
-                            {ETIQUETA_COMP[c.estado]}
+                            {etiqueta(c.estado)}
                           </Badge>
                           {c.estado !== "conciliado" && (c.movimientoId || opcionesMovimiento(c).length > 0) && (
                             <select
@@ -609,7 +738,43 @@ export default function ConciliacionBancariaPage() {
                             </select>
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {datos.mercantil && !c.pago && !!c.odooPagoId && (
+                            <span className="text-xs text-gray-500 mr-1">Registrado en Odoo (borrador)</span>
+                          )}
+                          {datos.mercantil && c.api?.estado === "confirmado" && !c.pago && !c.odooPagoId && (
+                            <Button size="sm" className="h-8 mr-1" onClick={() => setRegistrar(c.id)}>
+                              <Landmark className="h-4 w-4 mr-1" />
+                              Registrar en Odoo
+                            </Button>
+                          )}
+                          {datos.mercantil && (c.api?.estado === "sin_telefono" || c.api?.estado === "no_encontrado") && !c.movimiento && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Buscar como Pago Móvil con el celular de quien pagó"
+                              title="Pago Móvil: buscar con el celular de quien pagó"
+                              disabled={verificando !== null}
+                              onClick={() => {
+                                const tel = prompt("Celular completo de quien hizo el Pago Móvil (ej. 0412-1234567):");
+                                if (tel && tel.trim()) verificar(c.id, tel.trim());
+                              }}
+                            >
+                              <Smartphone className="h-4 w-4 text-gray-500" />
+                            </Button>
+                          )}
+                          {datos.mercantil && c.api?.estado !== "confirmado" && !c.movimiento && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Verificar en el banco"
+                              title="Consultar en Mercantil"
+                              disabled={verificando !== null}
+                              onClick={() => verificar(c.id)}
+                            >
+                              {verificando === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 text-gray-500" />}
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -626,7 +791,9 @@ export default function ConciliacionBancariaPage() {
                 <Paginacion pagina={paginaComprobantes} total={comprobantes.length} cambiar={setPaginaComprobantes} />
               </CardContent>
             </Card>
+            )}
 
+            {tabla === "estado" && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <div>
@@ -729,6 +896,7 @@ export default function ConciliacionBancariaPage() {
                 <Paginacion pagina={paginaMovs} total={movimientos.length} cambiar={setPaginaMovs} />
               </CardContent>
             </Card>
+            )}
           </>
         )
       )}
