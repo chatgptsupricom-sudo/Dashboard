@@ -1,5 +1,5 @@
 import { requireRoles } from "@/lib/auth/roles";
-import { guardarFactura, leerFactura, listarFacturas, type FilaFactura } from "@/lib/compras/preciosFacturas";
+import { borrarFactura, guardarFactura, leerFactura, listarFacturas, type FilaFactura } from "@/lib/compras/preciosFacturas";
 import { NextRequest, NextResponse } from "next/server";
 
 const MAX = 1000;
@@ -18,6 +18,22 @@ export async function GET(request: NextRequest) {
   } catch (e: any) {
     console.error("❌ actualizacion-precios/facturas GET:", e?.message);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
+  }
+}
+
+/** DELETE ?factura=INV00965 — borra el Excel guardado; los precios ya aplicados en Odoo quedan. */
+export async function DELETE(request: NextRequest) {
+  const auth = await requireRoles(request, ["compras"]);
+  if (auth.error) return auth.error;
+
+  const factura = request.nextUrl.searchParams.get("factura")?.trim();
+  if (!factura) return NextResponse.json({ error: "Falta la factura" }, { status: 400 });
+  try {
+    if (!(await borrarFactura(factura))) return NextResponse.json({ error: "No existe esa factura" }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    console.error("❌ actualizacion-precios/facturas DELETE:", e?.message);
+    return NextResponse.json({ error: "No se pudo borrar" }, { status: 500 });
   }
 }
 

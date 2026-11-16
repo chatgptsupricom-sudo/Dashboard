@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
-import { CheckCircle2, FileSpreadsheet, Loader2, Search, Upload } from "lucide-react";
+import { CheckCircle2, FileSpreadsheet, Loader2, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
@@ -99,6 +99,27 @@ export default function ActualizacionPreciosPage() {
   const [cargando, setCargando] = useState(false);
   const [aplicando, setAplicando] = useState<Set<string>>(new Set());
   const [confirmarTodos, setConfirmarTodos] = useState(false);
+  const [aBorrar, setABorrar] = useState<string | null>(null);
+
+  const cerrar = () => {
+    setFactura("");
+    setArchivo("");
+    setFilas([]);
+    setPrecios(new Map());
+  };
+
+  async function borrar(numero: string) {
+    try {
+      const r = await fetch(`/api/compras/actualizacion-precios/facturas?factura=${encodeURIComponent(numero)}`, { method: "DELETE" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "No se pudo borrar");
+      if (numero === factura) cerrar();
+      toast({ title: `${numero} eliminada` });
+      await listar();
+    } catch (e: any) {
+      toast({ title: `No se pudo eliminar ${numero}`, description: e.message, variant: "destructive" });
+    }
+  }
 
   const pendiente = (f: FilaExcel) => {
     const p = precios.get(f.codigo);
@@ -265,13 +286,14 @@ export default function ActualizacionPreciosPage() {
                   <TableHead className="text-right">Productos</TableHead>
                   <TableHead>Cargado por</TableHead>
                   <TableHead>Última carga</TableHead>
+                  <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {facturasFiltradas.map((f) => (
                   <TableRow
                     key={f.factura}
-                    onClick={() => !cargando && !ocupado && abrir(f.factura)}
+                    onClick={() => !cargando && !ocupado && (f.factura === factura ? cerrar() : abrir(f.factura))}
                     className={`cursor-pointer ${f.factura === factura ? "bg-muted" : ""}`}
                   >
                     <TableCell className="font-mono font-semibold">{f.factura}</TableCell>
@@ -281,6 +303,22 @@ export default function ActualizacionPreciosPage() {
                     <TableCell className="text-right">{f.productos}</TableCell>
                     <TableCell className="text-xs">{f.cargadoPor}</TableCell>
                     <TableCell className="text-xs">{fecha(f.actualizado)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        aria-label={`Eliminar ${f.factura}`}
+                        title="Eliminar factura"
+                        disabled={cargando || ocupado}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setABorrar(f.factura);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -370,6 +408,26 @@ export default function ActualizacionPreciosPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => aplicar(pendientes)}>Aplicar todos</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!aBorrar} onOpenChange={(o) => !o && setABorrar(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar {aBorrar}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se borra el Excel guardado de esta factura y no se puede deshacer. Los precios que ya se aplicaron en Odoo no cambian.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => aBorrar && borrar(aBorrar)}
+            >
+              Eliminar
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -70,6 +70,13 @@ export async function leerFactura(factura: string): Promise<(ResumenFactura & { 
   };
 }
 
+/** Borra el Excel guardado de la factura (no toca los precios de Odoo). Devuelve si existía. */
+export async function borrarFactura(factura: string) {
+  await asegurarTabla();
+  const { rows } = await query("DELETE FROM compras_precios_facturas WHERE factura = ?", [factura]);
+  return Number((rows as any)?.affectedRows) > 0;
+}
+
 /** Guarda (o reemplaza) los renglones de la factura. Devuelve si ya existía. */
 export async function guardarFactura(factura: string, archivo: string, filas: FilaFactura[], cargadoPor: string) {
   await asegurarTabla();
