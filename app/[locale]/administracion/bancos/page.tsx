@@ -150,6 +150,7 @@ export default function ConciliacionBancariaPage() {
   const [tabla, setTabla] = useState<"comprobantes" | "estado">("comprobantes");
   const [registrar, setRegistrar] = useState<number | null>(null);
   const [verificando, setVerificando] = useState<number | "pendientes" | null>(null);
+  const [avanceVerificar, setAvanceVerificar] = useState<{ hecho: number; total: number } | null>(null);
   const entradas = {
     estado: useRef<HTMLInputElement>(null),
     comprobante: useRef<HTMLInputElement>(null),
@@ -276,17 +277,46 @@ export default function ConciliacionBancariaPage() {
     cargar();
   };
 
-  /** Vuelve a consultar en el banco un comprobante, o todos los de la semana que no confirmo. */
-  const verificar = async (que: number | "pendientes", telefono?: string) => {
-    setVerificando(que);
+  const consultarBanco = async (id: number, telefono?: string) => {
     const res = await fetch("/api/administracion/bancos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cuenta, verificar: que, semana, telefono }),
+      body: JSON.stringify({ cuenta, verificar: id, telefono }),
     });
-    const j = await res.json().catch(() => ({}));
+    return res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
+  };
+
+  /**
+   * Vuelve a consultar en el banco un comprobante, o los de la semana que no
+   * confirmo. Los pendientes van de a uno desde aqui (cada uno puede llevar
+   * decenas de consultas a Mercantil): una sola peticion con todos se pasaria
+   * del tiempo que espera el servidor.
+   */
+  const verificar = async (que: number | "pendientes", telefono?: string) => {
+    setError(null);
+    if (que !== "pendientes") {
+      setVerificando(que);
+      const j = await consultarBanco(que, telefono);
+      setVerificando(null);
+      if (!j.success) setError(j.error || "No se pudo consultar el banco");
+      return cargar();
+    }
+    const ids = (datos?.comprobantes || [])
+      .filter((c) => !c.movimiento && (!c.api || ["no_encontrado", "error", "sin_telefono"].includes(c.api.estado)))
+      .map((c) => c.id);
+    setVerificando("pendientes");
+    setAvanceVerificar({ hecho: 0, total: ids.length });
+    for (const [n, id] of ids.entries()) {
+      const j = await consultarBanco(id);
+      setAvanceVerificar({ hecho: n + 1, total: ids.length });
+      if (!j.success || j.api?.estado === "error") {
+        // Mercantil caido o el servidor fallo: no tiene sentido seguir con los demas.
+        setError(j.error || j.api?.mensaje || "No se pudo consultar el banco");
+        break;
+      }
+    }
     setVerificando(null);
-    if (!j.success) setError(j.error || "No se pudo consultar el banco");
+    setAvanceVerificar(null);
     cargar();
   };
 
@@ -633,7 +663,7 @@ export default function ConciliacionBancariaPage() {
                       title="Consultar en Mercantil los comprobantes de la semana que todavía no confirmó"
                     >
                       {verificando === "pendientes" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                      Verificar pendientes
+                      {avanceVerificar ? `Verificando ${avanceVerificar.hecho} de ${avanceVerificar.total}` : "Verificar pendientes"}
                     </Button>
                   )}
                   <Button size="sm" className="h-9" disabled={!cuenta || !!subiendo} onClick={() => entradas.comprobante.current?.click()}>
