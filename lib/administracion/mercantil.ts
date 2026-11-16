@@ -185,12 +185,13 @@ export async function verificarEnMercantil(
       throw e;
     }
   }
+  const dia = c.fecha.split("-").reverse().join("/");
   return {
     estado: "no_encontrado",
     el,
     mensaje: propio
-      ? `Mercantil no la encontró (${BANCOS_VE.find((b) => b.codigo === propio)?.nombre} del ${c.fecha} ±1 día, ni otros bancos ese día)`
-      : `Mercantil no la encontró en ningún banco el ${c.fecha} (el comprobante no dice el banco)`,
+      ? `Mercantil no la encontró (${BANCOS_VE.find((b) => b.codigo === propio)?.nombre} del ${dia} ±1 día, ni otros bancos ese día)`
+      : `Mercantil no la encontró en ningún banco el ${dia} (el comprobante no dice el banco)`,
   };
 }
 

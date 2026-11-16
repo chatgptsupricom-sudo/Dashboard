@@ -577,21 +577,25 @@ async function tasaBcv(sede: number, fecha: string): Promise<number> {
   return Math.round((Number(filas?.[0]?.inverse_rate) || 0) * 100) / 100;
 }
 
-/** Cobro de Odoo ya registrado en el diario con esa referencia y monto (para no registrarlo dos veces). */
+/**
+ * Cobro de Odoo ya registrado con esa referencia y monto en cualquier diario de
+ * la sede (para no registrarlo dos veces): hay cobros de Mercantil cargados en
+ * otro diario, como «Deposito / Transferencia Mercantil».
+ */
 async function cobroExistente(cuenta: CuentaBanco, referencia: string, monto: number, fecha: string) {
   const pagos = await callOdooRPCEstricto<any[]>(
     "account.payment",
     "search_read",
     [
       [
-        ["journal_id", "=", cuenta.id],
+        ["company_id", "=", cuenta.sede],
         ["payment_type", "=", "inbound"],
         ["state", "!=", "cancel"],
         ["amount", "=", monto],
         ["date", ">=", sumarDias(fecha, -30)],
       ],
     ],
-    { fields: ["name", "ref", "state"], context: { allowed_company_ids: [cuenta.sede] } },
+    { fields: ["name", "ref", "state", "journal_id"], context: { allowed_company_ids: [cuenta.sede] } },
   );
   return (pagos || []).find((p) => mismaReferencia(String(p.ref || ""), referencia)) || null;
 }
@@ -623,7 +627,10 @@ async function comprobanteParaRegistrar(cuenta: CuentaBanco, id: number): Promis
   const monto = Number(r.monto);
   const fecha = api.fecha || r.fecha;
   const existente = await cobroExistente(cuenta, r.referencia, monto, fecha);
-  if (existente) return { error: `Ya está en Odoo: ${existente.name} (ref ${existente.ref})` };
+  if (existente) {
+    const diario = Array.isArray(existente.journal_id) ? `, diario ${existente.journal_id[1]}` : "";
+    return { error: `Ya está en Odoo: ${existente.name} (ref ${existente.ref}${diario})` };
+  }
   return { id: r.id, referencia: r.referencia, monto, fecha, motivo: r.motivo, cliente: r.cliente, api, odooPagoId: null };
 }
 
