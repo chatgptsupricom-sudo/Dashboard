@@ -10,7 +10,7 @@ const fuente = fs.readFileSync(path.join(__dirname, "..", "lib/administracion/ba
 const js = ts.transpileModule(fuente, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const m = { exports: {} };
 new Function("require", "module", "exports", js)(require, m, m.exports);
-const { leerFilasExcel, armarEstado, montoDeCelda, fechaDeCelda, mismaReferencia, cruzarBanco, codigoBanco, referenciaMercantil, esBolivares } = m.exports;
+const { leerFilasExcel, armarEstado, montoDeCelda, fechaDeCelda, mismaReferencia, cruzarBanco, codigoBanco, referenciaMercantil, esBolivares, celular58 } = m.exports;
 
 // Montos y fechas
 assert.strictEqual(montoDeCelda("+1.394.295,35"), 1394295.35);
@@ -147,5 +147,9 @@ assert.strictEqual(codigoBanco("BBVA Provincial"), 108);
 assert.strictEqual(codigoBanco("Pago móvil"), null);
 assert.strictEqual(referenciaMercantil("13427068326"), "27068326");
 assert.ok(esBolivares("") && esBolivares("VES") && esBolivares("Bs") && !esBolivares("USD"));
+
+assert.strictEqual(celular58("0412-5075239"), "584125075239");
+assert.strictEqual(celular58("+58 412-507-5239"), "584125075239");
+assert.strictEqual(celular58("04**-***5239"), null);
 
 console.log("check-bancos: OK");

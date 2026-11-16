@@ -108,7 +108,9 @@ export function RegistrarCobroOdoo({
         ["Vendedor", cliente?.vendedor || "—"],
         [
           "Según el banco",
-          `${c.api.pagador || "—"} (${c.api.pagadorId || "—"}) · ${c.api.hora || ""} · ${c.api.estatus === "A" ? "aprobada" : c.api.estatus || ""}`,
+          c.api.tipo === "pago_movil"
+            ? `Pago Móvil desde ${c.api.telefono || "—"} (${c.api.pagadorId || "—"}) · autorización ${c.api.autorizacion || "—"}`
+            : `${c.api.pagador || "—"} (${c.api.pagadorId || "—"}) · ${c.api.hora || ""} · ${c.api.estatus === "A" ? "aprobada" : c.api.estatus || ""}`,
         ],
       ]
     : [];

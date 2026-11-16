@@ -16,6 +16,7 @@ import {
   armarEstado,
   cruzarBanco,
   leerFilasExcel,
+  celular58,
   mismaReferencia,
   type ComprobanteBanco,
   type EstadoLeido,
@@ -122,6 +123,9 @@ async function ensureTablas() {
     ["odoo_pago_id", "INT NULL"],
     ["odoo_registrado_por", "VARCHAR(190) NULL"],
     ["odoo_registrado_at", "DATETIME NULL"],
+    // Pago Movil: lo dice la IA (NULL = comprobante de antes, no se sabe) y el celular de quien pago como se ve.
+    ["pago_movil", "TINYINT NULL"],
+    ["telefono_origen", "VARCHAR(30) NULL"],
   ];
   for (const [col, tipo] of nuevas) {
     if (!hay.has(col)) await db.execute(`ALTER TABLE banco_comprobantes ADD COLUMN ${col} ${tipo}`);
@@ -360,12 +364,26 @@ const INSTRUCCIONES_COMPROBANTE =
   "1394295.35). moneda: USD, VES, EUR... ('Bs.' es VES; '$' es USD). fecha: 'YYYY-MM-DD' de la operacion (dia/mes/año " +
   "si viene con numeros); si no se ve, ''. banco: el banco desde donde se pago. cuenta_origen: los ultimos 4 digitos " +
   "de la cuenta desde la que se pago ('Desde mi cuenta', 'Cuenta origen'); si no se ve, ''. motivo: el motivo, " +
-  "concepto o descripcion. Si no es un comprobante de pago, es_comprobante = false y lo demas vacio o 0.";
+  "concepto o descripcion. pago_movil: true si es un Pago Movil (trae numero celular de origen o destino, o dice " +
+  "'Pago Movil'/'Tpago'), false si es una transferencia. telefono_origen: el celular de quien pago tal cual se ve, con " +
+  "los asteriscos si viene oculto ('04**-***5239'); si no se ve, ''. Si no es un comprobante de pago, es_comprobante = " +
+  "false y lo demas vacio o 0.";
 
 const ESQUEMA_COMPROBANTE = {
   type: "object",
   additionalProperties: false,
-  required: ["es_comprobante", "referencia", "monto", "moneda", "fecha", "banco", "cuenta_origen", "motivo"],
+  required: [
+    "es_comprobante",
+    "referencia",
+    "monto",
+    "moneda",
+    "fecha",
+    "banco",
+    "cuenta_origen",
+    "motivo",
+    "pago_movil",
+    "telefono_origen",
+  ],
   properties: {
     es_comprobante: { type: "boolean" },
     referencia: { type: "string" },
@@ -375,6 +393,8 @@ const ESQUEMA_COMPROBANTE = {
     banco: { type: "string" },
     cuenta_origen: { type: "string" },
     motivo: { type: "string" },
+    pago_movil: { type: "boolean" },
+    telefono_origen: { type: "string" },
   },
 } as const;
 
@@ -425,8 +445,8 @@ export async function guardarComprobante(
     const [res]: any = await db.execute(
       `INSERT INTO banco_comprobantes
          (company_id, journal_id, referencia, monto, moneda, fecha, cuenta_origen, banco, motivo, cliente,
-          archivo_nombre, archivo_mime, archivo, archivo_sha, subido_por)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          archivo_nombre, archivo_mime, archivo, archivo_sha, subido_por, pago_movil, telefono_origen)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         cuenta.sede,
         cuenta.id,
@@ -443,6 +463,8 @@ export async function guardarComprobante(
         archivo.datos,
         sha,
         email,
+        l?.pago_movil ? 1 : 0,
+        String(l?.telefono_origen || "").replace(/[^\d*]/g, "").slice(0, 30),
       ],
     );
     const id = res.insertId as number;
@@ -482,19 +504,34 @@ export async function borrarComprobante(cuenta: CuentaBanco, id: number) {
  * transferencia ya la confirmo otro comprobante de la cuenta, queda "duplicado".
  * null si la cuenta no tiene API.
  */
-export async function verificarComprobante(cuenta: CuentaBanco, id: number): Promise<VerificacionApi | null> {
+export async function verificarComprobante(
+  cuenta: CuentaBanco,
+  id: number,
+  telefonoManual?: string,
+): Promise<VerificacionApi | null> {
   await ensureTablas();
   const cred = await credencialesMercantil(cuenta.id, cuenta.sede);
   if (!cred) return null;
   const { rows } = await query(
-    `SELECT referencia, monto, moneda, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, banco
+    `SELECT referencia, monto, moneda, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, banco, pago_movil, telefono_origen
        FROM banco_comprobantes WHERE id = ? AND journal_id = ?`,
     [id, cuenta.id],
   );
   const c: any = rows[0];
   if (!c) return null;
   const monto = Number(c.monto);
-  let v = await verificarEnMercantil(cred, { referencia: c.referencia, monto, moneda: c.moneda, fecha: c.fecha, banco: c.banco });
+  const telefonos = cred.pm
+    ? await celularesCandidatos(cuenta, { referencia: c.referencia, monto, telefono: c.telefono_origen || "" }, telefonoManual)
+    : [];
+  let v = await verificarEnMercantil(cred, {
+    referencia: c.referencia,
+    monto,
+    moneda: c.moneda,
+    fecha: c.fecha,
+    banco: c.banco,
+    pagoMovil: c.pago_movil === null ? null : !!Number(c.pago_movil),
+    telefonos,
+  });
   const clave = claveTransferencia(v, c.referencia, monto);
   if (clave) {
     const { rows: otro } = await query(
@@ -511,6 +548,54 @@ export async function verificarComprobante(cuenta: CuentaBanco, id: number): Pro
   return v;
 }
 
+/**
+ * Celulares posibles de quien hizo un Pago Movil (58 + 10 digitos), en este
+ * orden: el que escribieron a mano; el del comprobante si se ve completo; el del
+ * cliente del cobro de Odoo con esa referencia y monto; y los clientes de la sede
+ * cuyo telefono termina en los digitos que se ven ("04**-***5239" -> 5239).
+ */
+async function celularesCandidatos(
+  cuenta: CuentaBanco,
+  c: { referencia: string; monto: number; telefono: string },
+  manual?: string,
+): Promise<string[]> {
+  const delManual = manual ? celular58(manual) : null;
+  if (delManual) return [delManual];
+  const visto = String(c.telefono || "");
+  const completo = visto.includes("*") ? null : celular58(visto);
+  const sufijo = /(\d{4,})$/.exec(visto)?.[1] || "";
+  const lista: string[] = completo ? [completo] : [];
+  const ctx = { allowed_company_ids: [cuenta.sede] };
+  const telefonosDe = (p: any) => [p.phone, p.mobile].map((t) => celular58(String(t || ""))).filter(Boolean) as string[];
+  try {
+    const pagos = await callOdooRPCEstricto<any[]>(
+      "account.payment",
+      "search_read",
+      [[["company_id", "=", cuenta.sede], ["payment_type", "=", "inbound"], ["amount", "=", c.monto]]],
+      { fields: ["ref", "partner_id"], limit: 50, order: "date desc", context: ctx },
+    );
+    const ids = (pagos || [])
+      .filter((p) => mismaReferencia(String(p.ref || ""), c.referencia) && Array.isArray(p.partner_id))
+      .map((p) => p.partner_id[0]);
+    if (ids.length) {
+      const partners = await callOdooRPCEstricto<any[]>("res.partner", "read", [ids, ["phone", "mobile"]], { context: ctx });
+      for (const p of partners || []) lista.push(...telefonosDe(p));
+    }
+    if (sufijo) {
+      const partners = await callOdooRPCEstricto<any[]>(
+        "res.partner",
+        "search_read",
+        [["|", ["phone", "=like", `%${sufijo}`], ["mobile", "=like", `%${sufijo}`]]],
+        { fields: ["phone", "mobile"], limit: 30, context: ctx },
+      );
+      for (const p of partners || []) lista.push(...telefonosDe(p));
+    }
+  } catch (e: any) {
+    console.warn("[bancos] celulares candidatos:", e?.message);
+  }
+  return [...new Set(lista)].filter((t) => !sufijo || t.endsWith(sufijo));
+}
+
 /** Vuelve a consultar en el banco los comprobantes de la semana que no estan confirmados. */
 export async function verificarPendientes(cuenta: CuentaBanco, lunes: string) {
   if (!rangoSemana(lunes)) throw new Error("Semana inválida");
@@ -518,7 +603,7 @@ export async function verificarPendientes(cuenta: CuentaBanco, lunes: string) {
   const { rows } = await query(
     `SELECT id FROM banco_comprobantes
       WHERE journal_id = ? AND fecha BETWEEN ? AND ?
-        AND (api_estado IS NULL OR api_estado IN ('no_encontrado', 'error'))
+        AND (api_estado IS NULL OR api_estado IN ('no_encontrado', 'error', 'sin_telefono'))
       ORDER BY fecha, id`,
     [cuenta.id, lunes, sumarDias(lunes, 6)],
   );
@@ -551,11 +636,16 @@ export async function buscarClientes(cuenta: CuentaBanco, texto: string): Promis
   if (t.length < 3) return [];
   const digitos = t.replace(/\D/g, "");
   // Fichas principales (no contactos); un cliente persona natural no es is_company.
+  const porDigitos = digitos.length >= 5 ? digitos.replace(/^0+/, "") : t;
   const dominio: any[] = [
     ["parent_id", "=", false],
     "|",
+    "|",
+    "|",
     ["name", "ilike", t],
-    ["vat", "ilike", digitos.length >= 5 ? digitos.replace(/^0+/, "") : t],
+    ["vat", "ilike", porDigitos],
+    ["phone", "=like", `%${digitos.slice(-7) || t}`],
+    ["mobile", "=like", `%${digitos.slice(-7) || t}`],
   ];
   const filas = await callOdooRPCEstricto<any[]>("res.partner", "search_read", [dominio], {
     fields: ["name", "vat", "user_id"],
@@ -644,9 +734,10 @@ export async function vistaPreviaRegistro(cuenta: CuentaBanco, id: number) {
   if ("error" in c) return c;
   // Clientes sugeridos: por la cedula/RIF de quien pago (segun el banco) y por el nombre del archivo.
   const porRif = c.api.pagadorId ? await buscarClientes(cuenta, c.api.pagadorId.replace(/^[A-Z]0*/i, "")) : [];
+  const porTelefono = c.api.telefono ? await buscarClientes(cuenta, c.api.telefono) : [];
   const porNombre = c.cliente ? await buscarClientes(cuenta, c.cliente) : [];
   const vistos = new Set<number>();
-  const sugeridos = [...porRif, ...porNombre].filter((p) => !vistos.has(p.id) && vistos.add(p.id)).slice(0, 10);
+  const sugeridos = [...porTelefono, ...porRif, ...porNombre].filter((p) => !vistos.has(p.id) && vistos.add(p.id)).slice(0, 10);
   return {
     comprobante: c,
     diario: cuenta.nombre,
@@ -740,8 +831,11 @@ export async function registrarCobro(
     await callOdooRPCEstricto("account.payment", "message_post", [[pagoId]], {
       body:
         `Cobro registrado desde el panel (Conciliación bancaria) por ${escaparHtml(autor.nombre || autor.email)} (${escaparHtml(autor.email)}). ` +
-        `Verificado en Mercantil: transferencia del ${a.fecha} ${a.hora || ""} de ${escaparHtml(a.pagador || "—")} (${escaparHtml(a.pagadorId || "—")}), ` +
-        `ref ${escaparHtml(c.referencia)}, estatus ${a.estatus || "—"}.`,
+        (a.tipo === "pago_movil"
+          ? `Verificado en Mercantil: Pago Móvil del ${a.fecha} desde el ${escaparHtml(a.telefono || "—")} (${escaparHtml(a.pagadorId || "—")}), ` +
+            `autorización ${escaparHtml(a.autorizacion || "—")}, ref ${escaparHtml(c.referencia)}.`
+          : `Verificado en Mercantil: transferencia del ${a.fecha} ${a.hora || ""} de ${escaparHtml(a.pagador || "—")} (${escaparHtml(a.pagadorId || "—")}), ` +
+            `ref ${escaparHtml(c.referencia)}, estatus ${a.estatus || "—"}.`),
       message_type: "comment",
       subtype_xmlid: "mail.mt_note",
     });

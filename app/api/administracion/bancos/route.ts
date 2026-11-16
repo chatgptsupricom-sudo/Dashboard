@@ -121,7 +121,8 @@ export async function POST(request: NextRequest) {
 // PATCH /api/administracion/bancos
 //   {cuenta, movimiento, pago_id}      — movimiento <-> cobro de Odoo a mano (pago_id null = soltar)
 //   {cuenta, comprobante, movimiento}  — comprobante <-> movimiento a mano (movimiento null = soltar)
-//   {cuenta, verificar: id}            — volver a consultar un comprobante en el banco (API de Mercantil)
+//   {cuenta, verificar: id[, telefono]} — volver a consultar un comprobante en el banco (API de Mercantil;
+//                                         telefono = celular de quien hizo un Pago Movil)
 //   {cuenta, verificar: "pendientes", semana} — los de la semana que el banco no confirmo
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
@@ -137,7 +138,12 @@ export async function PATCH(request: NextRequest) {
       }
       const id = Number(b.verificar);
       if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Comprobante inválido" }, { status: 400 });
-      const api = await verificarComprobante(cuenta, id);
+      // Pago Movil: el celular de quien pago, si lo escribieron a mano.
+      const telefono = typeof b?.telefono === "string" ? b.telefono.replace(/\D/g, "").slice(0, 15) : undefined;
+      if (telefono !== undefined && !/^\d{10,12}$/.test(telefono)) {
+        return NextResponse.json({ error: "Escribe el celular completo, ej. 0412-1234567" }, { status: 400 });
+      }
+      const api = await verificarComprobante(cuenta, id, telefono);
       if (!api) return NextResponse.json({ error: "Esta cuenta no tiene la API del banco" }, { status: 400 });
       return NextResponse.json({ success: true, api });
     } catch (e: any) {

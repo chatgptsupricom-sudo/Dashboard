@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import {
   BANCOS_VE,
+  celular58,
   codigoBanco,
   esBolivares,
   referenciaMercantil,
@@ -14,6 +15,11 @@ import {
  * dados los ultimos 8 digitos de la referencia, el monto exacto, el dia y el
  * banco desde donde se pago. No lista los movimientos de la cuenta.
  * Campos en https://www.mercantilbanco.com/mercprod/apiportal/pdfs/api_transfer_search_descripcion_de_atributos_y_campos_0.pdf
+ *
+ * Pago Movil: "Busqueda de Transacciones Tpago" (`/mobile-payment/search`,
+ * tambien activo, con las credenciales "C2P" de la misma cuenta). Pide el
+ * celular completo de quien pago (sin el no lo encuentra; probado el
+ * 16-nov-2026), la referencia (bastan los ultimos 6), el monto y el dia.
  *
  * Las credenciales son las que ya estan cargadas en Odoo, en la cuenta de
  * integracion del modulo de Digiflex (`bank.integration.account`) del diario:
@@ -28,6 +34,8 @@ type Credenciales = {
   merchantId: number;
   terminalId: string;
   cuenta: string;
+  /** Pago Movil (Tpago); null si la cuenta no lo tiene. */
+  pm: { clientId: string; clave: string; merchantId: number; telefono: string } | null;
 };
 
 const cache = new Map<number, { hasta: number; cred: Credenciales | null }>();
@@ -53,6 +61,10 @@ export async function credencialesMercantil(journalId: number, sede: number): Pr
           "integrator_id",
           "terminal_id",
           "account_number",
+          "c2p_client_id",
+          "c2p_secret_key",
+          "c2p_merchant_id",
+          "phone_number",
         ],
         limit: 1,
         context: { allowed_company_ids: [sede] },
@@ -70,6 +82,15 @@ export async function credencialesMercantil(journalId: number, sede: number): Pr
         merchantId: Number(a.transfer_merchant_id),
         terminalId: String(a.terminal_id || "1"),
         cuenta,
+        pm:
+          a.c2p_client_id && a.c2p_secret_key && Number(a.c2p_merchant_id) && celular58(String(a.phone_number || ""))
+            ? {
+                clientId: String(a.c2p_client_id),
+                clave: String(a.c2p_secret_key),
+                merchantId: Number(a.c2p_merchant_id),
+                telefono: celular58(String(a.phone_number || ""))!,
+              }
+            : null,
       };
     }
   } catch (e: any) {
@@ -142,6 +163,7 @@ async function buscar(
   }
   const t = lista.find((x) => x?.trxStatus === "A") || lista[0];
   return {
+    tipo: "transferencia",
     fecha: String(t.trxValueDate || q.fecha).slice(0, 10),
     hora: String(t.trxTime || ""),
     estatus: String(t.trxStatus || ""),
@@ -153,48 +175,139 @@ async function buscar(
   };
 }
 
+/** Una consulta de Pago Movil: la transaccion, null si no hay (codigo 0330), o un error. */
+async function buscarPagoMovil(
+  cred: Credenciales,
+  q: { referencia: string; monto: number; fecha: string; telefono: string },
+): Promise<Encontrada | null> {
+  const pm = cred.pm!;
+  const cuerpo = {
+    merchant_identify: { integratorId: cred.integratorId, merchantId: pm.merchantId, terminalId: cred.terminalId },
+    client_identify: {
+      ipaddress: "10.0.0.1",
+      browser_agent: "panel",
+      mobile: { manufacturer: "", model: "", os_version: "", location: { lat: 0, lng: 0 } },
+    },
+    search_by: {
+      amount: Math.round(q.monto * 100) / 100,
+      currency: "ves",
+      // Da igual el orden: Mercantil la encuentra con los dos celulares en cualquiera de los dos campos.
+      origin_mobile_number: cifrar(pm.telefono, pm.clave),
+      destination_mobile_number: cifrar(q.telefono, pm.clave),
+      payment_reference: q.referencia,
+      trx_date: q.fecha,
+    },
+  };
+  let res: Response;
+  try {
+    res = await fetch(`${cred.url}/mobile-payment/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-IBM-Client-Id": pm.clientId },
+      body: JSON.stringify(cuerpo),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (e: any) {
+    throw new ErrorMercantil(`No se pudo conectar con Mercantil (${e?.name === "TimeoutError" ? "no respondió" : e?.message})`);
+  }
+  const j: any = await res.json().catch(() => null);
+  const errores: any[] = Array.isArray(j?.error_list) ? j.error_list : [];
+  if (errores.some((e) => /^0*330$/.test(String(e?.error_code)))) return null;
+  const lista: any[] = Array.isArray(j?.transaction_list) ? j.transaction_list : [];
+  if (!res.ok || !lista.length) {
+    const detalle = errores.map((e) => `${e?.error_code} ${e?.description}`).join("; ") || String(j?.moreInformation || "");
+    throw new ErrorMercantil(`Mercantil (Pago Móvil) respondió ${res.status}${detalle ? `: ${detalle}` : ""}`);
+  }
+  const t = lista[0];
+  return {
+    tipo: "pago_movil",
+    fecha: String(t.trx_date || q.fecha).slice(0, 10),
+    hora: "",
+    estatus: "A",
+    pagador: "",
+    pagadorId: descifrar(t.destination_id, pm.clave),
+    telefono: q.telefono,
+    autorizacion: String(t.authorization_code || ""),
+    canal: "PAGO MOVIL",
+    yaConsultada: false,
+  };
+}
+
 const DIA_MS = 86400_000;
 const otroDia = (dia: string, n: number) => new Date(Date.parse(dia) + n * DIA_MS).toISOString().slice(0, 10);
 
 /**
- * Busca el comprobante en el banco. Con el banco del comprobante prueba su dia,
- * el siguiente y el anterior (una transferencia de otro banco puede abonarse al
- * otro dia); despues, o si el comprobante no dice el banco, los demas bancos en
- * su dia. Hasta ~28 consultas, una tras otra.
+ * Busca el comprobante en el banco. Transferencia: con el banco del comprobante
+ * prueba su dia, el siguiente y el anterior (de otro banco puede abonarse al otro
+ * dia); despues, o si no dice el banco, los demas bancos en su dia (hasta ~28
+ * consultas). Pago Movil (o una transferencia que no aparecio): con cada celular
+ * candidato de quien pago, su dia, el siguiente y el anterior. Sin celular
+ * completo no se puede: queda "sin_telefono" para que lo escriban.
  */
 export async function verificarEnMercantil(
   cred: Credenciales,
-  c: { referencia: string; monto: number; moneda: string; fecha: string; banco: string },
+  c: {
+    referencia: string;
+    monto: number;
+    moneda: string;
+    fecha: string;
+    banco: string;
+    /** true = el comprobante es de Pago Movil; null = no se sabe (comprobantes de antes). */
+    pagoMovil: boolean | null;
+    /** Celulares posibles de quien pago (58 + 10 digitos). */
+    telefonos: string[];
+  },
 ): Promise<VerificacionApi> {
   const el = new Date().toISOString();
-  const referencia = referenciaMercantil(c.referencia);
   if (!esBolivares(c.moneda)) {
     return { estado: "no_aplica", el, mensaje: `El comprobante está en ${c.moneda}: la cuenta es en bolívares` };
   }
-  if (referencia.length < 4) return { estado: "no_aplica", el, mensaje: "La referencia no tiene suficientes dígitos" };
-  const propio = codigoBanco(c.banco);
-  const intentos: { banco: number; fecha: string }[] = [];
-  if (propio) for (const n of [0, 1, -1]) intentos.push({ banco: propio, fecha: otroDia(c.fecha, n) });
-  for (const b of BANCOS_VE) if (b.codigo !== propio) intentos.push({ banco: b.codigo, fecha: c.fecha });
-  for (const i of intentos) {
-    try {
-      const t = await buscar(cred, { referencia, monto: c.monto, fecha: i.fecha, banco: i.banco });
-      if (t) return { estado: "confirmado", el, ...t };
-    } catch (e: any) {
-      if (e instanceof ErrorMercantil) return { estado: "error", el, mensaje: e.message };
-      throw e;
-    }
-  }
+  const digitos = String(c.referencia || "").replace(/\D/g, "");
+  if (digitos.length < 4) return { estado: "no_aplica", el, mensaje: "La referencia no tiene suficientes dígitos" };
+  const dias = [0, 1, -1].map((n) => otroDia(c.fecha, n));
   const dia = c.fecha.split("-").reverse().join("/");
+  try {
+    if (c.pagoMovil !== true) {
+      const referencia = referenciaMercantil(c.referencia);
+      const propio = codigoBanco(c.banco);
+      const intentos: { banco: number; fecha: string }[] = [];
+      if (propio) for (const f of dias) intentos.push({ banco: propio, fecha: f });
+      for (const b of BANCOS_VE) if (b.codigo !== propio) intentos.push({ banco: b.codigo, fecha: c.fecha });
+      for (const i of intentos) {
+        const t = await buscar(cred, { referencia, monto: c.monto, fecha: i.fecha, banco: i.banco });
+        if (t) return { estado: "confirmado", el, ...t };
+      }
+    }
+    if (cred.pm) {
+      for (const telefono of c.telefonos.slice(0, 10)) {
+        for (const f of dias) {
+          const t = await buscarPagoMovil(cred, { referencia: digitos.slice(-6), monto: c.monto, fecha: f, telefono });
+          if (t) return { estado: "confirmado", el, ...t };
+        }
+      }
+    }
+  } catch (e: any) {
+    if (e instanceof ErrorMercantil) return { estado: "error", el, mensaje: e.message };
+    throw e;
+  }
+  if (c.pagoMovil === true) {
+    if (!cred.pm) return { estado: "no_aplica", el, mensaje: "Pago Móvil: la cuenta no tiene la API de Pago Móvil" };
+    if (!c.telefonos.length) {
+      return { estado: "sin_telefono", el, mensaje: "Pago Móvil: falta el celular completo de quien pagó para buscarlo" };
+    }
+    const cuantos = c.telefonos.length === 1 ? "ese celular" : `${c.telefonos.length} celulares posibles`;
+    return { estado: "no_encontrado", el, mensaje: `Mercantil no encontró el Pago Móvil del ${dia} ±1 día con ${cuantos}` };
+  }
   return {
     estado: "no_encontrado",
     el,
-    mensaje: propio
-      ? `Mercantil no la encontró (${BANCOS_VE.find((b) => b.codigo === propio)?.nombre} del ${dia} ±1 día, ni otros bancos ese día)`
-      : `Mercantil no la encontró en ningún banco el ${dia} (el comprobante no dice el banco)`,
+    mensaje: `Mercantil no la encontró como transferencia el ${dia} ±1 día${cred.pm && c.telefonos.length ? " ni como Pago Móvil" : ""}`,
   };
 }
 
 /** Llave de la transferencia que encontro el banco: la misma en dos comprobantes es un pago repetido. */
 export const claveTransferencia = (v: VerificacionApi, referencia: string, monto: number) =>
-  v.estado === "confirmado" ? [v.bancoId, v.fecha, v.hora, referenciaMercantil(referencia), monto.toFixed(2)].join("|") : null;
+  v.estado !== "confirmado"
+    ? null
+    : v.tipo === "pago_movil"
+      ? ["pm", v.fecha, v.autorizacion, monto.toFixed(2)].join("|")
+      : [v.bancoId, v.fecha, v.hora, referenciaMercantil(referencia), monto.toFixed(2)].join("|");
