@@ -72,7 +72,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const resultado = await buscarFacturaConSeriales(numero, rif, cid);
+    const resultado = await buscarFacturaConSeriales(numero, rif, cid, { smartbit: true });
 
     // Registro para poder detectar que alguien está raspando. Sin esto no hay
     // forma de enterarse: un raspado sostenido y por debajo del límite se ve
