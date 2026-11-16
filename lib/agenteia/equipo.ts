@@ -197,7 +197,7 @@ export async function ejecutarHerramientaEquipo(nombre: string, i: any, sedes: n
   }
   if (nombre === "finanzas_por_pagar") {
     const d = await fetchCxPAdmin([sede], hoy, desde, hoy, true);
-    return json({ sede, al: hoy, resumen: d.resumen, bandas: d.bandas, calendario: d.calendario, proveedores: d.proveedores.slice(0, 15) }, true);
+    return json({ sede, al: hoy, resumen: d.resumen, bandas: d.bandas, pagosFijos: d.pagosFijos, proveedores: d.proveedores.slice(0, 15) }, true);
   }
   const { clientes, resumen } = await calcularSobregiro([sede]);
   const riesgo = clientes.filter((c) => c.estado === "excedido" || c.estado === "al_limite");
