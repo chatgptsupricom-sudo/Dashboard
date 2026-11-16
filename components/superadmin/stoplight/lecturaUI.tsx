@@ -70,11 +70,12 @@ export function useTextosLectura(lectura: LecturaKpi, locale: string) {
   return { valor, meta, brechaTexto, ritmo };
 }
 
-export function ChipNivel({ nivel, pct }: { nivel: Nivel; pct: number | null }) {
+/** `conMeta`: el KPI tiene meta aunque todavía no tenga valor (sale "–", no "Sin meta"). */
+export function ChipNivel({ nivel, pct, conMeta = false }: { nivel: Nivel; pct: number | null; conMeta?: boolean }) {
   const t = useTranslations("stoplight");
   return (
     <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums ${CHIP_NIVEL[nivel]}`}>
-      {pct != null ? `${pct}%` : t("sin_meta")}
+      {pct != null ? `${pct}%` : conMeta ? "–" : t("sin_meta")}
     </span>
   );
 }

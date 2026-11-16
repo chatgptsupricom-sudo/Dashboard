@@ -235,7 +235,8 @@ export async function leerDepartamentos(
         : null,
       esperado,
       pctEsperado,
-      detalle: origen === "auto" ? auto?.detalle ?? null : null,
+      // También sin valor: explica por qué el panel no lo calculó ("sin casos en el mes").
+      detalle: origen === "manual" ? null : auto?.detalle ?? null,
     };
   };
 
