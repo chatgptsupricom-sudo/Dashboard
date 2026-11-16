@@ -15,8 +15,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, FileSpreadsheet, Loader2, Upload } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { CheckCircle2, FileSpreadsheet, Loader2, Search, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
 /** Fila del Excel de asignación por sede (CODIGO | DESCRIPCION | … | PRECIO DEFINITIVO). */
@@ -48,8 +49,16 @@ function numero(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Busca la fila de encabezados en la primera hoja y lee los renglones hasta el primer código vacío. */
-function leerExcel(buf: ArrayBuffer, nombreArchivo: string): { filas: FilaExcel[]; referencia: string } {
+interface ResumenFactura {
+  factura: string;
+  archivo: string;
+  productos: number;
+  cargadoPor: string;
+  actualizado: string;
+}
+
+/** Busca la fila de encabezados en la primera hoja y lee los renglones con código. */
+function leerExcel(buf: ArrayBuffer, nombreArchivo: string): { filas: FilaExcel[]; factura: string } {
   const wb = XLSX.read(buf, { type: "array" });
   const filas: unknown[][] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
   const h = filas.findIndex((f) => f.some((c) => norm(c).startsWith("CODIGO")) && f.some((c) => norm(c).includes("PRECIO DEFINITIVO")));
@@ -65,10 +74,14 @@ function leerExcel(buf: ArrayBuffer, nombreArchivo: string): { filas: FilaExcel[
     if (!codigo) continue;
     salida.push({ codigo, descripcion: iDesc >= 0 ? String(f[iDesc] ?? "").trim() : "", precio: numero(f[iPrecio]) });
   }
-  // La factura (ej. INV00965) va arriba del encabezado; si no, el nombre del archivo.
-  const factura = filas.slice(0, h).flat().map((c) => String(c ?? "").trim()).find((c) => /^INV\d+/i.test(c));
-  return { filas: salida, referencia: factura ? `la factura ${factura}` : nombreArchivo };
+  // La factura (ej. INV00965) va arriba del encabezado; si no, en el nombre de la hoja o del archivo.
+  const inv = (t: unknown) => String(t ?? "").match(/INV\d+/i)?.[0];
+  const factura =
+    filas.slice(0, h).flat().map(inv).find(Boolean) ?? inv(wb.SheetNames[0]) ?? inv(nombreArchivo) ?? nombreArchivo.replace(/\.[^.]+$/, "");
+  return { filas: salida, factura: factura.trim().toUpperCase() };
 }
+
+const fecha = (iso: string) => new Date(iso).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" });
 
 const usd = (v: number | null) =>
   v == null ? "—" : `$${v.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -78,7 +91,9 @@ export default function ActualizacionPreciosPage() {
   const { toast } = useToast();
   const input = useRef<HTMLInputElement>(null);
   const [archivo, setArchivo] = useState("");
-  const [referencia, setReferencia] = useState("");
+  const [factura, setFactura] = useState("");
+  const [facturas, setFacturas] = useState<ResumenFactura[]>([]);
+  const [buscar, setBuscar] = useState("");
   const [filas, setFilas] = useState<FilaExcel[]>([]);
   const [precios, setPrecios] = useState<Map<string, PrecioActual>>(new Map());
   const [cargando, setCargando] = useState(false);
@@ -100,31 +115,74 @@ export default function ActualizacionPreciosPage() {
     });
   };
 
-  async function cargar(file: File) {
+  async function listar() {
+    try {
+      const r = await fetch("/api/compras/actualizacion-precios/facturas", { cache: "no-store" });
+      const j = await r.json();
+      if (r.ok) setFacturas(j.data);
+    } catch {
+      /* la lista queda como estaba */
+    }
+  }
+  useEffect(() => {
+    listar();
+  }, []);
+
+  /** Abre una factura guardada y lee sus precios actuales en Odoo. */
+  async function abrir(numero: string) {
     setCargando(true);
-    setArchivo(file.name);
+    setFactura(numero);
     setFilas([]);
     setPrecios(new Map());
     try {
-      const leido = leerExcel(await file.arrayBuffer(), file.name);
-      if (!leido.filas.length) throw new Error("El Excel no trae productos");
-      setFilas(leido.filas);
-      setReferencia(leido.referencia);
+      const rf = await fetch(`/api/compras/actualizacion-precios/facturas?factura=${encodeURIComponent(numero)}`, { cache: "no-store" });
+      const jf = await rf.json();
+      if (!rf.ok) throw new Error(jf.error || "No se pudo abrir la factura");
+      setFilas(jf.data.filas);
+      setArchivo(jf.data.archivo);
       const r = await fetch("/api/compras/actualizacion-precios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codigos: leido.filas.map((f) => f.codigo) }),
+        body: JSON.stringify({ codigos: jf.data.filas.map((f: FilaExcel) => f.codigo) }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "No se pudo leer Odoo");
       guardarPrecios(j.data);
     } catch (e: any) {
-      toast({ title: "No se pudo cargar el Excel", description: e.message, variant: "destructive" });
+      toast({ title: `No se pudo abrir ${numero}`, description: e.message, variant: "destructive" });
     } finally {
       setCargando(false);
+    }
+  }
+
+  /** Lee el Excel, lo guarda por su factura (la misma factura reemplaza la carga anterior) y lo abre. */
+  async function cargar(file: File) {
+    setCargando(true);
+    try {
+      const leido = leerExcel(await file.arrayBuffer(), file.name);
+      if (!leido.filas.length) throw new Error("El Excel no trae productos");
+      const r = await fetch("/api/compras/actualizacion-precios/facturas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ factura: leido.factura, archivo: file.name, filas: leido.filas }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "No se pudo guardar el Excel");
+      toast({ title: j.reemplazada ? `${j.factura}: se reemplazó la carga anterior` : `${j.factura} guardada` });
+      await listar();
+      await abrir(j.factura);
+    } catch (e: any) {
+      toast({ title: "No se pudo cargar el Excel", description: e.message, variant: "destructive" });
+      setCargando(false);
+    } finally {
       if (input.current) input.current.value = "";
     }
   }
+
+  const facturasFiltradas = useMemo(() => {
+    const q = buscar.trim().toUpperCase();
+    return q ? facturas.filter((f) => f.factura.includes(q) || f.archivo.toUpperCase().includes(q)) : facturas;
+  }, [facturas, buscar]);
 
   async function aplicar(lista: FilaExcel[]) {
     const codigos = lista.map((f) => f.codigo);
@@ -133,7 +191,7 @@ export default function ActualizacionPreciosPage() {
       const r = await fetch("/api/compras/actualizacion-precios", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cambios: lista.map((f) => ({ codigo: f.codigo, precio: f.precio })), referencia }),
+        body: JSON.stringify({ cambios: lista.map((f) => ({ codigo: f.codigo, precio: f.precio })), referencia: `la factura ${factura}` }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "No se pudo actualizar");
@@ -181,19 +239,68 @@ export default function ActualizacionPreciosPage() {
             {cargando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
             Cargar Excel
           </Button>
-          {archivo && (
-            <span className="flex items-center gap-2 text-sm text-muted-foreground">
-              <FileSpreadsheet className="h-4 w-4" /> {archivo}
-            </span>
+          <span className="text-sm text-muted-foreground">Se guarda por su número de factura (ej. INV00965).</span>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="text-base">Excels cargados ({facturas.length})</CardTitle>
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Buscar factura…" value={buscar} onChange={(e) => setBuscar(e.target.value)} className="pl-8" />
+          </div>
+        </CardHeader>
+        <CardContent className="max-h-72 overflow-y-auto">
+          {!facturas.length ? (
+            <p className="text-sm text-muted-foreground">Todavía no se ha cargado ningún Excel.</p>
+          ) : !facturasFiltradas.length ? (
+            <p className="text-sm text-muted-foreground">Ninguna factura coincide con «{buscar}».</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Factura</TableHead>
+                  <TableHead>Archivo</TableHead>
+                  <TableHead className="text-right">Productos</TableHead>
+                  <TableHead>Cargado por</TableHead>
+                  <TableHead>Última carga</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {facturasFiltradas.map((f) => (
+                  <TableRow
+                    key={f.factura}
+                    onClick={() => !cargando && !ocupado && abrir(f.factura)}
+                    className={`cursor-pointer ${f.factura === factura ? "bg-muted" : ""}`}
+                  >
+                    <TableCell className="font-mono font-semibold">{f.factura}</TableCell>
+                    <TableCell className="max-w-[280px] truncate" title={f.archivo}>
+                      <span className="inline-flex items-center gap-1.5"><FileSpreadsheet className="h-4 w-4 shrink-0" /> {f.archivo}</span>
+                    </TableCell>
+                    <TableCell className="text-right">{f.productos}</TableCell>
+                    <TableCell className="text-xs">{f.cargadoPor}</TableCell>
+                    <TableCell className="text-xs">{fecha(f.actualizado)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
+
+      {cargando && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Leyendo precios en Odoo…
+        </p>
+      )}
 
       {filas.length > 0 && !cargando && (
         <Card>
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
             <CardTitle className="text-base">
-              {filas.length} productos · {pendientes.length} con precio distinto
+              <span className="font-mono">{factura}</span> · {filas.length} productos · {pendientes.length} con precio distinto
+              <span className="block text-xs font-normal text-muted-foreground">{archivo}</span>
             </CardTitle>
             <Button onClick={() => setConfirmarTodos(true)} disabled={!pendientes.length || ocupado}>
               {ocupado && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
