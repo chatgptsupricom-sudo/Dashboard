@@ -74,6 +74,7 @@ import {
   Store,
   Search,
   Settings2,
+  Tag,
   Shield,
   Send,
   Inbox,
@@ -401,6 +402,8 @@ export function Sidebar({
     // La misma clasificación de clientes de Inteligencia de Negocio, con el prompt de Compras.
     { id: "clasificacion_clientes_compras", label: "Clasificación de clientes", icon: Store, slug: "/clasificacion-clientes" },
     { id: "moq", label: t("moq"), icon: Settings2, slug: "/moq" },
+    // Excel de asignación por sede → precio definitivo en las listas de Valencia y Caracas (lib/compras/actualizacionPrecios).
+    { id: "actualizacion_precios", label: "Actualización de precios", icon: Tag, slug: "/actualizacion-precios" },
     { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
@@ -566,9 +569,10 @@ export function Sidebar({
     allowedSections.includes("cobertura") ||
     allowedSections.includes("rotacion_categoria") ||
     allowedSections.includes("tendencia") ||
-    allowedSections.includes("pareto_80_20");
+    allowedSections.includes("pareto_80_20") ||
+    allowedSections.includes("actualizacion_precios");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["ordenes_compra", "recepcion_packing", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
+  const comprasDropdownIds = ["ordenes_compra", "recepcion_packing", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20", "actualizacion_precios"];
   const isSuperAdminRole = userRole === "superAdmin";
   // Inteligencia de Negocio tiene los desplegables del SuperAdmin (Ventas,
   // Marketing, parte de CxC) sobre sus propias páginas.
@@ -1389,6 +1393,11 @@ export function Sidebar({
                           label: t("tendencia_ventas"),
                           href: `/${locale}/compras/tendencia`,
                           permission: "tendencia",
+                        },
+                        {
+                          label: "Actualización de precios",
+                          href: `/${locale}/compras/actualizacion-precios`,
+                          permission: "actualizacion_precios",
                         },
                       ].map((subItem, index) => {
                         if (

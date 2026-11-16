@@ -16,7 +16,6 @@ type Vista = {
   metodo: string;
   tasaBcv: number;
   sugeridos: ClienteOdoo[];
-  descripcion: string;
 };
 
 const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -71,7 +70,8 @@ export function RegistrarCobroOdoo({
       setOpciones(j.sugeridos);
       setCliente(j.sugeridos[0] ?? null);
       setTasa(j.tasaBcv ? String(j.tasaBcv) : "");
-      setDescripcion(j.descripcion || "");
+      // Vacia: ahi va el numero de las facturas que paga el cliente, como lo escribe CxC.
+      setDescripcion("");
     });
   }, [cuenta, comprobante]);
 
@@ -102,9 +102,10 @@ export function RegistrarCobroOdoo({
         ["Diario", vista.diario],
         ["Método de pago", vista.metodo],
         ["Fecha", dia(c.fecha)],
-        ["Referencia", <span className="font-mono">{c.referencia}</span>],
-        ["Monto", `${cifra(c.monto)} ${vista.moneda}`],
-        ["Equivalente", tasaNum > 0 ? `${cifra(c.monto / tasaNum)} USD` : "—"],
+        ["¿Usar tasa personalizada?", "Sí"],
+        ["Memo", <span className="font-mono">{c.referencia}</span>],
+        ["Importe", `${cifra(c.monto)} ${vista.moneda}`],
+        ["Importe local", tasaNum > 0 ? `${cifra(c.monto / tasaNum)} USD` : "—"],
         ["Vendedor", cliente?.vendedor || "—"],
         [
           "Según el banco",
@@ -179,7 +180,7 @@ export function RegistrarCobroOdoo({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-sm font-medium" htmlFor="registrar-tasa">
-                  Tasa (Bs por dólar)
+                  Tasa
                 </label>
                 <Input id="registrar-tasa" type="number" step="0.01" min="0" value={tasa} onChange={(e) => setTasa(e.target.value)} />
                 <p className="text-xs text-gray-500">BCV del día: {vista.tasaBcv ? cifra(vista.tasaBcv) : "—"}. Usa la tasa acordada con el cliente.</p>
