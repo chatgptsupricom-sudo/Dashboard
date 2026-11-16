@@ -636,7 +636,9 @@ export async function buscarClientes(cuenta: CuentaBanco, texto: string): Promis
   if (t.length < 3) return [];
   const digitos = t.replace(/\D/g, "");
   // Fichas principales (no contactos); un cliente persona natural no es is_company.
-  const porDigitos = digitos.length >= 5 ? digitos.replace(/^0+/, "") : t;
+  // RIF de 9 digitos: los 8 primeros, asi calza con o sin guiones y con o sin el digito verificador.
+  const sinCeros = digitos.replace(/^0+/, "");
+  const porDigitos = sinCeros.length === 9 ? sinCeros.slice(0, 8) : digitos.length >= 5 ? sinCeros : t;
   const dominio: any[] = [
     ["parent_id", "=", false],
     "|",
@@ -736,8 +738,11 @@ export async function vistaPreviaRegistro(cuenta: CuentaBanco, id: number) {
   const porRif = c.api.pagadorId ? await buscarClientes(cuenta, c.api.pagadorId.replace(/^[A-Z]0*/i, "")) : [];
   const porTelefono = c.api.telefono ? await buscarClientes(cuenta, c.api.telefono) : [];
   const porNombre = c.cliente ? await buscarClientes(cuenta, c.cliente) : [];
+  // El nombre que da el banco, sin la forma juridica ("EL BUEN PLATO, C.A." -> "EL BUEN PLATO").
+  const pagador = String(c.api.pagador || "").replace(/,?s*(C.?s?A.?|S.?s?A.?|S.?R.?L.?)s*$/i, "").trim();
+  const porPagador = pagador ? await buscarClientes(cuenta, pagador) : [];
   const vistos = new Set<number>();
-  const sugeridos = [...porTelefono, ...porRif, ...porNombre].filter((p) => !vistos.has(p.id) && vistos.add(p.id)).slice(0, 10);
+  const sugeridos = [...porTelefono, ...porRif, ...porPagador, ...porNombre].filter((p) => !vistos.has(p.id) && vistos.add(p.id)).slice(0, 10);
   return {
     comprobante: c,
     diario: cuenta.nombre,
