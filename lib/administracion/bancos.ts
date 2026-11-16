@@ -805,12 +805,12 @@ export async function registrarCobro(
           amount: c.monto,
           date: c.fecha,
           ref: c.referencia,
-          // Como los registra CxC: tasa propia del cobro y su equivalente en dolares.
+          // Como los registra CxC en el formulario de Odoo: tasa propia del cobro y su importe local en dolares
+          // (Odoo lo llena al cambiar la tasa en pantalla, no al crear por la API). Total pagar lo calcula Odoo.
           custom_rate: true,
           tax_today: datos.tasa,
           amount_local: montoUsd,
           amount_ref: c.monto,
-          amount_total_pagar: c.monto,
           payment_description: `<p>${escaparHtml(datos.descripcion)}</p>`,
           ...(Array.isArray(cliente.user_id) ? { salesperson_id: cliente.user_id[0] } : {}),
         },
