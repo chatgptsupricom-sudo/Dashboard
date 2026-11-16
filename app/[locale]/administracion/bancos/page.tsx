@@ -146,6 +146,8 @@ export default function ConciliacionBancariaPage() {
   const [verImagen, setVerImagen] = useState<{ id: number; referencia: string; cliente: string } | null>(null);
   const [paginaComprobantes, setPaginaComprobantes] = useState(0);
   const [paginaMovs, setPaginaMovs] = useState(0);
+  // Una tabla a la vez, como en Conciliacion Binance.
+  const [tabla, setTabla] = useState<"comprobantes" | "estado">("comprobantes");
   const [registrar, setRegistrar] = useState<number | null>(null);
   const [verificando, setVerificando] = useState<number | "pendientes" | null>(null);
   const entradas = {
@@ -596,6 +598,27 @@ export default function ConciliacionBancariaPage() {
               <RegistrarCobroOdoo cuenta={cuenta} comprobante={registrar} cerrar={() => setRegistrar(null)} listo={cargar} />
             )}
 
+            <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Tabla">
+              {(
+                [
+                  ["comprobantes", `Comprobantes (${comprobantes.length})`],
+                  ["estado", `Estado de cuenta (${movimientos.length})`],
+                ] as const
+              ).map(([clave, texto]) => (
+                <button
+                  key={clave}
+                  type="button"
+                  role="tab"
+                  aria-selected={tabla === clave}
+                  onClick={() => setTabla(clave)}
+                  className={`px-4 py-2 text-sm rounded-md ${tabla === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"}`}
+                >
+                  {texto}
+                </button>
+              ))}
+            </div>
+
+            {tabla === "comprobantes" && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
@@ -738,7 +761,9 @@ export default function ConciliacionBancariaPage() {
                 <Paginacion pagina={paginaComprobantes} total={comprobantes.length} cambiar={setPaginaComprobantes} />
               </CardContent>
             </Card>
+            )}
 
+            {tabla === "estado" && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <div>
@@ -841,6 +866,7 @@ export default function ConciliacionBancariaPage() {
                 <Paginacion pagina={paginaMovs} total={movimientos.length} cambiar={setPaginaMovs} />
               </CardContent>
             </Card>
+            )}
           </>
         )
       )}
