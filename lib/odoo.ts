@@ -102,6 +102,7 @@ async function callOdooRPCInternal<T>(
   kwargs: Record<string, any>,
   httpsAgent: https.Agent | undefined,
   estricto = false,
+  credencial?: { uid: number; key: string },
 ): Promise<T | null> {
   kwargs = conIdioma(kwargs);
   try {
@@ -113,8 +114,8 @@ async function callOdooRPCInternal<T>(
         method: "execute_kw",
         args: [
           ODOO_DB,
-          ODOO_UID,
-          odooApiKey(),
+          credencial?.uid ?? ODOO_UID,
+          credencial?.key ?? odooApiKey(),
           model,
           method,
           args, // Esto debe ser una lista: [[filtro, op, valor]]
@@ -175,6 +176,21 @@ export async function callOdooRPCEstricto<T>(
   kwargs: Record<string, any> = {},
 ): Promise<T | null> {
   return callOdooRPCInternal<T>(model, method, args, kwargs, undefined, true);
+}
+
+/**
+ * Igual que callOdooRPCEstricto, pero con la API key de otro usuario de Odoo:
+ * el cambio queda a su nombre («Última modificación por», chatter) y Odoo
+ * revisa sus permisos. Ej. Compras › Actualización de precios.
+ */
+export async function callOdooRPCComo<T>(
+  credencial: { uid: number; key: string },
+  model: string,
+  method: string,
+  args: any[] = [],
+  kwargs: Record<string, any> = {},
+): Promise<T | null> {
+  return callOdooRPCInternal<T>(model, method, args, kwargs, undefined, true, credencial);
 }
 
 /**
