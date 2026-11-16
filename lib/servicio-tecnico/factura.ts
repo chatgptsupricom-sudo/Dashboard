@@ -6,6 +6,7 @@ import {
 import { callOdooRPC } from "@/lib/odoo";
 import { query } from "@/lib/db";
 import { hayTablaProductos } from "@/lib/rma/items";
+import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 
 /**
  * Búsqueda de una factura de cliente en Odoo y de los seriales que se le
@@ -191,8 +192,27 @@ export async function buscarFacturaConSeriales(
   numeroCrudo: string,
   rif?: string,
   cid?: number,
+  opciones: { smartbit?: boolean } = {},
 ): Promise<ResultadoBusqueda> {
   const encontrada = await resolverFactura(numeroCrudo, rif, cid);
+
+  // Facturas de antes del corte a Odoo (2026-04-01): Odoo no las tiene, o
+  // tiene solo la migrada ("Importación Masiva - FAC 5034267", una línea de
+  // Saldo Inicial) si quedó abierta. Los productos y seriales están en el
+  // histórico de Smartbit del panel. Solo lo pide el portal: Buscar factura
+  // de RMA ya muestra Smartbit aparte.
+  if (opciones.smartbit) {
+    const importada =
+      encontrada.estado === "ok" ? numeroImportado(encontrada.cruda.ref) : null;
+    if (encontrada.estado === "no_encontrada" || importada) {
+      const sede = cid ?? (encontrada.estado === "ok" ? encontrada.factura.compania_id : null);
+      const deSmartbit = sede
+        ? await facturaDeSmartbit(importada ?? numeroCrudo, rif, sede)
+        : null;
+      if (deSmartbit) return deSmartbit;
+    }
+  }
+
   if (encontrada.estado !== "ok") return encontrada;
   const factura = encontrada.cruda;
 
@@ -256,7 +276,7 @@ export async function resolverFactura(
   if (cid) dominio.push(["company_id", "=", cid]);
 
   const facturasCrudas = await rpc<any[]>("account.move", "search_read", [dominio], {
-    fields: ["id", "name", "invoice_date", "partner_id", "company_id"],
+    fields: ["id", "name", "ref", "invoice_date", "partner_id", "company_id"],
     limit: 10,
     order: "invoice_date desc",
   });
@@ -315,6 +335,185 @@ async function filtrarPorDocumento(
   );
 
   return facturas.filter((f) => coincide.has(m2oId(f.partner_id)!));
+}
+
+/**
+ * El número de Smartbit de una factura migrada a Odoo: la carga inicial les
+ * puso de referencia "Importación Masiva - FAC <número>" (Valencia 410,
+ * Caracas 224, Panamá 1.097) y un nombre nuevo (FCLIE/2026/00211).
+ */
+function numeroImportado(ref: unknown): string | null {
+  if (typeof ref !== "string") return null;
+  const m = ref.match(/Importaci[oó]n Masiva\s*-\s*FAC\s+([A-Za-z0-9/-]+)/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * La factura del histórico de Smartbit (`ventas_smartbit_facturas` +
+ * `ventas_smartbit`, ver lib/rma/buscarCompras.ts) con la misma forma que la
+ * de Odoo, para que el formulario y la creación del ticket no distingan. El
+ * RIF se compara contra el de Smartbit con el mismo criterio que en Odoo. Los
+ * productos se buscan en Odoo por código para tener id, marca, categoría y si
+ * llevan serial; los que no están quedan con producto_id 0. null = no está en
+ * Smartbit (o no tiene productos): sigue el resultado de Odoo.
+ */
+async function facturaDeSmartbit(
+  numeroCrudo: string,
+  rif: string | undefined,
+  sede: number,
+): Promise<FacturaConItems | { estado: "ambiguo"; coincidencias: FacturaResumen[] } | null> {
+  // Import dinámico: buscarCompras importa OdooNoDisponibleError de aquí.
+  const { facturasSmartbit } = await import("@/lib/rma/buscarCompras");
+  const buscado = normalizarDocumento(rif);
+  const facturas = (await facturasSmartbit(normalizarNumero(numeroCrudo), sede)).filter(
+    (f) =>
+      !f.devolucion &&
+      f.productos.length > 0 &&
+      (!buscado || documentoCoincide(buscado, normalizarDocumento(f.rif))),
+  );
+  if (!facturas.length) return null;
+
+  const resumenSb = (f: (typeof facturas)[number]): FacturaResumen => ({
+    numero: f.numero,
+    fecha: f.fecha || null,
+    compania: NOMBRES_SUCURSAL[f.sede] ?? "",
+    compania_id: f.sede,
+  });
+  if (facturas.length > 1) {
+    return { estado: "ambiguo", coincidencias: facturas.map(resumenSb) };
+  }
+  const f = facturas[0];
+
+  const codigos = [
+    ...new Set(
+      f.productos
+        .map((p) => p.codigo.trim().toUpperCase())
+        .filter(Boolean)
+        .flatMap((c) => [c, c.replace(/\//g, "-")]),
+    ),
+  ];
+  const [productos, partnerId] = await Promise.all([
+    productosPorCodigo(codigos),
+    partnerDeSmartbit(f.numero, f.rif, sede),
+  ]);
+  const cliente = await leerCliente(partnerId);
+
+  const items: ItemFactura[] = [];
+  for (const [i, p] of f.productos.entries()) {
+    const codigo = p.codigo.trim().toUpperCase();
+    const odoo = productos.get(codigo) ?? productos.get(codigo.replace(/\//g, "-"));
+    const nombre = odoo?.nombre || p.articulo;
+    const garantia = odoo?.marca
+      ? await garantiaDelItem(odoo.marca, nombre, f.fecha || null)
+      : p.garantia;
+    const seriales = [...new Set(p.seriales.map((s) => s.trim()).filter(Boolean))];
+    const base = {
+      linea_id: 0,
+      garantia,
+      producto_id: odoo?.id ?? 0,
+      codigo: odoo?.codigo || p.codigo,
+      nombre,
+      marca: odoo?.marca ?? "",
+      categoria: odoo?.categoria ?? "",
+      lleva_serial: seriales.length > 0 || (odoo?.llevaSerial ?? false),
+      despacho: "",
+      ya_reportado: false,
+      rma_case_number: null,
+    };
+    for (const serial of seriales) {
+      items.push({ ...base, id: `sb${i}:${serial}`, serial, cantidad: 1 });
+    }
+    const sinSerial = Math.max(0, p.unidades - seriales.length);
+    if (sinSerial > 0) {
+      items.push({ ...base, id: `sb${i}:`, serial: "", cantidad: sinSerial });
+    }
+  }
+  if (!items.length) return null;
+
+  marcarYaReportados(items, await casosExistentes(f.numero));
+  return {
+    estado: "ok",
+    factura: resumenSb(f),
+    cliente: cliente.nombre ? cliente : { ...cliente, nombre: f.cliente },
+    partner_id: partnerId,
+    despachos: [],
+    items,
+  };
+}
+
+/** Productos de Odoo por código exacto (también archivados). */
+async function productosPorCodigo(codigos: string[]) {
+  const mapa = new Map<
+    string,
+    { id: number; codigo: string; nombre: string; marca: string; categoria: string; llevaSerial: boolean }
+  >();
+  if (!codigos.length) return mapa;
+  const productos = await rpc<any[]>(
+    "product.product",
+    "search_read",
+    [[["default_code", "in", codigos]]],
+    {
+      fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "tracking", "active"],
+      limit: codigos.length * 3,
+      context: { active_test: false },
+    },
+  );
+  // Si hay un activo y uno archivado con el mismo código, gana el activo.
+  for (const p of [...productos].sort((a, b) => Number(a.active) - Number(b.active))) {
+    const codigo = String(p.default_code || "").trim().toUpperCase();
+    if (!codigo) continue;
+    mapa.set(codigo, {
+      id: p.id,
+      codigo: p.default_code || "",
+      nombre: p.name || "",
+      marca: m2oNombre(p.x_studio_marca),
+      categoria: m2oNombre(p.categ_id),
+      llevaSerial: p.tracking === "serial",
+    });
+  }
+  return mapa;
+}
+
+/**
+ * El cliente en Odoo de una factura de Smartbit: el de su factura migrada si
+ * quedó abierta al corte y si no el contacto empresa de la sede con ese RIF.
+ * Sirve para que el técnico llegue al cliente; sin él el caso se crea igual.
+ */
+async function partnerDeSmartbit(numero: string, rif: string, sede: number): Promise<number | null> {
+  const migrada = await rpc<any[]>(
+    "account.move",
+    "search_read",
+    [
+      [
+        ["move_type", "=", "out_invoice"],
+        ["company_id", "=", sede],
+        ["ref", "=ilike", `Importación Masiva - FAC ${numero}`],
+      ],
+    ],
+    { fields: ["partner_id"], limit: 1 },
+  );
+  const deMigrada = m2oId(migrada[0]?.partner_id);
+  if (deMigrada) return deMigrada;
+
+  const documento = normalizarDocumento(rif);
+  const digitos = documento.replace(/^[A-Z]+/, "");
+  if (digitos.length < 6) return null;
+  const partners = await rpc<any[]>(
+    "res.partner",
+    "search_read",
+    [
+      [
+        ["vat", "ilike", digitos.slice(0, 8)],
+        ["company_id", "in", [sede, false]],
+      ],
+    ],
+    { fields: ["id", "vat", "is_company", "commercial_partner_id"], limit: 20 },
+  );
+  const coinciden = partners.filter((p) =>
+    documentoCoincide(documento, normalizarDocumento(p.vat)),
+  );
+  const elegido = coinciden.find((p) => p.is_company) ?? coinciden[0];
+  return elegido ? (m2oId(elegido.commercial_partner_id) ?? elegido.id) : null;
 }
 
 /**
