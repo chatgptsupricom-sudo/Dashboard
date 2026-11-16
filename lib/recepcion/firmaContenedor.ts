@@ -1,6 +1,4 @@
 import { query } from "@/lib/db";
-import { verificarClaveAlmacen, type ResultadoClave } from "@/lib/seguridad/clavePersonal";
-import { leerOtroVerificacion } from "@/lib/seguridad/verificacionOtro";
 
 /**
  * Firma de Almacén al abrir (registrar la llegada) y al cerrar cada
@@ -13,7 +11,8 @@ import { leerOtroVerificacion } from "@/lib/seguridad/verificacionOtro";
  * Sí/No y una nota. Al cerrar la nota es la de siempre, `notas_cierre`.
  *
  * Columnas en `recepcion_packing_contenedores`, se agregan solas; referencia
- * en sql/recepcion_contenedor_firma_almacen.sql.
+ * en sql/recepcion_contenedor_firma_almacen.sql. Leer la firma y verificar la
+ * clave: lib/seguridad/firmaAlmacen.ts (lo mismo que el egreso).
  */
 
 export type MomentoFirma = "llegada" | "cierre";
@@ -45,33 +44,4 @@ export function asegurarColumnasFirmaContenedor(): Promise<void> {
     });
   }
   return lista;
-}
-
-export type FirmaContenedor = {
-  almacenista: string;
-  otro: string | null;
-  otroOk: 0 | 1 | null;
-  /** Solo en la llegada (al cerrar va en `notas_cierre`). */
-  nota: string | null;
-};
-
-/**
- * Lee del body `{ almacenista, clave, otro_verificacion, otro_verificacion_ok,
- * nota }`. Devuelve el error de formato, si lo hay; la clave se verifica
- * aparte (`verificarFirma`), al final, para que solo cuente como intento
- * fallido una clave equivocada.
- */
-export function leerFirmaContenedor(body: any): { firma: FirmaContenedor; error: string | null } {
-  const almacenista = String(body?.almacenista ?? "").trim().slice(0, 200);
-  const otro = leerOtroVerificacion(body);
-  const nota = String(body?.nota ?? "").trim().slice(0, 2000) || null;
-  const firma: FirmaContenedor = { almacenista, otro: otro.detalle, otroOk: otro.ok, nota };
-  if (!almacenista) return { firma, error: "Elige quién de Almacén firma y escribe su clave" };
-  if (otro.error) return { firma, error: otro.error };
-  return { firma, error: null };
-}
-
-/** Clave del almacenista contra el catálogo de la sede de la recepción. */
-export function verificarFirma(firma: FirmaContenedor, cids: number | null, clave: unknown): Promise<ResultadoClave> {
-  return verificarClaveAlmacen(firma.almacenista, cids, clave);
 }

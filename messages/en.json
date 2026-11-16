@@ -3577,6 +3577,8 @@
     "firma_almacen": {
       "titulo_llegada": "Signature of who opens the container",
       "titulo_cierre": "Signature of who closes the container",
+      "titulo_armado": "Signature of who verifies the picking",
+      "verifico": "Picking verified by",
       "quien": "Warehouse staff member",
       "elegir": "Choose the person…",
       "sin_catalogo": "No warehouse workers registered.",

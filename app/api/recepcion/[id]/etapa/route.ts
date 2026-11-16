@@ -10,11 +10,8 @@ import { ErrorRecepcion, cargarEnOdoo, ponerOcDespues, productoPorCodigo } from 
 import { contenedorDeConteo, ponerCantidad, recalcularTotales } from "@/lib/recepcion/conteo";
 import { avisarObservaciones } from "@/lib/recepcion/avisoObservaciones";
 import { getPublicOrigin } from "@/lib/publicOrigin";
-import {
-  asegurarColumnasFirmaContenedor,
-  leerFirmaContenedor,
-  verificarFirma,
-} from "@/lib/recepcion/firmaContenedor";
+import { asegurarColumnasFirmaContenedor } from "@/lib/recepcion/firmaContenedor";
+import { leerFirmaAlmacen, verificarFirmaAlmacen } from "@/lib/seguridad/firmaAlmacen";
 import {
   cargarRecepcion,
   emitirRecepcion,
@@ -334,10 +331,10 @@ export async function POST(
           return NextResponse.json({ error: `Falta ${faltan.join(", ")}` }, { status: 400 });
         }
         // Firma de quien abre el contenedor: su clave de Almacén, al final.
-        const llegada = leerFirmaContenedor(body);
+        const llegada = leerFirmaAlmacen(body);
         if (llegada.error) return NextResponse.json({ error: llegada.error }, { status: 400 });
         await asegurarColumnasFirmaContenedor();
-        const claveLlegada = await verificarFirma(llegada.firma, Number(rec.cids) || null, body?.clave);
+        const claveLlegada = await verificarFirmaAlmacen(llegada.firma, Number(rec.cids) || null, body?.clave);
         if (!claveLlegada.ok) return NextResponse.json({ error: claveLlegada.motivo }, { status: claveLlegada.status });
         // Coincide solo si son exactamente los mismos; sin esperados, NULL.
         const cmp = compararPrecintos(contenedor.precintos_esperados, precintos);
@@ -403,10 +400,10 @@ export async function POST(
           );
         }
         // Firma de quien cierra el contenedor: su clave de Almacén, al final.
-        const cierre = leerFirmaContenedor(body);
+        const cierre = leerFirmaAlmacen(body);
         if (cierre.error) return NextResponse.json({ error: cierre.error }, { status: 400 });
         await asegurarColumnasFirmaContenedor();
-        const claveCierre = await verificarFirma(cierre.firma, Number(rec.cids) || null, body?.clave);
+        const claveCierre = await verificarFirmaAlmacen(cierre.firma, Number(rec.cids) || null, body?.clave);
         if (!claveCierre.ok) return NextResponse.json({ error: claveCierre.motivo }, { status: claveCierre.status });
         const res = await query(
           `UPDATE recepcion_packing_contenedores

@@ -32,6 +32,15 @@ import { useAuthStore } from "@/lib/stores/auth.store";
 import { fechaCorta } from "@/lib/fecha";
 import FirmasActa from "@/components/seguridad/FirmasActa";
 import { CheckOtro } from "@/components/seguridad/FormActa";
+import {
+  FirmaAlmacen,
+  FirmaContenedorVista,
+  FIRMA_VACIA,
+  cuerpoFirma,
+  firmaLista,
+  type AlmacenistaClave,
+  type FirmaForm,
+} from "@/components/recepcion/FirmaAlmacen";
 import NotaPedido from "@/components/seguridad/NotaPedido";
 import { VerAutorizacion } from "@/components/ventas/AutorizacionTransporte";
 import { describirMetodo, type FilaMetodo } from "@/lib/ventas/metodoRetiroTipos";
@@ -167,6 +176,11 @@ type Movimiento = {
   otro_verificacion?: string | null;
   otro_verificacion_ok?: number | null;
   observacion_seguridad?: string | null;
+  /** Firma con clave de quien verifico el armado (lib/seguridad/firmaAlmacen.ts). */
+  armado_con_clave?: number | null;
+  armado_otro?: string | null;
+  armado_otro_ok?: number | null;
+  armado_nota?: string | null;
 };
 
 type Calificacion = {
@@ -292,6 +306,9 @@ export default function EgresoFlujo({ id }: { id: string }) {
   const [observacionSeguridad, setObservacionSeguridad] = useState("");
   // Despacho parcial en el armado: motivo (de 100 salen 76).
   const [motivoParcial, setMotivoParcial] = useState("");
+  // Verificar el armado lo firma quien lo verifica, con su clave de Almacén.
+  const [firmaArmado, setFirmaArmado] = useState<FirmaForm>(FIRMA_VACIA);
+  const [almacenistasClave, setAlmacenistasClave] = useState<AlmacenistaClave[]>([]);
   // Firma de Seguridad en el acta: obligatoria para aprobar o despachar igual
   // (la API tambien la exige). null = todavia no se sabe.
   const [firmoSeguridad, setFirmoSeguridad] = useState<boolean | null>(null);
@@ -419,6 +436,15 @@ export default function EgresoFlujo({ id }: { id: string }) {
       }
     })();
   }, [mov?.etapa, esRuta]);
+
+  // Quien firma la verificacion del armado sale del Personal de Almacen.
+  useEffect(() => {
+    if (mov?.etapa !== "pre_despacho") return;
+    fetch("/api/seguridad/mercancia/catalogo/almacenistas")
+      .then((r) => (r.ok ? r.json() : { almacenistas: [] }))
+      .then((j) => setAlmacenistasClave(j.almacenistas || []))
+      .catch(() => setAlmacenistasClave([]));
+  }, [mov?.etapa]);
 
   // Un egreso por ruta que ya traia chofer y placa (registrado antes de que
   // se pidieran al asignar) arranca con esos valores, no en blanco.
@@ -920,6 +946,18 @@ export default function EgresoFlujo({ id }: { id: string }) {
                   {mov.observaciones}
                 </p>
               )}
+              {/* Quién verificó el armado con su clave y lo que anotó. */}
+              {(Number(mov.armado_con_clave) === 1 || mov.armado_otro || mov.armado_nota) && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <FirmaContenedorVista
+                    momento="armado"
+                    almacenista={Number(mov.armado_con_clave) === 1 ? mov.armado_verificado_por : null}
+                    otro={mov.armado_otro}
+                    otroOk={mov.armado_otro_ok}
+                    nota={mov.armado_nota}
+                  />
+                </div>
+              )}
             </Card>
 
             {/* Renglones: la orden, lo que conto Almacen y lo que conto Seguridad. */}
@@ -1243,16 +1281,28 @@ export default function EgresoFlujo({ id }: { id: string }) {
                 )}
 
                 {mov.etapa === "pre_despacho" && (
+                  <FirmaAlmacen
+                    momento="armado"
+                    valor={firmaArmado}
+                    onChange={(cambios) => setFirmaArmado((p) => ({ ...p, ...cambios }))}
+                    almacenistas={almacenistasClave}
+                    conNota
+                  />
+                )}
+                {mov.etapa === "pre_despacho" && (
                   <BotonPrimario
-                    onClick={() =>
-                      accionar("verificar_armado", {
+                    onClick={async () => {
+                      await accionar("verificar_armado", {
                         items: items.map((it) => ({
                           id: it.id,
                           cantidad_armado: armado[it.id] === "" ? null : Number(armado[it.id]),
                         })),
-                      })
-                    }
-                    disabled={enviando}
+                        ...cuerpoFirma(firmaArmado, true),
+                      });
+                      // La clave no se queda escrita en pantalla.
+                      setFirmaArmado((p) => ({ ...p, clave: "" }));
+                    }}
+                    disabled={enviando || !firmaLista(firmaArmado)}
                     icon={CheckCircle2}
                     className="w-full h-12"
                   >
@@ -1279,17 +1329,19 @@ export default function EgresoFlujo({ id }: { id: string }) {
                         className={`${inputClases} h-auto min-h-[64px] py-2.5`}
                       />
                       <BotonSecundario
-                        onClick={() =>
-                          accionar("verificar_armado", {
+                        onClick={async () => {
+                          await accionar("verificar_armado", {
                             items: items.map((it) => ({
                               id: it.id,
                               cantidad_armado: armado[it.id] === "" ? null : Number(armado[it.id]),
                             })),
                             parcial: true,
                             motivo: motivoParcial.trim(),
-                          })
-                        }
-                        disabled={enviando || !motivoParcial.trim()}
+                            ...cuerpoFirma(firmaArmado, true),
+                          });
+                          setFirmaArmado((p) => ({ ...p, clave: "" }));
+                        }}
+                        disabled={enviando || !motivoParcial.trim() || !firmaLista(firmaArmado)}
                         className="w-full"
                       >
                         {tf("parcial_confirmar")}

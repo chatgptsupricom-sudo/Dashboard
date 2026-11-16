@@ -7,11 +7,11 @@ import { CheckCircle2, KeyRound, XCircle } from "lucide-react";
 import { CheckOtro } from "@/components/seguridad/FormActa";
 
 /**
- * Firma de Almacén al abrir y al cerrar un contenedor de la recepción: quién
- * lo hace (Personal de Almacén) y su clave personal, más «Otro» control (si
- * aplica) y, al abrir, una nota. Lo valida el servidor
- * (lib/recepcion/firmaContenedor.ts); el usuario de Almacén es compartido, la
- * clave es lo que dice quién fue.
+ * Firma de Almacén con clave: al abrir y al cerrar un contenedor de la
+ * recepción y al verificar el armado de un egreso. Quién lo hace (Personal de
+ * Almacén) y su clave personal, más «Otro» control (si aplica) y una nota. Lo
+ * valida el servidor (lib/seguridad/firmaAlmacen.ts); el usuario de Almacén es
+ * compartido, la clave es lo que dice quién fue.
  */
 
 export type AlmacenistaClave = { id: number; nombre: string; tiene_clave?: number };
@@ -46,6 +46,16 @@ export function cuerpoFirma(f: FirmaForm, conNota: boolean): Record<string, unkn
 const claseCampo =
   "w-full h-11 px-3 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100";
 
+/** Dónde firma: abrir o cerrar un contenedor, o verificar el armado de un egreso. */
+export type MomentoFirmaAlmacen = "llegada" | "cierre" | "armado";
+
+const TITULO: Record<MomentoFirmaAlmacen, string> = {
+  llegada: "titulo_llegada",
+  cierre: "titulo_cierre",
+  armado: "titulo_armado",
+};
+const QUIEN_FUE: Record<MomentoFirmaAlmacen, string> = { llegada: "abrio", cierre: "cerro", armado: "verifico" };
+
 export function FirmaAlmacen({
   momento,
   valor,
@@ -53,11 +63,11 @@ export function FirmaAlmacen({
   almacenistas,
   conNota,
 }: {
-  momento: "llegada" | "cierre";
+  momento: MomentoFirmaAlmacen;
   valor: FirmaForm;
   onChange: (cambios: Partial<FirmaForm>) => void;
   almacenistas: AlmacenistaClave[];
-  /** Al cerrar la nota es la de siempre (notas_cierre), fuera de este bloque. */
+  /** Al cerrar un contenedor la nota es la de siempre (notas_cierre), fuera de este bloque. */
   conNota: boolean;
 }) {
   const t = useTranslations("recepcion.firma_almacen");
@@ -71,7 +81,7 @@ export function FirmaAlmacen({
     <div className="space-y-3 rounded-xl border border-violet-200 bg-white p-3">
       <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
         <KeyRound className="w-4 h-4 text-[color:var(--portal-primary,#741DFE)]" />
-        {t(momento === "llegada" ? "titulo_llegada" : "titulo_cierre")}
+        {t(TITULO[momento])}
       </p>
 
       <CheckOtro
@@ -166,7 +176,7 @@ export function FirmaAlmacen({
   );
 }
 
-/** Quién abrió o cerró el contenedor (con su clave) y lo que anotó. */
+/** Quién abrió o cerró el contenedor, o verificó el armado (con su clave), y lo que anotó. */
 export function FirmaContenedorVista({
   momento,
   almacenista,
@@ -174,7 +184,7 @@ export function FirmaContenedorVista({
   otroOk,
   nota,
 }: {
-  momento: "llegada" | "cierre";
+  momento: MomentoFirmaAlmacen;
   almacenista?: string | null;
   otro?: string | null;
   otroOk?: number | null;
@@ -190,7 +200,7 @@ export function FirmaContenedorVista({
         <p className="flex items-center gap-1.5">
           <KeyRound className="w-3 h-3 text-emerald-600" />
           <span>
-            {t(momento === "llegada" ? "abrio" : "cerro")}: <span className="font-semibold text-slate-800">{almacenista}</span>{" "}
+            {t(QUIEN_FUE[momento])}: <span className="font-semibold text-slate-800">{almacenista}</span>{" "}
             <span className="text-slate-400">· {t("con_clave")}</span>
           </span>
         </p>

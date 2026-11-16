@@ -3566,6 +3566,8 @@
     "firma_almacen": {
       "titulo_llegada": "Firma de quien abre el contenedor",
       "titulo_cierre": "Firma de quien cierra el contenedor",
+      "titulo_armado": "Firma de quien verifica el armado",
+      "verifico": "Verificó el armado",
       "quien": "Quién de Almacén",
       "elegir": "Elige a la persona…",
       "sin_catalogo": "No hay almacenistas registrados.",

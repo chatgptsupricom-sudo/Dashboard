@@ -31,3 +31,14 @@ ALTER TABLE supricom_panel.recepcion_packing_contenedores
 SHOW COLUMNS FROM supricom_panel.seguridad_catalogo_almacenistas LIKE 'clave_hash';
 SHOW COLUMNS FROM supricom_panel.recepcion_packing_contenedores LIKE 'llegada_%';
 SHOW COLUMNS FROM supricom_panel.recepcion_packing_contenedores LIKE 'cierre_%';
+
+-- Egreso de mercancía: firma con clave de quien verifica el armado
+-- (lib/seguridad/firmaAlmacen.ts, asegurarColumnasFirmaArmado). Quien firma
+-- queda en armado_verificado_por.
+SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'armado_%';
+ALTER TABLE supricom_panel.seguridad_mercancia
+  ADD COLUMN armado_con_clave TINYINT(1) DEFAULT NULL,
+  ADD COLUMN armado_otro VARCHAR(200) DEFAULT NULL,
+  ADD COLUMN armado_otro_ok TINYINT(1) DEFAULT NULL,
+  ADD COLUMN armado_nota TEXT DEFAULT NULL;
+SHOW COLUMNS FROM supricom_panel.seguridad_mercancia LIKE 'armado_%';

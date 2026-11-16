@@ -47,6 +47,7 @@ import { pickingValidado, validarPickingEnOdoo } from "@/lib/seguridad/validarOd
 import { unidadEnTaller } from "@/lib/mantenimiento/datos";
 import { NextRequest, NextResponse } from "next/server";
 import { asegurarColumnasVerificacion, leerOtroVerificacion } from "@/lib/seguridad/verificacionOtro";
+import { asegurarColumnasFirmaArmado, leerFirmaAlmacen, verificarFirmaAlmacen } from "@/lib/seguridad/firmaAlmacen";
 
 export const dynamic = "force-dynamic";
 
@@ -296,6 +297,16 @@ async function ejecutar(
         return { avanzo: false, extra: { armado: evaluacion } };
       }
 
+      // Pasa: lo firma quien verifico el armado, con su clave de Almacen
+      // (lib/seguridad/firmaAlmacen.ts), y queda como `armado_verificado_por`.
+      // Un conteo que no cuadra (arriba) no avanza y no la pide.
+      const firmaArmado = leerFirmaAlmacen(body);
+      if (firmaArmado.error) return NextResponse.json({ error: firmaArmado.error }, { status: 400 });
+      await asegurarColumnasFirmaArmado();
+      const claveArmado = await verificarFirmaAlmacen(firmaArmado.firma, Number(mov.cids) || cids, body?.clave);
+      if (!claveArmado.ok) return NextResponse.json({ error: claveArmado.motivo }, { status: claveArmado.status });
+      const verificador = firmaArmado.firma.almacenista;
+
       // Un tipo desconocido (o vacio, de antes) sigue como puerta: directo a
       // despacho, sin empaquetado. Los "ruta" viejos ya son ruta, y siguen el
       // mismo recorrido que tenian, asi que ninguno queda a medio camino.
@@ -304,10 +315,17 @@ async function ejecutar(
         id,
         "pre_despacho",
         etapaTrasArmado(tipo),
-        `armado_verificado_por = ?, armado_verificado_at = NOW()${
+        `armado_verificado_por = ?, armado_verificado_at = NOW(),
+         armado_con_clave = 1, armado_otro = ?, armado_otro_ok = ?, armado_nota = ?${
           parcial ? ", observaciones = CONCAT_WS(' · ', NULLIF(observaciones, ''), ?)" : ""
         }`,
-        parcial ? [quien, `Despacho parcial (${quien}): ${motivoParcial}`.slice(0, 600)] : [quien],
+        [
+          verificador,
+          firmaArmado.firma.otro,
+          firmaArmado.firma.otroOk,
+          firmaArmado.firma.nota,
+          ...(parcial ? [`Despacho parcial (${verificador}): ${motivoParcial}`.slice(0, 600)] : []),
+        ],
       );
       return ok ? { avanzo: true, extra: { armado: evaluacion, parcial } } : conflicto();
     }
