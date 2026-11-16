@@ -46,7 +46,7 @@ export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
     return (
       <div className="text-sm text-slate-600 leading-relaxed space-y-3">
         <p><strong>{t("info_que_mide")}</strong> {def.descripcion}</p>
-        <p><strong>Meta:</strong> {meta}{periodo}.</p>
+        <p><strong>Meta:</strong> {`${meta}${periodo}`.replace(/\.$/, "")}.</p>
         <p><strong>Fuente:</strong> {fuente}</p>
       </div>
     );

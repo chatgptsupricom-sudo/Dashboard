@@ -7,7 +7,7 @@
 
 import { HelpCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { getKpiCellColor, nivelSemaforo, NIVEL_UI } from "@/lib/stoplight/scoring";
+import { getKpiCellColor, nivelSemaforo, NIVEL_UI, sinMeta } from "@/lib/stoplight/scoring";
 import type { LecturaKpi } from "@/lib/stoplight/lectura";
 import { BarraLectura, ChipNivel, TEXTO_NIVEL, useTextosLectura } from "./lecturaUI";
 
@@ -52,7 +52,7 @@ export default function KpiCard({
             <HelpCircle size={13} />
           </button>
         </p>
-        <ChipNivel nivel={nivel} pct={pct} />
+        <ChipNivel nivel={nivel} pct={pct} conMeta={!sinMeta(kpi.goalDefault, kpi.id)} />
       </div>
 
       <div className="mt-2 flex flex-wrap items-baseline gap-x-1.5">
