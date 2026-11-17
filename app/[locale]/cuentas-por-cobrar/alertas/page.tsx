@@ -307,7 +307,7 @@ function InvoiceDetailTrigger({ item, onRenderSub }: { item: any; onRenderSub?: 
                             <td className="py-2.5 px-4 text-slate-500">{formatDate(p.date)}</td>
                             <td className="py-2.5 px-4 text-right text-slate-600">{p.debit > 0 ? formatCurrency(p.debit) : "—"}</td>
                             <td className="py-2.5 px-4 text-right text-emerald-600 font-medium">{p.credit > 0 ? formatCurrency(p.credit) : "—"}</td>
-                            <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(Math.abs(p.amount_residual || 0))}</td>
+                            <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(p.amount_residual || 0)}</td>
                             <td className="py-2.5 px-4 text-center">
                               {p.reconciled ? <span className="inline-block w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] font-bold leading-5 text-center">✓</span> : <span className="inline-block w-5 h-5 rounded-full bg-slate-100 text-slate-400 text-[10px] font-bold leading-5 text-center">—</span>}
                             </td>
