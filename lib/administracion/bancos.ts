@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { db, query } from "@/lib/db";
-import { callOdooRPCEstricto } from "@/lib/odoo";
+import { callOdooRPCComo, callOdooRPCEstricto } from "@/lib/odoo";
 import { SEDES_VALIDAS } from "@/lib/auth/sedeRol";
 import {
   ampliar,
@@ -946,6 +946,13 @@ export async function sugeridaPara(cuenta: CuentaBanco, m: { monto: number; desc
   return codigo ? (await cuentasContables(cuenta.sede)).find((c) => c.codigo === codigo) ?? null : null;
 }
 
+/** Odoo con el usuario de las conciliaciones (ver conciliarEnOdoo) o, sin el, el de la API del panel. */
+function rpc<T>(model: string, method: string, args: any[], kwargs: Record<string, any>) {
+  const uid = Number(process.env.ODOO_CONCILIACION_UID) || 0;
+  const key = process.env.ODOO_CONCILIACION_API_KEY || "";
+  return uid && key ? callOdooRPCComo<T>({ uid, key }, model, method, args, kwargs) : callOdooRPCEstricto<T>(model, method, args, kwargs);
+}
+
 /**
  * Contra que se concilia el movimiento: uno o varios cobros/pagos de Odoo, una
  * cuenta contable (comision, IGTF, intereses...), la cuenta de transferencias
@@ -972,6 +979,11 @@ export type Destino =
  * linea y un reintento la reusa. No crea la linea si Odoo ya tiene una importada
  * del mismo dia y monto en el diario (esa se concilia en Odoo). Se deshace en
  * Odoo (romper conciliacion y borrar la linea).
+ *
+ * En Odoo lo hace el usuario de `ODOO_CONCILIACION_UID` con su API key
+ * (`ODOO_CONCILIACION_API_KEY`): queda a su nombre y Odoo revisa sus permisos
+ * (necesita Contabilidad y no estar en «Restricciones de Usuario (Supricom)»,
+ * que no deja tocar dias pasados). Sin las dos, el usuario de la API del panel.
  */
 export async function conciliarEnOdoo(
   cuenta: CuentaBanco,
@@ -990,10 +1002,10 @@ export async function conciliarEnOdoo(
   const monto = Number(mov.monto);
   const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
   const leer = async (modelo: string, dominio: any[], campos: string[]) =>
-    (await callOdooRPCEstricto<any[]>(modelo, "search_read", [dominio], { fields: campos, context: ctx })) || [];
+    (await rpc<any[]>(modelo, "search_read", [dominio], { fields: campos, context: ctx })) || [];
   const conciliar = async (ids: number[]) => {
     try {
-      await callOdooRPCEstricto("account.move.line", "reconcile", [ids], { context: ctx });
+      await rpc("account.move.line", "reconcile", [ids], { context: ctx });
     } catch (e) {
       // reconcile() puede devolver algo que el JSON-RPC no sabe mandar aunque lo haya hecho: se mira en Odoo.
       const tocadas = await leer("account.move.line", [["id", "in", ids], ["matching_number", "!=", false]], ["id"]);
@@ -1066,7 +1078,7 @@ export async function conciliarEnOdoo(
     if (importada) {
       return { error: `Odoo ya tiene esta línea de extracto (${importada.move_id?.[1] || importada.id}): concíliala en Odoo` };
     }
-    const id = await callOdooRPCEstricto<number>(
+    const id = await rpc<number>(
       "account.bank.statement.line",
       "create",
       [
@@ -1127,7 +1139,7 @@ export async function conciliarEnOdoo(
     [huellaMov, cuenta.id, linea.id, destino.tipo === "pagos" ? destino.pagos[0] : null, detalle.slice(0, 255), autor.email],
   );
   try {
-    await callOdooRPCEstricto("account.move", "message_post", [[asientoId]], {
+    await rpc("account.move", "message_post", [[asientoId]], {
       body:
         `${destino.tipo === "sin_conciliar" ? "Pasado a Odoo" : "Conciliado"} desde el panel (Conciliación bancaria) por ` +
         `${escaparHtml(autor.nombre || autor.email)} (${escaparHtml(autor.email)}): movimiento del banco del ${mov.fecha}, ` +
