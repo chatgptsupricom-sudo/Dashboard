@@ -549,8 +549,14 @@ export default function CxcAlertas() {
                   Vence en {item.daysUntilDue} día
                   {item.daysUntilDue !== 1 ? "s" : ""}
                 </span>
-                <span>•</span>
-                <span>{formatCurrency(Math.abs(item.amountResidual))}</span>
+                {item.creditoAplicado > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>
+                      Factura {formatCurrency(item.saldoFactura)} − NC/a favor {formatCurrency(item.creditoAplicado)}
+                    </span>
+                  </>
+                )}
               </div>
             )}
           />
@@ -566,8 +572,14 @@ export default function CxcAlertas() {
                 <span className="text-red-500 font-semibold">
                   {item.agingDays} días vencido
                 </span>
-                <span>•</span>
-                <span>{formatCurrency(Math.abs(item.amountResidual))}</span>
+                {item.creditoAplicado > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>
+                      Factura {formatCurrency(item.saldoFactura)} − NC/a favor {formatCurrency(item.creditoAplicado)}
+                    </span>
+                  </>
+                )}
               </div>
             )}
           />
