@@ -77,8 +77,22 @@ const panama = armarEstado([
 assert.deepStrictEqual(panama.filas.map((f) => f.monto), [3321.2, -1000, 136108.7, 247]);
 assert.strictEqual(panama.saltos, 0);
 
+// Columna "Movimiento" o "Valor" con signo (ingresos y egresos juntos); "Fecha valor" no es el monto
+const conMovimiento = leerFilasExcel([
+  ["Fecha", "Fecha valor", "Referencia", "Concepto", "Movimiento", "Saldo"],
+  ["03/11/2026", "03/11/2026", "111222333", "TRF RECIBIDA", "1.500,00", "11.500,00"],
+  ["03/11/2026", "03/11/2026", "444555666", "PAGO PROVEEDOR", "-500,00", "11.000,00"],
+]);
+assert.deepStrictEqual(conMovimiento.filas.map((f) => f.monto), [1500, -500]);
+assert.deepStrictEqual(leerFilasExcel([["Fecha", "Descripción", "Valor"], ["03/11/2026", "X", "-20,00"]]).filas.map((f) => f.monto), [-20]);
+// Con Monto, "Movimiento" no se usa como monto (es la descripcion)
+assert.deepStrictEqual(
+  leerFilasExcel([["Fecha", "Movimiento", "Monto"], ["03/11/2026", "TRF 0115 J000000001", "-20,00"]]).filas.map((f) => f.monto),
+  [-20],
+);
+
 // Cruce
-const mov = (id, fecha, referencia, monto, descripcion = "") => ({ id, fecha, referencia, descripcion, monto, saldo: null });
+const mov =(id, fecha, referencia, monto, descripcion = "") => ({ id, fecha, referencia, descripcion, monto, saldo: null });
 const movimientos = [
   mov("a".repeat(64), "2026-10-27", "20467137440", 887400),
   mov("b".repeat(64), "2026-10-26", "", 136108.7, "Transf Banesco Online DE CUENTA NO.- 221021542357 A"),
