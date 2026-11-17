@@ -4,6 +4,7 @@ import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
 import { requireRoles } from "@/lib/auth/roles";
 import { CATEGORIAS_DISENO, esCategoriaValida } from "@/lib/disenos/categorias";
 import { COLUMNA_FECHA, aISO, fechaValida } from "@/lib/disenos/fecha";
+import { duenoDelToken, esDisenador, filtroDueno } from "@/lib/disenos/alcance";
 import { NextRequest, NextResponse } from "next/server";
 
 // El matcher del middleware excluye /api, asi que el guard va aqui.
@@ -34,8 +35,16 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(60, Math.max(1, parseInt(url.searchParams.get("limit") || "24", 10)));
     const offset = (page - 1) * limit;
 
-    let where = papelera ? "WHERE d.deleted_at IS NOT NULL" : "WHERE d.deleted_at IS NULL";
-    const params: any[] = [];
+    // Cada diseñador ve solo lo suyo (lib/disenos/alcance.ts).
+    const dueno = filtroDueno(auth.payload);
+    let where = (papelera ? "WHERE d.deleted_at IS NOT NULL" : "WHERE d.deleted_at IS NULL") + dueno.sql;
+    const params: any[] = [...dueno.params];
+    // SuperAdmin/BI: `?creador=<nombre>` acota a un diseñador (el detalle del día de los KPIs).
+    const creador = url.searchParams.get("creador") || "";
+    if (creador && !esDisenador(auth.payload)) {
+      where += " AND d.created_by = ?";
+      params.push(creador);
+    }
 
     if (search) {
       where += " AND (d.title LIKE ? OR d.folder LIKE ? OR d.created_by LIKE ?)";
@@ -77,7 +86,8 @@ export async function GET(request: NextRequest) {
 
     const foldersResult = await query(
       `SELECT DISTINCT folder FROM designer_designs
-       WHERE deleted_at IS NULL AND folder IS NOT NULL AND folder <> '' ORDER BY folder ASC`
+       WHERE deleted_at IS NULL AND folder IS NOT NULL AND folder <> ''${dueno.sql} ORDER BY folder ASC`,
+      dueno.params
     );
     const folders = (foldersResult.rows || []).map((r: any) => r.folder);
 
@@ -85,7 +95,8 @@ export async function GET(request: NextRequest) {
     // alimenta los chips de filtro, que no deben vaciarse al filtrar.
     const porCategoriaResult = await query(
       `SELECT COALESCE(NULLIF(category, ''), 'sin_categoria') AS categoria, COUNT(*) AS n
-       FROM designer_designs WHERE deleted_at IS NULL GROUP BY categoria`
+       FROM designer_designs WHERE deleted_at IS NULL${dueno.sql} GROUP BY categoria`,
+      dueno.params
     );
     const conteoPorCategoria: Record<string, number> = {};
     for (const r of porCategoriaResult.rows || []) {
@@ -99,7 +110,7 @@ export async function GET(request: NextRequest) {
       categorias: CATEGORIAS_DISENO,
       conteoPorCategoria,
       enPapelera: Number(
-        (await query(`SELECT COUNT(*) AS n FROM designer_designs WHERE deleted_at IS NOT NULL`)).rows?.[0]?.n || 0
+        (await query(`SELECT COUNT(*) AS n FROM designer_designs WHERE deleted_at IS NOT NULL${dueno.sql}`, dueno.params)).rows?.[0]?.n || 0
       ),
       total,
       page,
@@ -121,7 +132,7 @@ export async function GET(request: NextRequest) {
 //   dates      -> JSON string[] "YYYY-MM-DD" alineado por índice (opcional):
 //                 el día del diseño, que es el que cuenta para los KPIs. Sin
 //                 él, queda el día de la subida.
-//   created_by
+//   created_by -> se ignora: el dueño sale del token (lib/disenos/alcance.ts)
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ROLES);
   if (auth.error) return auth.error;
@@ -131,7 +142,8 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const files = formData.getAll("images").filter((f): f is File => f instanceof File && f.size > 0);
-    const created_by = (formData.get("created_by") as string | null) || "";
+    const yo = duenoDelToken(auth.payload);
+    const created_by = yo.nombre || (formData.get("created_by") as string | null) || "";
 
     if (files.length === 0) {
       return NextResponse.json({ error: "No se recibió ninguna imagen" }, { status: 400 });
@@ -182,9 +194,9 @@ export async function POST(request: NextRequest) {
       const designDate = fechaValida(dates[i]);
 
       await query(
-        `INSERT INTO designer_designs (title, folder, category, image_data, image_mime, created_by, design_date)
-         VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURDATE()))`,
-        [title, folder, categories[i], buffer, mime, created_by, designDate]
+        `INSERT INTO designer_designs (title, folder, category, image_data, image_mime, created_by, created_by_email, design_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURDATE()))`,
+        [title, folder, categories[i], buffer, mime, created_by, yo.email || null, designDate]
       );
       inserted++;
     }
@@ -206,10 +218,11 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const id = Number(body.id);
     if (!id) return NextResponse.json({ error: "Falta id" }, { status: 400 });
+    const dueno = filtroDueno(auth.payload);
 
     // Restaurar desde la papelera.
     if (body.restaurar === true) {
-      await query(`UPDATE designer_designs SET deleted_at = NULL, deleted_by = NULL WHERE id = ?`, [id]);
+      await query(`UPDATE designer_designs SET deleted_at = NULL, deleted_by = NULL WHERE id = ?${dueno.sql}`, [id, ...dueno.params]);
       return NextResponse.json({ success: true, restaurado: id });
     }
 
@@ -241,8 +254,8 @@ export async function PATCH(request: NextRequest) {
     if (sets.length === 0) {
       return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
     }
-    params.push(id);
-    await query(`UPDATE designer_designs SET ${sets.join(", ")} WHERE id = ?`, params);
+    params.push(id, ...dueno.params);
+    await query(`UPDATE designer_designs SET ${sets.join(", ")} WHERE id = ?${dueno.sql}`, params);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("PATCH /api/disenador/disenos:", error.message);
@@ -277,14 +290,15 @@ export async function DELETE(request: NextRequest) {
     }
 
     const placeholders = ids.map(() => "?").join(",");
+    const dueno = filtroDueno(auth.payload);
     if (definitivo) {
-      await query(`DELETE FROM designer_designs WHERE id IN (${placeholders})`, ids);
+      await query(`DELETE FROM designer_designs WHERE id IN (${placeholders})${dueno.sql}`, [...ids, ...dueno.params]);
       return NextResponse.json({ success: true, deleted: ids.length, definitivo: true });
     }
 
     await query(
-      `UPDATE designer_designs SET deleted_at = NOW(), deleted_by = ? WHERE id IN (${placeholders})`,
-      [quien, ...ids]
+      `UPDATE designer_designs SET deleted_at = NOW(), deleted_by = ? WHERE id IN (${placeholders})${dueno.sql}`,
+      [quien, ...ids, ...dueno.params]
     );
     return NextResponse.json({ success: true, deleted: ids.length, papelera: true });
   } catch (error: any) {

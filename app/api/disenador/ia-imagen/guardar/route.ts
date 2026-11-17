@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
 import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
+import { duenoDelToken, esDisenador } from "@/lib/disenos/alcance";
 import { esCategoriaValida } from "@/lib/disenos/categorias";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -20,7 +21,8 @@ export async function POST(request: NextRequest) {
     const resultUrl = String(body.resultUrl || "");
     const title = String(body.title || "Diseño IA").slice(0, 255);
     const folder = (body.folder ? String(body.folder) : "IA").trim().slice(0, 255) || "IA";
-    const created_by = String(body.created_by || "");
+    const yo = duenoDelToken(auth.payload);
+    const created_by = yo.nombre || String(body.created_by || "");
     const category = body.category;
 
     if (!esCategoriaValida(category)) {
@@ -33,7 +35,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "created_by es obligatorio" }, { status: 400 });
     }
 
-    const jobResult = await query(`SELECT result_urls FROM designer_ai_jobs WHERE id = ?`, [jobId]);
+    const soloSuyo = esDisenador(auth.payload);
+    const jobResult = await query(
+      `SELECT result_urls FROM designer_ai_jobs WHERE id = ?${soloSuyo ? " AND created_by = ?" : ""}`,
+      soloSuyo ? [jobId, yo.nombre] : [jobId]
+    );
     const job = jobResult.rows?.[0];
     const allowedUrls: string[] = job?.result_urls ? JSON.parse(job.result_urls) : [];
     if (!allowedUrls.includes(resultUrl)) {
@@ -50,8 +56,8 @@ export async function POST(request: NextRequest) {
     await ensureDesignerDesignsTable();
 
     const insertResult = await query(
-      `INSERT INTO designer_designs (title, folder, category, image_data, image_mime, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
-      [title, folder, category, buffer, mime, created_by]
+      `INSERT INTO designer_designs (title, folder, category, image_data, image_mime, created_by, created_by_email) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [title, folder, category, buffer, mime, created_by, yo.email || null]
     );
     const newId = (insertResult.rows as any)?.insertId;
 
