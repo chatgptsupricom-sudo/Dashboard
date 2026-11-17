@@ -153,7 +153,7 @@ export async function aplicarPrecio(
  * servidor no sirvió: el módulo account_dual_currency vuelve a escribir la
  * regla con el usuario de la llamada).
  */
-function escritor(uid: number | undefined) {
+export function escritor(uid: number | undefined) {
   const uidCompras = Number(process.env.ODOO_COMPRAS_UID) || 0;
   const key = process.env.ODOO_COMPRAS_API_KEY || "";
   if (uid && key && uid === uidCompras) {

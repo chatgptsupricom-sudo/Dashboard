@@ -365,6 +365,7 @@ export const rolePermissions: RolePermissions = {
       "ordenes_compra", // Órdenes de compra: crear/editar/enviar a aprobación
       "recepcion_packing", // Packing lists: Compras los carga, Almacén los recibe
       "actualizacion_precios", // Excel de asignación por sede → listas de precios de Odoo (lib/compras/actualizacionPrecios)
+      "validar_factura", // Factura de compra → SKU que faltan en Odoo y crearlos (lib/compras/validarFactura)
     ],
   },
   [UserRole.RMA]: {

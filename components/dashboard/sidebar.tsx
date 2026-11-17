@@ -75,6 +75,7 @@ import {
   Search,
   Settings2,
   Tag,
+  PackagePlus,
   Shield,
   Send,
   Inbox,
@@ -404,6 +405,8 @@ export function Sidebar({
     { id: "moq", label: t("moq"), icon: Settings2, slug: "/moq" },
     // Excel de asignación por sede → precio definitivo en las listas de Valencia y Caracas (lib/compras/actualizacionPrecios).
     { id: "actualizacion_precios", label: "Actualización de precios", icon: Tag, slug: "/actualizacion-precios" },
+    // Factura de compra → qué SKU no están en Odoo y crearlos (lib/compras/validarFactura).
+    { id: "validar_factura", label: "Validar factura", icon: PackagePlus, slug: "/validar-factura" },
     { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
@@ -570,9 +573,10 @@ export function Sidebar({
     allowedSections.includes("rotacion_categoria") ||
     allowedSections.includes("tendencia") ||
     allowedSections.includes("pareto_80_20") ||
-    allowedSections.includes("actualizacion_precios");
+    allowedSections.includes("actualizacion_precios") ||
+    allowedSections.includes("validar_factura");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["ordenes_compra", "recepcion_packing", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20", "actualizacion_precios"];
+  const comprasDropdownIds = ["ordenes_compra", "recepcion_packing", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20", "actualizacion_precios", "validar_factura"];
   const isSuperAdminRole = userRole === "superAdmin";
   // Inteligencia de Negocio tiene los desplegables del SuperAdmin (Ventas,
   // Marketing, parte de CxC) sobre sus propias páginas.
@@ -1398,6 +1402,11 @@ export function Sidebar({
                           label: "Actualización de precios",
                           href: `/${locale}/compras/actualizacion-precios`,
                           permission: "actualizacion_precios",
+                        },
+                        {
+                          label: "Validar factura",
+                          href: `/${locale}/compras/validar-factura`,
+                          permission: "validar_factura",
                         },
                       ].map((subItem, index) => {
                         if (
