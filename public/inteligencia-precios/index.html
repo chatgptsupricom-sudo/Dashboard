@@ -1,0 +1,1898 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inteligencia de Precios</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f3f4f6; --surface:#ffffff; --surface-2:#f8f9fb; --ink:#0f1b2d; --ink-2:#4a5568; --muted:#8a94a6; --line:#e3e7ee;
+  --brand:#0b2545; --brand-2:#13315c; --accent:#2a78d6;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
+  --q-star:#1baf7a; --q-vol:#2a78d6; --q-opp:#6250d6; --q-none:#9a9890;
+  --up:#eb6834; --down:#2a78d6; --neutral:#b8bcc4;
+  --radius:10px; --shadow:0 1px 2px rgba(15,27,45,.06),0 2px 8px rgba(15,27,45,.05);
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:linear-gradient(90deg,var(--brand),var(--brand-2));color:#fff;padding:14px 24px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+header h1{font-size:19px;margin:0;font-weight:650;letter-spacing:.2px}
+header .sub{font-size:12px;opacity:.8;margin-top:2px}
+header .grow{flex:1}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 13px;border-radius:8px;cursor:pointer;font:inherit;font-size:13px;font-weight:550}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:#fff;color:var(--brand);border-color:#fff}
+.btn.primary:hover{background:#e8eef7}
+.btn.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.35)}
+.btn.small{padding:4px 9px;font-size:12px}
+nav.tabs{display:flex;gap:4px;background:var(--brand-2);padding:0 24px}
+nav.tabs a{color:#c9d6ea;text-decoration:none;padding:10px 16px;font-weight:600;font-size:13.5px;border-bottom:3px solid transparent}
+nav.tabs .reset{margin:auto 0 auto auto;background:transparent;color:#fff;border-color:rgba(255,255,255,.4)}
+nav.tabs .reset:hover{background:rgba(255,255,255,.12)}
+nav.tabs a.active{color:#fff;border-bottom-color:#4aa3ff}
+main{padding:18px 24px 40px;max-width:1600px;margin:0 auto}
+.view{display:none}.view.active{display:block}
+.filters{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;background:var(--surface);padding:12px 14px;border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:14px}
+.filters .flabel{display:flex;flex-direction:column;font-size:11.5px;color:var(--ink-2);font-weight:600;gap:4px;text-transform:uppercase;letter-spacing:.3px}
+.filters .flabel .seg button{text-transform:none;letter-spacing:0;padding:6px 11px}
+.pill.st1{background:#e3effc;color:#1d5fae}.pill.st2{background:#dff5ec;color:#0b7a52}.pill.st3{background:#fde9df;color:#b4461a}
+.pres{display:inline-flex;align-items:center;gap:5px;font-weight:700}.pres i{display:inline-block;width:8px;height:8px;border-radius:2px;background:#d6dbe3}.pres i.on{background:var(--s1)}
+.res{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.res h4{margin:0;font-size:14px}.res .meta{font-size:12px;color:var(--ink-2);margin:2px 0 8px}
+.res .cols{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:12px;font-size:12.5px}
+@media(max-width:1000px){.res .cols{grid-template-columns:1fr}}
+.res .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:700;margin-bottom:2px}
+.res ul{margin:4px 0 0;padding-left:18px}.res a{color:#1d5fae}
+.cal{border-collapse:separate;border-spacing:3px;font-size:11.5px;width:100%}.cal td,.cal th{padding:4px 3px;text-align:center;border:0;background:none;position:static;text-transform:none;letter-spacing:0}
+.cal td.l{text-align:left;white-space:nowrap;color:var(--ink);font-weight:600}.cal td.c{border-radius:4px;color:#fff;font-weight:700}
+.lv0{background:#eef1f5!important;color:#9aa3b2!important}.lv1{background:#cfe0f5!important;color:#1d5fae!important}.lv2{background:#6fa3e4!important}.lv3{background:#1d5fae!important}
+.pill.pa{background:#e2f6ee;color:#0b7a52}.pill.nr{background:#eef0f3;color:#5b6576}
+.gapleg{margin:0 0 6px;gap:6px 16px}.gapleg b{color:var(--ink)}
+.filters label{display:flex;flex-direction:column;font-size:11.5px;color:var(--ink-2);font-weight:600;gap:4px;text-transform:uppercase;letter-spacing:.3px}
+select,input[type=text],input[type=search],input[type=date],input[type=number]{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);min-width:150px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--surface);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow)}
+.kpi .l{font-size:11.5px;color:var(--ink-2);font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.kpi .v{font-size:24px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+.kpi .d{font-size:12px;color:var(--muted);margin-top:2px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:1fr 1fr}.g32{grid-template-columns:2fr 1fr}
+@media(max-width:1100px){.g2,.g32{grid-template-columns:1fr}}
+.card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;min-width:0}
+.card h2{font-size:15px;margin:0 0 2px;font-weight:650}
+.card .cap{font-size:12px;color:var(--muted);margin:0 0 10px}
+.chartbox{position:relative;height:340px}
+.chartbox.tall{height:520px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink-2);user-select:none}
+.chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.chip.acc.on{background:var(--accent);border-color:var(--accent)}
+.qcards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.qcard{border:1px solid var(--line);border-radius:9px;padding:10px 12px;cursor:pointer;position:relative}
+.qcard.sel{outline:2px solid var(--ink);}
+.qcard .t{font-weight:700;font-size:13px;display:flex;align-items:center;gap:7px}
+.qcard .t i{width:11px;height:11px;border-radius:50%;display:inline-block}
+.qcard .n{font-size:20px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+.qcard .s{font-size:11.5px;color:var(--ink-2)}
+.qcard .h{font-size:11px;color:var(--muted);margin-top:3px}
+.cutinfo{font-size:12px;color:var(--ink-2);margin:8px 0;padding:8px 10px;background:var(--surface-2);border-radius:7px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-weight:650;color:var(--ink-2);padding:7px 8px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap;font-size:11.5px;text-transform:uppercase;letter-spacing:.2px}
+td{padding:6px 8px;border-bottom:1px solid #eef1f5;vertical-align:top}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tr.click:hover td{background:#f5f8fd;cursor:pointer}
+.tablewrap{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:650;white-space:nowrap}
+.pill.id{background:#e3effc;color:#1d5fae}.pill.si{background:#fdf1dc;color:#8a5a00}
+.pill.q{color:#fff}
+.pos{color:#c4501f;font-weight:650}.neg{color:#1d5fae;font-weight:650}
+.small{font-size:11.5px;color:var(--muted)}
+.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px;font-size:12px;color:var(--ink-2)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);margin:4px 0 8px}
+.legend span{display:flex;align-items:center;gap:6px}.legend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.modal-bg{position:fixed;inset:0;background:rgba(10,20,35,.45);display:none;align-items:center;justify-content:center;z-index:50}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:12px;width:min(860px,94vw);max-height:92vh;overflow:auto;padding:20px 22px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.modal h2{margin:0 0 4px;font-size:18px}
+.drops{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+@media(max-width:700px){.drops{grid-template-columns:1fr}}
+.drop{border:2px dashed #b9c4d6;border-radius:10px;padding:18px;text-align:center;cursor:pointer;background:var(--surface-2);transition:.15s}
+.drop.over{border-color:var(--accent);background:#eaf3fe}
+.drop b{display:block;font-size:14px;margin-bottom:4px}
+.drop .f{font-size:12px;color:var(--ink-2);margin-top:8px;word-break:break-all}
+.log{background:#0f1b2d;color:#cfe3ff;font:12px/1.5 ui-monospace,Consolas,monospace;border-radius:8px;padding:10px 12px;max-height:180px;overflow:auto;white-space:pre-wrap;margin-top:10px}
+.help{font-size:12px;color:var(--ink-2);background:var(--surface-2);border-radius:8px;padding:10px 12px}
+.help code{background:#e9edf3;padding:0 4px;border-radius:4px}
+.drawer{position:fixed;top:0;right:0;width:min(640px,96vw);height:100vh;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);transform:translateX(105%);transition:.2s;z-index:40;overflow:auto;padding:18px 20px}
+.drawer.open{transform:none}
+.drawer h3{margin:0 0 4px;font-size:16px}
+.sync{display:flex;align-items:center;gap:7px;font-size:12px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:5px 11px;max-width:330px}
+.sync span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sync i{width:8px;height:8px;border-radius:50%;background:#9aa7b8;flex:none}
+.sync.ok i{background:#3ddc97}.sync.warn i{background:#f4b740}.sync.err i{background:#ff6b6b}.sync.busy i{background:#4aa3ff;animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.3}}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-2);cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}.seg button.on{background:var(--brand);color:#fff}
+.loading{position:fixed;inset:0;background:rgba(243,244,246,.85);display:flex;align-items:center;justify-content:center;z-index:60;font-weight:600;color:var(--brand)}
+.empty{padding:30px;text-align:center;color:var(--muted)}
+.mlabel{display:flex;flex-direction:column;font-size:11.5px;color:var(--ink-2);font-weight:600;gap:4px;text-transform:uppercase;letter-spacing:.3px}
+#mFiles input[type=text]{min-width:220px}
+</style>
+</head>
+<body>
+<div class="loading" id="loading">Procesando datos…</div>
+<header>
+  <div>
+    <h1>Supricom · Inteligencia de Precios</h1>
+    <div class="sub" id="hdrSub">—</div>
+  </div>
+  <div class="grow"></div>
+  <div class="sync" id="syncOdoo" title="Estado de la conexión con Odoo"><i></i><span>Odoo: cargando…</span></div>
+  <div class="sync" id="syncMkt" title="Versión de la base de mercado"><i></i><span>Mercado: cargando…</span></div>
+  <button class="btn ghost" id="btnSync">⟳ Sincronizar Odoo</button>
+  <button class="btn primary" id="btnUpdate">Cargar listas</button>
+</header>
+<nav class="tabs">
+  <a href="#comparativo" data-view="comparativo">1 · Comparativo de Precios y Estrategia de Portafolio</a>
+  <a href="#evolucion" data-view="evolucion">2 · Evolución Histórica de Precios de Mercado</a>
+  <a href="#competencia" data-view="competencia">3 · Oportunidades de Portafolio y Demanda del Mercado</a>
+  <button class="btn small reset" id="btnReset" title="Devuelve todos los selectores, fechas y segmentaciones a su estado inicial">↺ Borrar todos los filtros</button>
+</nav>
+
+<main>
+<div class="card empty" id="vacio" style="display:none;margin-bottom:14px"><div id="vacioTxt"></div><button class="btn" style="margin-top:12px" onclick="document.getElementById('btnUpdate').click()">Cargar listas</button></div>
+<!-- ================= VISTA 1 ================= -->
+<section class="view" id="view-comparativo">
+  <div class="filters">
+    <label>Fecha de corte (mercado)<select id="f1Cut"></select></label>
+    <label>Precio Supricom (sede)<select id="f1Sede"><option value="">Consolidado Caracas + Valencia</option><option value="C">Caracas (CCS 21)</option><option value="V">Valencia (OSC 2004)</option></select></label>
+    <div class="flabel">Coincidencia<div class="seg" id="f1TypeSeg" title="Clic para filtrar; clic de nuevo para ver todos"><button data-t="Idéntico">Idénticos</button><button data-t="Similar">Similares</button><button data-t="Sin referencia">Sin referencia</button></div></div>
+    <label>Categoría<select id="f1Cat"></select></label>
+    <label>Marca<select id="f1Brand"></select></label>
+    <label>Buscar producto / código<input type="search" id="f1Q" placeholder="Ej. L3250, Vivobook, 1TB…"></label>
+  </div>
+  <div class="kpis" id="kpis1"></div>
+  <div class="grid g2" style="margin-bottom:14px">
+    <div class="card">
+      <h2>Posición de precio vs mercado por categoría</h2>
+      <p class="cap">Brecha mediana del precio Supricom frente al promedio del mercado en el corte, por categoría.</p>
+      <div class="legend gapleg">
+        <span><i style="background:var(--down);border-radius:3px"></i><b>Más baratos</b> que el mercado: barra azul hacia la izquierda del 0% (brecha negativa)</span>
+        <span><i style="background:var(--up);border-radius:3px"></i><b>Más caros</b> que el mercado: barra naranja hacia la derecha del 0% (brecha positiva)</span>
+        <span>0% = igual al promedio del mercado · mientras más larga la barra, mayor la diferencia</span>
+      </div>
+      <div class="chartbox"><canvas id="chGapCat"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Distribución de la posición competitiva</h2>
+      <p class="cap">Productos con precio Supricom vigente al corte, según dónde cae frente al rango de mercado. <b>Haz clic en una barra</b> para filtrar los indicadores, el gráfico por categoría y la tabla; clic de nuevo para quitar el filtro.</p>
+      <div class="chartbox"><canvas id="chPos"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="row" style="justify-content:space-between">
+      <div><h2>Matriz estratégica del portafolio</h2>
+      <p class="cap" style="margin:0">Consolidado Caracas + Valencia (sin ventas entre empresas del grupo) · Eje X: ventas ($) · Eje Y: Margen % = (Venta del mes − Costo valorizado de lo vendido) / Venta del mes × 100 · Cortes en la venta promedio y el margen promedio del conjunto mostrado.</p></div>
+      <div class="row">
+        <label class="small"><input type="checkbox" id="qExcl" checked> Excluir servicios, fletes y productos sin costo</label>
+        <label class="small"><input type="checkbox" id="qLog" checked> Escala logarítmica (ventas)</label>
+        <label class="small"><input type="checkbox" id="qMatched"> Solo productos cruzados con mercado</label>
+        <button class="btn small" id="btnQX" title="Descarga el listado de productos con los filtros activos">⬇ Descargar Excel</button>
+      </div>
+    </div>
+    <div class="row" style="margin:10px 0 4px"><span class="small" style="font-weight:600">Concentración:</span><div class="seg" id="qMode"><button data-m="all" class="on">Todo el portafolio</button><button data-m="pareto">Pareto 80/20</button><button data-m="top200">Top 200</button></div></div>
+    <div class="row" style="margin:6px 0 4px"><span class="small" style="font-weight:600">Meses:</span><div class="chips" id="qMonths"></div><span class="small">Clic en un mes para verlo solo; clic en otros meses para combinarlos; “Acumulado” selecciona todos.</span></div>
+    <div class="cutinfo" id="qInfo"></div>
+    <div class="grid g32">
+      <div class="chartbox tall"><canvas id="chQuad"></canvas></div>
+      <div>
+        <div class="qcards" id="qCards"></div>
+        <p class="small" style="margin-top:10px">Haz clic en un cuadrante para filtrar la tabla de abajo. Los puntos fuera del rango del eje Y (márgenes extremos) se dibujan en el borde como triángulos.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div><h2>Comparativo detallado Supricom vs. Mercado</h2>
+      <p class="cap" style="margin:0" id="tblCap"></p></div>
+      <div class="row"><span id="qFilterTag"></span><button class="btn small" id="btnCsv">Exportar CSV</button><button class="btn small" id="btnCat" title="Catálogo de Supricom y del mercado con categoría y subcategoría homologadas">⬇ Catálogo homologado (Excel)</button></div>
+    </div>
+    <div class="tablewrap" style="margin-top:10px"><table id="tbl1"></table></div>
+    <div class="pager" id="pager1"></div>
+  </div>
+</section>
+
+<!-- ================= VISTA 2 ================= -->
+<section class="view" id="view-evolucion">
+  <div class="filters">
+    <label>Fecha desde<input type="date" id="f2From"></label>
+    <label>Fecha hasta<input type="date" id="f2To"></label>
+    <label>Categoría<select id="f2Cat"></select></label>
+    <label>Marca<select id="f2Brand"></select></label>
+    <label>Mayorista / competidor<select id="f2May"></select></label>
+    <label>Desglosar por<select id="f2Dim"><option value="total">Total mercado</option><option value="may">Mayorista</option><option value="cat">Categoría</option><option value="brand">Marca</option></select></label>
+    <label>Métrica<select id="f2Metric"><option value="index">Índice de precios (canasta constante, base 100)</option><option value="median">Precio mediano ($)</option><option value="avg">Precio promedio ($)</option><option value="count">Nº de SKUs con precio</option></select></label>
+  </div>
+  <div class="small" id="f2Cuts" style="margin:-6px 0 10px 4px"></div>
+  <div class="kpis" id="kpis2"></div>
+  <div class="card" style="margin-bottom:14px">
+    <h2 id="evoTitle">Evolución de precios de mercado</h2>
+    <p class="cap" id="evoCap"></p>
+    <div class="chartbox"><canvas id="chEvo"></canvas></div>
+  </div>
+  <div class="grid g2" style="margin-bottom:14px">
+    <div class="card"><h2>Variación por mayorista</h2><p class="cap" id="capMay"></p><div class="chartbox"><canvas id="chMay"></canvas></div></div>
+    <div class="card"><h2>Variación por categoría</h2><p class="cap" id="capCat"></p><div class="chartbox"><canvas id="chCat"></canvas></div></div>
+  </div>
+  <div class="grid g2">
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><h2>Mayores movimientos de precio</h2>
+        <div class="row"><select id="mvDir"><option value="up">Mayores subidas</option><option value="down">Mayores bajadas</option></select><button class="btn small" id="btnMvX" title="Descarga todas las variaciones de la dirección elegida con los filtros activos">⬇ Descargar Excel</button></div></div>
+      <p class="cap" id="capMv"></p>
+      <div class="tablewrap" style="max-height:420px"><table id="tblMv"></table></div>
+    </div>
+    <div class="card">
+      <h2>Historial de un SKU por mayorista</h2>
+      <p class="cap">Escribe un código o parte de la descripción y selecciona el producto.</p>
+      <div class="row"><input type="search" id="skuQ" placeholder="Código o descripción…" style="flex:1"><select id="skuSel" style="flex:2"></select></div>
+      <div class="chartbox" style="height:330px;margin-top:10px"><canvas id="chSku"></canvas></div>
+    </div>
+  </div>
+</section>
+<!-- ================= VISTA 3 ================= -->
+<section class="view" id="view-competencia">
+  <div class="filters">
+    <label>Mes de cierre<select id="opMonth"></select></label>
+    <label>Categoría<select id="opCat"></select></label>
+    <button class="btn small" id="btnOpX" style="align-self:flex-end">⬇ Exportar a Excel</button>
+    <span class="small" id="opUpd" style="align-self:flex-end"></span>
+  </div>
+  <div class="kpis" id="opKpis"></div>
+  <div class="card">
+    <h2>Lo que demanda el mercado venezolano y Supricom no tiene</h2>
+    <p class="cap" id="opCap"></p>
+    <div class="tablewrap" style="max-height:none"><table id="tblOp"></table></div>
+  </div>
+</section>
+</main>
+
+<!-- Detalle -->
+<div class="drawer" id="drawer"></div>
+
+<!-- Cargar listas de precios (lib/inteligencia-negocio/precios) -->
+<div class="modal-bg" id="modal">
+  <div class="modal" style="width:min(1150px,96vw)">
+    <div class="row" style="justify-content:space-between"><h2>Cargar listas de precios</h2><button class="btn small" id="mClose">Cerrar ✕</button></div>
+    <p class="small" style="margin:0">Sube las listas de los mayoristas tal como llegan, una o varias a la vez (Excel o CSV). El panel las ordena con el formato de la lista de ejemplo: código, marca, categoría, nombre corto, grado de confianza, observaciones, mayorista, fecha y PVP en dólares sin IVA. Lo que ya se clasificó antes no se vuelve a pasar por la IA. Una lista que ya viene ordenada entra tal cual.</p>
+    <div class="row" style="margin:14px 0 10px;align-items:flex-end">
+      <label class="mlabel">Fecha de corte<input type="date" id="mFecha"></label>
+      <span class="small" style="max-width:560px">Las listas con la misma fecha de corte se comparan entre sí en el tablero: usa la misma fecha para todas las listas de la semana.</span>
+    </div>
+    <div class="drop" id="dropMkt"><b>Listas de los mayoristas</b><span class="small">Arrastra aquí los archivos o haz clic para elegirlos</span><input type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple hidden></div>
+    <div id="mFiles" style="margin-top:10px"></div>
+    <div class="row" style="margin-top:10px"><button class="btn primary" style="background:var(--brand);color:#fff" id="mApply">Cargar y ordenar</button><span class="small" id="mEstado"></span></div>
+    <div class="log" id="mLog">Listo para recibir listas.</div>
+    <div class="row" style="justify-content:space-between;margin-top:18px">
+      <h2 style="font-size:15px;margin:0">Listas cargadas</h2>
+      <div class="row"><select id="mCorte" title="Corte para la lista consolidada"></select><button class="btn small" id="mConsol" title="Todas las listas del corte, con el precio más bajo de cada mayorista">⬇ Lista consolidada (Excel)</button><button class="btn small" id="mConsolCsv">CSV</button></div>
+    </div>
+    <div class="tablewrap" style="margin-top:8px;max-height:420px"><table id="mListas"><tbody><tr><td class="empty">Cargando…</td></tr></tbody></table></div>
+    <details style="margin-top:12px"><summary class="small" style="cursor:pointer;font-weight:600">Cómo se ordena una lista</summary>
+      <div class="help" style="margin-top:8px">
+        <b>Lectura:</b> se busca el encabezado en cualquier fila y hoja (descripción + precio); las filas de sección («DECIBEL», «Categoría: ACCESORIOS») se toman como marca o línea; una hoja que repite otra no duplica.<br>
+        <b>Precios:</b> en dólares y sin IVA. Si la lista trae IVA (columna «con IVA» o leyenda «IVA incluido») se le quita el 16 %; puedes forzarlo por archivo. Si trae varias columnas de precio (efectivo, transferencia, VIP…) queda la más baja. Si un mismo mayorista manda varias listas en el mismo corte, de cada producto queda el precio más bajo.<br>
+        <b>Fuera:</b> sin precio, en cero, «Consultar», stock en cero o «Agotado». No se estima ningún precio.<br>
+        <b>Clasificación:</b> categoría (una de las 47 de la lista de ejemplo), nombre corto con la estructura de su categoría, grado de confianza (Alto 1,00 · Medio 0,70–0,90 · Bajo &lt; 0,70) y observaciones, por IA; sin IA se clasifica por reglas con confianza baja para revisar.
+      </div>
+    </details>
+    <details style="margin-top:8px"><summary class="small" style="cursor:pointer;font-weight:600">Reporte mensual de oportunidades (vista 3)</summary>
+      <div class="help" style="margin-top:8px">La vista 3 lee el reporte mensual (JSON con <code>reports</code>: indicadores del mes y oportunidades con su fuente). Para reemplazarlo, sube el archivo <code>macro.json</code>: <input type="file" id="mMacro" accept=".json,application/json"></div>
+    </details>
+  </div>
+</div>
+<script>
+/* ===== Motor de datos (sin DOM): matching, precios por corte, cuadrantes, evolución ===== */
+const Engine = (() => {
+  const DAY = 86400000;
+  const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  const skuKey = s => {
+    let t = norm(s).trim();
+    if (!t || t === 'NONE' || t === 'FALSE') return '';
+    t = t.replace(/#\w+$/, '').replace(/-EX$/, '');
+    return t.replace(/[^A-Z0-9]/g, '');
+  };
+  const brandKey = s => norm(s).replace(/[^A-Z0-9]/g, '');
+  const brandOk = (a, b) => {
+    a = brandKey(a); b = brandKey(b);
+    if (!a || !b) return true;
+    return a === b || a.startsWith(b) || b.startsWith(a);
+  };
+  const toISO = d => d.toISOString().slice(0, 10);
+  const parseDate = v => {
+    if (v == null || v === '') return null;
+    if (v instanceof Date && !isNaN(v)) return new Date(Date.UTC(v.getFullYear(), v.getMonth(), v.getDate()));
+    if (typeof v === 'number') { // serial de Excel
+      return new Date(Math.round((v - 25569) * DAY));
+    }
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (m) { let y = +m[3]; if (y < 100) y += 2000; return new Date(Date.UTC(y, +m[2] - 1, +m[1])); }
+    const d = new Date(s); return isNaN(d) ? null : new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  };
+  const num = v => {
+    if (typeof v === 'number') return v;
+    if (v == null) return NaN;
+    let s = String(v).replace(/[$\s]|USD/gi, '');
+    if (/,\d{1,2}$/.test(s) && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else if (/,\d{1,2}$/.test(s)) s = s.replace(',', '.');
+    else s = s.replace(/,/g, '');
+    return parseFloat(s);
+  };
+
+  /* ---------- Tokenización para similares ---------- */
+  const STOP = new Set('DE LA EL LOS LAS CON PARA Y EN X A O DEL AL POR SIN THE AND FOR WITH'.split(' '));
+  const SYN = { BOCINA: 'CORNETA', PARLANTE: 'CORNETA', SPEAKER: 'CORNETA', ALTAVOZ: 'CORNETA', AURICULAR: 'AUDIFONO', HEADSET: 'AUDIFONO', AUDIFONOS: 'AUDIFONO', EARBUDS: 'AUDIFONO', WIRELESS: 'INALAMBRICO', INALAMBRICA: 'INALAMBRICO', NOTEBOOK: 'LAPTOP', PORTATIL: 'LAPTOP', TONER: 'TONER', CARTUCHO: 'CARTUCHO', TECLADOS: 'TECLADO', MOUSEPAD: 'PAD', ESTACION: 'ESTACION', MULTIFUNCION: 'MULTIFUNCIONAL', PROYECTOR: 'PROYECTOR', SWITCHES: 'SWITCH', BLACK: 'NEGRO', BK: 'NEGRO', NEGRA: 'NEGRO', CIAN: 'CYAN', CY: 'CYAN', MAGENTA: 'MAGENTA', YELLOW: 'AMARILLO', YE: 'AMARILLO', WHITE: 'BLANCO', BLANCA: 'BLANCO', TRICOLOR: 'TRICOLOR', COLORES: 'COLOR' };
+  const TECH = ['POE', 'LASER', 'TINTA', 'MATRIZ', 'TERMICA', 'MESH', 'SUBLIMACION'];
+  const REQ = new Set(['NEGRO', 'CYAN', 'MAGENTA', 'AMARILLO', 'TRICOLOR', 'LASER', 'TINTA', 'MATRIZ', 'TERMICA', 'MESH', 'POE', 'ADMINISTRABLE', 'SUBLIMACION', 'OLED', 'CURVO']);
+  function toks(s) {
+    s = norm(s).replace(/″|''/g, '"');
+    s = s.replace(/CORE\s*(TM|™)?\s*(ULTRA\s*)?I?(\d)\b/g, ' I$3 ').replace(/RYZEN\s*(TM|™)?\s*(\d)\b/g, ' RYZEN$2 ');
+    s = s.replace(/MEMORIA USB|USB FLASH( DRIVE)?|FLASH DRIVE/g, ' PENDRIVE ').replace(/RELOJ INTELIGENTE|SMART ?WATCH/g, ' SMARTWATCH ').replace(/WI-?FI\s*(\d)/g, ' WIFI$1 ').replace(/(\d+)\s*-?\s*(PUERTOS|PORTS?|PTOS)\b/g, ' $1P ');
+    s = s.replace(/(\d+(?:[.,]\d+)?)\s*(GB|TB|MB|W|VA|HZ|MAH|MP|KVA|PULGADAS|PULG|"|MTS|PPM|DPI)(?![A-Z])/g,
+      (m, a, u) => ' ' + a.replace(',', '.') + ({ PULGADAS: '"', PULG: '"', MTS: 'M' }[u] || u) + ' ');
+    const out = [];
+    for (let w of s.match(/[A-Z0-9."]+/g) || []) {
+      w = w.replace(/^\.+|\.+$/g, '');
+      if (w.length < 2 || STOP.has(w)) continue;
+      if (/^\d+(\.\d+)?$/.test(w)) continue; // números sueltos sin unidad
+      if (SYN[w]) w = SYN[w];
+      else if (!/\d/.test(w) && w.length > 5 && w.endsWith('ES')) w = w.slice(0, -2);
+      else if (!/\d/.test(w) && w.length > 4 && w.endsWith('S')) w = w.slice(0, -1);
+      out.push(w);
+    }
+    return out;
+  }
+  const isSpec = t => /\d/.test(t);
+
+  /* ---------- Dataset ---------- */
+  // MKT: {d:{brand,cat,sub,may,niv,date}, r:[[code,b,c,s,conf,niv,obs,may,date,pvp,desc]]}
+  // ODOO: {p:[[id,code,name,brand,cat]], f:[[pid,date,q,v,c]]}
+  function build(ds) {
+    const M = ds.MKT, d = M.d;
+    const rows = M.r.map(r => ({
+      code: r[0], key: skuKey(r[0]), brand: d.brand[r[1]], cat: d.cat[r[2]], sub: d.sub[r[3]], conf: r[4],
+      niv: d.niv[r[5]], obs: r[6], may: d.may[r[7]], date: d.date[r[8]], pvp: r[9], desc: r[10]
+    }));
+    const dates = [...new Set(rows.map(r => r.date))].sort();
+    // Productos de mercado únicos por SKU
+    const mprod = new Map();
+    for (const r of rows) {
+      const k = r.key || ('D:' + norm(r.desc));
+      let p = mprod.get(k);
+      if (!p) { p = { key: k, code: r.code, brand: r.brand, cat: r.cat, sub: r.sub, desc: r.desc, rows: [] }; mprod.set(k, p); }
+      p.rows.push(r);
+      if (r.date >= (p.last || '')) { p.last = r.date; p.desc = r.desc; p.sub = r.sub; p.cat = r.cat; p.brand = r.brand; }
+    }
+    const mlist = [...mprod.values()];
+    // Índice TF-IDF
+    const df = new Map();
+    mlist.forEach(p => { p.tk = new Set([...toks(p.desc), ...toks(p.sub)]); p.tk.forEach(t => df.set(t, (df.get(t) || 0) + 1)); });
+    const N = mlist.length, idf = new Map();
+    df.forEach((c, t) => idf.set(t, Math.log(N / c)));
+    const inv = new Map();
+    mlist.forEach((p, i) => { let n = 0; p.tk.forEach(t => { const w = idf.get(t); n += w * w; if (!inv.has(t)) inv.set(t, []); inv.get(t).push(i); }); p.norm = Math.sqrt(n) || 1; });
+    const subIndex = new Map();
+    mlist.forEach(p => { const k = p.cat + '||' + p.sub; if (!subIndex.has(k)) subIndex.set(k, []); subIndex.get(k).push(p); });
+
+    // Odoo
+    const O = ds.ODOO;
+    const prods = new Map();
+    for (const p of O.p) prods.set(p[0], { id: p[0], code: p[1], name: p[2], brand: p[3], cat: p[4], key: skuKey(p[1]), facts: [] });
+    for (const f of O.f) { const p = prods.get(f[0]); if (p) p.facts.push({ date: f[1], q: f[2], v: f[3], c: f[4], co: f[5] || '', qv: f[6] == null ? f[2] : f[6] }); }
+    prods.forEach(p => p.facts.sort((a, b) => a.date < b.date ? -1 : 1));
+    const allM = [...new Set(O.f.map(f => f[1].slice(0, 7)))].sort();
+    const apr = allM.find(m => m.endsWith('-04')) || allM[0];
+    const months = allM.filter(m => m >= apr);
+
+    const W = { rows, dates, mprod, mlist, idf, inv, subIndex, prods, months, meta: ds.meta || {} };
+    match(W);
+    classify(W);
+    marketGroups(W);
+    coverage(W);
+    return W;
+  }
+
+  function neighbors(W, qset, limit = 15, pool = null) {
+    const sc = new Map(); const N = W.mlist.length;
+    let qn = 0;
+    qset.forEach(t => { const w = W.idf.get(t); if (!w) return; qn += w * w; const L = W.inv.get(t); if (L.length > N * 0.2) return; for (const i of L) sc.set(i, (sc.get(i) || 0) + w * w); });
+    qn = Math.sqrt(qn) || 1;
+    const res = [];
+    sc.forEach((v, i) => { const p = W.mlist[i]; if (pool && !pool.has(p)) return; res.push({ p, s: v / (qn * p.norm) }); });
+    res.sort((a, b) => b.s - a.s);
+    return res.slice(0, limit);
+  }
+
+  /* ---------- Modelos y números de parte ---------- */
+  const SPEC_RE = /^(\d+(\.\d+)?(GB|TB|MB|W|VA|HZ|MAH|MP|KVA|"|PPM|DPI|M|K|KG|ML|MM|CM|V|A|MS|G|AH|P))$|^(I[3579]|RYZEN[3579]|WIFI\d|AX\d+|AC\d+|BE\d+|DDR\d|USB\d.*|PCIE\d.*|GEN\d|M2|RJ45|CAT\d.*|IP\d\d|HDMI\d.*|4K|2K|8K|FHD|QHD|UHD|N\d{3,4}|\d+X\d+[A-Z]*|\d+P|X\d|\d+PACK|\d{4,5}(U|H|HS|HX|K|KF|F|G\d|P|X|X3D|T)|\d+(DBI|DBM|LM|LUMENS|MBPS|GBPS|MBS|MHZ|GHZ|MAH|WH|KW|NEMA|AWG|FT|PCS|PZ|CH|CANALES|PUERTOS|PORT|PORTS))$/;
+  // Tokens de modelo (letras+dígitos) del texto, normalizados; incluye uniones con guion
+  function modelToks(s) {
+    const t = norm(s).replace(/[™®]/g, ' ');
+    const out = new Set();
+    for (const raw of t.match(/[A-Z0-9][A-Z0-9\-\/\.]*[A-Z0-9]/g) || []) {
+      const parts = raw.split(/[\/]/);
+      for (const part of parts) {
+        const joined = part.replace(/[\-\.]/g, '');
+        const add = w => { if (w.length >= 4 && /\d/.test(w) && /[A-Z]/.test(w) && !SPEC_RE.test(w)) out.add(w); };
+        add(joined);
+        part.split(/[\-\.]/).forEach(add);
+      }
+    }
+    return out;
+  }
+
+  /* ---------- Consumibles ---------- */
+  const OEM = ['HP', 'CANON', 'EPSON', 'BROTHER', 'XEROX', 'LEXMARK', 'ZEBRA', 'RICOH', 'KYOCERA', 'SAMSUNG', 'PANTUM', 'EVOLIS', 'BADGY', 'OKI', 'SHARP', 'KONICA', 'DATACARD', 'TOSHIBA', 'DELL'];
+  const GENERIC_BRANDS = /^(MAGNAPRINT|GEKO|ASTA|JEMIP|EOC|GENERICO|COMPATIBLE|NEXXT|ARGOM|XTECH|PRINTER|MASTERINK|INKTEC|KATUN|STATIC|UNINET)/;
+  const CONS_RE = /\b(TONER|TINTA|CARTUCHO|CARTRIDGE|CARTRIGE|CINTA|RIBBON|DRUM|TAMBOR|CHIP|POLVO|MANTENIMIENTO|FOTOCONDUCTOR|CABEZAL|INK|BOTELLA|REVELADOR|FUSOR)\b/;
+  const PRINTER_RE = /^(M|MF|L|G|LBP|DCP|HL|MFC|P|E|WF|ET|TS|MG|SC|LX|FX|DJ|IX|IP|MP|PRO|MX|TR|GX|LQ|DFX|T|C|CP|CM|CLP|ML|SCX|SL|ZT|ZD|GK|GC|ZC|TM|CLI|PIXMA)\d{3,5}[A-Z]{0,4}$/;
+  function oemOf(text, brand) {
+    const t = ' ' + norm(text).replace(/[^A-Z0-9]+/g, ' ') + ' ';
+    for (const o of OEM) if (t.includes(' ' + o + ' ')) return o;
+    if (/ HPQ /.test(t)) return 'HP';
+    const b = brandKey(brand); if (b.startsWith('HP')) return 'HP';
+    return OEM.find(o => b === o) || '';
+  }
+  function consInfo(text, brand, cat) {
+    const t = norm(text);
+    const c = norm(cat);
+    const isCons = catKey(c) === catKey('CONSUMIBLES') || ((c === '' || c === 'GENERAL') && CONS_RE.test(t));
+    if (!isCons || catKey(c) !== catKey('CONSUMIBLES') && /\b(IMPRESORA|MULTIFUNCIONAL|PLOTTER|ESCANER)\b/.test(t) && !/\b(TONER|CARTUCHO|CARTRIDGE|CARTRIGE|BOTELLA|CINTA|RIBBON|TAMBOR|DRUM|CABEZAL|CHIP|POLVO|INK)\b/.test(t)) return null;
+    const b = brandKey(brand);
+    const generic = /COMPATIBLE|GENERIC|ALTERNATIV|REMANUFACT|RECARGAD/.test(t) || GENERIC_BRANDS.test(b) || (b && !OEM.some(o => b.startsWith(o)) && !OEM.includes(b));
+    const oem = oemOf(t, generic ? '' : brand);
+    const color = /\b(TRICOLOR|COLOR(ES)? ?(PACK|KIT)|3 ?PACK|CMY)\b/.test(t) ? 'TRICOLOR' : /\b(NEGRO|NEGRA|BLACK|BK|K|PGBK|MBK|PBK)\b/.test(t) ? 'NEGRO' : /\b(CYAN|CIAN|AZUL|C|CY)\b/.test(t) ? 'CYAN' : /\b(MAGENTA|ROJO|M|MA)\b/.test(t) ? 'MAGENTA' : /\b(AMARILLO|YELLOW|Y|YE)\b/.test(t) ? 'AMARILLO' : '';
+    const kind = /\b(CHIP)\b/.test(t) ? 'CHIP' : /\bPOLVO\b/.test(t) ? 'POLVO' : /\b(DRUM|TAMBOR|FOTOCONDUCTOR|IMAGING)\b/.test(t) ? 'TAMBOR' : /\b(CINTA|RIBBON)\b/.test(t) ? 'CINTA' : /\bMANTENIMIENTO\b/.test(t) ? 'MANT' : /\bCABEZAL/.test(t) ? 'CABEZAL' : /\bTONER\b/.test(t) ? 'TONER' : /\b(BOTELLA|TINTA|INK)\b/.test(t) && !/\b(CARTUCHO|CARTRIDGE|CARTRIGE)\b/.test(t) ? 'TINTA' : /\b(CARTUCHO|CARTRIDGE|CARTRIGE)\b/.test(t) ? 'CARTUCHO' : 'OTRO';
+    // Códigos de insumo y modelos de impresora compatibles
+    const codes = new Set(), printers = new Set();
+    const T = t.replace(/\bCRG[\s\-]?/g, '').replace(/\bNO\.\s*/g, '').replace(/(\d)\s+(XL|H|X)\b/g, '$1$2');
+    for (let raw of T.match(/[A-Z0-9][A-Z0-9\-]*[A-Z0-9]|\d+/g) || []) {
+      let w = raw.replace(/-/g, '');
+      if (!/\d/.test(w)) continue;
+      if (/^\d+(\.\d+)?(ML|K|KG|MM|M|G|CM|PAG|PAGINAS|GR|L)$/.test(w) || /^\d{5,}$/.test(w) || /^\d+X\d+M?$/.test(w)) continue;
+      if (PRINTER_RE.test(w)) { printers.add(w); continue; }
+      w = w.replace(/^(\d{2,4}[AXH]?)(BK|PBK|MBK|C|M|Y|K|CY|MA|YE)$/, '$1').replace(/^([A-Z]{1,4}\d{2,4})(BK|PBK|MBK|C|M|Y|K|CY|MA|YE)$/, '$1');
+      if (/^\d{1}$/.test(w)) continue;
+      codes.add(w);
+      const m = w.match(/^T(\d{3,4})$/); if (m) codes.add(m[1]); // Epson T504 ↔ 504
+      if (/^\d{2,3}$/.test(w) && +w >= 100 && +w % 100 === 0) codes.delete(w); // 100/200/300 suelen ser series, no insumos
+    }
+    return { generic, oem, color, kind, codes, printers };
+  }
+  const kindOk = (a, b) => a === b || (a === 'TINTA' && b === 'CARTUCHO') || (a === 'CARTUCHO' && b === 'TINTA');
+
+  function match(W) {
+    // Índices de mercado
+    const byKey = new Map(), byTok = new Map(), tokDf = new Map();
+    W.mlist.forEach(p => {
+      if (p.key && !p.key.startsWith('D:')) { if (!byKey.has(p.key)) byKey.set(p.key, []); byKey.get(p.key).push(p); }
+      p.mt = modelToks(p.desc + ' ' + p.code);
+      p.mt.forEach(t => { tokDf.set(t, (tokDf.get(t) || 0) + 1); if (!byTok.has(t)) byTok.set(t, []); byTok.get(t).push(p); });
+      p.cons = consInfo(p.desc + ' ' + p.sub, p.brand, p.cat);
+    });
+    const consList = W.mlist.filter(p => p.cons);
+    const consIdx = new Map();
+    consList.forEach(p => { [...p.cons.codes, ...p.cons.printers].forEach(c => { if (!consIdx.has(c)) consIdx.set(c, []); consIdx.get(c).push(p); }); });
+    const specOk = (o, p) => { const a = [...toks(o.name)].filter(t => /^\d+(\.\d+)?(GB|TB)$/.test(t)); if (!a.length) return true; const b = new Set([...p.tk]); return a.every(t => b.has(t)); };
+    const ident = (o, refs, how) => { const r = refs[0]; o.match = { type: 'Idéntico', how, refs, ref: r, cat: r.cat, sub: r.sub, score: 1 }; };
+
+    W.prods.forEach(o => {
+      o.match = null;
+      const ci = consInfo(o.name + ' ' + o.code, o.brand, o.cat);
+      o.cons = ci;
+      // 1) Idéntico por SKU (exacto o con sufijos de región/empaque).
+      //    Los consumibles genéricos nunca usan esta vía: solo se comparan contra otras marcas genéricas compatibles (paso 2).
+      if (o.key && o.key.length >= 4 && !(ci && ci.generic)) {
+        let refs = (byKey.get(o.key) || []).filter(m => brandOk(o.brand, m.brand) || (ci && ci.oem && oemOf(m.desc, m.brand) === ci.oem));
+        if (!refs.length && o.key.length >= 6) {
+          // código del proveedor dentro de la descripción del mercado (ej. "(CF258A)") o variantes con sufijo corto
+          refs = (byTok.get(o.key) || []).filter(m => brandOk(o.brand, m.brand) || !m.brand);
+          if (!refs.length) byKey.forEach((L, k) => { if (k.length >= 6 && Math.abs(k.length - o.key.length) <= 3 && (k.startsWith(o.key) || o.key.startsWith(k))) L.forEach(m => { if (brandOk(o.brand, m.brand)) refs.push(m); }); });
+        }
+        // Consumible original: solo referencias de mercado que también sean consumibles originales
+        if (ci) refs = refs.filter(m => m.cons && !m.cons.generic);
+        if (refs.length) {
+          // añade el mismo producto en otros mayoristas (mismo modelo)
+          if (ci) { const sameModel = consList.filter(m => !m.cons.generic && m.cons.oem === ci.oem && m.cons.color === ci.color && [...ci.codes].some(c => m.cons.codes.has(c)) && kindOk(m.cons.kind, ci.kind)); refs = [...new Set([...refs, ...sameModel])]; }
+          ident(o, refs, 'SKU'); return;
+        }
+      }
+      // 2) Consumibles: originales vs originales (misma marca y modelo); genéricos vs genéricos (misma compatibilidad)
+      if (ci) {
+        if (!ci.generic) {
+          if (!ci.oem || !ci.codes.size) return;
+          const cand = new Set(); ci.codes.forEach(c => (consIdx.get(c) || []).forEach(m => cand.add(m)));
+          const refs = [...cand].filter(m => !m.cons.generic && m.cons.oem === ci.oem && kindOk(m.cons.kind, ci.kind) && (!ci.color || !m.cons.color || m.cons.color === ci.color) && [...ci.codes].some(c => m.cons.codes.has(c)));
+          if (refs.length) { ident(o, refs, 'Modelo original'); o.match.cons = 'Original'; }
+          return;
+        }
+        const keys = [...ci.codes, ...ci.printers];
+        if (!keys.length) return;
+        const cand = new Set(); keys.forEach(c => (consIdx.get(c) || []).forEach(m => cand.add(m)));
+        const ob = brandKey(o.brand);
+        const comps = [...cand].filter(m => m.cons.generic && brandKey(m.brand) !== ob && kindOk(m.cons.kind, ci.kind) && (!ci.color || !m.cons.color || m.cons.color === ci.color) && (!ci.oem || !m.cons.oem || m.cons.oem === ci.oem));
+        if (!comps.length) return;
+        comps.forEach(m => m._sc = [...ci.codes].filter(c => m.cons.codes.has(c)).length * 2 + [...ci.printers].filter(c => m.cons.printers.has(c)).length);
+        comps.sort((a, b) => b._sc - a._sc);
+        const best = comps[0]._sc, top = comps.filter(m => m._sc === best).slice(0, 8);
+        const compat = [...new Set(top.flatMap(m => [...ci.codes, ...ci.printers].filter(c => m.cons.codes.has(c) || m.cons.printers.has(c))))];
+        o.match = { type: 'Similar', how: 'Genérico compatible', cons: 'Genérico', cat: top[0].cat, sub: top[0].sub, score: 1, comps: top, compat };
+        return;
+      }
+      // 3) Idéntico por modelo: misma marca + mismo código de modelo poco frecuente
+      const omt = modelToks(o.name + ' ' + (o.code || ''));
+      let refs = [];
+      omt.forEach(t => { const L = byTok.get(t); if (L && (tokDf.get(t) || 0) <= 25) L.forEach(m => { if (!m.cons && brandOk(o.brand, m.brand) && m.brand && specOk(o, m)) refs.push(m); }); });
+      o._mt = omt;
+      if (refs.length) {
+        // conserva los que comparten el token más largo (modelo más específico)
+        const lens = refs.map(m => Math.max(...[...omt].filter(t => m.mt.has(t)).map(t => t.length)));
+        const mx = Math.max(...lens); refs = [...new Set(refs.filter((m, i) => lens[i] === mx))];
+        if (mx >= 5) { ident(o, refs, 'Modelo'); return; }
+      }
+      // 4) Similar: misma subcategoría técnica (estructura de la base maestra) + especificaciones
+      const q = new Set(toks(o.name));
+      if (q.size < 2) return;
+      const nb = neighbors(W, q, 15);
+      if (!nb.length || nb[0].s < 0.3) return;
+      const cand = new Map();
+      nb.forEach(({ p, s }) => { if (p.cons) return; const k = p.cat + '||' + p.sub; cand.set(k, (cand.get(k) || 0) + s); });
+      let best = null;
+      cand.forEach((score, k) => {
+        const [cat, sub] = k.split('||');
+        const st = toks(sub);
+        if (st.length < 2) return; // subcategoría demasiado genérica
+        if (!st.filter(t => isSpec(t) || REQ.has(t)).every(t => q.has(t))) return; // especificaciones obligatorias
+        if (!q.has(st[0])) return; // mismo tipo de producto
+        const sts = new Set(st);
+        for (const t of TECH) if (q.has(t) && !sts.has(t)) return; // tecnología distinta (PoE, láser, tinta...)
+        let tot = 0, hit = 0;
+        st.forEach(t => { const w = W.idf.get(t) || 1; tot += w; if (q.has(t)) hit += w; });
+        const cov = hit / tot;
+        if (cov < 0.6) return;
+        const f = score * (0.5 + cov);
+        if (!best || f > best.f) best = { k, cat, sub, f, cov };
+      });
+      if (!best) return;
+      const pool = new Set(W.subIndex.get(best.k));
+      const comps = neighbors(W, q, 8, pool).filter(x => !(o.key && x.p.key === o.key));
+      if (!comps.length) return;
+      o.match = { type: 'Similar', how: 'Especificaciones', cat: best.cat, sub: best.sub, score: Math.min(1, best.cov), comps: comps.map(x => x.p), q };
+    });
+  }
+
+  /* ---------- Taxonomía homologada (categoría + subcategoría) ---------- */
+  // Categorías canónicas: las de la base maestra de mercado + SERVICIOS. Cualquier variante (singular/plural, acentos,
+  // abreviaturas o nombres de Odoo) se lleva a una de ellas. Se ejecuta en cada carga, así cubre los registros nuevos.
+  const BASE_CATS = ["ACCESORIOS VARIOS", "AIO", "ALMACENAMIENTO", "AUDIFONOS", "BATERIAS Y PILAS", "BOLSOS Y ESTUCHES", "CABLEADO Y RACKS", "CABLES Y ADAPTADORES", "CAMARAS WEB", "CARGADORES Y POWER BANKS", "CASES", "CELULARES Y TABLETS", "COMBOS TECLADO Y MOUSE", "CONSUMIBLES", "CORNETAS", "ESCANERES", "FUENTES DE PODER", "GAMING", "HOGAR INTELIGENTE", "HOGAR Y OTROS", "ILUMINACION", "IMPRESORA", "LAPTOP", "MEMORIA RAM", "MICROFONOS", "MOBILIARIO", "MONITORES", "MOUSE", "PAPELERIA", "PC CORPORATIVA", "PROCESADORES", "PROYECTORES", "PUNTO DE VENTA", "REDES", "REFRIGERACION", "ROUTERING", "SERVIDORES", "SOFTWARE", "SOPORTES Y BASES", "TARJETAS DE VIDEO", "TARJETAS MADRE", "TECLADOS", "TELEFONIA Y RADIOS", "TELEVISORES Y PANTALLAS", "UPS Y REGULADORES", "VIDEOVIGILANCIA", "WEARABLES", "SERVICIOS"];
+  const CAT_ALIAS = {
+    AUDIFONO: 'AUDIFONOS', AURICULARES: 'AUDIFONOS', 'BOLSOS Y MOCHILAS': 'BOLSOS Y ESTUCHES', MOCHILAS: 'BOLSOS Y ESTUCHES', 'PC ALL IN ONE': 'AIO', 'ALL IN ONE': 'AIO',
+    'MINI PC': 'PC CORPORATIVA', 'PC DE ESCRITORIO': 'PC CORPORATIVA', DESKTOP: 'PC CORPORATIVA', 'LAPTOP CORPORATIVA': 'LAPTOP', LAPTOPS: 'LAPTOP', NOTEBOOK: 'LAPTOP',
+    TABLET: 'CELULARES Y TABLETS', TABLETS: 'CELULARES Y TABLETS', CELULARES: 'CELULARES Y TABLETS', 'VIDEO JUEGOS Y ACCESORIOS': 'GAMING', VIDEOJUEGOS: 'GAMING',
+    IMPRESORAS: 'IMPRESORA', MONITOR: 'MONITORES', PROYECTOR: 'PROYECTORES', ESCANER: 'ESCANERES', SERVIDOR: 'SERVIDORES', CONSUMIBLE: 'CONSUMIBLES', CORNETA: 'CORNETAS', PARLANTES: 'CORNETAS',
+    'CAJON MONEDERO': 'PUNTO DE VENTA', POS: 'PUNTO DE VENTA', SERVICIO: 'SERVICIOS', 'BOOKING FEES': 'SERVICIOS', TELEVISORES: 'TELEVISORES Y PANTALLAS', 'MEMORIAS RAM': 'MEMORIA RAM'
+  };
+  // Categorías amplias de Odoo → categorías canónicas candidatas (orientan la clasificación por similitud)
+  const CAT_HINT = {
+    'PERIFERICOS DE COMPUTACION': ['MOUSE', 'TECLADOS', 'COMBOS TECLADO Y MOUSE', 'CABLES Y ADAPTADORES', 'CAMARAS WEB', 'SOPORTES Y BASES', 'PUNTO DE VENTA', 'WEARABLES', 'ACCESORIOS VARIOS', 'MICROFONOS', 'AUDIFONOS', 'GAMING', 'CARGADORES Y POWER BANKS', 'ALMACENAMIENTO'],
+    SONIDO: ['AUDIFONOS', 'CORNETAS', 'MICROFONOS'], CAMARAS: ['VIDEOVIGILANCIA', 'CAMARAS WEB'], DOMOTICA: ['HOGAR INTELIGENTE', 'ILUMINACION', 'VIDEOVIGILANCIA'],
+    ROUTERING: ['ROUTERING', 'REDES', 'CABLEADO Y RACKS', 'VIDEOVIGILANCIA'], 'UPS Y REGULADORES': ['UPS Y REGULADORES', 'CARGADORES Y POWER BANKS', 'FUENTES DE PODER', 'BATERIAS Y PILAS'],
+    'COMPONENTES / COMPUTACION': ['CASES', 'FUENTES DE PODER', 'REFRIGERACION', 'MEMORIA RAM', 'PROCESADORES', 'TARJETAS MADRE', 'TARJETAS DE VIDEO', 'ALMACENAMIENTO'],
+    PROYECTORES: ['PROYECTORES', 'SOPORTES Y BASES', 'ACCESORIOS VARIOS'], LAPTOP: ['LAPTOP', 'AIO', 'BOLSOS Y ESTUCHES', 'CARGADORES Y POWER BANKS'], IMPRESORA: ['IMPRESORA', 'PUNTO DE VENTA', 'ESCANERES'],
+    MONITORES: ['MONITORES', 'TELEVISORES Y PANTALLAS', 'SOPORTES Y BASES'], ALMACENAMIENTO: ['ALMACENAMIENTO', 'MEMORIA RAM'], MOBILIARIO: ['MOBILIARIO', 'GAMING', 'SOPORTES Y BASES']
+  };
+  // Sustantivo de tipo de producto → categoría (gana el que aparece primero en la descripción)
+  const TYPE_RULES = [
+    [/\b(RELOJ INTELIGENTE|SMART ?WATCH|SMARTBAND|SMART RING|ANILLO INTELIGENTE|PULSERA INTELIGENTE)\b/, 'WEARABLES'], [/\b(ECOTANK|SMART TANK|MEGA ?TANK|PIXMA|LASERJET|DESKJET|OFFICEJET|IMAGECLASS|WORKFORCE)\b/, 'IMPRESORA'], [/\b(COMBO|KIT) (DE )?(TECLADO|MOUSE)/, 'COMBOS TECLADO Y MOUSE'], [/\bTECLADOS?\b|\bKEYBOARD\b/, 'TECLADOS'],
+    [/\bMOUSE ?PADS?\b|\bMOUSEPAD\b|\bMOUSE\b|\bRATON\b/, 'MOUSE'], [/\b(AUDIFONOS?|AURICULARES?|HEADSET|HEADPHONES?|EARBUDS|EARPHONES?|INTRAAURALES)\b/, 'AUDIFONOS'],
+    [/\b(CORNETAS?|ALTAVOZ|BOCINAS?|PARLANTES?|SPEAKERS?|BARRA DE SONIDO|SOUNDBAR)\b/, 'CORNETAS'], [/\bMICROFONOS?\b/, 'MICROFONOS'], [/\b(PROYECTOR|PROJECTOR)\b/, 'PROYECTORES'],
+    [/\b(MONITOR)\b(?! DE BEBE)/, 'MONITORES'], [/\b(TELEVISOR|SMART TV|TV \d{2})/, 'TELEVISORES Y PANTALLAS'], [/\b(ESTACION DE ENERGIA|POWER STATION|CENTRAL ELECTRICA|UPS|REGULADOR DE VOLTAJE|PROTECTOR DE VOLTAJE|REGLETA|INVERSOR)\b/, 'UPS Y REGULADORES'],
+    [/\b(POWER ?BANK|CARGADOR|CHARGER)\b/, 'CARGADORES Y POWER BANKS'], [/\b(MOCHILA|MORRAL|BOLSO|MALETIN|BACKPACK|ESTUCHE PARA LAPTOP|FUNDA PARA LAPTOP|SLEEVE)\b/, 'BOLSOS Y ESTUCHES'],
+    [/\b(PENDRIVE|MEMORIA USB|USB FLASH|FLASH DRIVE|MICRO ?SD|DISCO DURO|DISCO SOLIDO|\bSSD\b|HARD DRIVE|CARCASA PARA DISCO)\b/, 'ALMACENAMIENTO'], [/\b(ROUTER|MESH)\b/, 'ROUTERING'],
+    [/\b(SWITCH|PUNTO DE ACCESO|ACCESS POINT|ADAPTADOR DE RED|ANTENA|EXTENSOR|REPETIDOR|CPE|INYECTOR POE)\b/, 'REDES'], [/\b(CAMARA WEB|WEBCAM)\b/, 'CAMARAS WEB'],
+    [/\b(CAMARA|NVR|DVR|GRABADOR DE VIDEO|VIDEOVIGILANCIA)\b/, 'VIDEOVIGILANCIA'], [/\b(IMPRESORA|PLOTTER|MULTIFUNCIONAL)\b/, 'IMPRESORA'], [/\b(ESCANER|SCANNER)\b/, 'ESCANERES'],
+    [/\b(LAPTOP|NOTEBOOK|PORTATIL)\b(?! ?(STAND|SOPORTE|BASE))/, 'LAPTOP'], [/\b(ALL[ -]?IN[ -]?ONE|AIO)\b(?!.*\b(MULTIFUNCIONAL|IMPRESORA|ECOTANK|TANK)\b)/, 'AIO'], [/\b(MINI PC|DESKTOP|TORRE)\b/, 'PC CORPORATIVA'],
+    [/\b(TABLET|CELULAR|SMARTPHONE)\b/, 'CELULARES Y TABLETS'], [/\b(CONSOLA|PLAYSTATION|XBOX|NINTENDO|CONTROL (DE )?JUEGO|GAMEPAD|SILLA GAMER)\b/, 'GAMING'],
+    [/\b(SILLA|ESCRITORIO|MESA)\b/, 'MOBILIARIO'], [/\b(SOPORTE|BASE PARA|BRAZO|STAND)\b/, 'SOPORTES Y BASES'], [/\b(BOMBILL[OA]|LAMPARA|LUZ LED|TIRA LED|ILUMINACION)\b/, 'ILUMINACION'],
+    [/\b(ENCHUFE INTELIGENTE|SENSOR|INTERRUPTOR INTELIGENTE|TIMBRE|CERRADURA)\b/, 'HOGAR INTELIGENTE'], [/\b(CABLE|ADAPTADOR|CONVERTIDOR|HUB|DOCKING|EXTENSION)\b/, 'CABLES Y ADAPTADORES'],
+    [/\b(PAPEL|ETIQUETAS?|ROLLO TERMICO|RESMA)\b/, 'PAPELERIA'], [/\b(LICENCIA|SOFTWARE|ANTIVIRUS|OFFICE|WINDOWS)\b/, 'SOFTWARE'], [/\b(MEMORIA RAM|DDR[345]|SODIMM)\b/, 'MEMORIA RAM'],
+    [/\b(FUENTE DE PODER|PSU)\b/, 'FUENTES DE PODER'], [/\b(GABINETE|CASE)\b/, 'CASES'], [/\b(VENTILADOR|COOLER|DISIPADOR|ENFRIAMIENTO)\b/, 'REFRIGERACION'], [/\b(PILAS?|BATERIAS?)\b/, 'BATERIAS Y PILAS'],
+    [/\b(CAJON MONEDERO|LECTOR DE CODIGO|ESCANER DE CODIGO|IMPRESORA FISCAL)\b/, 'PUNTO DE VENTA']
+  ];
+  function typeCat(t, canon) { let best = null; for (const [re, c] of TYPE_RULES) { const m = t.match(re); if (m && canon.includes(c) && (!best || m.index < best.i)) best = { c, i: m.index }; } return best ? best.c : ''; }
+  const SERVICE_RE = /\b(FLETE|HONORARIOS?|REBATE|ALMACENAJE|SERVICIO|USUARIOS|EVENTO|MATERIAL POP|BOOKING|INSTALACION|MANO DE OBRA|ENVIO|COMISION)\b/;
+  const catKey = c => norm(c).replace(/[^A-Z0-9]+/g, ' ').trim().split(' ').map(w => w.length > 4 && !/\d/.test(w) ? w.replace(/(ES|S|E)$/, '') : w).join(' '); // singular/plural y variantes de escritura
+  function canonCatFactory(canon) {
+    const byKey = new Map(canon.map(c => [catKey(c), c]));
+    return raw => {
+      const n = norm(raw).replace(/\s+/g, ' ').trim();
+      if (!n) return '';
+      if (CAT_ALIAS[n]) return CAT_ALIAS[n];
+      if (canon.includes(n)) return n;
+      return byKey.get(catKey(n)) || '';
+    };
+  }
+  const CPU = t => { let m;
+    if ((m = t.match(/\bCORE\s*(TM|™)?\s*ULTRA\s*(\d)/))) return 'Core Ultra ' + m[2];
+    if ((m = t.match(/\b(?:CORE\s*(?:TM|™)?\s*)?I([3579])[\s\-]?\d{3,5}|\bCORE\s*(?:TM|™)?\s*I([3579])\b|\bI([3579])\b/))) return 'Core i' + (m[1] || m[2] || m[3]);
+    if ((m = t.match(/\bRYZEN\s*(?:TM|™)?\s*(?:AI\s*)?(\d)/))) return 'Ryzen ' + m[1];
+    if ((m = t.match(/\bR([3579])[\s\-]\d{4}/))) return 'Ryzen ' + m[1];
+    for (const [re, v] of [[/CELERON|N4500|N4020|N100\b|N200\b/, 'Celeron'], [/PENTIUM/, 'Pentium'], [/ATHLON/, 'Athlon'], [/SNAPDRAGON/, 'Snapdragon'], [/XEON/, 'Xeon'], [/\bM[1-4]\b.*(APPLE|MAC)|(APPLE|MAC).*\bM[1-4]\b/, 'Apple M']]) if (re.test(t)) return v;
+    return ''; };
+  const RAM = t => { const m = t.match(/\b(4|8|12|16|18|24|32|36|48|64|96|128)\s*GB\b(?!\s*(SSD|HDD|EMMC|M\.?2|NVME|PCIE|ALMAC|DE ALMAC))/) || t.match(/\b(4|8|12|16|32|64)\s*(?:GB\s*)?(RAM|DDR\d)/); return m ? m[1] + 'GB' : ''; };
+  const STO = t => { const m = t.match(/\b(\d(?:\.\d)?)\s*TB\b/) || t.match(/\b(128|256|500|512|1000|1024|2000)\s*GB\b/); if (!m) return ''; const v = /TB/.test(m[0]) ? m[1] + 'TB' : (m[1] === '1000' || m[1] === '1024' ? '1TB' : m[1] === '2000' ? '2TB' : m[1] + 'GB'); return v + (/HDD|DISCO DURO/.test(t) && !/SSD/.test(t) ? ' HDD' : ' SSD'); };
+  const INCH = t => { const m = t.match(/\b(\d{2}(?:[.,]\d)?)\s*(?:"|''|”|PULG|IN\b|INCH)/); return m ? m[1].replace(',', '.') + '"' : ''; };
+  const GPU = t => { const m = t.match(/\b(RTX|GTX)\s*-?\s*(\d{4})/); return m ? m[1] + ' ' + m[2] : ''; };
+  const CONS_TYPE = { TONER: 'Tóner', TINTA: 'Botella de Tinta', CARTUCHO: 'Cartucho de Tinta', CINTA: 'Cinta', TAMBOR: 'Tambor / Drum', CHIP: 'Chip de Tóner', POLVO: 'Polvo de Tóner', MANT: 'Cartucho de Mantenimiento', CABEZAL: 'Cabezal de Impresión', OTRO: 'Insumo de Impresión' };
+  const CONS_COLOR = { NEGRO: 'Negro', CYAN: 'Cian', MAGENTA: 'Magenta', AMARILLO: 'Amarillo', TRICOLOR: 'Tricolor' };
+  function subTemplate(cat, text, ci) {
+    const t = norm(text).replace(/(\d),(\d{3})(?!\d)/g, '$1$2');
+    const j = a => a.filter(Boolean).join(' ');
+    switch (cat) {
+      case 'CONSUMIBLES': if (!ci) return ''; return j([CONS_TYPE[ci.kind] || 'Insumo de Impresión', CONS_COLOR[ci.color] || '']) + ' · ' + (ci.generic ? 'Genérico' : 'Original');
+      case 'LAPTOP': { const c = CPU(t); if (!c) return ''; return j(['Laptop', c, RAM(t), STO(t), /GAMING|GAMER|RTX|GTX/.test(t) ? GPU(t) : '']); }
+      case 'AIO': { const c = CPU(t); if (!c) return ''; return j(['AIO', INCH(t), c, RAM(t), STO(t)]); }
+      case 'PC CORPORATIVA': { const c = CPU(t); if (!c) return ''; return j([/MINI ?PC|CUBI|NUC|TINY/.test(t) ? 'Mini PC' : 'PC Corporativa', c, RAM(t), STO(t)]); }
+      case 'MONITORES': { const i = INCH(t); if (!i) return ''; const r = /\b(4K|UHD|3840)\b/.test(t) ? '4K' : /\b(QHD|WQHD|2K|2560)\b/.test(t) ? 'QHD' : /\b(FHD|FULL ?HD|1080P?|1920)\b/.test(t) ? 'FHD' : /\bHD\b/.test(t) ? 'HD' : ''; const hz = (t.match(/\b(\d{2,3})\s*HZ\b/) || [])[1]; const pn = (t.match(/\b(IPS|VA|TN|OLED)\b/) || [])[1]; return j(['Monitor', i, r, hz ? hz + 'Hz' : '', pn || '']); }
+      case 'IMPRESORA': { const fn = /MULTIFUNCI|AIO|ALL[ -]?IN[ -]?ONE|\bMFP?\b|COPIA|ESCANE/.test(t) ? 'Multifuncional' : 'Solo Impresión'; const ty = /TERMIC|ETIQUET|RECIBO|TICKET|ZT\d|ZD\d|TM-?T/.test(t) ? 'Térmica de Recibos/Etiquetas' : /MATRIZ|MATRICIAL|\bLX\b|\bFX\b|LQ-?\d/.test(t) ? 'Matriz de Punto' : /SUBLIMA/.test(t) ? 'Sublimación' : /PLOTTER|SURECOLOR|DESIGNJET|GRAN FORMATO/.test(t) ? 'Gran Formato' : /LASER|LBP|LASERJET|IMAGECLASS/.test(t) ? (/COLOR|CDW|CDN|\bC\d{3,4}/.test(t) ? 'Láser Color' : 'Láser Mono') : /TANQUE|ECOTANK|SMART TANK|MEGA ?TANK|\bG\d{4}\b|\bL\d{3,5}\b|TINTA CONTINUA/.test(t) ? 'Tinta Continua' : /TINTA|PIXMA|DESKJET|INYECCION/.test(t) ? 'Inyección' : ''; return ty ? j(['Impresora', ty === 'Térmica de Recibos/Etiquetas' || ty === 'Gran Formato' ? '' : fn, ty]) : ''; }
+      case 'ALMACENAMIENTO': { const cm = t.match(/\b(\d{1,4}(?:\.\d)?)\s*(GB|TB|T)\b/); const cap = cm ? cm[1] + (cm[2] === 'GB' ? 'GB' : 'TB') : '';
+        if (/PENDRIVE|MEMORIA USB|USB FLASH|FLASH DRIVE|DATATRAVELER|\bDT\b/.test(t)) { const v = (t.match(/USB\s*(3\.2|3\.1|3\.0|2\.0)/) || [])[1]; return j(['Pendrive', 'USB' + (v ? ' ' + v : ''), cap]); }
+        if (/MICRO ?SD|TARJETA DE MEMORIA/.test(t)) return j(['Memoria MicroSD', cap]);
+        if (/\bSSD\b|ESTADO SOLIDO|SOLIDO/.test(t)) return j([/EXTERN|PORTATIL|PORTABLE/.test(t) ? 'SSD Externo' : 'SSD', /M\.?2|NVME/.test(t) ? (/NVME|PCIE/.test(t) ? 'M.2 NVMe' : 'M.2 SATA') : /SATA|2\.5/.test(t) ? 'SATA 2.5"' : '', /EXTERN|PORTATIL|PORTABLE/.test(t) ? 'USB' : '', cap].filter(Boolean));
+        if (/DISCO DURO|HARD DRIVE|\bHDD\b/.test(t)) return j([/EXTERN|PORTATIL|PORTABLE|CANVIO|USB/.test(t) ? 'Disco Duro Externo' : 'Disco Duro', cap]);
+        return ''; }
+      case 'UPS Y REGULADORES': { const va = (t.match(/\b(\d{3,5})\s*VA\b/) || [])[1], w = (t.match(/\b(\d{2,5})\s*W\b/) || [])[1], wh = (t.match(/\b(\d{2,5})\s*WH\b/) || [])[1];
+        if (/ESTACION DE ENERGIA|POWER STATION|BLUETTI|\bAC\d{2,3}P?\b|ELITE \d/.test(t)) return j(['Estación de Energía', w ? w + 'W' : '', wh ? wh + 'Wh' : '']);
+        if (/REGULADOR|AVR/.test(t)) return j(['Regulador de Voltaje', va ? va + 'VA' : '', w ? w + 'W' : '']);
+        if (/PROTECTOR/.test(t)) return j(['Protector de Voltaje', w ? w + 'W' : '']);
+        if (/\bUPS\b/.test(t)) return j(['UPS', /ONLINE|ON-LINE/.test(t) ? 'Online' : /INTERACTIV/.test(t) ? 'Interactivo' : '', va ? va + 'VA' : '', w ? w + 'W' : '']);
+        return ''; }
+    }
+    return '';
+  }
+  function classify(W) {
+    // Taxonomía cerrada: categorías base + las que traiga la data que no sean variantes de una existente
+    const toBase = canonCatFactory(BASE_CATS);
+    const extra = [...new Set(W.rows.map(r => norm(r.cat).replace(/\s+/g, ' ').trim()).filter(c => c && !toBase(c)))];
+    const canon = [...BASE_CATS, ...extra];
+    const toCat = canonCatFactory(canon);
+    W.canonCats = canon.sort();
+    // 1) Mercado: categoría canónica + subcategoría unificada (misma escritura para variantes de una misma subcategoría)
+    const variants = new Map();
+    W.rows.forEach(r => { r.catH = toCat(r.cat) || norm(r.cat) || 'SIN CATEGORIA'; const k = r.catH + '|' + catKey(r.sub); const m = variants.get(k) || new Map(); m.set(r.sub, (m.get(r.sub) || 0) + 1); variants.set(k, m); });
+    const best = new Map(); variants.forEach((m, k) => best.set(k, [...m.entries()].sort((a, b) => b[1] - a[1])[0][0]));
+    W.mlist.forEach(p => {
+      const r0 = p.rows[p.rows.length - 1];
+      p.catH = r0.catH;
+      p.subH = p.catH === 'CONSUMIBLES' && p.cons ? subTemplate('CONSUMIBLES', p.desc, p.cons) : best.get(p.catH + '|' + catKey(p.sub)) || p.sub;
+      p.rows.forEach(r => { r.subH = p.subH; r.catH = p.catH; });
+    });
+    W.subsByCat = new Map(); W.mlist.forEach(p => { if (!W.subsByCat.has(p.catH)) W.subsByCat.set(p.catH, new Map()); const m = W.subsByCat.get(p.catH); m.set(p.subH, (m.get(p.subH) || 0) + 1); });
+    // 2) Supricom: cada producto queda con categoría y subcategoría de la misma taxonomía
+    W.prods.forEach(o => {
+      const t = norm(o.name), m = o.match, ci = o.cons;
+      let cat = '', sub = '', src = '';
+      if (SERVICE_RE.test(t) || ['ALL', 'SERVICIO', 'BOOKING FEES'].includes(norm(o.cat)) && !ci && !m) { cat = 'SERVICIOS'; sub = /FLETE|ENVIO/.test(t) ? 'Flete' : /REBATE/.test(t) ? 'Rebate de Marca' : /HONORARIO/.test(t) ? 'Honorarios Profesionales' : /ALMACENAJE/.test(t) ? 'Almacenaje' : /POP|EVENTO/.test(t) ? 'Mercadeo / Material POP' : 'Servicio'; src = 'Regla'; }
+      else if (ci) { cat = 'CONSUMIBLES'; sub = subTemplate('CONSUMIBLES', o.name, ci); src = m ? 'Mercado (' + m.type.toLowerCase() + ')' : 'Regla (consumible)'; if (ci.codes.size || ci.printers.size) o.compat = [...ci.codes, ...ci.printers].slice(0, 6).join(', '); }
+      else if (m) { const ref = (m.refs || m.comps || [])[0]; cat = ref ? ref.catH : toCat(m.cat); sub = m.type === 'Idéntico' && ref ? ref.subH : (best.get(cat + '|' + catKey(m.sub)) || m.sub); src = 'Mercado (' + m.type.toLowerCase() + ')'; }
+      else {
+        // Similitud con el catálogo de mercado, orientada por la categoría de Odoo
+        const q = new Set(toks(o.name)); const nb = q.size ? neighbors(W, q, 20) : [];
+        const own = toCat(o.cat), hint = new Set(CAT_HINT[norm(o.cat)] || (own ? [own] : []));
+        const byType = typeCat(t.replace(/(\d),(\d{3})(?!\d)/g, '$1$2'), canon);
+        if (byType) cat = byType;
+        else {
+          // sin sustantivo de tipo: votación por similitud; si la categoría de Odoo es específica, solo dentro de sus candidatas
+          const sc = new Map(); nb.forEach(({ p, s }) => { if (p.cons) return; if (hint.size && !hint.has(p.catH)) return; sc.set(p.catH, (sc.get(p.catH) || 0) + s); });
+          const top = [...sc.entries()].sort((a, b) => b[1] - a[1])[0];
+          cat = top && (top[1] >= 0.45 || hint.size) ? top[0] : own || (hint.size ? [...hint][0] : 'ACCESORIOS VARIOS');
+        }
+        sub = subTemplate(cat, o.name, null);
+        if (!sub) {
+          // subcategoría existente de esa categoría con mejor cobertura de términos (y especificaciones compatibles)
+          // subcategoría existente cuyos términos estén todos en la descripción (la más específica); si no, el tipo base
+          let bestSub = null, base = null;
+          (W.subsByCat.get(cat) || new Map()).forEach((n, sname) => {
+            const st = toks(sname); if (!st.length || !q.has(st[0])) return;
+            if (!base || n > base.n) base = { n, w: sname.split(' ')[0] };
+            if (!st.every(x => q.has(x))) return;
+            const f = st.length + Math.min(n, 50) / 1000; if (!bestSub || f > bestSub.f) bestSub = { sname, f };
+          });
+          sub = bestSub ? bestSub.sname : base ? base.w : 'Otros ' + cat.charAt(0) + cat.slice(1).toLowerCase();
+        }
+        src = 'Similitud';
+      }
+      if (!sub) { const tpl = subTemplate(cat, o.name, ci); sub = tpl || (m ? m.sub : 'Otros ' + cat.charAt(0) + cat.slice(1).toLowerCase()); }
+      o.catH = cat; o.subH = sub.replace(/\s+/g, ' ').trim(); o.clsSrc = src;
+    });
+  }
+
+  /* ---------- Inteligencia competitiva: productos de mercado agrupados y cobertura de Supricom ---------- */
+  // Un mismo producto aparece con códigos distintos en cada mayorista: se agrupa por SKU o por marca + código de modelo poco frecuente.
+  function marketGroups(W) {
+    const L = W.mlist, parent = L.map((_, i) => i);
+    const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    const uni = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[b] = a; };
+    const df = new Map(); L.forEach(p => p.mt.forEach(t => df.set(t, (df.get(t) || 0) + 1)));
+    // Cada producto aporta su código de modelo principal (el más raro y largo); se une con productos de la misma marca,
+    // categoría y subcategoría (y color, en consumibles) que contengan ese mismo código. Evita uniones en cadena.
+    const scope = p => brandKey(p.brand) + '|' + p.catH + '|' + p.subH + '|' + (p.cons ? p.cons.color + p.cons.generic : '');
+    const byTok = new Map();
+    L.forEach((p, i) => { if (!brandKey(p.brand)) return; p.mt.forEach(t => { if (t.length < 5 || df.get(t) > 6) return; const k = scope(p) + '|' + t; if (!byTok.has(k)) byTok.set(k, []); byTok.get(k).push(i); }); });
+    L.forEach((p, i) => {
+      if (!brandKey(p.brand)) return;
+      const prim = [...p.mt].filter(t => t.length >= 5 && df.get(t) <= 6).sort((a, b) => df.get(a) - df.get(b) || b.length - a.length)[0];
+      if (prim) (byTok.get(scope(p) + '|' + prim) || []).forEach(j => uni(i, j));
+    });
+    const G = new Map();
+    L.forEach((p, i) => { const r = find(i); if (!G.has(r)) G.set(r, []); G.get(r).push(p); });
+    W.groups = [...G.values()].map((members, gi) => {
+      const rows = members.flatMap(m => m.rows);
+      const first = rows.reduce((a, r) => r.date < a ? r.date : a, '9999');
+      const rep = members.slice().sort((a, b) => (b.last || '').localeCompare(a.last || '') || b.rows.length - a.rows.length)[0];
+      const g = { id: gi, members, rows, rep, brand: rep.brand, catH: rep.catH, subH: rep.subH, desc: rep.desc, codes: [...new Set(members.map(m => m.code))], first,
+        firstMays: [...new Set(rows.filter(r => r.date === first).map(r => r.may))], cov: '', covBy: null };
+      members.forEach(m => m.group = g);
+      return g;
+    });
+  }
+  const COV_RANK = { 'Idéntico': 2, 'Similar': 1, '': 0 };
+  function coverage(W) {
+    const set = (p, cov, o) => { const g = p.group; if (COV_RANK[cov] > COV_RANK[g.cov]) { g.cov = cov; g.covBy = o; } };
+    // 1) cruces directos del matching de Supricom
+    W.prods.forEach(o => { const m = o.match; if (!m) return; (m.refs || []).forEach(p => set(p, 'Idéntico', o)); if (m.type === 'Similar') (m.comps || []).forEach(p => set(p, 'Similar', o)); });
+    // 2) misma subcategoría técnica homologada (no consumibles; excluye subcategorías genéricas de respaldo)
+    const subs = new Map();
+    W.prods.forEach(o => { if (o.cons || o.catH === 'SERVICIOS' || /^Otros /.test(o.subH) || !o.subH.includes(' ')) return; const k = o.catH + '|' + o.subH; if (!subs.has(k)) subs.set(k, o); });
+    W.mlist.forEach(p => { if (p.cons) return; const o = subs.get(p.catH + '|' + p.subH); if (o) set(p, 'Similar', o); });
+    // 3) consumibles: originales ↔ originales (misma marca y modelo); genéricos ↔ genéricos (misma compatibilidad)
+    const idx = new Map();
+    W.prods.forEach(o => { if (!o.cons) return; [...o.cons.codes, ...o.cons.printers].forEach(c => { if (!idx.has(c)) idx.set(c, []); idx.get(c).push(o); }); });
+    W.mlist.forEach(p => {
+      const pc = p.cons; if (!pc) return;
+      const cand = new Set(); [...pc.codes, ...pc.printers].forEach(c => (idx.get(c) || []).forEach(o => cand.add(o)));
+      cand.forEach(o => {
+        const oc = o.cons;
+        if (!kindOk(oc.kind, pc.kind) || (oc.color && pc.color && oc.color !== pc.color)) return;
+        if (!pc.generic && !oc.generic && oc.oem && oc.oem === pc.oem && [...oc.codes].some(c => pc.codes.has(c))) set(p, 'Idéntico', o);
+        else if (pc.generic && oc.generic && brandKey(o.brand) !== brandKey(p.brand)) set(p, 'Similar', o);
+      });
+    });
+  }
+
+  /* ---------- Precio Supricom vigente a una fecha de corte ---------- */
+  function supricomPrice(o, cut, sede = '', win = 15, fallback = 60) {
+    const D = new Date(cut + 'T00:00:00Z').getTime();
+    let q = 0, v = 0, c = 0, last = null;
+    for (const f of o.facts) {
+      const t = new Date(f.date + 'T00:00:00Z').getTime();
+      if (t > D) break;
+      if (sede ? f.co !== sede : f.co === 'P') continue;
+      if (f.q > 0) last = f;
+      if (t > D - win * DAY && f.q > 0) { q += f.q; v += f.v; c += f.c; }
+    }
+    if (q > 0) return { price: v / q, cost: c / q, ref: `${win} días al corte`, from: toISO(new Date(D - (win - 1) * DAY)), to: cut, q };
+    if (last && (D - new Date(last.date + 'T00:00:00Z').getTime()) <= fallback * DAY)
+      return { price: last.v / last.q, cost: last.c / last.q, ref: 'última venta', from: last.date, to: last.date, q: last.q };
+    return null;
+  }
+
+  function marketAt(W, prods, cut) {
+    const list = [];
+    prods.forEach(p => p.rows.forEach(r => { if (r.date === cut) list.push(r); }));
+    return list;
+  }
+
+  /* Tabla comparativa para un corte */
+  function compare(W, cut, sede = '') {
+    const out = [];
+    W.prods.forEach(o => {
+      const sp = supricomPrice(o, cut, sede);
+      if (!o.match) { if (o.facts.length) out.push({ o, sp, mk: null }); return; }
+      let mk;
+      if (o.match.type === 'Idéntico') mk = marketAt(W, o.match.refs || [o.match.ref], cut);
+      else mk = marketAt(W, o.match.cons ? o.match.comps : o.match.comps.slice(0, 5), cut);
+      if (!mk.length) { out.push({ o, sp, mk: null }); return; }
+      // Regla del precio más bajo por mayorista
+      const byMay = new Map();
+      mk.forEach(r => { const k = r.may + '|' + r.key; if (!byMay.has(k) || r.pvp < byMay.get(k).pvp) byMay.set(k, r); });
+      const arr = [...byMay.values()].sort((a, b) => a.pvp - b.pvp);
+      const prices = arr.map(r => r.pvp);
+      const med = prices.length % 2 ? prices[(prices.length - 1) / 2] : (prices[prices.length / 2 - 1] + prices[prices.length / 2]) / 2;
+      const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+      out.push({ o, sp, mk: { min: prices[0], minMay: arr[0].may, max: prices[prices.length - 1], avg, med, n: new Set(arr.map(r => r.may)).size, rows: arr } });
+    });
+    return out;
+  }
+
+  /* ---------- Cuadrantes ---------- */
+  const EXCL_CATS = new Set(['ALL', 'SERVICIO', 'BOOKING FEES']);
+  // Consolidado Caracas (C) + Valencia (V); excluye otras compañías (P = Panamá). Margen % = (Venta − Costo valorizado) / Venta
+  function quadrants(W, monthsSel, opts = {}) {
+    const set = new Set(monthsSel);
+    let items = [];
+    W.prods.forEach(o => {
+      let v = 0, c = 0, q = 0, qv = 0, vc = 0, vv = 0;
+      for (const f of o.facts) if (set.has(f.date.slice(0, 7)) && f.co !== 'P') { v += f.v; c += f.c; q += f.q; qv += f.qv; if (f.co === 'C') vc += f.v; else if (f.co === 'V') vv += f.v; }
+      if (v <= 0) return;
+      if (opts.exclude && (EXCL_CATS.has(norm(o.cat)) || c <= 0.01 * v)) return;
+      items.push({ o, v, c, q, qv, vc, vv, m: (v - c) / v });
+    });
+    const totalAll = items.reduce((a, b) => a + b.v, 0), nAll = items.length;
+    items.sort((a, b) => b.v - a.v);
+    if (opts.mode === 'top200') items = items.slice(0, 200);
+    else if (opts.mode === 'pareto') { let acc = 0; const out = []; for (const it of items) { if (acc >= 0.8 * totalAll) break; out.push(it); acc += it.v; } items = out; }
+    const V = items.reduce((a, b) => a + b.v, 0), C = items.reduce((a, b) => a + b.c, 0);
+    const Q = items.reduce((a, b) => a + b.q, 0), QV = items.reduce((a, b) => a + b.qv, 0);
+    const avgV = items.length ? V / items.length : 0;
+    const avgMw = V ? (V - C) / V : 0;
+    items.forEach(it => {
+      const hv = it.v >= avgV, hm = it.m >= avgMw;
+      it.quad = hv && hm ? 'Estrella' : hv ? 'Volumen' : hm ? 'Oportunidad' : 'Sin Rentabilidad';
+    });
+    return { items, V, C, avgV, avgMw, mCut: avgMw, totalAll, nAll, valCov: Q ? QV / Q : 0, VC: items.reduce((a, b) => a + b.vc, 0), VV: items.reduce((a, b) => a + b.vv, 0) };
+  }
+
+  /* ---------- Evolución de mercado ---------- */
+  // Variaciones fuera de [-50%, +100%] entre dos cortes se tratan como posibles errores de captura
+  const validRatio = r => r >= 0.5 && r <= 2;
+  function evolution(W, filter, dim, metric, dates = W.dates) {
+    const rows = W.rows.filter(filter);
+    const groups = new Map();
+    rows.forEach(r => {
+      const g = dim === 'total' ? 'Mercado' : r[dim];
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(r);
+    });
+    const res = [];
+    groups.forEach((rs, g) => {
+      const byDate = new Map();
+      rs.forEach(r => { if (!byDate.has(r.date)) byDate.set(r.date, new Map()); const m = byDate.get(r.date); const k = r.key + '|' + r.may; if (!m.has(k) || r.pvp < m.get(k)) m.set(k, r.pvp); });
+      const series = []; let idx = 100, prev = null;
+      dates.forEach(dt => {
+        const m = byDate.get(dt);
+        if (!m) { series.push(null); return; }
+        const vals = [...m.values()];
+        let val;
+        if (metric === 'index') {
+          if (prev) {
+            const ratios = [];
+            m.forEach((p, k) => { if (prev.has(k)) ratios.push(p / prev.get(k)); });
+            const ok = ratios.filter(validRatio);
+            if (ok.length) idx *= Math.exp(ok.reduce((a, b) => a + Math.log(b), 0) / ok.length);
+          }
+          val = idx; prev = m;
+        } else if (metric === 'avg') val = vals.reduce((a, b) => a + b, 0) / vals.length;
+        else if (metric === 'median') { vals.sort((a, b) => a - b); val = vals.length % 2 ? vals[(vals.length - 1) / 2] : (vals[vals.length / 2 - 1] + vals[vals.length / 2]) / 2; }
+        else val = vals.length;
+        series.push(val);
+      });
+      res.push({ g, n: rs.length, series });
+    });
+    res.sort((a, b) => b.n - a.n);
+    return res;
+  }
+
+  function movers(W, filter, d0, d1) {
+    const a = new Map(), b = new Map();
+    W.rows.forEach(r => {
+      if (!filter(r)) return;
+      const k = r.key + '|' + r.may;
+      if (r.date === d0 && (!a.has(k) || r.pvp < a.get(k).pvp)) a.set(k, r);
+      if (r.date === d1 && (!b.has(k) || r.pvp < b.get(k).pvp)) b.set(k, r);
+    });
+    const out = [];
+    b.forEach((r, k) => { if (a.has(k)) { const p0 = a.get(k).pvp; out.push({ r, p0, p1: r.pvp, ch: r.pvp / p0 - 1, out: !validRatio(r.pvp / p0) }); } });
+    return out;
+  }
+
+  /* ---------- Carga de archivos (array de filas de SheetJS) ---------- */
+  const H = s => norm(String(s ?? '').split('/').pop()).replace(/[^A-Z0-9]/g, '');
+  function findCols(header, spec) {
+    const hs = header.map(H), out = {};
+    for (const [k, aliases] of Object.entries(spec)) {
+      for (const a of aliases) { const i = hs.findIndex(h => h === a); if (i >= 0) { out[k] = i; break; } }
+      if (out[k] == null) for (const a of aliases) { const i = hs.findIndex(h => h && h.includes(a)); if (i >= 0) { out[k] = i; break; } }
+    }
+    return out;
+  }
+  function headerRow(aoa, must) {
+    for (let i = 0; i < Math.min(aoa.length, 30); i++) {
+      const hs = (aoa[i] || []).map(H);
+      if (must.every(alts => alts.some(a => hs.some(h => h && (h === a || h.includes(a)))))) return i;
+    }
+    return -1;
+  }
+
+  const MKT_SPEC = {
+    code: ['CODIGO', 'SKU', 'PARTNUMBER', 'NUMERODEPARTE', 'CODE'], brand: ['MARCA', 'BRAND'], cat: ['CATEGORIA', 'CATEGORY'],
+    sub: ['SUBCATEGORIANOMBRECORTO', 'SUBCATEGORIA', 'NOMBRECORTO'], conf: ['GRADODECONFIANZA', 'CONFIANZA'], niv: ['NIVEL'],
+    obs: ['OBSERVACIONESVERIFICAR', 'OBSERVACIONES'], may: ['MAYORISTA', 'PROVEEDOR', 'COMPETIDOR'], date: ['FECHA', 'FECHADECORTE', 'CORTE', 'DATE'],
+    pvp: ['PVP', 'PRECIO', 'PRICE'], desc: ['DESCRIPCIONORIGINAL', 'DESCRIPCION', 'DESCRIPTION']
+  };
+  function parseMarket(sheets) {
+    // sheets: [{name, aoa}] — usa la hoja "Catalogo" si existe
+    const cand = sheets.find(s => /catalog/i.test(norm(s.name))) ? [sheets.find(s => /catalog/i.test(norm(s.name)))] : sheets;
+    for (const s of cand) {
+      const hr = headerRow(s.aoa, [['CODIGO', 'SKU'], ['PVP', 'PRECIO'], ['MAYORISTA', 'PROVEEDOR', 'COMPETIDOR']]);
+      if (hr < 0) continue;
+      const c = findCols(s.aoa[hr], MKT_SPEC);
+      const out = []; let bad = 0;
+      for (let i = hr + 1; i < s.aoa.length; i++) {
+        const r = s.aoa[i]; if (!r || r[c.code] == null || r[c.code] === '') continue;
+        const pvp = num(r[c.pvp]); const dt = parseDate(r[c.date]);
+        if (!(pvp > 0) || !dt) { bad++; continue; }
+        const g = k => c[k] == null || r[c[k]] == null ? '' : String(r[c[k]]).trim();
+        out.push({ code: g('code'), brand: g('brand').toUpperCase(), cat: g('cat').toUpperCase(), sub: g('sub'), conf: c.conf == null ? null : num(r[c.conf]), niv: g('niv'), obs: g('obs'), may: g('may').toUpperCase(), date: toISO(dt), pvp: Math.round(pvp * 100) / 100, desc: g('desc') });
+      }
+      return { rows: out, bad, sheet: s.name, cols: c };
+    }
+    throw new Error('No se encontró una hoja con columnas Código, PVP y Mayorista.');
+  }
+
+  const ODOO_SPEC = {
+    date: ['FECHADELAORDEN', 'FECHADEPEDIDO', 'FECHAORDEN', 'ORDERDATE', 'DATEORDER', 'FECHADECONFIRMACION', 'FECHA', 'DATE'],
+    code: ['REFERENCIAINTERNA', 'DEFAULTCODE', 'INTERNALREFERENCE', 'CODIGO', 'SKU', 'REFERENCIA'],
+    name: ['PRODUCTO', 'PRODUCT', 'NOMBRE', 'DESCRIPCION'],
+    brand: ['MARCA', 'BRAND'], cat: ['CATEGORIADEPRODUCTO', 'CATEGORIADELPRODUCTO', 'PRODUCTCATEGORY', 'CATEGORIA', 'CATEGORY'],
+    q: ['CANTIDAD', 'PRODUCTUOMQTY', 'QUANTITY', 'CANT'], unit: ['PRECIOUNITARIO', 'PRICEUNIT', 'UNITPRICE'],
+    v: ['SUBTOTAL', 'PRICESUBTOTAL', 'TOTALSINIMPUESTOS', 'BASEIMPONIBLE', 'UNTAXEDAMOUNT', 'VENTAS', 'VENTA'],
+    cost: ['COSTO', 'COSTE', 'PURCHASEPRICE', 'COST'], ctot: ['COSTOTOTAL', 'COSTTOTAL'],
+    state: ['ESTADO', 'STATE', 'STATUS'], company: ['COMPANIA', 'EMPRESA', 'COMPANY', 'SEDE', 'SUCURSAL']
+  };
+  function parseOdoo(sheets) {
+    for (const s of sheets) {
+      const hr = headerRow(s.aoa, [['FECHA', 'DATE'], ['PRODUCTO', 'PRODUCT'], ['CANTIDAD', 'QTY', 'QUANTITY']]);
+      if (hr < 0) continue;
+      const c = findCols(s.aoa[hr], ODOO_SPEC);
+      if (c.v == null && c.unit == null) throw new Error('El archivo de Odoo necesita la columna Subtotal o Precio unitario.');
+      if (c.cost == null && c.ctot == null) throw new Error('El archivo de Odoo necesita la columna Costo (costo unitario) para calcular el margen.');
+      const prods = new Map(), facts = new Map(); let skipped = 0, n = 0, lastDate = null, lastProd = null;
+      for (let i = hr + 1; i < s.aoa.length; i++) {
+        const r = s.aoa[i]; if (!r) continue;
+        const g = k => c[k] == null || r[c[k]] == null ? '' : String(r[c[k]]).trim();
+        // Exportaciones agrupadas de Odoo dejan la fecha/producto vacíos en filas hijas
+        let dt = parseDate(r[c.date]); if (dt) lastDate = dt; else dt = lastDate;
+        if (c.state != null) { const st = norm(g('state')); if (st && !/(VENTA|SALE|DONE|BLOQUEAD|LOCKED|HECHO)/.test(st)) { skipped++; continue; } }
+        let name = g('name'); if (name) lastProd = name; else name = lastProd;
+        const q = num(r[c.q]); if (!dt || !name || !(q > 0)) { skipped++; continue; }
+        let v = c.v != null ? num(r[c.v]) : NaN; if (!(v === v)) v = q * num(r[c.unit]);
+        let cost = c.ctot != null ? num(r[c.ctot]) : q * num(r[c.cost]); if (!(cost === cost)) cost = 0;
+        let code = g('code'), nm = name;
+        const mm = name.match(/^\[([^\]]+)\]\s*(.*)$/); // "[CODIGO] Nombre"
+        if (mm) { if (!code) code = mm[1]; nm = mm[2]; }
+        const id = skuKey(code) ? 'C:' + skuKey(code) : 'N:' + norm(nm).replace(/\s+/g, ' ');
+        if (!prods.has(id)) prods.set(id, [id, code, nm, g('brand'), g('cat')]);
+        const cn = norm(g('company')); const co = !cn ? '' : /CCS|CARACAS/.test(cn) ? 'C' : /OFFICE SOLUTIONS|VALENCIA|OSC/.test(cn) ? 'V' : 'P';
+        const fk = id + '|' + toISO(dt) + '|' + co;
+        const f = facts.get(fk) || [id, toISO(dt), 0, 0, 0, co, 0];
+        f[2] += q; f[3] += v; f[4] += cost; f[6] += q; facts.set(fk, f); n++;
+      }
+      return { p: [...prods.values()], f: [...facts.values()], lines: n, skipped, sheet: s.name, cols: c };
+    }
+    throw new Error('No se encontró una hoja con columnas Fecha, Producto y Cantidad.');
+  }
+
+  /* Normaliza el seed (ids numéricos) a ids por SKU para poder fusionar con cargas futuras */
+  function normalizeOdooIds(O) {
+    const map = new Map(), prods = new Map();
+    O.p.forEach(p => {
+      const id = /^[CN]:/.test(p[0]) ? p[0] : (skuKey(p[1]) ? 'C:' + skuKey(p[1]) : 'N:' + norm(p[2]).replace(/\s+/g, ' '));
+      map.set(p[0], id);
+      if (!prods.has(id)) prods.set(id, [id, p[1], p[2], p[3], p[4]]);
+    });
+    const facts = new Map();
+    O.f.forEach(f => {
+      const id = map.get(f[0]) || f[0]; const co = f[5] || ''; const k = id + '|' + f[1] + '|' + co;
+      const x = facts.get(k) || [id, f[1], 0, 0, 0, co, 0]; x[2] += f[2]; x[3] += f[3]; x[4] += f[4]; x[6] += (f[6] == null ? f[2] : f[6]); facts.set(k, x);
+    });
+    return { p: [...prods.values()], f: [...facts.values()] };
+  }
+
+  function mergeOdoo(cur, up, replaceAll) {
+    cur = normalizeOdooIds(cur);
+    if (replaceAll) return { p: up.p, f: up.f };
+    const dates = up.f.map(f => f[1]).sort();
+    const lo = dates[0], hi = dates[dates.length - 1];
+    const f = cur.f.filter(x => x[1] < lo || x[1] > hi).concat(up.f);
+    const pm = new Map(cur.p.map(p => [p[0], p]));
+    up.p.forEach(p => { const o = pm.get(p[0]); pm.set(p[0], o ? [p[0], p[1] || o[1], p[2] || o[2], p[3] || o[3], p[4] || o[4]] : p); });
+    return { p: [...pm.values()], f, range: [lo, hi] };
+  }
+
+  function packMarket(objs) {
+    const d = { brand: [], cat: [], sub: [], may: [], niv: [], date: [] }, ix = {};
+    Object.keys(d).forEach(k => ix[k] = new Map());
+    const I = (k, v) => { v = v ?? ''; if (!ix[k].has(v)) { ix[k].set(v, d[k].length); d[k].push(v); } return ix[k].get(v); };
+    return { d, r: objs.map(o => [o.code, I('brand', o.brand), I('cat', o.cat), I('sub', o.sub), o.conf, I('niv', o.niv), o.obs, I('may', o.may), I('date', o.date), o.pvp, o.desc]) };
+  }
+  function unpackMarket(M) {
+    const d = M.d;
+    return M.r.map(r => ({ code: r[0], brand: d.brand[r[1]], cat: d.cat[r[2]], sub: d.sub[r[3]], conf: r[4], niv: d.niv[r[5]], obs: r[6], may: d.may[r[7]], date: d.date[r[8]], pvp: r[9], desc: r[10] }));
+  }
+  function mergeMarket(curM, upRows, replaceAll) {
+    if (replaceAll) return packMarket(upRows);
+    const dates = new Set(upRows.map(r => r.date));
+    const keep = unpackMarket(curM).filter(r => !dates.has(r.date));
+    return packMarket(keep.concat(upRows));
+  }
+
+  /* ---------- Extracción en vivo desde Odoo (conector run_readonly_query) ---------- */
+  const COMPANIES = '9,10'; // 9 = OFFICE SOLUTIONS CENTER 2004, C.A. - B (Valencia) · 10 = SUPRICOM CCS 21, C.A. - B (Caracas)
+  const EXT = "p.commercial_partner_id NOT IN (SELECT partner_id FROM res_company) AND p.name !~* '(SUPRICOM|OFFICE SOLUTIONS CENTER|OFIMASTER)'";
+  const utcStart = d => `'${d} 04:00'`; // medianoche de Caracas (UTC−4) en UTC
+  function sqlProducts(from) {
+    return `SELECT '<<<'||string_agg(concat_ws('|',x.id, coalesce(x.code,''), x.nm, coalesce(x.brand,''), coalesce(x.cat,'')), E'\\n')||'>>>' FROM (SELECT pp.id, regexp_replace(coalesce(pp.default_code,''),'[|;\\n\\r]',' ','g') code, regexp_replace(coalesce(pt.name->>'es_VE', pt.name->>'en_US'),'[|;\\n\\r]+',' ','g') nm, regexp_replace(coalesce(sb.name::text,''),'[|;\\n\\r]',' ','g') brand, pc.name cat FROM product_product pp JOIN product_template pt ON pt.id=pp.product_tmpl_id LEFT JOIN spiff_brand sb ON sb.id=pt.spiff_brand_id LEFT JOIN product_category pc ON pc.id=pt.categ_id WHERE pp.id IN (SELECT sol.product_id FROM sale_order_line sol JOIN sale_order so ON so.id=sol.order_id WHERE so.state='sale' AND so.company_id IN (${COMPANIES}) AND so.date_order>=${utcStart(from)})) x`;
+  }
+  function sqlFacts(from, to) {
+    const L = `SELECT sol.id, sol.product_id, so.company_id, (so.date_order AT TIME ZONE 'UTC' AT TIME ZONE 'America/Caracas')::date d, sol.product_uom_qty q, sol.price_subtotal v, sol.purchase_price pp FROM sale_order_line sol JOIN sale_order so ON so.id=sol.order_id JOIN res_partner p ON p.id=so.partner_id WHERE so.state='sale' AND so.company_id IN (${COMPANIES}) AND sol.display_type IS NULL AND sol.product_uom_qty>0 AND so.date_order >= ${utcStart(from)} AND so.date_order < ${utcStart(to)} AND ${EXT}`;
+    const SV = `SELECT sm.sale_line_id sid, -sum(svl.value) cv, -sum(svl.quantity) cq FROM stock_valuation_layer svl JOIN stock_move sm ON sm.id=svl.stock_move_id JOIN sale_order_line sl ON sl.id=sm.sale_line_id JOIN sale_order so2 ON so2.id=sl.order_id WHERE so2.company_id IN (${COMPANIES}) AND so2.date_order >= ${utcStart(from)} AND so2.date_order < ${utcStart(to)} GROUP BY 1`;
+    return `SELECT '<<<'||coalesce(string_agg(x.s, ';'),'')||'>>>' FROM (SELECT l.product_id||','||to_char(l.d,'YYMMDD')||','||CASE l.company_id WHEN 10 THEN 'C' ELSE 'V' END||','||round(sum(l.q)::numeric,2)||','||round(sum(l.v)::numeric,2)||','||round(sum(l.q*CASE WHEN sv.cq>0 THEN sv.cv/sv.cq ELSE l.pp END)::numeric,2)||','||round(sum(CASE WHEN sv.cq>0 THEN l.q ELSE 0 END)::numeric,2) s FROM (${L}) l LEFT JOIN (${SV}) sv ON sv.sid=l.id GROUP BY l.product_id,l.d,l.company_id) x`;
+  }
+  function payloadText(r) {
+    if (r == null) return '';
+    if (typeof r === 'string') return r;
+    if (typeof r.payload === 'string') return r.payload;
+    if (Array.isArray(r.content)) return r.content.map(c => c.text || '').join('\n');
+    return JSON.stringify(r.payload ?? r);
+  }
+  function parseMarked(r) { const m = payloadText(r).match(/<<<([\s\S]*?)>>>/); if (!m) throw new Error('Respuesta de Odoo sin datos reconocibles'); return m[1]; }
+  function parseLiveProducts(r) { return parseMarked(r).split('\n').filter(l => l.split('|').length >= 5).map(l => l.split('|').slice(0, 5)); }
+  function parseLiveFacts(r) {
+    const s = parseMarked(r); if (!s) return [];
+    return s.split(';').map(t => { const a = t.split(','); return [a[0], '20' + a[1].slice(0, 2) + '-' + a[1].slice(2, 4) + '-' + a[1].slice(4, 6), +a[3], +a[4], +a[5], a[2], +a[6]]; });
+  }
+
+  return { sqlProducts, sqlFacts, parseLiveProducts, parseLiveFacts, consInfo, modelToks, validRatio, build, compare, quadrants, evolution, movers, supricomPrice, parseMarket, parseOdoo, mergeOdoo, mergeMarket, normalizeOdooIds, toks, skuKey, norm };
+})();
+if (typeof module !== 'undefined') module.exports = Engine;
+
+</script>
+<script>
+/* ================= Aplicación ================= */
+(() => {
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const NF0 = new Intl.NumberFormat('es-VE', { maximumFractionDigits: 0 });
+const NF2 = new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = v => v == null || isNaN(v) ? '—' : '$' + (Math.abs(v) >= 1000 ? NF0.format(v) : NF2.format(v));
+const moneyK = v => v == null ? '—' : Math.abs(v) >= 1e6 ? '$' + (v % 1e6 ? NF2.format(v / 1e6) : NF0.format(v / 1e6)) + ' M' : Math.abs(v) >= 1e3 ? '$' + NF0.format(v / 1e3) + ' K' : '$' + NF0.format(v);
+const pct = (v, d = 1) => v == null || isNaN(v) ? '—' : (v * 100).toFixed(d).replace('.', ',') + '%';
+const spct = v => v == null || isNaN(v) ? '—' : (v > 0 ? '+' : '') + pct(v);
+const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const fdate = s => { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${d}-${MES[+m - 1]}-${y}`; };
+const fmonth = s => { const [y, m] = s.split('-'); return MES[+m - 1].replace(/^./, c => c.toUpperCase()) + ' ' + y.slice(2); };
+const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const SERIES = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7', '--s8'].map(css);
+const QCOL = { 'Estrella': css('--q-star'), 'Volumen': css('--q-vol'), 'Oportunidad': css('--q-opp'), 'Sin Rentabilidad': css('--q-none') };
+const QDESC = { 'Estrella': 'Venta alta · Margen alto', 'Volumen': 'Venta alta · Margen bajo', 'Oportunidad': 'Venta baja · Margen alto', 'Sin Rentabilidad': 'Venta baja · Margen bajo' };
+const QORDER = ['Estrella', 'Volumen', 'Oportunidad', 'Sin Rentabilidad'];
+
+Chart.defaults.font.family = '"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif';
+Chart.defaults.font.size = 12;
+Chart.defaults.color = '#4a5568';
+Chart.defaults.borderColor = '#edf0f4';
+Chart.defaults.plugins.tooltip.backgroundColor = '#0f1b2d';
+Chart.defaults.plugins.tooltip.padding = 10;
+
+/* ---------- Datos del panel (APIs de Inteligencia de Precios, lib/inteligencia-negocio/precios) ---------- */
+const API = '/api/inteligencia-negocio/precios';
+const START = '2026-04-01'; // inicio del análisis (abril)
+let BASE = null;
+async function api(url, opt) {
+  const r = await fetch(url, Object.assign({ cache: 'no-store', credentials: 'same-origin' }, opt || {}));
+  let j = null; try { j = await r.json(); } catch (e) { }
+  if (!r.ok) throw new Error((j && j.error) || ('Error ' + r.status));
+  return j;
+}
+const VACIO_MKT = { d: { brand: [], cat: [], sub: [], may: [], niv: [], date: [] }, r: [] };
+const loadMercado = () => api(API + '?parte=mercado');
+const loadOdoo = refrescar => api(API + '?parte=odoo' + (refrescar ? '&refrescar=1' : ''));
+async function loadBase() {
+  const [mk, mc] = await Promise.all([loadMercado(), api(API + '?parte=macro').catch(() => null)]);
+  MACRO = mc;
+  return { mk, od: { ODOO: { p: [], f: [] }, meta: { odooTs: '', odooSource: 'pendiente' } } };
+}
+const baseDS = () => ({ MKT: BASE.mk.MKT || VACIO_MKT, ODOO: Engine.normalizeOdooIds(BASE.od.ODOO), meta: { mktTs: BASE.mk.meta.mktTs || '', mktSource: BASE.mk.meta.mktSource || '', odooTs: BASE.od.meta.odooTs || '', odooSource: BASE.od.meta.odooSource } });
+const fts = iso => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); };
+
+let DS, W, charts = {};
+const S = { cut: null, sede: '', type: '', pos: '', cat: '', brand: '', q: '', months: [], qmode: 'all', quad: '', sort: { k: 'sales', d: -1 }, page: 0 };
+
+function setSync(which, state, text) { const el = $(which === 'odoo' ? '#syncOdoo' : '#syncMkt'); el.className = 'sync ' + state; el.querySelector('span').textContent = text; el.title = text; }
+
+/* ---------- Ventas de Odoo (las lee el servidor del panel y las guarda 30 min) ---------- */
+let MCP = null, syncing = false;
+function startLive() { }
+async function syncOdoo(refrescar) {
+  if (syncing) return false; syncing = true; $('#btnSync').disabled = true;
+  setSync('odoo', 'busy', 'Odoo: leyendo ventas…');
+  let ok = false;
+  try {
+    const od = await loadOdoo(refrescar);
+    BASE.od = od;
+    DS = { ...DS, ODOO: Engine.normalizeOdooIds(od.ODOO), meta: { ...DS.meta, odooTs: od.meta.odooTs, odooSource: 'live' } };
+    setSync('odoo', 'ok', `Odoo en vivo · ${fts(DS.meta.odooTs)}`);
+    ok = true;
+  } catch (e) {
+    console.warn('Odoo', e);
+    setSync('odoo', 'err', 'Odoo: ' + e.message);
+  }
+  syncing = false; $('#btnSync').disabled = false;
+  return ok;
+}
+const hayMercado = () => !!(DS && DS.MKT && DS.MKT.r && DS.MKT.r.length);
+const hayOdoo = () => !!(DS && DS.ODOO && DS.ODOO.f && DS.ODOO.f.length);
+
+function setLoading(on, msg) { const l = $('#loading'); l.textContent = msg || 'Procesando datos…'; l.style.display = on ? 'flex' : 'none'; }
+
+/* Sin listas o sin ventas el tablero no se dibuja: se muestra el aviso y el botón de carga sigue andando. */
+let uiLista = false;
+function mostrarTablero() {
+  const listo = hayMercado() && hayOdoo();
+  $('#vacio').style.display = listo ? 'none' : 'block';
+  $$('.view').forEach(v => v.style.visibility = listo ? '' : 'hidden');
+  if (!hayMercado()) {
+    $('#vacioTxt').innerHTML = 'Todavía no hay listas de precios cargadas. Usa <b>Cargar listas</b> para subir las listas de los mayoristas (o la lista de ejemplo ya ordenada).';
+    setSync('mkt', 'warn', 'Mercado: sin listas cargadas');
+  } else if (!hayOdoo()) $('#vacioTxt').textContent = 'No se pudieron leer las ventas de Odoo. Prueba con «Sincronizar Odoo».';
+  if (!listo) return;
+  rebuild();
+  if (!uiLista) { bindUI(); uiLista = true; }
+  route();
+}
+
+async function init() {
+  setLoading(true, 'Cargando el catálogo de mercado…');
+  bindModal();
+  try { BASE = await loadBase(); } catch (e) { setLoading(true, 'No se pudieron leer los datos: ' + e.message); return; }
+  DS = baseDS();
+  if (!hayMercado()) { setLoading(false); mostrarTablero(); abrirModal(); }
+  else setLoading(true, 'Leyendo las ventas de Odoo… (la primera vez tarda un poco)');
+  await syncOdoo(false);
+  setLoading(false);
+  mostrarTablero();
+}
+
+function rebuild() {
+  W = Engine.build(DS);
+  W.qcache = new Map();
+  const odooMax = DS.ODOO.f.reduce((m, f) => f[1] > m ? f[1] : m, '');
+  const odooMin = DS.ODOO.f.reduce((m, f) => f[1] < m ? f[1] : m, '9999');
+  W.odooRange = [odooMin, odooMax];
+  $('#hdrSub').textContent = `Mercado: ${W.dates.length} cortes (${W.dates.map(fdate).join(' · ')}) · ${NF0.format(W.rows.length)} precios · ${new Set(W.rows.map(r => r.may)).size} mayoristas  |  Supricom (Caracas + Valencia): ventas ${fdate(odooMin)} → ${fdate(odooMax)}`;
+  setSync('mkt', 'ok', `Mercado: corte ${fdate(W.dates[W.dates.length - 1])} · actualizado ${fts(DS.meta.mktTs)}`);
+    // Estado por defecto
+  if (!W.dates.includes(S.cut)) S.cut = W.dates[W.dates.length - 1];
+  S.months = S.months.filter(m => W.months.includes(m));
+  if (!S.months.length) S.months = [...W.months];
+  fillFilters();
+  W.cmpCache = new Map();
+  renderAll();
+}
+
+/* ---------- Filtros ---------- */
+function opts(sel, values, all = 'Todas', cur = '') {
+  sel.innerHTML = `<option value="">${all}</option>` + values.map(v => `<option${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
+}
+function fillFilters() {
+  $('#f1Cut').innerHTML = W.dates.map(d => `<option value="${d}"${d === S.cut ? ' selected' : ''}>${fdate(d)}</option>`).join('');
+  const matched = [...W.prods.values()].filter(o => o.match);
+  opts($('#f1Cat'), [...new Set([...W.prods.values()].map(o => o.catH))].sort(), 'Todas', S.cat);
+  opts($('#f1Brand'), [...new Set(matched.map(o => (o.brand || '').toUpperCase()).filter(Boolean))].sort(), 'Todas', S.brand);
+  opts($('#f2Cat'), [...new Set(W.rows.map(r => r.catH))].sort(), 'Todas', $('#f2Cat').value);
+  // Rango de fechas de la vista 2: límites tomados de los cortes cargados (sin fechas fijas)
+  ['#f2From', '#f2To'].forEach(id => { $(id).min = W.dates[0]; $(id).max = W.dates[W.dates.length - 1]; });
+  $('#f2From').value = S.from || W.dates[0]; $('#f2To').value = S.to || W.dates[W.dates.length - 1];
+  opts($('#f2Brand'), [...new Set(W.rows.map(r => r.brand))].filter(Boolean).sort(), 'Todas');
+  opts($('#f2May'), [...new Set(W.rows.map(r => r.may))].sort(), 'Todos');
+  // chips de meses
+  const box = $('#qMonths');
+  box.innerHTML = W.months.map(m => `<span class="chip${S.months.includes(m) ? ' on' : ''}" data-m="${m}">${fmonth(m)}</span>`).join('') +
+    `<span class="chip acc${S.months.length === W.months.length ? ' on' : ''}" data-m="ALL">Acumulado (abr → ${fmonth(W.months[W.months.length - 1])})</span>`;
+}
+
+function bindUI() {
+  $('#f1Cut').onchange = e => { S.cut = e.target.value; S.page = 0; renderV1(); };
+  $('#f1TypeSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.type = S.type === b.dataset.t ? '' : b.dataset.t; $$('#f1TypeSeg button').forEach(x => x.classList.toggle('on', x.dataset.t === S.type)); S.page = 0; renderV1(); };
+  $('#f1Sede').onchange = e => { S.sede = e.target.value; S.page = 0; renderV1(); };
+  $('#btnSync').onclick = async () => { if (await syncOdoo(true)) mostrarTablero(); };
+  $('#qMode').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.qmode = b.dataset.m; $$('#qMode button').forEach(x => x.classList.toggle('on', x === b)); S.page = 0; S.quad = ''; renderQuad(); renderTable(); };
+  $('#f1Cat').onchange = e => { S.cat = e.target.value; S.page = 0; renderV1(); };
+  $('#f1Brand').onchange = e => { S.brand = e.target.value; S.page = 0; renderV1(); };
+  let t; $('#f1Q').oninput = e => { clearTimeout(t); t = setTimeout(() => { S.q = e.target.value; S.page = 0; renderV1(); }, 250); };
+  $('#qMonths').onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    const m = c.dataset.m;
+    if (m === 'ALL') S.months = [...W.months];
+    else if (e.ctrlKey || e.metaKey || e.shiftKey || S.months.length !== W.months.length) {
+      // multiselección: alterna el mes
+      if (S.months.length === W.months.length && !(e.ctrlKey || e.metaKey || e.shiftKey)) S.months = [m];
+      else S.months = S.months.includes(m) ? S.months.filter(x => x !== m) : [...S.months, m].sort();
+      if (!S.months.length) S.months = [m];
+    } else S.months = [m];
+    $$('#qMonths .chip').forEach(x => x.classList.toggle('on', x.dataset.m === 'ALL' ? S.months.length === W.months.length : S.months.includes(x.dataset.m)));
+    S.page = 0; renderQuad(); renderTable();
+  };
+  ['#qExcl', '#qLog', '#qMatched'].forEach(id => $(id).onchange = () => { S.page = 0; renderQuad(); renderTable(); });
+  $('#btnCsv').onclick = exportCsv;
+  $('#btnQX').onclick = exportQuadXlsx;
+  $('#btnMvX').onclick = exportMoversXlsx;
+  $('#btnReset').onclick = resetFilters;
+  ['#f2Cat', '#f2Brand', '#f2May', '#f2Dim', '#f2Metric', '#mvDir'].forEach(id => $(id).onchange = renderV2);
+  ['#f2From', '#f2To'].forEach(id => $(id).onchange = () => { S.from = $('#f2From').value || null; S.to = $('#f2To').value || null; if (S.from === W.dates[0]) S.from = null; if (S.to === W.dates[W.dates.length - 1]) S.to = null; $('#skuSel').innerHTML = ''; renderV2(); });
+  $('#btnCat').onclick = exportCatalogXlsx;
+  $('#opMonth').onchange = e => { OP.month = e.target.value; OP.cat = ''; renderOp(); };
+  $('#opCat').onchange = e => { OP.cat = e.target.value; renderOp(); };
+  $('#btnOpX').onclick = exportOpXlsx;
+  $('#skuQ').oninput = skuSearch; $('#skuSel').onchange = renderSku;
+  window.addEventListener('hashchange', route);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#drawer').classList.remove('open'); $('#modal').classList.remove('open'); } });
+}
+function route() {
+  const v = location.hash === '#evolucion' ? 'evolucion' : location.hash === '#competencia' ? 'competencia' : 'comparativo';
+  $$('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
+  $$('nav.tabs a').forEach(a => a.classList.toggle('active', a.dataset.view === v));
+  if (v === 'evolucion') renderV2(); else if (v === 'competencia') renderOp(); else renderV1();
+}
+
+function renderAll() { route(); }
+
+/* ================= VISTA 1 ================= */
+function cmpFor(cut) { const k = cut + '|' + S.sede; if (!W.cmpCache.has(k)) W.cmpCache.set(k, Engine.compare(W, cut, S.sede)); return W.cmpCache.get(k); }
+function quadFor() {
+  const k = S.months.join(',') + '|' + $('#qExcl').checked + '|' + S.qmode;
+  if (!W.qcache.has(k)) {
+    const Q = Engine.quadrants(W, S.months, { exclude: $('#qExcl').checked, mode: S.qmode });
+    Q.byId = new Map(Q.items.map(i => [i.o.id, i]));
+    W.qcache.set(k, Q);
+  }
+  return W.qcache.get(k);
+}
+function passFilters(o) {
+  if (S.type && (S.type === 'Sin referencia' ? !!o.match : o.match?.type !== S.type)) return false;
+  if (S.cat && o.catH !== S.cat) return false;
+  if (S.brand && (o.brand || '').toUpperCase() !== S.brand) return false;
+  if (S.q) { const q = Engine.norm(S.q); if (!Engine.norm(o.name + ' ' + o.code).includes(q)) return false; }
+  return true;
+}
+/* Posición competitiva del precio Supricom frente al rango de mercado */
+const POS = ['Bajo el mínimo', 'Entre mínimo y promedio', 'Entre promedio y máximo', 'Sobre el máximo'];
+function posOf(r) { if (!r.sp || !r.mk) return null; const p = r.sp.price, m = r.mk; return p < m.min ? POS[0] : p <= m.avg ? POS[1] : p <= m.max ? POS[2] : POS[3]; }
+/* Productos del Pareto de ventas (80/20) de los meses seleccionados, consolidado Caracas + Valencia */
+function paretoIds() {
+  const k = 'P|' + S.months.join(',') + '|' + $('#qExcl').checked;
+  if (!W.qcache.has(k)) W.qcache.set(k, new Set(Engine.quadrants(W, S.months, { exclude: $('#qExcl').checked, mode: 'pareto' }).items.map(i => i.o.id)));
+  return W.qcache.get(k);
+}
+function rowsV1(ignorePos) {
+  const Q = quadFor(), P = paretoIds();
+  const R = cmpFor(S.cut).filter(x => passFilters(x.o) && (S.qmode === 'all' || Q.byId.has(x.o.id))).map(x => {
+    const it = Q.byId.get(x.o.id);
+    const gMin = x.sp && x.mk ? x.sp.price / x.mk.min - 1 : null;
+    const gAvg = x.sp && x.mk ? x.sp.price / x.mk.avg - 1 : null;
+    const r = { ...x, gMin, gAvg, quad: it?.quad || null, sales: it?.v || 0, margin: it ? it.m : null, pareto: P.has(x.o.id) };
+    r.pos = posOf(r);
+    return r;
+  });
+  return S.pos && !ignorePos ? R.filter(r => r.pos === S.pos) : R;
+}
+
+function renderV1() {
+  if (!W) return;
+  const R = rowsV1();
+  const both = R.filter(r => r.sp && r.mk);
+  const nId = R.filter(r => r.o.match?.type === 'Idéntico').length, nSi = R.filter(r => r.o.match?.type === 'Similar').length, nSin = R.length - nId - nSi;
+  const cheaper = both.filter(r => r.sp.price < r.mk.min).length;
+  const above = both.filter(r => r.sp.price > r.mk.avg).length;
+  $('#kpis1').innerHTML = [
+    ['Productos cruzados', NF0.format(nId + nSi), `${NF0.format(nId)} idénticos · ${NF0.format(nSi)} similares · ${NF0.format(nSin)} sin referencia`],
+    ['Comparables al corte', NF0.format(both.length), `con precio Supricom y de mercado al ${fdate(S.cut)}`],
+    ['Brecha mediana vs. mínimo', spct(median(both.map(r => r.gMin))), 'precio Supricom / mínimo del mercado − 1'],
+    ['Brecha mediana vs. promedio', spct(median(both.map(r => r.gAvg))), 'precio Supricom / promedio del mercado − 1'],
+    ['Más baratos que el mercado', both.length ? pct(cheaper / both.length, 0) : '—', `${NF0.format(cheaper)} productos bajo el mínimo`],
+    ['Sobre el promedio', both.length ? pct(above / both.length, 0) : '—', `${NF0.format(above)} productos por encima del promedio`]
+  ].map(([l, v, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
+  renderGapCat(both); renderPos(rowsV1(true).filter(r => r.sp && r.mk)); renderQuad(); renderTable();
+}
+
+function mkChart(id, cfg) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart(document.getElementById(id), cfg); return charts[id]; }
+
+function renderGapCat(both) {
+  const g = new Map();
+  both.forEach(r => { const k = r.o.catH; if (!g.has(k)) g.set(k, []); g.get(k).push(r.gAvg); });
+  const arr = [...g.entries()].filter(([, v]) => v.length >= 3).map(([k, v]) => ({ k, m: median(v), n: v.length })).sort((a, b) => b.n - a.n).slice(0, 14).sort((a, b) => b.m - a.m);
+  mkChart('chGapCat', {
+    type: 'bar',
+    data: { labels: arr.map(a => a.k), datasets: [{ data: arr.map(a => a.m * 100), backgroundColor: arr.map(a => a.m >= 0 ? css('--up') : css('--down')), borderRadius: 4, barThickness: 14 }] },
+    options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `Brecha mediana ${spct(arr[c.dataIndex].m)} · ${arr[c.dataIndex].n} productos` } } },
+      scales: { x: { ticks: { callback: v => v + '%' }, grid: { color: c => c.tick.value === 0 ? '#8a94a6' : '#edf0f4' } }, y: { grid: { display: false } } }, layout: { padding: { top: 18, right: 36, left: 4 } } },
+    plugins: [{ id: 'gapLbl', afterDatasetsDraw(ch) {
+      const { ctx, chartArea: A, scales: { x } } = ch; const z = x.getPixelForValue(0);
+      ctx.save(); ctx.font = '700 11px Segoe UI, system-ui'; ctx.textBaseline = 'bottom';
+      if (z > A.left + 60) { ctx.fillStyle = css('--down'); ctx.textAlign = 'right'; ctx.fillText('◀ MÁS BARATOS', z - 6, A.top - 4); }
+      if (z < A.right - 60) { ctx.fillStyle = css('--up'); ctx.textAlign = 'left'; ctx.fillText('MÁS CAROS ▶', z + 6, A.top - 4); }
+      ctx.font = '600 11px Segoe UI, system-ui'; ctx.fillStyle = '#0f1b2d'; ctx.textBaseline = 'middle';
+      ch.getDatasetMeta(0).data.forEach((el, i) => { const v = arr[i].m; ctx.textAlign = v >= 0 ? 'left' : 'right'; ctx.fillText(spct(v), el.x + (v >= 0 ? 4 : -4), el.y); });
+      ctx.restore(); } }]
+  });
+}
+function renderPos(both) {
+  const b = { 'Bajo el mínimo': 0, 'Entre mínimo y promedio': 0, 'Entre promedio y máximo': 0, 'Sobre el máximo': 0 };
+  both.forEach(r => { const p = r.sp.price, m = r.mk; if (p < m.min) b['Bajo el mínimo']++; else if (p <= m.avg) b['Entre mínimo y promedio']++; else if (p <= m.max) b['Entre promedio y máximo']++; else b['Sobre el máximo']++; });
+  const L = Object.keys(b), tot = both.length || 1;
+  const col = [css('--down'), '#8fb8ea', '#f3b08f', css('--up')].map((c, i) => !S.pos || S.pos === L[i] ? c : c + '40');
+  mkChart('chPos', {
+    type: 'bar',
+    data: { labels: L, datasets: [{ data: L.map(k => b[k]), backgroundColor: col, borderColor: L.map(k => S.pos === k ? '#0f1b2d' : 'transparent'), borderWidth: 2, borderRadius: 4, barThickness: 46 }] },
+    options: { maintainAspectRatio: false,
+      onClick: (e, els) => { if (!els.length) return; const k = L[els[0].index]; S.pos = S.pos === k ? '' : k; S.page = 0; setTimeout(renderV1, 0); },
+      onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${NF0.format(c.raw)} productos (${pct(c.raw / tot, 0)})`, footer: c => S.pos === L[c[0].dataIndex] ? 'Clic para quitar el filtro' : 'Clic para filtrar el dashboard' } } },
+      scales: { y: { beginAtZero: true, title: { display: true, text: 'Nº de productos' } }, x: { grid: { display: false } } } },
+    plugins: [{ id: 'lbl', afterDatasetsDraw(ch) { const { ctx } = ch; ctx.save(); ctx.font = '600 12px Segoe UI, system-ui'; ctx.fillStyle = '#0f1b2d'; ctx.textAlign = 'center'; ch.getDatasetMeta(0).data.forEach((el, i) => ctx.fillText(pct(b[L[i]] / tot, 0), el.x, el.y - 6)); ctx.restore(); } }]
+  });
+}
+
+/* Matriz por cuadrantes */
+const quadLines = {
+  id: 'quadLines',
+  afterDraw(ch, a, o) {
+    const { ctx, chartArea: A, scales: { x, y } } = ch; if (!o.v) return;
+    // Eje X = ventas ($) · Eje Y = margen (%)
+    const px = x.getPixelForValue(o.v), py = y.getPixelForValue(o.m * 100);
+    ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = '#0f1b2d'; ctx.lineWidth = 1.2;
+    if (px >= A.left && px <= A.right) { ctx.beginPath(); ctx.moveTo(px, A.top); ctx.lineTo(px, A.bottom); ctx.stroke(); }
+    if (py >= A.top && py <= A.bottom) { ctx.beginPath(); ctx.moveTo(A.left, py); ctx.lineTo(A.right, py); ctx.stroke(); }
+    ctx.setLineDash([]); ctx.font = '700 12px Segoe UI, system-ui'; ctx.globalAlpha = .85;
+    const L = [['Estrella', A.right - 8, A.top + 16, 'right'], ['Oportunidad', A.left + 8, A.top + 16, 'left'], ['Volumen', A.right - 8, A.bottom - 10, 'right'], ['Sin Rentabilidad', A.left + 8, A.bottom - 10, 'left']];
+    L.forEach(([t, xx, yy, al]) => { ctx.fillStyle = QCOL[t]; ctx.textAlign = al; ctx.fillText(t.toUpperCase(), xx, yy); });
+    ctx.font = '600 11px Segoe UI, system-ui'; ctx.fillStyle = '#0f1b2d'; ctx.textAlign = 'left';
+    ctx.fillText(`Venta prom. ${moneyK(o.v)}`, Math.min(px + 5, A.right - 120), A.top + 34);
+    ctx.textAlign = 'right'; ctx.fillText(`Margen prom. ${pct(o.m)}`, A.right - 8, py - 6);
+    ctx.restore();
+  }
+};
+function renderQuad() {
+  const Q = quadFor();
+  let items = Q.items;
+  if ($('#qMatched').checked) items = items.filter(i => i.o.match);
+  const cnt = {}; QORDER.forEach(q => cnt[q] = { n: 0, v: 0, c: 0 });
+  Q.items.forEach(i => { const c = cnt[i.quad]; c.n++; c.v += i.v; c.c += i.c; });
+  const ms = Q.items.map(i => i.m * 100).sort((a, b) => a - b);
+  const lo = Math.min(Q.mCut * 100 - 5, ms[Math.floor(ms.length * 0.02)] ?? -20), hi = Math.max(Q.mCut * 100 + 5, ms[Math.floor(ms.length * 0.98)] ?? 60);
+  const ymin = Math.floor(lo / 5) * 5, ymax = Math.ceil(hi / 5) * 5;
+  const label = S.months.length === W.months.length ? `Acumulado ${fmonth(W.months[0])} → ${fmonth(W.months[W.months.length - 1])}` : S.months.map(fmonth).join(' + ');
+  const modeTxt = S.qmode === 'pareto' ? ` · <b>Pareto 80/20:</b> ${NF0.format(Q.items.length)} de ${NF0.format(Q.nAll)} productos generan el ${pct(Q.V / (Q.totalAll || 1), 0)} de la venta` : S.qmode === 'top200' ? ` · <b>Top 200:</b> ${pct(Q.V / (Q.totalAll || 1), 0)} de la venta del periodo (de ${NF0.format(Q.nAll)} productos)` : '';
+  $('#qInfo').innerHTML = `<b>Periodo:</b> ${label} · <b>${NF0.format(Q.items.length)}</b> productos · Venta <b>${moneyK(Q.V)}</b> (Caracas ${moneyK(Q.VC)} · Valencia ${moneyK(Q.VV)}) · Costo valorizado <b>${moneyK(Q.C)}</b> · Margen <b>${pct(Q.avgMw)}</b> · Venta promedio por producto <b>${money(Q.avgV)}</b>${modeTxt}` +
+    `<div class="small" style="margin-top:3px">Costo valorizado tomado de las capas de valoración de inventario de los despachos (${pct(Q.valCov, 0)} de las unidades); el resto, aún sin despachar, usa el costo registrado en la línea de venta.</div>` +
+    ($('#qMatched').checked ? `<div class="small">Mostrando ${NF0.format(items.length)} productos cruzados con mercado; las líneas de corte se calculan sobre todo el conjunto.</div>` : '');
+  const ds = QORDER.map(q => {
+    const pts = items.filter(i => i.quad === q).map(i => { const m = i.m * 100; return { x: i.v, y: Math.max(ymin, Math.min(ymax, m)), it: i, clip: m < ymin || m > ymax }; });
+    return { label: q, data: pts, backgroundColor: QCOL[q] + 'cc', borderColor: '#fff', borderWidth: 1, pointRadius: pts.map(p => p.it.o.id === S.hl ? 8 : 4), pointHoverRadius: 7, pointStyle: pts.map(p => p.clip ? 'triangle' : 'circle') };
+  });
+  mkChart('chQuad', {
+    type: 'scatter', data: { datasets: ds },
+    options: {
+      maintainAspectRatio: false, animation: false,
+      plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }, quadLines: { m: Q.mCut, v: Q.avgV },
+        tooltip: { callbacks: { title: c => c[0].raw.it.o.name, label: c => { const i = c.raw.it; return [`${i.o.code || 's/código'} · ${i.o.brand || ''}`, `Ventas: ${money(i.v)} · Unidades: ${NF0.format(i.q)}`, `Margen bruto: ${pct(i.m)} · Cuadrante: ${i.quad}`, i.o.match ? `Mercado: ${i.o.match.type} (${i.o.match.sub})` : 'Sin cruce con mercado']; } } } },
+      scales: {
+        x: { type: $('#qLog').checked ? 'logarithmic' : 'linear', title: { display: true, text: 'Ventas del periodo ($)' }, ticks: { autoSkip: false, callback: v => { const l = Math.log10(v); return !$('#qLog').checked || Math.abs(l - Math.round(l)) < 1e-9 ? moneyK(v) : ''; } } },
+        y: { min: ymin, max: ymax, title: { display: true, text: 'Margen bruto % ponderado (sobre PVP)' }, ticks: { callback: v => v + '%' } }
+      },
+      onClick: (e, els) => { if (!els.length) return; const p = ch.data.datasets[els[0].datasetIndex].data[els[0].index]; openDetail(p.it.o); }
+    },
+    plugins: [quadLines]
+  });
+  const ch = charts.chQuad;
+  $('#qCards').innerHTML = ['Oportunidad', 'Estrella', 'Sin Rentabilidad', 'Volumen'].map(q => { const c = cnt[q]; return `<div class="qcard${S.quad === q ? ' sel' : ''}" data-q="${q}"><div class="t"><i style="background:${QCOL[q]}"></i>${q}</div><div class="n">${NF0.format(c.n)}</div><div class="s">${moneyK(c.v)} en ventas · ${pct(c.v / (Q.V || 1), 0)} del total</div><div class="s">Margen ${pct(c.v ? (c.v - c.c) / c.v : null)}</div><div class="h">${QDESC[q]}</div></div>`; }).join('');
+  $$('#qCards .qcard').forEach(el => el.onclick = () => { S.quad = S.quad === el.dataset.q ? '' : el.dataset.q; S.page = 0; renderQuad(); renderTable(); });
+}
+
+/* Tabla */
+const COLS = [
+  ['name', 'Producto Supricom'], ['pareto', 'Pareto'], ['brand', 'Marca'], ['sub', 'Categoría / Subcategoría'], ['type', 'Coincidencia'],
+  ['sp', 'Precio Supricom', 'n'], ['min', 'Mín. mercado', 'n'], ['avg', 'Prom. mercado', 'n'], ['max', 'Máx. mercado', 'n'], ['nm', 'Nº may.', 'n'],
+  ['gMin', 'Δ vs mín.', 'n'], ['gAvg', 'Δ vs prom.', 'n'], ['sales', 'Ventas periodo', 'n'], ['margin', 'Margen', 'n'], ['quad', 'Cuadrante']
+];
+const sortVal = (r, k) => ({ name: r.o.name, pareto: r.pareto ? 1 : 0, brand: r.o.brand, sub: r.o.catH + ' ' + r.o.subH, type: r.o.match ? r.o.match.type : 'Sin referencia', sp: r.sp?.price, min: r.mk?.min, avg: r.mk?.avg, max: r.mk?.max, nm: r.mk?.n, gMin: r.gMin, gAvg: r.gAvg, sales: r.sales, margin: r.margin, quad: r.quad }[k]);
+function tableRows() {
+  let R = rowsV1();
+  if (S.quad) R = R.filter(r => r.quad === S.quad);
+  const { k, d } = S.sort;
+  R.sort((a, b) => { const x = sortVal(a, k), y = sortVal(b, k); if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x > y ? 1 : x < y ? -1 : 0) * d; });
+  return R;
+}
+function renderTable() {
+  const R = tableRows(), PS = 50, pages = Math.max(1, Math.ceil(R.length / PS));
+  S.page = Math.min(S.page, pages - 1);
+  $('#tblCap').textContent = `Corte ${fdate(S.cut)} · ${NF0.format(R.length)} productos · precio Supricom = precio neto promedio ponderado vendido en los 15 días previos al corte (o la última venta de los 60 días previos). Mercado sin IVA, menor precio por mayorista.`;
+  $('#qFilterTag').innerHTML = (S.pos ? `<span class="pill q" data-x="pos" style="background:#0f1b2d">Posición: ${S.pos} ✕</span> ` : '') + (S.quad ? `<span class="pill q" data-x="quad" style="background:${QCOL[S.quad]}">${S.quad} ✕</span>` : '');
+  $$('#qFilterTag .pill').forEach(tag => { tag.style.cursor = 'pointer'; tag.onclick = () => { if (tag.dataset.x === 'pos') { S.pos = ''; S.page = 0; renderV1(); } else { S.quad = ''; renderQuad(); renderTable(); } }; });
+  const head = '<thead><tr>' + COLS.map(([k, l, c]) => `<th class="${c || ''}" data-k="${k}">${l}${S.sort.k === k ? (S.sort.d > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('') + '</tr></thead>';
+  const body = R.slice(S.page * PS, S.page * PS + PS).map((r, i) => {
+    const o = r.o, m = o.match;
+    const g = v => v == null ? '—' : `<span class="${v > 0.005 ? 'pos' : v < -0.005 ? 'neg' : ''}">${spct(v)}</span>`;
+    return `<tr class="click" data-i="${S.page * PS + i}"><td><div style="font-weight:600">${esc(o.name)}</div><div class="small">${esc(o.code || 's/código')}</div></td>
+      <td>${r.pareto ? '<span class="pill pa">Sí</span>' : '<span class="small">No</span>'}</td><td>${esc(o.brand)}</td><td>${esc(o.catH)}<div class="small">${esc(o.subH)}</div>${o.compat ? `<div class="small">Compatible: ${esc(o.compat)}</div>` : ''}</td>
+      <td>${m ? `<span class="pill ${m.type === 'Idéntico' ? 'id' : 'si'}">${m.type}</span><div class="small">${esc(m.how || '')}</div>` : '<span class="pill nr">Sin referencia</span>'}</td>
+      <td class="n">${r.sp ? money(r.sp.price) + `<div class="small">${r.sp.ref}</div>` : '<span class="small">sin venta reciente</span>'}</td>
+      <td class="n">${r.mk ? money(r.mk.min) + `<div class="small">${esc(r.mk.minMay)}</div>` : `<span class="small">${m ? 'sin precio en el corte' : 'sin referencia en mercado'}</span>`}</td>
+      <td class="n">${money(r.mk?.avg)}</td><td class="n">${money(r.mk?.max)}</td><td class="n">${r.mk?.n ?? '—'}</td>
+      <td class="n">${g(r.gMin)}</td><td class="n">${g(r.gAvg)}</td><td class="n">${r.sales ? money(r.sales) : '—'}</td><td class="n">${pct(r.margin)}</td>
+      <td>${r.quad ? `<span class="pill q" style="background:${QCOL[r.quad]}">${r.quad}</span>` : '<span class="small">sin venta</span>'}</td></tr>`;
+  }).join('');
+  $('#tbl1').innerHTML = head + '<tbody>' + (body || `<tr><td colspan="${COLS.length}" class="empty">Sin productos para estos filtros.</td></tr>`) + '</tbody>';
+  $$('#tbl1 th').forEach(th => th.onclick = () => { const k = th.dataset.k; S.sort = { k, d: S.sort.k === k ? -S.sort.d : (['name', 'brand', 'sub', 'type', 'quad'].includes(k) ? 1 : -1) }; renderTable(); });
+  $$('#tbl1 tr.click').forEach(tr => tr.onclick = () => openDetail(R[+tr.dataset.i].o));
+  $('#pager1').innerHTML = `<button class="btn small" ${S.page ? '' : 'disabled'} id="pgPrev">‹ Anterior</button> Página ${S.page + 1} de ${pages} <button class="btn small" ${S.page < pages - 1 ? '' : 'disabled'} id="pgNext">Siguiente ›</button>`;
+  $('#pgPrev').onclick = () => { S.page--; renderTable(); }; $('#pgNext').onclick = () => { S.page++; renderTable(); };
+}
+
+function openDetail(o) {
+  const x = cmpFor(S.cut).find(r => r.o === o);
+  const m = o.match;
+  const hist = W.dates.map(d => ({ d, sp: Engine.supricomPrice(o, d, S.sede) }));
+  let html = `<div class="row" style="justify-content:space-between"><h3>${esc(o.name)}</h3><button class="btn small" id="dClose">Cerrar ✕</button></div>
+    <div class="small">${esc(o.code || 's/código')} · ${esc(o.brand)} · Categoría Odoo: ${esc(o.cat)}</div>`;
+  const HOW = { 'SKU': 'mismo SKU / número de parte y marca', 'Modelo': 'misma marca y mismo código de modelo', 'Modelo original': 'consumible original: misma marca, mismo modelo de insumo y color', 'Genérico compatible': 'consumible genérico: otras marcas genéricas compatibles con el mismo insumo/impresora' + (m && m.compat ? ' (' + m.compat.join(', ') + ')' : ''), 'Especificaciones': 'misma subcategoría técnica y especificaciones; se compara contra los 5 SKUs más parecidos' };
+  html += `<p class="small">Clasificación homologada: <b>${esc(o.catH)} › ${esc(o.subH)}</b> (${esc(o.clsSrc)})${o.compat ? ' · compatible: ' + esc(o.compat) : ''}</p>`;
+  if (m) html += `<p><span class="pill ${m.type === 'Idéntico' ? 'id' : 'si'}">${m.type}</span> ${esc(m.cat)} › ${esc(m.sub)}<br><span class="small">Criterio: ${esc(HOW[m.how] || m.how || '')}</span></p>`;
+  else html += `<p class="small">Este producto no tiene coincidencia en la base de mercado.</p>`;
+  html += `<h4 style="margin:14px 0 6px">Precio Supricom vigente por corte</h4><table><thead><tr><th>Corte</th><th class="n">Precio</th><th class="n">Costo</th><th>Referencia</th></tr></thead><tbody>` +
+    hist.map(h => `<tr><td>${fdate(h.d)}</td><td class="n">${money(h.sp?.price)}</td><td class="n">${money(h.sp?.cost)}</td><td class="small">${h.sp ? h.sp.ref + ' (' + fdate(h.sp.from) + (h.sp.to !== h.sp.from ? ' → ' + fdate(h.sp.to) : '') + ')' : 'sin ventas'}</td></tr>`).join('') + '</tbody></table>';
+  if (x?.mk) {
+    html += `<h4 style="margin:14px 0 6px">Precios de mercado al ${fdate(S.cut)}</h4><table><thead><tr><th>Mayorista</th><th>Código</th><th>Descripción</th><th class="n">PVP</th><th class="n">Δ Supricom</th></tr></thead><tbody>` +
+      x.mk.rows.map(r => { const g = x.sp ? x.sp.price / r.pvp - 1 : null; return `<tr><td>${esc(r.may)}</td><td>${esc(r.code)}</td><td class="small">${esc(r.desc)}</td><td class="n">${money(r.pvp)}</td><td class="n"><span class="${g > 0 ? 'pos' : 'neg'}">${spct(g)}</span></td></tr>`; }).join('') + '</tbody></table>';
+  } else if (m) html += `<p class="small">No hay precios de mercado para este producto en el corte ${fdate(S.cut)}.</p>`;
+  // ventas mensuales
+  const mm = new Map(); o.facts.forEach(f => { const k = f.date.slice(0, 7); const a = mm.get(k) || { q: 0, v: 0, c: 0 }; a.q += f.q; a.v += f.v; a.c += f.c; mm.set(k, a); });
+  html += `<h4 style="margin:14px 0 6px">Ventas mensuales (Odoo)</h4><table><thead><tr><th>Mes</th><th class="n">Unidades</th><th class="n">Ventas</th><th class="n">Precio prom.</th><th class="n">Margen</th></tr></thead><tbody>` +
+    [...mm.entries()].sort().map(([k, a]) => `<tr><td>${fmonth(k)}</td><td class="n">${NF0.format(a.q)}</td><td class="n">${money(a.v)}</td><td class="n">${money(a.v / a.q)}</td><td class="n">${pct(a.v ? (a.v - a.c) / a.v : null)}</td></tr>`).join('') + '</tbody></table>';
+  const d = $('#drawer'); d.innerHTML = html; d.classList.add('open');
+  $('#dClose').onclick = () => d.classList.remove('open');
+}
+
+function exportCsv() {
+  const R = tableRows();
+  const H = ['Codigo Supricom', 'Producto', 'Pareto', 'Marca', 'Categoria', 'Subcategoria', 'Coincidencia', 'Criterio', 'Fecha corte', 'Precio Supricom', 'Referencia precio', 'Min mercado', 'Mayorista min', 'Prom mercado', 'Max mercado', 'N mayoristas', 'Delta vs min', 'Delta vs prom', 'Ventas periodo', 'Margen periodo', 'Cuadrante'];
+  const q = v => { const s = v == null ? '' : String(v); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const n = v => v == null || isNaN(v) ? '' : String(Math.round(v * 10000) / 10000).replace('.', ',');
+  const lines = [H.join(';')].concat(R.map(r => [r.o.code, r.o.name, r.pareto ? 'Sí' : 'No', r.o.brand, r.o.catH, r.o.subH, r.o.match ? r.o.match.type : 'Sin referencia', r.o.match?.how, S.cut, n(r.sp?.price), r.sp?.ref, n(r.mk?.min), r.mk?.minMay, n(r.mk?.avg), n(r.mk?.max), r.mk?.n, n(r.gMin), n(r.gAvg), n(r.sales), n(r.margin), r.quad].map(q).join(';')));
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  saveFile(blob, `comparativo_supricom_${S.cut}.csv`);
+}
+/* ---------- Descargas (CSV / Excel) ---------- */
+async function saveFile(blob, fname) {
+  if (window.claude && typeof window.claude.use === 'function') {
+    let d = null; try { d = await window.claude.use('downloads'); } catch (e) { }
+    if (d) { try { await d.save({ filename: fname, data: blob }); } catch (e) { console.warn('Descarga no completada', e); } return; }
+  }
+  plainDownload(blob, fname);
+}
+function xlsxBlob(sheets) {
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(([name, rows, widths]) => {
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Sin datos': 'No hay registros para los filtros activos' }]);
+    if (widths) ws['!cols'] = widths.map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  });
+  return new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+const r2 = v => v == null || isNaN(v) ? null : Math.round(v * 100) / 100;
+const pc2 = v => v == null || isNaN(v) ? null : Math.round(v * 10000) / 100;
+function periodLabel() { return S.months.length === W.months.length ? `Acumulado ${fmonth(W.months[0])} - ${fmonth(W.months[W.months.length - 1])}` : S.months.map(fmonth).join(' + '); }
+function exportQuadXlsx() {
+  if (typeof XLSX === 'undefined') { alertBox('No se pudo cargar la librería de Excel (se necesita conexión a internet).'); return; }
+  const Q = quadFor();
+  const nq = S.q ? Engine.norm(S.q) : '';
+  let items = Q.items.filter(i => {
+    const o = i.o, m = o.match;
+    if ($('#qMatched').checked && !m) return false;
+    if (S.quad && i.quad !== S.quad) return false;
+    if (S.brand && (o.brand || '').toUpperCase() !== S.brand) return false;
+    if (nq && !Engine.norm(o.name + ' ' + o.code).includes(nq)) return false;
+    if (S.type && (S.type === 'Sin referencia' ? !!m : m?.type !== S.type)) return false;
+    if (S.cat && o.catH !== S.cat) return false;
+    return true;
+  });
+  const cmp = new Map(cmpFor(S.cut).map(x => [x.o.id, x])), P = paretoIds();
+  if (S.pos) items = items.filter(i => { const x = cmp.get(i.o.id); return x && posOf(x) === S.pos; });
+  const sedeTxt = { '': 'Consolidado Caracas + Valencia', C: 'Caracas', V: 'Valencia' }[S.sede];
+  const rows = items.map(i => {
+    const o = i.o, m = o.match, x = cmp.get(o.id), sp = x?.sp, mk = x?.mk;
+    return {
+      'Código': o.code || '', 'Producto': o.name, 'Pareto': P.has(o.id) ? 'Sí' : 'No', 'Marca': o.brand || '', 'Categoría Odoo': o.cat || '', 'Cuadrante': i.quad,
+      'Unidades': r2(i.q), 'Ventas ($)': r2(i.v), 'Ventas Caracas ($)': r2(i.vc), 'Ventas Valencia ($)': r2(i.vv), 'Costo valorizado ($)': r2(i.c),
+      'Utilidad bruta ($)': r2(i.v - i.c), 'Margen %': pc2(i.m), 'Precio promedio de venta ($)': r2(i.q ? i.v / i.q : null), 'Costo unitario valorizado ($)': r2(i.q ? i.c / i.q : null),
+      'Coincidencia mercado': m ? m.type : 'Sin referencia', 'Criterio': m?.how || '', 'Categoría': o.catH, 'Subcategoría': o.subH, 'Origen clasificación': o.clsSrc, 'Compatibilidad': o.compat || '',
+      [`Precio Supricom al ${S.cut} ($)`]: r2(sp?.price), 'Referencia precio': sp ? sp.ref : '', 'Mín. mercado ($)': r2(mk?.min), 'Mayorista mín.': mk?.minMay || '',
+      'Prom. mercado ($)': r2(mk?.avg), 'Máx. mercado ($)': r2(mk?.max), 'Nº mayoristas': mk?.n ?? null,
+      'Δ vs mín. %': pc2(sp && mk ? sp.price / mk.min - 1 : null), 'Δ vs prom. %': pc2(sp && mk ? sp.price / mk.avg - 1 : null), 'Posición vs mercado': x ? (posOf(x) || '') : ''
+    };
+  });
+  const cnt = {}; QORDER.forEach(q => cnt[q] = { n: 0, v: 0, c: 0 }); items.forEach(i => { cnt[i.quad].n++; cnt[i.quad].v += i.v; cnt[i.quad].c += i.c; });
+  const resumen = [
+    { 'Concepto': 'Periodo', 'Valor': periodLabel() },
+    { 'Concepto': 'Concentración', 'Valor': { all: 'Todo el portafolio', pareto: 'Pareto 80/20', top200: 'Top 200' }[S.qmode] },
+    { 'Concepto': 'Datos', 'Valor': 'Consolidado Caracas + Valencia, sin ventas entre empresas del grupo' },
+    { 'Concepto': 'Fórmula de margen', 'Valor': '(Venta − Costo valorizado) / Venta × 100' },
+    { 'Concepto': 'Venta promedio por producto (línea de corte)', 'Valor': r2(Q.avgV) },
+    { 'Concepto': 'Margen promedio ponderado % (línea de corte)', 'Valor': pc2(Q.avgMw) },
+    { 'Concepto': 'Corte de mercado / sede del precio Supricom', 'Valor': `${S.cut} · ${sedeTxt}` },
+    { 'Concepto': 'Filtros adicionales', 'Valor': [S.quad && 'Cuadrante: ' + S.quad, S.type && 'Coincidencia: ' + S.type, S.pos && 'Posición: ' + S.pos, S.cat && 'Categoría: ' + S.cat, S.brand && 'Marca: ' + S.brand, S.q && 'Búsqueda: ' + S.q, $('#qMatched').checked && 'Solo cruzados con mercado', $('#qExcl').checked && 'Sin servicios ni productos sin costo'].filter(Boolean).join(' · ') || 'Ninguno' },
+    { 'Concepto': 'Productos en el archivo', 'Valor': rows.length },
+    ...QORDER.map(q => ({ 'Concepto': `${q}: productos / ventas ($) / margen %`, 'Valor': `${cnt[q].n} / ${r2(cnt[q].v)} / ${cnt[q].v ? pc2((cnt[q].v - cnt[q].c) / cnt[q].v) : '-'}` }))
+  ];
+  saveFile(xlsxBlob([['Portafolio', rows, [14, 48, 8, 12, 18, 16, 9, 13, 13, 13, 13, 13, 9, 12, 12, 14, 18, 18, 30, 14, 16, 12, 14, 12, 12, 10, 10, 10]], ['Resumen', resumen, [46, 70]]]),
+    `matriz_portafolio_${S.months.length === W.months.length ? 'acumulado' : S.months.join('_')}_${S.qmode}.xlsx`);
+}
+function exportMoversXlsx() {
+  if (typeof XLSX === 'undefined') { alertBox('No se pudo cargar la librería de Excel (se necesita conexión a internet).'); return; }
+  const L = W.lastMv; if (!L || !L.d0) { alertBox('Se necesita más de un corte de mercado para calcular variaciones.'); return; }
+  const dir = $('#mvDir').value;
+  const list = L.mv.filter(x => dir === 'up' ? x.ch > 0 : x.ch < 0).sort((a, b) => dir === 'up' ? b.ch - a.ch : a.ch - b.ch);
+  const rows = list.map(x => ({
+    'Subcategoría': x.r.subH, 'Código': x.r.code, 'Marca': x.r.brand, 'Categoría': x.r.catH, 'Mayorista': x.r.may, 'Descripción': x.r.desc,
+    [`Precio ${L.d0} ($)`]: r2(x.p0), [`Precio ${L.d1} ($)`]: r2(x.p1), 'Variación ($)': r2(x.p1 - x.p0), 'Variación %': pc2(x.ch), 'Revisar (salto fuera de −50%/+100%)': x.out ? 'Sí' : ''
+  }));
+  const f = [$('#f2Cat').value && 'Categoría: ' + $('#f2Cat').value, $('#f2Brand').value && 'Marca: ' + $('#f2Brand').value, $('#f2May').value && 'Mayorista: ' + $('#f2May').value].filter(Boolean).join(' · ') || 'Sin filtros';
+  const info = [{ 'Concepto': 'Comparación', 'Valor': `${L.d0} → ${L.d1} (mismo SKU y mismo mayorista, menor precio por mayorista)` }, { 'Concepto': 'Dirección', 'Valor': dir === 'up' ? 'Subidas' : 'Bajadas' }, { 'Concepto': 'Filtros', 'Valor': f }, { 'Concepto': 'Registros', 'Valor': rows.length }];
+  saveFile(xlsxBlob([[dir === 'up' ? 'Subidas' : 'Bajadas', rows, [34, 16, 14, 18, 14, 60, 14, 14, 12, 12, 14]], ['Info', info, [16, 80]]]), `movimientos_precios_${dir === 'up' ? 'subidas' : 'bajadas'}_${L.d0}_${L.d1}.xlsx`);
+}
+function exportCatalogXlsx() {
+  if (typeof XLSX === 'undefined') { alertBox('No se pudo cargar la librería de Excel (se necesita conexión a internet).'); return; }
+  const P = [...W.prods.values()].sort((a, b) => (a.catH + a.subH).localeCompare(b.catH + b.subH));
+  const sup = P.map(o => ({ 'Código': o.code || '', 'Producto': o.name, 'Marca': o.brand || '', 'Categoría Odoo (original)': o.cat || '', 'Categoría': o.catH, 'Subcategoría': o.subH, 'Origen clasificación': o.clsSrc, 'Consumible': o.cons ? (o.cons.generic ? 'Genérico' : 'Original') : '', 'Compatibilidad': o.compat || '', 'Coincidencia mercado': o.match ? o.match.type : 'Sin referencia' }));
+  const mkt = W.mlist.map(p => ({ 'Código': p.code, 'Marca': p.brand, 'Categoría (original)': p.cat, 'Subcategoría (original)': p.sub, 'Categoría': p.catH, 'Subcategoría': p.subH, 'Consumible': p.cons ? (p.cons.generic ? 'Genérico' : 'Original') : '', 'Descripción': p.desc, 'Último corte': p.last })).sort((a, b) => (a['Categoría'] + a['Subcategoría']).localeCompare(b['Categoría'] + b['Subcategoría']));
+  const tax = new Map();
+  W.mlist.forEach(p => { const k = p.catH + '|' + p.subH; const t = tax.get(k) || { c: p.catH, s: p.subH, m: 0, n: 0 }; t.m++; tax.set(k, t); });
+  P.forEach(o => { const k = o.catH + '|' + o.subH; const t = tax.get(k) || { c: o.catH, s: o.subH, m: 0, n: 0 }; t.n++; tax.set(k, t); });
+  const taxRows = [...tax.values()].sort((a, b) => (a.c + a.s).localeCompare(b.c + b.s)).map(t => ({ 'Categoría': t.c, 'Subcategoría': t.s, 'Productos de mercado': t.m, 'Productos Supricom': t.n }));
+  saveFile(xlsxBlob([['Supricom', sup, [16, 60, 14, 24, 24, 40, 18, 12, 30, 16]], ['Mercado', mkt, [16, 14, 22, 40, 22, 40, 12, 70, 12]], ['Taxonomía', taxRows, [26, 50, 18, 18]]]), `catalogo_homologado_${W.dates[W.dates.length - 1]}.xlsx`);
+}
+function alertBox(msg) { const l = $('#loading'); l.textContent = msg; l.style.display = 'flex'; setTimeout(() => l.style.display = 'none', 2500); }
+
+/* ---------- Restablecer filtros ---------- */
+function resetFilters() {
+  Object.assign(S, { from: null, to: null, cut: W.dates[W.dates.length - 1], sede: '', type: '', pos: '', cat: '', brand: '', q: '', months: [...W.months], qmode: 'all', quad: '', sort: { k: 'sales', d: -1 }, page: 0 });
+  $('#f1Cut').value = S.cut;
+  $$('#f1TypeSeg button').forEach(b => b.classList.remove('on'));
+  ['#f1Sede', '#f1Cat', '#f1Brand', '#f2Cat', '#f2Brand', '#f2May'].forEach(id => $(id).value = '');
+  $('#f1Q').value = ''; $('#qExcl').checked = true; $('#qLog').checked = true; $('#qMatched').checked = false;
+  $$('#qMode button').forEach(b => b.classList.toggle('on', b.dataset.m === 'all'));
+  $$('#qMonths .chip').forEach(x => x.classList.add('on'));
+  $('#f2From').value = W.dates[0]; $('#f2To').value = W.dates[W.dates.length - 1];
+  $('#f2Dim').value = 'total'; $('#f2Metric').value = 'index'; $('#mvDir').value = 'up';
+  $('#skuQ').value = ''; $('#skuSel').innerHTML = '';
+  OP.month = null; OP.cat = '';
+  $('#drawer').classList.remove('open');
+  route();
+}
+function plainDownload(blob, fname) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* ================= VISTA 2 ================= */
+function f2() {
+  const c = $('#f2Cat').value, b = $('#f2Brand').value, m = $('#f2May').value;
+  return r => (!c || r.catH === c) && (!b || r.brand === b) && (!m || r.may === m);
+}
+function rangeDates() {
+  let a = $('#f2From').value || W.dates[0], b = $('#f2To').value || W.dates[W.dates.length - 1];
+  if (a > b) [a, b] = [b, a];
+  return { from: a, to: b, dates: W.dates.filter(d => d >= a && d <= b) };
+}
+function renderV2() {
+  if (!W) return;
+  const flt = f2(), dim = $('#f2Dim').value, metric = $('#f2Metric').value;
+  // Cortes dentro del rango Desde–Hasta (todo se calcula sobre estos cortes; se adapta solo a los cortes nuevos)
+  const R2 = rangeDates(), dates = R2.dates;
+  const inRange = new Set(dates);
+  const rows = W.rows.filter(r => inRange.has(r.date) && flt(r));
+  const d0 = dates.length > 1 ? dates[0] : null, d1 = dates[dates.length - 1];
+  $('#f2Cuts').textContent = dates.length ? `${dates.length} de ${W.dates.length} cortes en el rango: ${dates.map(fdate).join(' · ')}` : 'Ningún corte de mercado cae en este rango.';
+  const mv = d0 ? Engine.movers(W, flt, d0, d1) : [];
+  W.lastMv = { mv, d0, d1 };
+  const mvOk = mv.filter(x => !x.out), nOut = mv.length - mvOk.length;
+  const gmean = a => a.length ? Math.exp(a.reduce((s, x) => s + Math.log(1 + x.ch), 0) / a.length) - 1 : null;
+  const up = mv.filter(x => x.ch > 0.0005).length, dn = mv.filter(x => x.ch < -0.0005).length;
+  $('#kpis2').innerHTML = [
+    ['Cortes en el rango', dates.length, dates.length ? `${fdate(dates[0])} → ${fdate(d1)} (de ${W.dates.length} cargados)` : 'ajusta las fechas'],
+    ['Precios en el filtro', NF0.format(rows.length), `${NF0.format(new Set(rows.map(r => r.key)).size)} SKUs · ${new Set(rows.map(r => r.may)).size} mayoristas`],
+    ['Variación promedio', d0 ? spct(gmean(mvOk)) : '—', d0 ? `mismo SKU y mayorista, ${fdate(d0)} → ${fdate(d1)} · mediana ${spct(median(mv.map(x => x.ch)))}` : 'se necesita más de un corte'],
+    ['SKUs que subieron', d0 && mv.length ? pct(up / mv.length, 0) : '—', `${NF0.format(up)} de ${NF0.format(mv.length)} comparables`],
+    ['SKUs que bajaron', d0 && mv.length ? pct(dn / mv.length, 0) : '—', `${NF0.format(dn)} de ${NF0.format(mv.length)} comparables`]
+  ].map(([l, v, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
+
+  // Línea principal
+  let ev = Engine.evolution(W, flt, dim === 'cat' ? 'catH' : dim, metric, dates);
+  const TOP = 8; const more = ev.length > TOP; ev = ev.slice(0, TOP);
+  const mLbl = { index: 'Índice (base 100 = primer corte del rango)', median: 'Precio mediano ($)', avg: 'Precio promedio ($)', count: 'Nº de SKUs' }[metric];
+  $('#evoTitle').textContent = `Evolución de precios de mercado — ${mLbl}`;
+  $('#evoCap').textContent = (metric === 'index' ? 'Índice encadenado: en cada corte se aplica la variación promedio (geométrica) de los mismos SKU-mayorista presentes en el corte anterior, así los cambios de surtido no distorsionan la tendencia; se excluyen saltos fuera de −50% / +100% (posibles errores de captura). ' : metric === 'count' ? '' : 'El promedio y la mediana cambian también por la mezcla de productos de cada corte. ') + (more ? `Se muestran los ${TOP} grupos con más precios.` : '');
+  mkChart('chEvo', {
+    type: 'line',
+    data: { labels: dates.map(fdate), datasets: ev.map((e, i) => ({ label: e.g, data: e.series, borderColor: SERIES[i % 8], backgroundColor: SERIES[i % 8], borderWidth: 2, pointRadius: dates.length > 40 ? 0 : 4, pointHoverRadius: 6, tension: 0, spanGaps: true })) },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: ev.length > 1, position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw == null ? '—' : metric === 'index' ? NF2.format(c.raw) : metric === 'count' ? NF0.format(c.raw) : money(c.raw)}` } } },
+      scales: { y: { title: { display: true, text: mLbl }, ticks: { callback: v => metric === 'index' ? NF0.format(v) : metric === 'count' ? NF0.format(v) : moneyK(v) } }, x: { grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 14, maxRotation: 0 } } } }
+  });
+  // Barras de variación
+  const varBy = (key, el, cap) => {
+    const g = new Map(); mvOk.forEach(x => { const k = x.r[key]; if (!g.has(k)) g.set(k, []); g.get(k).push(x.ch); });
+    let arr = [...g.entries()].filter(([, v]) => v.length >= 5).map(([k, v]) => ({ k, m: median(v), avg: Math.exp(v.reduce((a, b) => a + Math.log(1 + b), 0) / v.length) - 1, n: v.length }));
+    arr = arr.sort((a, b) => b.n - a.n).slice(0, 15).sort((a, b) => b.avg - a.avg);
+    $(cap).textContent = d0 ? `Variación promedio de precio del mismo SKU-mayorista entre el primer y el último corte del rango (${fdate(d0)} → ${fdate(d1)}) (grupos con ≥5 SKUs comparables). Se excluyen ${NF0.format(nOut)} variaciones fuera de −50% / +100% por ser posibles errores de captura.` : 'Se necesitan al menos dos cortes dentro del rango para calcular variaciones.';
+    mkChart(el, { type: 'bar', data: { labels: arr.map(a => a.k), datasets: [{ data: arr.map(a => a.avg * 100), backgroundColor: arr.map(a => a.avg >= 0 ? css('--up') : css('--down')), borderRadius: 4, barThickness: 13 }] },
+      options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => { const a = arr[c.dataIndex]; return [`Promedio ${spct(a.avg)} · Mediana ${spct(a.m)}`, `${a.n} SKUs comparables`]; } } } },
+        scales: { x: { ticks: { callback: v => v + '%' }, grid: { color: c => c.tick.value === 0 ? '#8a94a6' : '#edf0f4' } }, y: { grid: { display: false } } } } });
+  };
+  varBy('may', 'chMay', '#capMay'); varBy('catH', 'chCat', '#capCat');
+  // Movimientos
+  const dir = $('#mvDir').value;
+  const top = [...mv].filter(x => dir === 'up' ? x.ch > 0 : x.ch < 0).sort((a, b) => dir === 'up' ? b.ch - a.ch : a.ch - b.ch).slice(0, 60);
+  $('#capMv').textContent = d0 ? `${fdate(d0)} → ${fdate(d1)} · mismo SKU y mismo mayorista. “⚠ revisar” marca saltos fuera de −50% / +100% que suelen ser errores de captura o cambios de presentación.` : '';
+  $('#tblMv').innerHTML = '<thead><tr><th>Producto</th><th>Mayorista</th><th class="n">Antes</th><th class="n">Ahora</th><th class="n">Δ</th></tr></thead><tbody>' +
+    (top.map(x => `<tr><td><div style="font-weight:600">${esc(x.r.subH)}</div><div class="small">${esc(x.r.code)} · ${esc(x.r.brand)} · ${esc(x.r.desc).slice(0, 90)}</div></td><td>${esc(x.r.may)}</td><td class="n">${money(x.p0)}</td><td class="n">${money(x.p1)}</td><td class="n"><span class="${x.ch > 0 ? 'pos' : 'neg'}">${spct(x.ch)}</span>${x.out ? '<div class="small">⚠ revisar</div>' : ''}</td></tr>`).join('') || `<tr><td colspan="5" class="empty">${d0 ? 'Sin movimientos para este filtro.' : 'Se necesitan al menos dos cortes dentro del rango.'}</td></tr>`) + '</tbody>';
+  if (!$('#skuSel').options.length) skuSearch(); else renderSku();
+}
+function skuSearch() {
+  const q = Engine.norm($('#skuQ').value.trim());
+  const flt = f2();
+  const seen = new Map();
+  const inR = new Set(rangeDates().dates);
+  for (const r of W.rows) { if (!flt(r) || !inR.has(r.date)) continue; if (q && !Engine.norm(r.code + ' ' + r.desc).includes(q)) continue; const p = seen.get(r.key) || { r, n: 0 }; p.n++; seen.set(r.key, p); if (seen.size > 400) break; }
+  const L = [...seen.values()].sort((a, b) => b.n - a.n).slice(0, 200);
+  $('#skuSel').innerHTML = L.map(p => `<option value="${esc(p.r.key)}">${esc(p.r.code)} — ${esc(p.r.desc.slice(0, 80))}</option>`).join('');
+  renderSku();
+}
+function renderSku() {
+  const k = $('#skuSel').value;
+  const p = W.mprod.get(k);
+  const byMay = new Map();
+  (p ? p.rows : []).forEach(r => { if (!byMay.has(r.may)) byMay.set(r.may, new Map()); const m = byMay.get(r.may); if (!m.has(r.date) || r.pvp < m.get(r.date)) m.set(r.date, r.pvp); });
+  const mays = [...byMay.keys()].sort();
+  const dts = rangeDates().dates;
+  mkChart('chSku', { type: 'line', data: { labels: dts.map(fdate), datasets: mays.map((m, i) => ({ label: m, data: dts.map(d => byMay.get(m).get(d) ?? null), borderColor: SERIES[i % 8], backgroundColor: SERIES[i % 8], borderWidth: 2, pointRadius: 4, spanGaps: true })) },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${money(c.raw)}` } } }, scales: { y: { ticks: { callback: v => money(v) } }, x: { grid: { display: false } } } } });
+}
+
+
+/* ================= Sección 3 · Oportunidades de portafolio y demanda del mercado ================= */
+// Fuente: data/macro.json (un reporte por mes de cierre, generado por la tarea mensual con búsqueda web en Venezuela).
+// En pantalla: solo líneas que Supricom NO tiene (se re-verifica contra el catálogo cargado) y su presencia en la competencia.
+let MACRO = null;
+const OP = { month: null, cat: '' };
+const monthName = m => { const [y, mm] = m.split('-'); return ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][+mm - 1] + ' ' + y; };
+const DEM_CLS = { Alta: 'st3', Media: 'st1', Baja: 'nr' };
+function opReport() { const R = (MACRO && MACRO.reports || []).filter(r => r.opportunities && r.opportunities.length); if (!R.length) return null; const r = R.find(x => x.month === OP.month) || R[R.length - 1]; OP.month = r.month; return r; }
+function opRows(rep) {
+  // Corte de mercado más reciente dentro del mes de cierre (o el último disponible)
+  const end = rep.month + '-31';
+  const cut = W.dates.filter(d => d <= end).pop() || W.dates[W.dates.length - 1];
+  const rows = [];
+  let covered = 0;
+  rep.opportunities.forEach(o => {
+    const sup = new RegExp(o.sup), mkt = new RegExp(o.mkt);
+    const own = [...W.prods.values()].filter(p => sup.test(Engine.norm(p.name)));
+    if (own.length) { covered++; return; } // Supricom ya lo tiene: fuera de la tabla
+    const m = W.rows.filter(r => r.date === cut && mkt.test(Engine.norm(r.desc + ' ' + r.sub)));
+    const mays = [...new Set(m.map(r => r.may))].sort();
+    const prices = m.map(r => r.pvp).sort((a, b) => a - b);
+    rows.push({ ...o, cut, mays, nSku: m.length, pmin: prices[0], pmax: prices[prices.length - 1], pmed: median(prices) });
+  });
+  return { rows, covered, cut };
+}
+const lk = a => (a || []).map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener" style="color:#1d5fae">${esc(t)}</a>`).join('<br>');
+function renderOp() {
+  if (!W) return;
+  const rep = opReport();
+  if (!rep) { $('#tblOp').innerHTML = '<tbody><tr><td class="empty">Aún no hay un reporte mensual publicado.</td></tr></tbody>'; return; }
+  const R = (MACRO.reports || []).filter(r => r.opportunities && r.opportunities.length);
+  $('#opMonth').innerHTML = R.map(r => `<option value="${r.month}"${r.month === rep.month ? ' selected' : ''}>${monthName(r.month)}</option>`).join('');
+  const { rows: all, covered, cut } = opRows(rep);
+  opts($('#opCat'), [...new Set(all.map(r => r.cat))].sort(), 'Todas', OP.cat);
+  const rows = all.filter(r => !OP.cat || r.cat === OP.cat);
+  const P = rep.params || {};
+  $('#opUpd').textContent = `Actualizado el ${fdate(rep.generated)} · se renueva el día 5 de cada mes`;
+  const withComp = rows.filter(r => r.mays.length).length;
+  const topMay = (() => { const c = new Map(); rows.forEach(r => r.mays.forEach(m => c.set(m, (c.get(m) || 0) + 1))); return [...c.entries()].sort((a, b) => b[1] - a[1])[0]; })();
+  $('#opKpis').innerHTML = [
+    ['Brechas del mes', rows.length, `${monthName(rep.month)}${covered ? ` · ${covered} ya incorporada(s)` : ''}`],
+    ['Demanda alta', rows.filter(r => r.demand === 'Alta').length, 'prioridad de compra'],
+    ['Ya las vende la competencia', `${withComp} de ${rows.length}`, `mayoristas al corte ${fdate(cut)}`],
+    ['Contexto del mes', P.inflBs != null ? `Inflación ${String(P.inflBs).replace('.', ',')}%` : '—', P.fxEnd ? `Dólar BCV ${NF2.format(P.fxEnd)} Bs` : '']
+  ].map(([l, v, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
+  $('#opCap').textContent = `Investigación web y en redes sociales al ${fdate(rep.generated)}, cruzada con Odoo y la base de competencia. Solo productos de alta demanda o primera necesidad en Venezuela sin idéntico ni similar en el catálogo Supricom (Caracas + Valencia).${topMay ? ` Mayorista con más de estas líneas: ${topMay[0]}.` : ''}`;
+  rows.sort((a, b) => ({ Alta: 0, Media: 1, Baja: 2 }[a.demand] - { Alta: 0, Media: 1, Baja: 2 }[b.demand]) || b.mays.length - a.mays.length);
+  $('#tblOp').innerHTML = '<thead><tr><th>Producto / línea demandada</th><th>Demanda del mes</th><th>Presencia en competencia</th><th>Fuente verificable</th></tr></thead><tbody>' +
+    (rows.map(r => `<tr>
+      <td style="min-width:240px"><div style="font-weight:600">${esc(r.line)}</div><div class="small">${esc(r.cat)} › ${esc(r.sub)}</div></td>
+      <td style="min-width:220px"><span class="pill ${DEM_CLS[r.demand] || 'nr'}">${esc(r.demand)}</span><div class="small" style="margin-top:3px">${esc(r.trend)}</div>${(r.social || []).length ? `<div class="small" style="margin-top:3px">🗨 ${r.social.length} señal(es) en redes</div>` : ''}</td>
+      <td style="min-width:220px">${r.mays.length ? `<b>${esc(r.mays.join(', '))}</b><div class="small">${r.nSku} SKU · ${money(r.pmin)}${r.pmax > r.pmin ? ' – ' + money(r.pmax) : ''} · mediana ${money(r.pmed)}</div>` : `<span class="small">Ningún mayorista de la base lo ofrece</span><div class="small">Ref. web: ${esc(r.ref || '—')}</div>`}</td>
+      <td class="small" style="min-width:240px">${lk(r.src)}${(r.social || []).length ? `<div style="margin-top:4px;font-weight:600">Redes sociales</div>${lk(r.social)}` : ''}</td></tr>`).join('') ||
+      '<tr><td colspan="4" class="empty">Sin brechas para este filtro.</td></tr>') + '</tbody>';
+  OP.last = { rep, rows };
+}
+function exportOpXlsx() {
+  if (typeof XLSX === 'undefined') { alertBox('No se pudo cargar la librería de Excel (se necesita conexión a internet).'); return; }
+  const L = OP.last; if (!L) return;
+  const mes = monthName(L.rep.month);
+  const rows = L.rows.map(r => ({ 'Mes de cierre': mes, 'Categoría': r.cat, 'Subcategoría': r.sub, 'Producto / línea demandada': r.line, 'Demanda del mes': r.demand, 'Tendencia': r.trend,
+    'Mayoristas que lo venden': r.mays.join(', ') || 'Ninguno en la base', 'Nº SKU en competencia': r.nSku, 'Precio mín. competencia ($)': r2(r.pmin), 'Precio máx. competencia ($)': r2(r.pmax), 'Precio mediano ($)': r2(r.pmed),
+    'Corte de mercado': r.cut, 'Precio referencial web': r.ref || '', 'Fuentes web': (r.src || []).map(([t, u]) => `${t} — ${u}`).join('\n'), 'Señales en redes sociales': (r.social || []).map(([t, u]) => `${t} — ${u}`).join('\n') || 'Sin señal relevante' }));
+  saveFile(xlsxBlob([['Oportunidades', rows, [14, 20, 30, 50, 10, 60, 36, 10, 12, 12, 12, 12, 30, 80, 80]]]), `oportunidades_${L.rep.month}${OP.cat ? '_' + OP.cat.replace(/\W+/g, '_') : ''}.xlsx`);
+}
+
+/* ================= Cargar listas de precios (APIs /api/inteligencia-negocio/precios/listas) ================= */
+const hoyISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+let LISTAS = null, pollT = null, abierta = null, clasificaba = false;
+function abrirModal() { $('#modal').classList.add('open'); refrescarListas(); }
+function mlog(m) { const l = $('#mLog'); l.textContent += '\n' + m; l.scrollTop = 1e9; }
+function descargar(url) { const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
+
+function textoResultado(r) {
+  if (r.error) return `✖ ${r.archivo}: ${r.error}`;
+  const L = [];
+  if (r.ordenada) {
+    L.push(`✔ ${r.archivo}: ya venía ordenada · ${NF0.format(r.productos)} productos en ${r.cargas.length} lista(s): ${r.cargas.map(c => `${c.mayorista} ${fdate(c.fecha)}`).join(', ')}.`);
+  } else {
+    const c = r.cargas[0];
+    L.push(`✔ ${r.archivo}: ${NF0.format(r.productos)} productos de ${c.mayorista} · corte ${fdate(c.fecha)}${r.fechaLista ? ` (la lista dice ${fdate(r.fechaLista)})` : ''}${c.reemplazo ? ' · reemplazó la misma lista cargada antes' : ''}.`);
+    L.push(`   ${NF0.format(r.desdeMemoria)} ya clasificados antes · ${NF0.format(r.pendientes)} van a la IA.`);
+    const d = r.descartes || {};
+    const fuera = [d.sinPrecio && `${d.sinPrecio} sin precio`, d.sinStock && `${d.sinStock} agotados`, d.duplicados && `${d.duplicados} repetidos (quedó el precio más bajo)`].filter(Boolean);
+    if (fuera.length) L.push(`   Fuera: ${fuera.join(' · ')}.`);
+  }
+  (r.avisos || []).forEach(a => L.push('   ⚠ ' + a));
+  return L.join('\n');
+}
+
+const NIV = { Alto: 'st2', Medio: 'st1', Bajo: 'st3' };
+function pintarListas() {
+  const D = LISTAS; if (!D) return;
+  const est = D.estado || {};
+  $('#mEstado').textContent = est.corriendo ? `Clasificando con ${D.hayIA ? 'IA' : 'reglas'}: ${NF0.format(est.hechos)} de ${NF0.format(est.total)}…` : (D.hayIA ? '' : 'Sin IA configurada en el servidor: se clasifica por reglas (confianza baja).');
+  const cortes = [...new Set(D.cargas.map(c => c.fecha_corte))].sort().reverse();
+  const cur = $('#mCorte').value;
+  $('#mCorte').innerHTML = `<option value="">Todos los cortes</option>` + cortes.map(c => `<option value="${c}"${c === cur ? ' selected' : ''}>Corte ${fdate(c)}</option>`).join('');
+  if (!D.cargas.length) { $('#mListas').innerHTML = '<tbody><tr><td class="empty">Todavía no hay listas cargadas.</td></tr></tbody>'; return; }
+  const filas = D.cargas.map(c => {
+    const R = c.resumen || {}, n = R.niveles || {}, cmp = c.comparacion;
+    const estado = c.estado === 'clasificando' ? `<span class="pill st1">Clasificando · faltan ${NF0.format(c.pendientes || 0)}</span>` : c.estado === 'error' ? '<span class="pill st3">Error</span>' : '<span class="pill pa">Ordenada</span>';
+    const precio = !cmp ? '—' : cmp.descartada ? '<span class="pill st3" title="Otra lista del mismo mayorista y corte tiene todos estos productos más baratos">Descartada: precios más altos</span>' : cmp.perdidos ? `<span class="small">${NF0.format(cmp.perdidos)} más caros que en otra lista</span>` : '<span class="small">—</span>';
+    const camb = R.corteAnterior ? `<span class="pos">▲ ${R.subieron || 0}</span> · <span class="neg">▼ ${R.bajaron || 0}</span><div class="small">vs ${fdate(R.corteAnterior)}${R.nuevos != null ? ` · ${R.nuevos} nuevos` : ''}</div>` : '<span class="small">primer corte</span>';
+    const niv = c.estado === 'lista' ? ['Alto', 'Medio', 'Bajo'].map(k => `<span class="pill ${NIV[k]}" title="${k}">${NF0.format(n[k] || 0)}</span>`).join(' ') : '';
+    const fila = `<tr class="click" data-id="${c.id}"><td>${fdate(c.fecha_corte)}</td><td style="font-weight:650">${esc(c.mayorista)}</td><td class="small" style="max-width:260px;word-break:break-word">${esc(c.archivo)}${c.ordenada ? ' · ya ordenada' : ''}</td><td class="n">${NF0.format(c.filas)}</td><td>${estado}</td><td>${niv}</td><td>${precio}</td><td>${camb}</td>
+      <td style="white-space:nowrap"><button class="btn small" data-x="xlsx" title="La lista ordenada en Excel">⬇ Excel</button> <button class="btn small" data-x="csv">CSV</button> <button class="btn small" data-x="del" title="Borrar esta lista">🗑</button></td></tr>`;
+    return fila + (abierta === c.id ? detalleCarga(c) : '');
+  }).join('');
+  $('#mListas').innerHTML = '<thead><tr><th>Corte</th><th>Mayorista</th><th>Archivo</th><th class="n">Productos</th><th>Estado</th><th>Alto · Medio · Bajo</th><th>Vs. otras listas</th><th>Cambios de precio</th><th></th></tr></thead><tbody>' + filas + '</tbody>';
+}
+function detalleCarga(c) {
+  const R = c.resumen || {}, d = R.descartes || {};
+  const fuera = [`${d.sinPrecio || 0} sin precio`, `${d.sinStock || 0} agotados`, `${d.duplicados || 0} repetidos`].join(' · ');
+  const cambios = (R.cambios || []).map(x => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.producto)}<div class="small">${esc(x.descripcion)}</div></td><td class="n">${money(x.antes)}</td><td class="n">${money(x.ahora)}</td><td class="n ${x.cambio > 0 ? 'pos' : 'neg'}">${spct(x.cambio)}</td></tr>`).join('');
+  return `<tr><td colspan="9" style="background:var(--surface-2)">
+    <div class="small"><b>Leído:</b> ${R.hojas ? R.hojas + ' hoja(s) · ' : ''}fuera de la lista: ${fuera}${R.ivaIncluido ? ' · se quitó el IVA' : ''}${R.desdeMemoria != null ? ` · ${NF0.format(R.desdeMemoria)} ya clasificados antes` : ''}${R.origen ? ' · clasificados por: ' + Object.entries(R.origen).map(([k, v]) => `${({ ia: 'IA', reglas: 'reglas', memoria: 'memoria', lista: 'la lista', manual: 'a mano' })[k] || k} ${v}`).join(', ') : ''}</div>
+    ${(R.avisos || []).map(a => `<div class="small">⚠ ${esc(a)}</div>`).join('')}
+    ${cambios ? `<div class="small" style="margin:8px 0 4px;font-weight:650">Cambios importantes (±15 % o más) frente al corte del ${fdate(R.corteAnterior)}</div><table><thead><tr><th>Código</th><th>Producto</th><th class="n">Antes</th><th class="n">Ahora</th><th class="n">Cambio</th></tr></thead><tbody>${cambios}</tbody></table>` : R.corteAnterior ? `<div class="small" style="margin-top:6px">Sin cambios de ±15 % o más frente al corte del ${fdate(R.corteAnterior)}.</div>` : ''}
+  </td></tr>`;
+}
+
+async function refrescarListas() {
+  clearTimeout(pollT);
+  try { LISTAS = (await api(API + '/listas')).data; } catch (e) { $('#mListas').innerHTML = `<tbody><tr><td class="empty">${esc(e.message)}</td></tr></tbody>`; return; }
+  pintarListas();
+  const sigue = LISTAS.estado.corriendo || LISTAS.cargas.some(c => c.estado === 'clasificando');
+  if (sigue) { clasificaba = true; pollT = setTimeout(refrescarListas, 4000); }
+  else if (clasificaba) { clasificaba = false; mlog('✔ Clasificación terminada: el tablero ya tiene las listas nuevas.'); await recargarMercado(); }
+}
+async function recargarMercado() {
+  try {
+    const mk = await loadMercado();
+    BASE.mk = mk;
+    DS = { ...DS, MKT: mk.MKT, meta: { ...DS.meta, mktTs: mk.meta.mktTs, mktSource: mk.meta.mktSource } };
+    if (!hayOdoo()) await syncOdoo(false);
+    mostrarTablero();
+  } catch (e) { mlog('⚠ No se pudo recargar el catálogo: ' + e.message); }
+}
+
+function bindModal() {
+  const files = [];
+  $('#btnUpdate').onclick = abrirModal;
+  $('#mClose').onclick = () => $('#modal').classList.remove('open');
+  $('#mFecha').value = hoyISO();
+  const d = $('#dropMkt'), inp = d.querySelector('input');
+  const agregar = list => { for (const f of list) { if (/\.(xlsx|xls|xlsm|csv)$/i.test(f.name)) files.push({ f, may: '', iva: '' }); else mlog('✖ ' + f.name + ': solo Excel o CSV.'); } pintarArchivos(); };
+  d.onclick = () => inp.click();
+  inp.onchange = () => { agregar([...inp.files]); inp.value = ''; };
+  d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
+  d.ondragleave = () => d.classList.remove('over');
+  d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); agregar([...e.dataTransfer.files]); };
+  function pintarArchivos() {
+    const box = $('#mFiles');
+    if (!files.length) { box.innerHTML = ''; return; }
+    box.innerHTML = '<table><thead><tr><th>Archivo</th><th>Mayorista</th><th>Precios</th><th></th></tr></thead><tbody>' + files.map((x, i) => `<tr>
+      <td>${esc(x.f.name)} <span class="small">(${NF0.format(Math.ceil(x.f.size / 1024))} KB)</span></td>
+      <td><input type="text" data-i="${i}" data-k="may" value="${esc(x.may)}" placeholder="Se deduce del nombre del archivo"></td>
+      <td><select data-i="${i}" data-k="iva"><option value="">Detectar IVA</option><option value="si"${x.iva === 'si' ? ' selected' : ''}>Traen IVA (quitar 16 %)</option><option value="no"${x.iva === 'no' ? ' selected' : ''}>Sin IVA</option></select></td>
+      <td><button class="btn small" data-quitar="${i}">Quitar</button></td></tr>`).join('') + '</tbody></table>';
+    box.querySelectorAll('[data-k]').forEach(el => el.oninput = el.onchange = () => { files[+el.dataset.i][el.dataset.k] = el.value; });
+    box.querySelectorAll('[data-quitar]').forEach(el => el.onclick = () => { files.splice(+el.dataset.quitar, 1); pintarArchivos(); });
+  }
+  $('#mApply').onclick = async () => {
+    if (!files.length) { mlog('⚠ Elige al menos una lista.'); return; }
+    if (!$('#mFecha').value) { mlog('⚠ Elige la fecha de corte.'); return; }
+    const fd = new FormData();
+    fd.append('fecha_corte', $('#mFecha').value);
+    files.forEach((x, i) => { fd.append('archivo_' + i, x.f, x.f.name); fd.append('mayorista_' + i, x.may.trim()); fd.append('iva_' + i, x.iva); });
+    $('#mApply').disabled = true;
+    mlog(`Subiendo ${files.length} lista(s)…`);
+    try {
+      const j = await api(API + '/listas', { method: 'POST', body: fd });
+      j.data.resultados.forEach(r => mlog(textoResultado(r)));
+      files.length = 0; pintarArchivos();
+      clasificaba = true;
+      await refrescarListas();
+    } catch (e) { mlog('✖ ' + e.message); }
+    $('#mApply').disabled = false;
+  };
+  $('#mListas').onclick = async e => {
+    const b = e.target.closest('button'), tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    const id = +tr.dataset.id;
+    if (!b) { abierta = abierta === id ? null : id; pintarListas(); return; }
+    if (b.dataset.x === 'xlsx') descargar(`${API}/excel?carga=${id}`);
+    else if (b.dataset.x === 'csv') descargar(`${API}/excel?carga=${id}&formato=csv`);
+    else if (b.dataset.x === 'del') {
+      const c = LISTAS.cargas.find(x => x.id === id);
+      if (!confirm(`¿Borrar la lista de ${c.mayorista} del corte ${fdate(c.fecha_corte)} (${c.filas} productos)?`)) return;
+      try { await api(`${API}/listas?id=${id}`, { method: 'DELETE' }); mlog(`🗑 Borrada la lista de ${c.mayorista} del ${fdate(c.fecha_corte)}.`); await refrescarListas(); await recargarMercado(); }
+      catch (err) { mlog('✖ ' + err.message); }
+    }
+  };
+  const consolidada = csv => { const f = $('#mCorte').value; descargar(`${API}/excel?${f ? 'fecha=' + f + '&' : ''}${csv ? 'formato=csv' : ''}`); };
+  $('#mConsol').onclick = () => consolidada(false);
+  $('#mConsolCsv').onclick = () => consolidada(true);
+  $('#mMacro').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const macro = JSON.parse(await f.text());
+      await api(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ macro }) });
+      MACRO = macro; mlog('✔ Reporte mensual actualizado.');
+      if (W && location.hash === '#competencia') renderOp();
+    } catch (err) { mlog('✖ Reporte mensual: ' + err.message); }
+    e.target.value = '';
+  };
+}
+
+init();
+})();
+
+</script>
+</body>
+</html>
