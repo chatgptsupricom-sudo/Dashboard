@@ -231,6 +231,26 @@ export type EstadoMovimiento = "referencia" | "manual" | "por_monto" | "sin_regi
 /** Comision del banco: se concilia contra la cuenta de gastos bancarios, sin pago de Odoo. */
 export const esComision = (m: { monto: number; descripcion: string; referencia?: string }) =>
   m.monto < 0 && /comisi|\bcomis\b/i.test(`${m.descripcion} ${m.referencia || ""}`);
+
+/** Cuenta que se propone para un movimiento sin cobro/pago (la elige o cambia quien aprueba). */
+export function cuentaSugerida(m: { monto: number; descripcion: string; referencia?: string }): "igtf" | "comision" | null {
+  if (m.monto < 0 && /igtf|grandes transacciones/i.test(`${m.descripcion} ${m.referencia || ""}`)) return "igtf";
+  return esComision(m) ? "comision" : null;
+}
+
+/**
+ * Si los cobros/pagos elegidos cubren el movimiento (lo que les falta conciliar,
+ * en la moneda del diario): uno solo puede ser mayor (un cobro que el banco
+ * abono en varias partes); varios tienen que sumar justo el movimiento. null = ok.
+ */
+export function errorPagos(monto: number, pendientes: number[]): string | null {
+  const objetivo = Math.abs(monto);
+  if (!pendientes.length) return "Elige al menos un cobro o pago";
+  if (pendientes.some((p) => p < 0.005)) return "Uno de ellos ya está conciliado en Odoo";
+  const total = pendientes.reduce((s, p) => s + p, 0);
+  if (pendientes.length === 1) return total + 0.005 >= objetivo ? null : `Le quedan ${total.toFixed(2)} por conciliar y el movimiento es por ${objetivo.toFixed(2)}`;
+  return Math.abs(total - objetivo) < 0.01 ? null : `Suman ${total.toFixed(2)} y el movimiento es por ${objetivo.toFixed(2)}`;
+}
 export type EstadoComprobante = "conciliado" | "por_revisar" | "sin_registrar" | "no_encontrado" | "sin_estado";
 
 export type MovimientoCruzado = Movimiento & {

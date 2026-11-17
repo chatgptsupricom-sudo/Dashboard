@@ -25,7 +25,8 @@ import type {
   VerificacionApi,
 } from "@/lib/administracion/bancosCruce";
 import { RegistrarCobroOdoo } from "@/components/administracion/RegistrarCobroOdoo";
-import { ArrowLeft, Banknote, CheckCircle2, FileSpreadsheet, FolderUp, Landmark, Loader2, RefreshCw, Smartphone, Trash2, Upload } from "lucide-react";
+import { AprobarMovimiento } from "@/components/administracion/AprobarMovimiento";
+import { ArrowLeft, Banknote, CheckCircle2, FileSpreadsheet, MoreHorizontal, FolderUp, Landmark, Loader2, RefreshCw, Smartphone, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SEDES = [
@@ -80,8 +81,10 @@ const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice
 const suma = (items: { monto: number }[]) => items.reduce((s, i) => s + i.monto, 0);
 const enOdoo = (m: MovimientoCruzado) => m.estado !== "sin_registrar" && m.estado !== "comision";
 type MovimientoSemana = ConciliacionBanco["movimientos"][number];
-/** Se puede conciliar en Odoo: tiene su cobro/pago (sin conciliar alla) o es una comision, y el panel no lo concilio. */
-const conciliable = (m: MovimientoSemana) => !m.odoo && (m.pago ? !m.pago.conciliado : m.estado === "comision");
+/** Falta pasarlo a Odoo: el panel no lo paso y su cobro/pago propuesto (si tiene) no esta conciliado alla. */
+const conciliable = (m: MovimientoSemana) => !m.odoo && !m.pago?.conciliado;
+/** Calza por referencia (o se amarro a mano): se aprueba con un clic, sin el dialogo. */
+const directo = (m: MovimientoSemana) => conciliable(m) && !!m.pago && (m.estado === "referencia" || m.estado === "manual");
 
 /** Carpeta donde esta el archivo ("Comprobantes/27-10-2026/Cliente.jpg" -> "27-10-2026"). */
 function carpetaDe(ruta: string) {
@@ -156,6 +159,7 @@ export default function ConciliacionBancariaPage() {
   const [verificando, setVerificando] = useState<number | "pendientes" | null>(null);
   const [avanceVerificar, setAvanceVerificar] = useState<{ hecho: number; total: number } | null>(null);
   const [conciliando, setConciliando] = useState<string | null>(null);
+  const [aprobar, setAprobar] = useState<MovimientoSemana | null>(null);
   const [avanceConciliar, setAvanceConciliar] = useState<{ hecho: number; total: number } | null>(null);
   const entradas = {
     estado: useRef<HTMLInputElement>(null),
@@ -331,13 +335,14 @@ export default function ConciliacionBancariaPage() {
     const res = await fetch("/api/administracion/bancos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cuenta, conciliar: m.id, pago_id: m.pago?.id ?? null }),
+      body: JSON.stringify({ cuenta, conciliar: m.id, pagos: [m.pago!.id] }),
     });
     return res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
   };
 
   const conciliar = async (m: MovimientoSemana) => {
-    const con = m.pago ? `${m.pago.nombre} (${m.pago.cliente})` : "la cuenta de comisiones bancarias";
+    if (!directo(m)) return setAprobar(m);
+    const con = `${m.pago!.nombre} (${m.pago!.cliente})`;
     if (!confirm(`¿Conciliar en Odoo el movimiento del ${dia(m.fecha)} por ${cifra(m.monto)} con ${con}?`)) return;
     setError(null);
     setConciliando(m.id);
@@ -349,7 +354,7 @@ export default function ConciliacionBancariaPage() {
 
   /** Los de la semana que calzan por referencia (o amarrados a mano), de a uno; para al primer error. */
   const conciliarTodos = async () => {
-    const lista = movimientos.filter((m) => conciliable(m) && (m.estado === "referencia" || m.estado === "manual"));
+    const lista = movimientos.filter(directo);
     if (!lista.length || !confirm(`¿Conciliar en Odoo los ${lista.length} movimientos que calzan por referencia?`)) return;
     setError(null);
     setConciliando("todos");
@@ -373,7 +378,7 @@ export default function ConciliacionBancariaPage() {
   const conciliados = comprobantes.filter((c) => c.estado === "conciliado");
   const conProblema = comprobantes.filter((c) => c.estado !== "conciliado");
   const sinComprobante = movimientos.filter((m) => m.monto > 0 && !m.comprobante);
-  const porConciliarRef = movimientos.filter((m) => conciliable(m) && (m.estado === "referencia" || m.estado === "manual")).length;
+  const porConciliarRef = movimientos.filter(directo).length;
   const COMPROBANTES_LISTA = { comprobantes, conciliados, problema: conProblema };
   const moneda = cuentaElegida?.moneda || "";
   const etiqueta = (e: EstadoComprobante) => (e === "sin_estado" && datos?.mercantil ? "Sin verificar en el banco" : ETIQUETA_COMP[e]);
@@ -411,7 +416,7 @@ export default function ConciliacionBancariaPage() {
         "Cobro/pago en Odoo": m.pago?.nombre || (m.estado === "comision" ? "Comisión" : "No está en Odoo"),
         "Cliente/proveedor": m.pago?.cliente || m.comprobante?.cliente || "",
         Comprobante: m.comprobante?.referencia || "",
-        "Conciliado en Odoo": m.odoo || m.pago?.conciliado ? "Sí" : "No",
+        "En Odoo": m.odoo ? (m.odoo.conciliada ? `Conciliado: ${m.odoo.detalle}` : "Pasado sin conciliar") : m.pago?.conciliado ? "Conciliado" : "No",
       })),
     },
     {
@@ -678,6 +683,15 @@ export default function ConciliacionBancariaPage() {
             {cuenta && (
               <RegistrarCobroOdoo cuenta={cuenta} comprobante={registrar} cerrar={() => setRegistrar(null)} listo={cargar} />
             )}
+            {cuenta && (
+              <AprobarMovimiento
+                cuenta={cuenta}
+                movimiento={aprobar}
+                pagosLibres={datos.pagosLibres}
+                cerrar={() => setAprobar(null)}
+                listo={cargar}
+              />
+            )}
 
             <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Tabla">
               {(
@@ -851,7 +865,7 @@ export default function ConciliacionBancariaPage() {
                   <CardTitle className="text-base">Estado de cuenta</CardTitle>
                   <p className="text-xs text-gray-500 mt-1">
                     {datos.archivos.length
-                      ? `${movimientos.length} movimientos en la semana · ${movimientos.filter(enOdoo).length} están en Odoo · ${movimientos.filter((m) => m.odoo || m.pago?.conciliado).length} conciliados en Odoo`
+                      ? `${movimientos.length} movimientos en la semana · ${movimientos.filter(enOdoo).length} están en Odoo · ${movimientos.filter((m) => m.odoo?.conciliada || m.pago?.conciliado).length} conciliados en Odoo`
                       : "Esta semana todavía no tiene estado de cuenta: el Excel que baja el banco (o una captura/PDF)."}
                     {datos.archivos.length > 0 && datos.diasSinEstado.length > 0 && ` · falta el ${datos.diasSinEstado.map(dia).join(", ")}`}
                   </p>
@@ -965,25 +979,44 @@ export default function ConciliacionBancariaPage() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {m.odoo ? (
-                            <span className="text-xs text-emerald-700" title={`Aprobado por ${m.odoo.por} el ${dia(m.odoo.el.slice(0, 10))}`}>
+                            <span
+                              className={`text-xs ${m.odoo.conciliada ? "text-emerald-700" : "text-amber-700"}`}
+                              title={`Aprobado por ${m.odoo.por} el ${dia(m.odoo.el.slice(0, 10))}`}
+                            >
                               <CheckCircle2 className="h-4 w-4 inline mr-1" />
-                              Conciliado
+                              {m.odoo.conciliada ? "Conciliado" : "En Odoo, falta conciliar allá"}
+                              <span className="block text-gray-500 max-w-[14rem] truncate">{m.odoo.detalle}</span>
                               <span className="block text-gray-500">{m.odoo.por}</span>
                             </span>
                           ) : m.pago?.conciliado ? (
                             <span className="text-xs text-emerald-700">Ya conciliado en Odoo</span>
                           ) : conciliable(m) ? (
-                            <Button
-                              size="sm"
-                              variant={m.estado === "referencia" || m.estado === "manual" ? "default" : "outline"}
-                              className="h-8"
-                              disabled={conciliando !== null}
-                              onClick={() => conciliar(m)}
-                              title={m.estado === "por_monto" ? "Calza solo por monto: revisa el cobro o pago antes de aprobar" : undefined}
-                            >
-                              {conciliando === m.id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
-                              Aprobar
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant={directo(m) ? "default" : "outline"}
+                                className="h-8"
+                                disabled={conciliando !== null}
+                                onClick={() => conciliar(m)}
+                                title={m.estado === "por_monto" ? "Calza solo por monto: revisa el cobro o pago antes de aprobar" : undefined}
+                              >
+                                {conciliando === m.id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                                {directo(m) ? "Aprobar" : "Aprobar…"}
+                              </Button>
+                              {directo(m) && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8"
+                                  aria-label="Conciliar contra otra cosa"
+                                  title="Otros cobros/pagos, una cuenta contable, transferencia o pasar sin conciliar"
+                                  disabled={conciliando !== null}
+                                  onClick={() => setAprobar(m)}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </>
                           ) : (
                             <span className="text-xs text-gray-400">—</span>
                           )}

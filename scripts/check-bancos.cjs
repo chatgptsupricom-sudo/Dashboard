@@ -138,6 +138,17 @@ const salidas = cruzarBanco(
 assert.deepStrictEqual(salidas.movimientos.map((x) => [x.estado, x.pago?.id ?? null]), [["referencia", 6], ["comision", null]]);
 assert.ok(m.exports.esComision({ monto: -10, descripcion: "COMIS. TRF" }) && !m.exports.esComision({ monto: 10, descripcion: "COMISION" }));
 assert.ok(!m.exports.esComision({ monto: -10, descripcion: "COMPRA DE PINTURA" }));
+const { cuentaSugerida, errorPagos } = m.exports;
+assert.strictEqual(cuentaSugerida({ monto: -30, descripcion: "COBRO IGTF 3%" }), "igtf");
+assert.strictEqual(cuentaSugerida({ monto: -30, descripcion: "COMISION PAGO MOVIL" }), "comision");
+assert.strictEqual(cuentaSugerida({ monto: -30, descripcion: "PAGO PROVEEDOR" }), null);
+// Varios cobros: suman justo el movimiento; uno solo puede ser mayor (cobro abonado en partes)
+assert.strictEqual(errorPagos(1000, [600, 400]), null);
+assert.ok(errorPagos(1000, [600, 500]));
+assert.strictEqual(errorPagos(-400, [1000]), null);
+assert.ok(errorPagos(1000, [400]));
+assert.ok(errorPagos(1000, [1000, 0]));
+assert.ok(errorPagos(1000, []));
 // Un cobro no se amarra con una salida del mismo monto
 assert.strictEqual(cruzarBanco([mov("h".repeat(64), "2026-10-26", "", -5000)], pagos, [], new Map(), cubierto).movimientos[0].pago, null);
 assert.deepStrictEqual(r.comprobantes.map((c) => c.estado), ["conciliado", "sin_registrar", "no_encontrado", "sin_estado"]);
