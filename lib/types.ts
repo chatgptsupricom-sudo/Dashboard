@@ -525,6 +525,7 @@ export const rolePermissions: RolePermissions = {
       "inventory",
       "bi_dias_promedio", // Días promedio de cobro, inventario y pago
       "bi_por_llegar", // Productos en camino y si ya se vendieron (lib/inteligencia-negocio/porLlegar.ts)
+      "bi_precios", // Inteligencia de precios: listas de la competencia ordenadas vs Supricom (lib/inteligencia-negocio/precios)
       "bi_rotacion_productos", // Rotación productos: el Dashboard de Productos de AdminLeads, con costo, fuera del desplegable Leads
       "bi_reportes", // Desplegable Reportes: Facturación, Productos, Clientes (lib/inteligencia-negocio/reportes.ts)
       "bi_clasificacion", // Desplegable Clasificación: productos, clientes y por marca (lib/inteligencia-negocio/clasificacion)
