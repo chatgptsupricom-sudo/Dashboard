@@ -1017,7 +1017,7 @@ export default function ConciliacionBancariaPage() {
                                 title={m.estado === "parcial" && m.coincide ? `No coincide ${queFalla(m.coincide)}: revisa antes de aprobar` : undefined}
                               >
                                 {conciliando === m.id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
-                                {directo(m) ? "Aprobar" : "Aprobar…"}
+                                {directo(m) ? "Aprobar" : "Revisar y aprobar"}
                               </Button>
                               {directo(m) && (
                                 <Button
