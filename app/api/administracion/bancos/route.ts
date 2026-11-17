@@ -8,6 +8,7 @@ import {
   borrarComprobante,
   borrarEstado,
   conciliacionSemana,
+  conciliarEnOdoo,
   cuentasBancarias,
   esExcel,
   guardarComprobante,
@@ -124,6 +125,8 @@ export async function POST(request: NextRequest) {
 //   {cuenta, verificar: id[, telefono]} — volver a consultar un comprobante en el banco (API de Mercantil;
 //                                         telefono = celular de quien hizo un Pago Movil)
 //   {cuenta, verificar: "pendientes", semana} — los de la semana que el banco no confirmo
+//   {cuenta, conciliar: huella, pago_id}  — aprobado: crea la linea de extracto en Odoo y la concilia con el
+//                                           cobro/pago (pago_id null = comision del banco, contra gastos bancarios)
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
@@ -149,6 +152,27 @@ export async function PATCH(request: NextRequest) {
     } catch (e: any) {
       console.error("[bancos] verificar:", e?.message);
       return NextResponse.json({ error: "No se pudo consultar el banco" }, { status: 502 });
+    }
+  }
+  if (b?.conciliar !== undefined) {
+    if (!HUELLA.test(String(b.conciliar))) return NextResponse.json({ error: "Movimiento inválido" }, { status: 400 });
+    const pago = b?.pago_id == null ? null : Number(b.pago_id);
+    if (pago !== null && (!Number.isInteger(pago) || pago <= 0)) return NextResponse.json({ error: "Pago inválido" }, { status: 400 });
+    const p = auth.payload as any;
+    try {
+      const r = await conciliarEnOdoo(cuenta, String(b.conciliar), pago, {
+        nombre: String(p?.name || p?.nombre || ""),
+        email: String(p?.email || ""),
+      });
+      if ("error" in r) return NextResponse.json({ error: r.error }, { status: 409 });
+      return NextResponse.json({ success: true, ...r });
+    } catch (e: any) {
+      const msg = String(e?.message || "error");
+      console.error("[bancos] conciliar en Odoo:", msg);
+      const pista = /d[ií]as pasados/i.test(msg)
+        ? " (el usuario de Odoo del panel tiene bloqueado modificar días pasados: grupo «Restricciones de Usuario (Supricom)»)"
+        : "";
+      return NextResponse.json({ error: `Odoo no lo aceptó: ${msg.slice(0, 300)}${pista}` }, { status: 502 });
     }
   }
   const movimiento = b?.movimiento ?? null;
