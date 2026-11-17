@@ -17,6 +17,7 @@ import {
 } from "@/components/administracion/comunes";
 import type { ConciliacionBanco, CuentaBanco } from "@/lib/administracion/bancos";
 import type {
+  Coincide,
   ComprobanteCruzado,
   EstadoComprobante,
   EstadoMovimiento,
@@ -52,7 +53,7 @@ const CLASE_COMP: Record<EstadoComprobante, string> = {
 const CLASE_MOV: Record<EstadoMovimiento, string> = {
   referencia: "bg-emerald-100 text-emerald-800",
   manual: "bg-emerald-100 text-emerald-800",
-  por_monto: "bg-amber-100 text-amber-800",
+  parcial: "bg-amber-100 text-amber-800",
   sin_registrar: "bg-red-100 text-red-800",
   comision: "bg-slate-100 text-slate-700",
 };
@@ -124,16 +125,27 @@ function EnElBanco({ api }: { api: VerificacionApi }) {
   );
 }
 
-/** El cobro de Odoo en una linea: numero, cliente y referencia. */
-function Cobro({ pago }: { pago: PagoOdoo }) {
+/**
+ * El cobro/pago de Odoo: numero, cliente, monto, Memo y fecha. Con `coincide`
+ * (contra el movimiento del banco) lo que no coincide va en rojo.
+ */
+function Cobro({ pago, coincide }: { pago: PagoOdoo; coincide?: Coincide | null }) {
+  const mal = (ok: boolean | undefined) => (coincide && !ok ? "text-red-700 font-medium" : "");
   return (
     <span className="text-xs">
       <span className="font-medium">{pago.nombre}</span> · {pago.cliente}
       <span className="block text-gray-500">
-        ref {pago.ref || "—"} · {dia(pago.fecha)}
+        <span className={mal(coincide?.monto)}>{cifra(pago.monto)}</span> · Memo{" "}
+        <span className={mal(coincide?.referencia)}>{pago.ref || "—"}</span> · <span className={mal(coincide?.fecha)}>{dia(pago.fecha)}</span>
       </span>
     </span>
   );
+}
+
+/** Que no coincide entre el movimiento y el cobro/pago propuesto ("la fecha y el monto"). */
+function queFalla(c: Coincide) {
+  const fallan = [!c.fecha && "la fecha", !c.referencia && "la referencia", !c.monto && "el monto"].filter(Boolean) as string[];
+  return fallan.length > 1 ? `${fallan.slice(0, -1).join(", ")} y ${fallan[fallan.length - 1]}` : fallan[0] || "";
 }
 
 export default function ConciliacionBancariaPage() {
@@ -414,6 +426,10 @@ export default function ConciliacionBancariaPage() {
         Descripción: m.descripcion,
         Monto: m.monto,
         "Cobro/pago en Odoo": m.pago?.nombre || (m.estado === "comision" ? "Comisión" : "No está en Odoo"),
+        "Monto en Odoo": m.pago?.monto ?? "",
+        "Memo en Odoo": m.pago?.ref || "",
+        "Fecha en Odoo": m.pago?.fecha || "",
+        "No coincide": m.coincide ? queFalla(m.coincide) : "",
         "Cliente/proveedor": m.pago?.cliente || m.comprobante?.cliente || "",
         Comprobante: m.comprobante?.referencia || "",
         "En Odoo": m.odoo ? (m.odoo.conciliada ? `Conciliado: ${m.odoo.detalle}` : "Pasado sin conciliar") : m.pago?.conciliado ? "Conciliado" : "No",
@@ -926,10 +942,10 @@ export default function ConciliacionBancariaPage() {
                         <TableCell>
                           {m.pago ? (
                             <>
-                              <Cobro pago={m.pago} />
+                              <Cobro pago={m.pago} coincide={m.coincide} />
                               {m.estado !== "referencia" && (
                                 <Badge variant="outline" className={`border-0 block w-fit mt-0.5 ${CLASE_MOV[m.estado]}`}>
-                                  {m.estado === "manual" ? "A mano" : "Solo por monto (revisar)"}
+                                  {m.estado === "manual" ? "A mano" : `Revisar: no coincide ${m.coincide ? queFalla(m.coincide) : ""}`}
                                 </Badge>
                               )}
                             </>
@@ -955,7 +971,7 @@ export default function ConciliacionBancariaPage() {
                                 {m.pago ? `Cambiar por otro ${m.monto > 0 ? "cobro" : "pago"}…` : `Amarrar a un ${m.monto > 0 ? "cobro" : "pago"} de Odoo…`}
                               </option>
                               {m.estado === "manual" && <option value="soltar">Soltar</option>}
-                              {m.estado === "por_monto" && m.pago && <option value={m.pago.id}>Confirmar {m.pago.nombre}</option>}
+                              {m.estado === "parcial" && m.pago && <option value={m.pago.id}>Confirmar {m.pago.nombre}</option>}
                               {opcionesPago(m).map((p) => (
                                 <option key={p.id} value={p.id}>
                                   {p.nombre} · {cifra(p.monto)} · {p.cliente}
@@ -998,7 +1014,7 @@ export default function ConciliacionBancariaPage() {
                                 className="h-8"
                                 disabled={conciliando !== null}
                                 onClick={() => conciliar(m)}
-                                title={m.estado === "por_monto" ? "Calza solo por monto: revisa el cobro o pago antes de aprobar" : undefined}
+                                title={m.estado === "parcial" && m.coincide ? `No coincide ${queFalla(m.coincide)}: revisa antes de aprobar` : undefined}
                               >
                                 {conciliando === m.id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
                                 {directo(m) ? "Aprobar" : "Aprobar…"}
