@@ -10,6 +10,7 @@ import {
   conciliacionSemana,
   conciliarEnOdoo,
   cuentasBancarias,
+  cuentasContables,
   esExcel,
   guardarComprobante,
   guardarEstado,
@@ -19,6 +20,7 @@ import {
   verificarPendientes,
   vistaPreviaRegistro,
   type CuentaBanco,
+  type Destino,
 } from "@/lib/administracion/bancos";
 import { respuestaSedeNoPermitida, SEDES_VALIDAS } from "@/lib/auth/sedeRol";
 
@@ -48,6 +50,7 @@ async function cuentaPedida(payload: any, id: unknown): Promise<CuentaBanco | Ne
 
 // GET /api/administracion/bancos?cuentas=1[&sede=9] — cuentas de banco de la sede.
 // GET /api/administracion/bancos?cuenta=<diario>&semana=YYYY-MM-DD (lunes) — la conciliacion.
+// GET /api/administracion/bancos?cuenta=<diario>&contables=1 — cuentas contables de la sede (contrapartida al aprobar).
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
@@ -57,6 +60,11 @@ export async function GET(request: NextRequest) {
       const sedes = sedesDe(auth.payload, p.get("sede"));
       if (!sedes) return respuestaSedeNoPermitida();
       return NextResponse.json({ success: true, cuentas: await cuentasBancarias(sedes) });
+    }
+    if (p.get("contables")) {
+      const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
+      if (cuenta instanceof NextResponse) return cuenta;
+      return NextResponse.json({ success: true, contables: await cuentasContables(cuenta.sede) });
     }
     const semana = p.get("semana") || "";
     if (!rangoSemana(semana)) {
@@ -125,8 +133,11 @@ export async function POST(request: NextRequest) {
 //   {cuenta, verificar: id[, telefono]} — volver a consultar un comprobante en el banco (API de Mercantil;
 //                                         telefono = celular de quien hizo un Pago Movil)
 //   {cuenta, verificar: "pendientes", semana} — los de la semana que el banco no confirmo
-//   {cuenta, conciliar: huella, pago_id}  — aprobado: crea la linea de extracto en Odoo y la concilia con el
-//                                           cobro/pago (pago_id null = comision del banco, contra gastos bancarios)
+//   {cuenta, conciliar: huella, ...}      — aprobado: crea la linea de extracto en Odoo y la concilia contra
+//        pagos: [ids]           uno o varios cobros/pagos de Odoo (varios = suman justo el movimiento)
+//        cuenta_contable: id    una cuenta de la sede (comision, IGTF, intereses...)
+//        transferencia: true    la cuenta de transferencias internas (movimiento entre cuentas propias)
+//        sin_conciliar: true    la linea queda en Odoo para conciliarla alla
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
@@ -156,11 +167,20 @@ export async function PATCH(request: NextRequest) {
   }
   if (b?.conciliar !== undefined) {
     if (!HUELLA.test(String(b.conciliar))) return NextResponse.json({ error: "Movimiento inválido" }, { status: 400 });
-    const pago = b?.pago_id == null ? null : Number(b.pago_id);
-    if (pago !== null && (!Number.isInteger(pago) || pago <= 0)) return NextResponse.json({ error: "Pago inválido" }, { status: 400 });
+    const entero = (v: unknown) => Number.isInteger(Number(v)) && Number(v) > 0;
+    let destino: Destino;
+    if (Array.isArray(b?.pagos)) {
+      if (!b.pagos.length || b.pagos.length > 50 || !b.pagos.every(entero)) return NextResponse.json({ error: "Pagos inválidos" }, { status: 400 });
+      destino = { tipo: "pagos", pagos: b.pagos.map(Number) };
+    } else if (b?.cuenta_contable !== undefined) {
+      if (!entero(b.cuenta_contable)) return NextResponse.json({ error: "Cuenta contable inválida" }, { status: 400 });
+      destino = { tipo: "cuenta", cuentaId: Number(b.cuenta_contable) };
+    } else if (b?.transferencia === true) destino = { tipo: "transferencia" };
+    else if (b?.sin_conciliar === true) destino = { tipo: "sin_conciliar" };
+    else return NextResponse.json({ error: "Falta contra qué conciliar" }, { status: 400 });
     const p = auth.payload as any;
     try {
-      const r = await conciliarEnOdoo(cuenta, String(b.conciliar), pago, {
+      const r = await conciliarEnOdoo(cuenta, String(b.conciliar), destino, {
         nombre: String(p?.name || p?.nombre || ""),
         email: String(p?.email || ""),
       });
