@@ -31,6 +31,8 @@ const COLUMNAS: Record<string, RegExp> = {
   referencia: /referencia|^ref\b|^documento|^nro|^numero|comprobante/,
   descripcion: /descripcion|concepto|detalle|transaccion/,
   monto: /^monto|^importe/,
+  // Solo si no hay Monto/Importe ni Debito + Credito: en algunos bancos "Movimiento" es la descripcion.
+  montoOtro: /^movimiento|^valor/,
   credito: /credito|abono|haber|deposito/,
   debito: /debito|cargo|debe|retiro/,
   saldo: /saldo|balance/,
@@ -122,6 +124,7 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
     const titulos = (celdas[h] || []).map((c) => sinAcentos(String(c ?? "")));
     const col = (clave: string) => titulos.findIndex((t) => t && COLUMNAS[clave].test(t));
     const c = Object.fromEntries(Object.keys(COLUMNAS).map((k) => [k, col(k)]));
+    if (c.monto < 0 && (c.credito < 0 || c.debito < 0)) c.monto = c.montoOtro;
     if (c.fecha < 0 || (c.monto < 0 && (c.credito < 0 || c.debito < 0))) continue;
     const filas: FilaEstado[] = [];
     const dias: string[] = [];
