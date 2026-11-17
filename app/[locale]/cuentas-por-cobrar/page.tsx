@@ -789,7 +789,7 @@ export default function CxcDashboardPage() {
           <div className="space-y-5">
             {/* ── STATUS BANNER ── */}
             {(() => {
-              const isPaid = invoiceDetail.paymentState === "paid" || invoiceDetail.amountResidual <= 0;
+              const isPaid = invoiceDetail.paymentState === "paid" || Math.abs(invoiceDetail.amountResidual) < 0.005;
               const isPartial = !isPaid && (invoiceDetail.paymentState === "partial" || (invoiceDetail.amountPaid > 0 && invoiceDetail.amountResidual > 0));
               const isOverdue = !isPaid && !isPartial && invoiceDetail.amountResidual > 0 && invoiceDetail.invoiceDateDue && new Date(invoiceDetail.invoiceDateDue) < new Date();
               return (
@@ -1012,7 +1012,7 @@ export default function CxcDashboardPage() {
                           <td className="py-2.5 px-4 text-slate-500">{formatDate(p.date)}</td>
                           <td className="py-2.5 px-4 text-right text-slate-600">{p.debit > 0 ? formatCurrency(p.debit) : "—"}</td>
                           <td className="py-2.5 px-4 text-right text-emerald-600 font-medium">{p.credit > 0 ? formatCurrency(p.credit) : "—"}</td>
-                          <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(Math.abs(p.amount_residual || 0))}</td>
+                          <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(p.amount_residual || 0)}</td>
                           <td className="py-2.5 px-4 text-center">
                             {p.reconciled ? (
                               <span className="inline-block w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] font-bold leading-5 text-center">✓</span>

@@ -1146,7 +1146,7 @@ export default function ContadoCreditoPage() {
         ) : (
           <div className="space-y-5">
             {(() => {
-              const isPaid = invoiceDetail.paymentState === "paid" || invoiceDetail.amountResidual <= 0;
+              const isPaid = invoiceDetail.paymentState === "paid" || Math.abs(invoiceDetail.amountResidual) < 0.005;
               const isPartial = !isPaid && (invoiceDetail.paymentState === "partial" || (invoiceDetail.amountPaid > 0 && invoiceDetail.amountResidual > 0));
               return (
                 <div className={`flex items-center justify-between px-5 py-3.5 rounded-xl border ${isPaid ? "bg-emerald-50 border-emerald-200" : isPartial ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200"}`}>
