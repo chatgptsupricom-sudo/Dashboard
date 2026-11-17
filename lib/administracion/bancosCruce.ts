@@ -166,6 +166,7 @@ export type Movimiento = FilaEstado & {
   id: string;
 };
 
+/** Cobro (monto +) o pago a proveedor (monto -) de Odoo. ref = el Memo del pago. */
 export type PagoOdoo = {
   id: number;
   nombre: string;
@@ -173,6 +174,8 @@ export type PagoOdoo = {
   monto: number;
   cliente: string;
   ref: string;
+  /** Ya conciliado en Odoo con una linea de extracto (`is_matched`). */
+  conciliado?: boolean;
 };
 
 export type ComprobanteBanco = {
@@ -219,8 +222,12 @@ export type VerificacionApi = {
   yaConsultada?: boolean;
 };
 
-/** Como se amarro el movimiento con el cobro de Odoo. */
-export type EstadoMovimiento = "referencia" | "manual" | "por_monto" | "sin_registrar";
+/** Como se amarro el movimiento con el cobro/pago de Odoo. comision = salida sin pago que dice "comision". */
+export type EstadoMovimiento = "referencia" | "manual" | "por_monto" | "sin_registrar" | "comision";
+
+/** Comision del banco: se concilia contra la cuenta de gastos bancarios, sin pago de Odoo. */
+export const esComision = (m: { monto: number; descripcion: string; referencia?: string }) =>
+  m.monto < 0 && /comisi|\bcomis\b/i.test(`${m.descripcion} ${m.referencia || ""}`);
 export type EstadoComprobante = "conciliado" | "por_revisar" | "sin_registrar" | "no_encontrado" | "sin_estado";
 
 export type MovimientoCruzado = Movimiento & {
@@ -266,8 +273,10 @@ const DIAS_POR_REFERENCIA = 7;
 const DIAS_POR_MONTO = 3;
 
 /**
- * Cruza las entradas del estado de cuenta con los cobros de Odoo del mismo
- * diario y con los comprobantes de los clientes. Solo entradas (monto > 0).
+ * Cruza el estado de cuenta con los cobros y pagos de Odoo del mismo diario
+ * (entradas con cobros, salidas con pagos: el signo del monto los separa) y las
+ * entradas con los comprobantes de los clientes. Una salida sin pago que dice
+ * "comision" queda "comision".
  *
  * Movimiento con cobro de Odoo: primero lo amarrado a mano; despues misma
  * referencia + mismo monto; despues mismo monto con la fecha mas cercana (hasta
@@ -290,7 +299,8 @@ export function cruzarBanco(
   manuales: Map<string, number>,
   cubierto: (dia: string) => boolean,
 ) {
-  const entradas = movimientos.filter((m) => m.monto > 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const todos = [...movimientos].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const entradas = todos.filter((m) => m.monto > 0);
   const porId = new Map(pagos.map((p) => [p.id, p]));
   const usados = new Set<number>();
   const pagoDe = new Map<string, { pago: PagoOdoo; estado: EstadoMovimiento }>();
@@ -299,16 +309,16 @@ export function cruzarBanco(
     usados.add(pago.id);
     pagoDe.set(m.id, { pago, estado });
   };
-  for (const m of entradas) tomar(m, porId.get(manuales.get(m.id) ?? -1), "manual");
+  for (const m of todos) tomar(m, porId.get(manuales.get(m.id) ?? -1), "manual");
   const cercano = (m: Movimiento, ok: (p: PagoOdoo) => boolean, max: number) =>
     pagos
       .filter((p) => !usados.has(p.id) && mismoMonto(p.monto, m.monto) && dias(p.fecha, m.fecha) <= max && ok(p))
       .sort((a, b) => dias(a.fecha, m.fecha) - dias(b.fecha, m.fecha))[0];
-  for (const m of entradas) tomar(m, cercano(m, (p) => mismaReferencia(p.ref, m.referencia), DIAS_POR_REFERENCIA), "referencia");
-  for (const m of entradas) tomar(m, cercano(m, () => true, DIAS_POR_MONTO), "por_monto");
+  for (const m of todos) tomar(m, cercano(m, (p) => mismaReferencia(p.ref, m.referencia), DIAS_POR_REFERENCIA), "referencia");
+  for (const m of todos) tomar(m, cercano(m, () => true, DIAS_POR_MONTO), "por_monto");
 
   const movDePago = new Map([...pagoDe].map(([movId, { pago }]) => [pago.id, movId]));
-  const porMovId = new Map(entradas.map((m) => [m.id, m]));
+  const porMovId = new Map(entradas.map((m) => [m.id, m] as const));
   const movsUsados = new Set<string>();
   // Cobros de Odoo que tomo un comprobante confirmado por la API del banco: la plata esta en el banco.
   const usadosApi = new Set<number>();
@@ -365,12 +375,12 @@ export function cruzarBanco(
   });
 
   const compDeMov = new Map(salidaComp.filter((c) => c.movimiento).map((c) => [c.movimiento!.id, c]));
-  const salidaMovs: MovimientoCruzado[] = entradas.map((m) => {
+  const salidaMovs: MovimientoCruzado[] = todos.map((m) => {
     const c = compDeMov.get(m.id);
     const p = pagoDe.get(m.id);
     return {
       ...m,
-      estado: p?.estado ?? "sin_registrar",
+      estado: p?.estado ?? (esComision(m) ? "comision" : "sin_registrar"),
       pago: p?.pago ?? null,
       comprobante: c ? { id: c.id, cliente: c.cliente, referencia: c.referencia } : null,
     };
@@ -378,7 +388,7 @@ export function cruzarBanco(
   return {
     movimientos: salidaMovs,
     comprobantes: salidaComp,
-    /** Cobros de Odoo que no estan en el estado de cuenta, en dias que el estado cubre. */
+    /** Cobros y pagos de Odoo que no estan en el estado de cuenta, en dias que el estado cubre. */
     pagosSinMovimiento: pagos.filter((p) => !usados.has(p.id) && !usadosApi.has(p.id) && cubierto(p.fecha)),
     /** Cobros de Odoo cuyo comprobante confirmo el banco por la API (no estan en el estado de cuenta). */
     pagosConfirmadosApi: usadosApi,

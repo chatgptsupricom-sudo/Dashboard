@@ -15,6 +15,7 @@ import {
 import {
   armarEstado,
   cruzarBanco,
+  esComision,
   leerFilasExcel,
   celular58,
   mismaReferencia,
@@ -142,6 +143,18 @@ async function ensureTablas() {
       UNIQUE KEY uq_pago (pago_odoo_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  // Movimiento conciliado en Odoo desde el panel (aprobado por una persona): la linea de extracto que se creo.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS banco_conciliaciones (
+      huella CHAR(64) PRIMARY KEY,
+      journal_id INT NOT NULL,
+      st_line_id INT NOT NULL,
+      pago_odoo_id INT NULL,
+      aprobado_por VARCHAR(190) NOT NULL DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX (journal_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
   tablasListas = true;
 }
 
@@ -179,29 +192,37 @@ export async function cuentasBancarias(sedes: number[]): Promise<CuentaBanco[]> 
   return cacheCuentas.cuentas.filter((c) => sedes.includes(c.sede));
 }
 
-/** Cobros de clientes de Odoo en el diario (sin borradores ni anulados). */
-async function cobrosOdoo(cuenta: CuentaBanco, desde: string, hasta: string): Promise<PagoOdoo[]> {
+/**
+ * Cobros (monto +) y pagos a proveedores (monto -) de Odoo en el diario, sin
+ * borradores, anulados ni transferencias internas. `ref` es el Memo del pago:
+ * ahi CxC y Administracion escriben la referencia del banco.
+ */
+async function pagosOdoo(cuenta: CuentaBanco, desde: string, hasta: string): Promise<PagoOdoo[]> {
   const pagos = await callOdooRPCEstricto<any[]>(
     "account.payment",
     "search_read",
     [
       [
         ["journal_id", "=", cuenta.id],
-        ["payment_type", "=", "inbound"],
         ["state", "not in", ["draft", "cancel"]],
+        ["is_internal_transfer", "=", false],
         ["date", ">=", desde],
         ["date", "<=", hasta],
       ],
     ],
-    { fields: ["name", "date", "amount", "partner_id", "ref"], context: { allowed_company_ids: [cuenta.sede] } },
+    {
+      fields: ["name", "date", "amount", "payment_type", "partner_id", "ref", "is_matched"],
+      context: { allowed_company_ids: [cuenta.sede] },
+    },
   );
   return (pagos || []).map((p) => ({
     id: p.id,
     nombre: String(p.name || ""),
     fecha: String(p.date),
-    monto: Number(p.amount) || 0,
+    monto: (Number(p.amount) || 0) * (p.payment_type === "outbound" ? -1 : 1),
     cliente: Array.isArray(p.partner_id) ? String(p.partner_id[1]) : "",
     ref: String(p.ref || ""),
+    conciliado: !!p.is_matched,
   }));
 }
 
@@ -878,6 +899,159 @@ export async function amarrarPago(cuenta: CuentaBanco, movimiento: string, pagoI
   }
 }
 
+// ---------- Conciliar en Odoo (con aprobacion) ----------
+
+/**
+ * Cuenta de las comisiones del banco por sede (codigo en el plan de cuentas):
+ * Caracas y Panama "Gastos Bancarios" (la que usa Caracas a mano), Valencia
+ * "Comisiones Bancarias" (su 6.07.01.001 es "Debitos Bancarios").
+ */
+const CUENTA_COMISION: Record<number, string> = { 9: "6.07.01.002", 10: "6.07.01.001", 7: "6.07.01.001" };
+
+/**
+ * Concilia en Odoo un movimiento del estado de cuenta cuando una persona lo
+ * aprueba en la pantalla: crea su linea de extracto en el diario con la
+ * contrapartida en la cuenta de "Pagos/Recibos Pendientes" del pago (o en la de
+ * comisiones si es una comision, `pagoId` null) y la concilia con la linea del
+ * pago, como se hace a mano en Odoo. `unique_import_id` = "panel-<huella>":
+ * Odoo no deja crear dos veces la misma linea y un reintento la reusa. No crea
+ * la linea si Odoo ya tiene una importada del mismo dia y monto en el diario
+ * (esa se concilia en Odoo). Se deshace en Odoo (romper conciliacion y borrar
+ * la linea).
+ */
+export async function conciliarEnOdoo(
+  cuenta: CuentaBanco,
+  huellaMov: string,
+  pagoId: number | null,
+  autor: { nombre: string; email: string },
+): Promise<{ error: string } | { stLineId: number; asiento: string }> {
+  await ensureTablas();
+  const { rows } = await query(
+    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, referencia, descripcion, monto
+       FROM banco_movimientos WHERE journal_id = ? AND huella = ? LIMIT 1`,
+    [cuenta.id, huellaMov],
+  );
+  const mov = rows[0];
+  if (!mov) return { error: "Ese movimiento ya no está en el estado de cuenta" };
+  const monto = Number(mov.monto);
+  const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
+  const leer = async (modelo: string, dominio: any[], campos: string[]) =>
+    (await callOdooRPCEstricto<any[]>(modelo, "search_read", [dominio], { fields: campos, context: ctx })) || [];
+
+  // Contrapartida: la cuenta pendiente del pago (y su linea por conciliar) o la de comisiones.
+  let cuentaId: number;
+  let lineaPago: number | null = null;
+  let partnerId: number | null = null;
+  let nombrePago = "";
+  if (pagoId === null) {
+    if (!esComision({ monto, descripcion: mov.descripcion, referencia: mov.referencia })) {
+      return { error: "Sin cobro o pago de Odoo solo se concilian las comisiones del banco" };
+    }
+    const codigo = CUENTA_COMISION[cuenta.sede];
+    const cuentas = await leer("account.account", [["code", "=", codigo], ["company_id", "=", cuenta.sede]], ["id"]);
+    if (!cuentas.length) return { error: `No está la cuenta de comisiones ${codigo} en Odoo` };
+    cuentaId = cuentas[0].id;
+  } else {
+    const pago = (
+      await leer(
+        "account.payment",
+        [["id", "=", pagoId]],
+        ["name", "journal_id", "state", "payment_type", "amount", "is_matched", "outstanding_account_id", "partner_id", "move_id"],
+      )
+    )[0];
+    if (!pago) return { error: "Ese pago no existe en Odoo" };
+    nombrePago = String(pago.name || "");
+    if (!Array.isArray(pago.journal_id) || pago.journal_id[0] !== cuenta.id) return { error: `${nombrePago} es de otro diario` };
+    if (pago.state !== "posted") return { error: `${nombrePago} no está confirmado en Odoo` };
+    if ((pago.payment_type === "inbound") !== monto > 0) {
+      return { error: `${nombrePago} es un ${pago.payment_type === "inbound" ? "cobro" : "pago"} y el movimiento es una ${monto > 0 ? "entrada" : "salida"}` };
+    }
+    if (Math.abs(Number(pago.amount) - Math.abs(monto)) > 0.005) {
+      return { error: `${nombrePago} es por ${pago.amount} y el movimiento por ${Math.abs(monto)}` };
+    }
+    if (!Array.isArray(pago.outstanding_account_id)) return { error: `${nombrePago} no tiene cuenta de pagos pendientes` };
+    cuentaId = pago.outstanding_account_id[0];
+    partnerId = Array.isArray(pago.partner_id) ? pago.partner_id[0] : null;
+    const lineas = await leer(
+      "account.move.line",
+      [["move_id", "=", Array.isArray(pago.move_id) ? pago.move_id[0] : 0], ["account_id", "=", cuentaId]],
+      ["reconciled"],
+    );
+    if (!lineas.length) return { error: `No se encontró la línea de ${nombrePago} en la cuenta de pagos pendientes` };
+    // Ya conciliado: solo sigue si es un reintento (la linea de extracto del panel ya existe).
+    lineaPago = pago.is_matched || lineas[0].reconciled ? null : lineas[0].id;
+  }
+
+  const importId = `panel-${huellaMov}`;
+  let linea = (await leer("account.bank.statement.line", [["unique_import_id", "=", importId]], ["move_id"]))[0];
+  if (!linea && pagoId !== null && lineaPago === null) return { error: `${nombrePago} ya está conciliado en Odoo` };
+  if (!linea) {
+    const importada = (
+      await leer(
+        "account.bank.statement.line",
+        [["journal_id", "=", cuenta.id], ["date", "=", mov.fecha], ["amount", "=", monto], ["unique_import_id", "not ilike", "panel-"]],
+        ["move_id"],
+      )
+    )[0];
+    if (importada) {
+      return { error: `Odoo ya tiene esta línea de extracto (${importada.move_id?.[1] || importada.id}): concíliala en Odoo` };
+    }
+    const id = await callOdooRPCEstricto<number>(
+      "account.bank.statement.line",
+      "create",
+      [
+        {
+          journal_id: cuenta.id,
+          date: mov.fecha,
+          amount: monto,
+          payment_ref: [mov.referencia, mov.descripcion].filter(Boolean).join(" · ").slice(0, 250) || "Movimiento del banco",
+          unique_import_id: importId,
+          counterpart_account_id: cuentaId,
+          ...(partnerId ? { partner_id: partnerId } : {}),
+        },
+      ],
+      { context: ctx },
+    );
+    if (!id) throw new Error("Odoo no devolvió la línea de extracto");
+    linea = (await leer("account.bank.statement.line", [["id", "=", id]], ["move_id"]))[0];
+  }
+  const asientoId = Array.isArray(linea.move_id) ? linea.move_id[0] : 0;
+
+  if (lineaPago !== null) {
+    const contra = (await leer("account.move.line", [["move_id", "=", asientoId], ["account_id", "=", cuentaId]], ["reconciled"]))[0];
+    if (!contra) throw new Error("La línea de extracto no quedó con la cuenta de pagos pendientes");
+    if (!contra.reconciled) {
+      try {
+        await callOdooRPCEstricto("account.move.line", "reconcile", [[contra.id, lineaPago]], { context: ctx });
+      } catch (e) {
+        // reconcile() puede devolver algo que el JSON-RPC no sabe mandar aunque lo haya hecho: se mira en Odoo.
+        const hecho = await leer("account.move.line", [["id", "in", [contra.id, lineaPago]], ["reconciled", "=", true]], ["id"]);
+        if (hecho.length < 2) throw e;
+      }
+    }
+  }
+
+  await query(
+    `INSERT INTO banco_conciliaciones (huella, journal_id, st_line_id, pago_odoo_id, aprobado_por) VALUES (?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE st_line_id = VALUES(st_line_id), pago_odoo_id = VALUES(pago_odoo_id),
+       aprobado_por = VALUES(aprobado_por), created_at = CURRENT_TIMESTAMP`,
+    [huellaMov, cuenta.id, linea.id, pagoId, autor.email],
+  );
+  try {
+    await callOdooRPCEstricto("account.move", "message_post", [[asientoId]], {
+      body:
+        `Conciliado desde el panel (Conciliación bancaria) por ${escaparHtml(autor.nombre || autor.email)} (${escaparHtml(autor.email)}): ` +
+        `movimiento del banco del ${mov.fecha}, ref ${escaparHtml(mov.referencia || "—")}, ${monto}` +
+        (nombrePago ? `, con ${escaparHtml(nombrePago)}.` : ", comisión del banco."),
+      message_type: "comment",
+      subtype_xmlid: "mail.mt_note",
+    });
+  } catch (e: any) {
+    console.warn("[bancos] sin nota en el chatter:", e?.message);
+  }
+  return { stLineId: linea.id, asiento: Array.isArray(linea.move_id) ? String(linea.move_id[1]) : "" };
+}
+
 // ---------- Conciliacion ----------
 
 /**
@@ -890,7 +1064,7 @@ export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
   const domingo = sumarDias(lunes, 6);
   const desde = sumarDias(lunes, -7);
   const hasta = sumarDias(lunes, 13);
-  const [movs, estados, comps, amarres, pagos] = await Promise.all([
+  const [movs, estados, comps, amarres, pagos, concs] = await Promise.all([
     // La misma fila en dos archivos (misma huella) va una vez: la del primero.
     query(
       `SELECT m.huella, DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, m.referencia, m.descripcion, m.monto, m.saldo
@@ -913,8 +1087,26 @@ export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
       [cuenta.id, desde, hasta],
     ),
     query("SELECT huella, pago_odoo_id FROM banco_amarres WHERE journal_id = ?", [cuenta.id]),
-    cobrosOdoo(cuenta, desde, hasta),
+    pagosOdoo(cuenta, desde, hasta),
+    query("SELECT huella, st_line_id, aprobado_por, created_at FROM banco_conciliaciones WHERE journal_id = ?", [cuenta.id]),
   ]);
+  // Solo las lineas que siguen en Odoo (alguien pudo romper la conciliacion y borrarla alla).
+  const enSemanaHuellas = new Set(movs.rows.map((r: any) => r.huella));
+  const filasConc = concs.rows.filter((r: any) => enSemanaHuellas.has(r.huella));
+  const idsLinea = filasConc.map((r: any) => Number(r.st_line_id));
+  const vivas = new Set(
+    idsLinea.length
+      ? ((await callOdooRPCEstricto<any[]>("account.bank.statement.line", "search_read", [[["id", "in", idsLinea]]], {
+          fields: ["id"],
+          context: { allowed_company_ids: [cuenta.sede] },
+        })) || []).map((l) => l.id)
+      : [],
+  );
+  const conciliadoEnOdoo = new Map<string, { stLineId: number; por: string; el: string }>(
+    filasConc
+      .filter((r: any) => vivas.has(Number(r.st_line_id)))
+      .map((r: any) => [r.huella, { stLineId: Number(r.st_line_id), por: r.aprobado_por, el: new Date(r.created_at).toISOString() }]),
+  );
   const mercantil = !!(await credencialesMercantil(cuenta.id, cuenta.sede));
   const movimientos: Movimiento[] = movs.rows.map((r: any) => ({
     id: r.huella,
@@ -951,12 +1143,13 @@ export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
   return {
     /** La cuenta consulta los comprobantes en el banco (API de Mercantil). */
     mercantil,
-    movimientos: cruce.movimientos.filter((m) => enSemana(m.fecha)),
-    /** Lo que salio de la cuenta en la semana (no se concilia, solo el total). */
-    salidas: movimientos.filter((m) => m.monto < 0 && enSemana(m.fecha)).reduce((s, m) => s + m.monto, 0),
+    /** Entradas y salidas de la semana; `odoo` = ya conciliado en Odoo desde el panel. */
+    movimientos: cruce.movimientos
+      .filter((m) => enSemana(m.fecha))
+      .map((m) => ({ ...m, odoo: conciliadoEnOdoo.get(m.id) ?? null })),
     comprobantes: cruce.comprobantes.filter((c) => enSemana(c.fecha)),
     pagosSinMovimiento: cruce.pagosSinMovimiento.filter((p) => enSemana(p.fecha)),
-    /** Cobros de Odoo de la ventana que no tomo ningun movimiento: para amarrar a mano. */
+    /** Cobros y pagos de Odoo de la ventana que no tomo ningun movimiento: para amarrar a mano. */
     pagosLibres: pagos.filter((p) => !pagosTomados.has(p.id)),
     /** Dias de la semana que no cubre ningun estado de cuenta. */
     diasSinEstado: Array.from({ length: 7 }, (_, i) => sumarDias(lunes, i)).filter((d) => !cubierto(d)),

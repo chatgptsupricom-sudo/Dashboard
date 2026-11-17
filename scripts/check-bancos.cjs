@@ -109,8 +109,23 @@ assert.deepStrictEqual(estadoMov, {
   a: ["referencia", 1],
   b: ["por_monto", 2],
   c: ["sin_registrar", null],
+  d: ["sin_registrar", null], // salida sin pago ni "comision"
   e: ["por_monto", 3],
 });
+
+// Salidas: con el pago a proveedor (monto negativo) por el Memo; comision sin pago
+const salidas = cruzarBanco(
+  [mov("f".repeat(64), "2026-10-27", "13428526349", -145536.99), mov("g".repeat(64), "2026-10-27", "80558667850", -391, "COMISION PAGO MOVIL")],
+  [...pagos, { id: 6, nombre: "PBANES/4", fecha: "2026-10-26", monto: -145536.99, cliente: "Proveedor", ref: "13428526349" }],
+  [],
+  new Map(),
+  cubierto,
+);
+assert.deepStrictEqual(salidas.movimientos.map((x) => [x.estado, x.pago?.id ?? null]), [["referencia", 6], ["comision", null]]);
+assert.ok(m.exports.esComision({ monto: -10, descripcion: "COMIS. TRF" }) && !m.exports.esComision({ monto: 10, descripcion: "COMISION" }));
+assert.ok(!m.exports.esComision({ monto: -10, descripcion: "COMPRA DE PINTURA" }));
+// Un cobro no se amarra con una salida del mismo monto
+assert.strictEqual(cruzarBanco([mov("h".repeat(64), "2026-10-26", "", -5000)], pagos, [], new Map(), cubierto).movimientos[0].pago, null);
 assert.deepStrictEqual(r.comprobantes.map((c) => c.estado), ["conciliado", "sin_registrar", "no_encontrado", "sin_estado"]);
 assert.deepStrictEqual(r.pagosSinMovimiento.map((p) => p.id), [4]); // el 5 es de un dia sin estado de cuenta
 
