@@ -4,6 +4,7 @@ import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
 import { requireRoles } from "@/lib/auth/roles";
 import { CATEGORIAS_DISENO } from "@/lib/disenos/categorias";
 import { COLUMNA_FECHA_SIN_ALIAS as FECHA, aISO } from "@/lib/disenos/fecha";
+import { esDisenador, filtroDueno } from "@/lib/disenos/alcance";
 import { NextRequest, NextResponse } from "next/server";
 
 const ROLES = ["diseñador", ROL_BI]; // superadmin siempre pasa via requireRoles
@@ -20,7 +21,9 @@ const ROLES = ["diseñador", ROL_BI]; // superadmin siempre pasa via requireRole
  * Los diseños en la papelera (deleted_at) no cuentan.
  *
  * `?mes=YYYY-MM` elige el mes del calendario (default: el mes en curso).
- * `?creador=` lo acota a un diseñador; sin él cuenta a todos.
+ * Un diseñador ve solo sus números (lib/disenos/alcance.ts). SuperAdmin y BI
+ * ven a todos y `?creador=<nombre>` los acota a uno; para eso la respuesta trae
+ * `creadores` (solo a ellos).
  */
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES);
@@ -41,10 +44,12 @@ export async function GET(request: NextRequest) {
     const hastaDate = new Date(anio, mes, 0); // día 0 del mes siguiente = último del mes
     const hasta = `${anio}-${String(mes).padStart(2, "0")}-${String(hastaDate.getDate()).padStart(2, "0")}`;
 
-    const filtroCreador = creador ? " AND created_by = ?" : "";
-    const pCreador = creador ? [creador] : [];
+    const dueno = filtroDueno(auth.payload);
+    const verTodos = !esDisenador(auth.payload);
+    const filtroCreador = dueno.sql + (verTodos && creador ? " AND created_by = ?" : "");
+    const pCreador = [...dueno.params, ...(verTodos && creador ? [creador] : [])];
 
-    const [porDia, porCategoria, totales] = await Promise.all([
+    const [porDia, porCategoria, totales, creadores] = await Promise.all([
       // Un renglón por día con diseños: el calendario rellena los días vacíos.
       query(
         `SELECT ${FECHA} AS dia, COUNT(*) AS n
@@ -72,6 +77,12 @@ export async function GET(request: NextRequest) {
          WHERE deleted_at IS NULL${filtroCreador}`,
         pCreador
       ),
+      verTodos
+        ? query(
+            `SELECT created_by AS nombre, COUNT(*) AS n FROM designer_designs
+             WHERE deleted_at IS NULL AND created_by <> '' GROUP BY created_by ORDER BY created_by`
+          )
+        : Promise.resolve({ rows: [] as any[] }),
     ]);
 
     const dias: Record<string, number> = {};
@@ -112,6 +123,7 @@ export async function GET(request: NextRequest) {
       semanas,
       categorias,
       catalogoCategorias: CATEGORIAS_DISENO,
+      creadores: verTodos ? (creadores.rows || []).map((r: any) => String(r.nombre)) : undefined,
     });
   } catch (error: any) {
     console.error("GET /api/disenador/disenos/kpis:", error.message);

@@ -1,6 +1,8 @@
 import { query } from "@/lib/db";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
+import { filtroDueno } from "@/lib/disenos/alcance";
 import JSZip from "jszip";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -35,10 +37,12 @@ export async function POST(request: NextRequest) {
     }
 
     const placeholders = ids.map(() => "?").join(",");
+    await ensureDesignerDesignsTable();
+    const dueno = filtroDueno(auth.payload);
     const result = await query(
       `SELECT id, title, folder, image_data, image_mime
-       FROM designer_designs WHERE id IN (${placeholders})`,
-      ids
+       FROM designer_designs WHERE id IN (${placeholders})${dueno.sql}`,
+      [...ids, ...dueno.params]
     );
 
     const zip = new JSZip();

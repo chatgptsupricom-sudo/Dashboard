@@ -1,6 +1,8 @@
 import { query } from "@/lib/db";
 import { kieCreateTask } from "@/lib/kie";
 import { requireRoles } from "@/lib/auth/roles";
+import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
+import { duenoDelToken, esDisenador, filtroDueno } from "@/lib/disenos/alcance";
 import { NextRequest, NextResponse } from "next/server";
 
 // Editor con IA (Seedream vía KIE). Cada job guarda su propia imagen fuente en
@@ -70,7 +72,10 @@ export async function GET(request: NextRequest) {
   try {
     await ensureTable();
     const url = new URL(request.url);
-    const createdBy = url.searchParams.get("created_by") || "";
+    // Un diseñador ve solo sus generaciones (lib/disenos/alcance.ts).
+    const createdBy = esDisenador(auth.payload)
+      ? duenoDelToken(auth.payload).nombre
+      : url.searchParams.get("created_by") || "";
     const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "12", 10)));
 
     let where = "WHERE 1=1";
@@ -112,7 +117,7 @@ export async function POST(request: NextRequest) {
   try {
     await ensureTable();
     const formData = await request.formData();
-    const created_by = (formData.get("created_by") as string) || "";
+    const created_by = duenoDelToken(auth.payload).nombre || (formData.get("created_by") as string) || "";
     const prompt = ((formData.get("prompt") as string) || "").trim();
     const aspectRatioInput = (formData.get("aspect_ratio") as string) || "1:1";
     const aspect_ratio = ASPECT_RATIOS.includes(aspectRatioInput) ? aspectRatioInput : "1:1";
@@ -133,7 +138,12 @@ export async function POST(request: NextRequest) {
       buffer = Buffer.from(await image.arrayBuffer());
       mime = image.type || "image/png";
     } else if (sourceDesignId) {
-      const r = await query(`SELECT image_data, image_mime FROM designer_designs WHERE id = ?`, [sourceDesignId]);
+      await ensureDesignerDesignsTable();
+      const dueno = filtroDueno(auth.payload);
+      const r = await query(
+        `SELECT image_data, image_mime FROM designer_designs WHERE id = ?${dueno.sql}`,
+        [sourceDesignId, ...dueno.params]
+      );
       const row = r.rows?.[0];
       if (!row?.image_data) {
         return NextResponse.json({ error: "El diseño de origen no existe" }, { status: 404 });
