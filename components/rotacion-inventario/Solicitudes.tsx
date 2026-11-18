@@ -259,7 +259,7 @@ function DetalleSolicitud({ id, puedeGestionar, cerrar }: { id: number; puedeGes
 
   return (
     <Dialog open onOpenChange={(o) => !o && cerrar(cambio)}>
-      <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[min(72rem,calc(100vw-2rem))] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="pr-6 flex flex-wrap items-center gap-2">
             {s ? `${folio(s.id)} · ${s.marcaNombre} · ${nombreSede(s.companyId)}` : "Solicitud"}
@@ -565,7 +565,7 @@ function EnviarDialog({ detalle, cerrar }: { detalle: Detalle; cerrar: (enviada:
 
   return (
     <Dialog open onOpenChange={(o) => !o && cerrar(false)}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-[min(42rem,calc(100vw-2rem))]">
         <DialogHeader>
           <DialogTitle>Enviar {folio(s.id)} a {s.marcaNombre}</DialogTitle>
           <DialogDescription>

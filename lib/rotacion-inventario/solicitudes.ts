@@ -117,7 +117,7 @@ export async function listarSolicitudes(sedes: number[], marcas: string[] | null
     `${SELECT_SOLICITUD}
       WHERE s.company_id IN (?) ${marcas ? "AND s.marca IN (?)" : ""}
       GROUP BY s.id
-      ORDER BY FIELD(s.estado, 'por_enviar', 'enviada', 'respondida', 'acordada', 'liquidando', 'rechazada', 'cerrada', 'anulada'), s.id DESC`,
+      ORDER BY FIELD(s.estado, 'por_enviar', 'enviada', 'respondida', 'acordada', 'liquidando', 'rechazada', 'cerrada', 'anulada'), valor DESC, s.id DESC`,
     marcas ? [sedes, marcas] : [sedes],
   );
   // Un borrador que se quedó sin productos (todo se vendió) no se muestra.

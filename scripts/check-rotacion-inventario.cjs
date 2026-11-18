@@ -12,7 +12,7 @@ const m = { exports: {} };
 new Function("require", "module", "exports", js)(require, m, m.exports);
 const {
   colorDe, referenciaSinVenta, colorDesde, calcularPlan, estadoPlanHoy, inicioSemana, mesesSeguimiento,
-  resumir, vendidasEntre, margenRemate, finDePlan,
+  resumir, vendidasEntre, margenRemate, finDePlan, tieneMarca,
 } = m.exports;
 
 // Semáforo: verde 0-45, amarillo 46-90, rojo 91+
@@ -49,8 +49,12 @@ assert.strictEqual(plan.metaMensual, 30);
 assert.strictEqual(plan.diasTranscurridos, 18);
 assert.strictEqual(plan.diasRestantes, 73);
 assert.strictEqual(plan.vendidasPlan, 10); // lo del 30-oct no cuenta
-assert.strictEqual(plan.esperadoAHoy, 18);
-assert.strictEqual(plan.avancePlan, 55.6);
+assert.strictEqual(plan.esperadoAHoy, 17); // días completos: el día de hoy todavía no cuenta
+assert.strictEqual(plan.avancePlan, 58.8);
+// El día que arranca el plan no se espera nada todavía
+const hoyMismo = calcularPlan({ id: 2, inicio: hoy, unidadesInicio: 90, creadoPor: null, motivo: null }, ventas, 90, hoy);
+assert.strictEqual(hoyMismo.esperadoAHoy, 0);
+assert.strictEqual(hoyMismo.avancePlan, null);
 assert.strictEqual(plan.vendidasSemana, 5);
 assert.strictEqual(plan.vendidasMes, 10);
 assert.strictEqual(plan.necesariaDiaria, Math.round((80 / 73) * 100) / 100);
@@ -79,5 +83,10 @@ assert.strictEqual(grupos[1].porColor.amarillo.referencias, 1);
 // Precio de remate con el apoyo de la marca
 assert.deepStrictEqual(margenRemate(100, 20, 90), { costoNeto: 80, margen: 11.1 });
 assert.deepStrictEqual(margenRemate(100, null, null), { costoNeto: 100, margen: null });
+
+// Marcas sin dueño: no se les pide apoyo
+assert.strictEqual(tieneMarca("NO ASIGNADO"), false);
+assert.strictEqual(tieneMarca("SIN MARCA"), false);
+assert.strictEqual(tieneMarca("LINKSYS"), true);
 
 console.log("OK rotación de inventario");
