@@ -98,7 +98,7 @@ export default function FichaDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && cerrar(cambio)}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[min(56rem,calc(100vw-2rem))] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="pr-6">{f ? f.nombre : "Producto"}</DialogTitle>
           <DialogDescription>
@@ -181,9 +181,9 @@ export default function FichaDialog({
                 <p className="text-[11px] text-slate-500 mt-2">Total desde abril: {num(f.vendidasSeguimiento)} unidades.</p>
               </div>
               <div className="rounded-xl border p-4">
-                <p className="font-semibold mb-3">Vendidas por semana vs. meta del plan</p>
+                <p className="font-semibold mb-3">Vendidas por semana (últimas 13) vs. meta del plan</p>
                 <div className="flex items-end gap-1 h-32 relative">
-                  {d.semanas.slice(-14).map((s) => (
+                  {d.semanas.slice(-13).map((s) => (
                     <div key={s.semana} className="flex-1 flex flex-col items-center justify-end h-full gap-1" title={`Semana del ${fecha(s.semana)}: ${num(s.vendidas)}`}>
                       <div className="w-full relative flex-1 flex items-end">
                         <div

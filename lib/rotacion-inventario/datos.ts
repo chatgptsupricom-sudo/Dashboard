@@ -14,6 +14,7 @@ import {
   mesesSeguimiento,
   referenciaSinVenta,
   sumarDias,
+  tieneMarca,
   vendidasEntre,
   type EstadoSolicitud,
   type FichaProducto,
@@ -322,7 +323,7 @@ export async function agregarASolicitudes(
 ): Promise<number[]> {
   const porMarca = new Map<string, FichaBase[]>();
   for (const f of productos) {
-    if (f.claveMarca === SIN_MARCA) continue;
+    if (!tieneMarca(f.claveMarca)) continue;
     const l = porMarca.get(f.claveMarca) ?? [];
     l.push(f);
     porMarca.set(f.claveMarca, l);
@@ -389,7 +390,7 @@ async function sincronizarSolicitudes(d: DatosSede, companyId: number) {
   const nuevas = [...d.fichas.values()].filter(
     (f) =>
       f.color === "rojo" &&
-      f.claveMarca !== SIN_MARCA &&
+      tieneMarca(f.claveMarca) &&
       !abiertas.has(f.productoId) &&
       !((ultimaPedida.get(f.productoId) ?? "") >= f.colorDesde),
   );
@@ -405,7 +406,7 @@ async function sincronizarSolicitudes(d: DatosSede, companyId: number) {
   );
   for (const l of lineas) {
     const f = d.fichas.get(Number(l.product_id));
-    const sale = !f || (l.origen === "auto" && f.color !== "rojo");
+    const sale = !f || !tieneMarca(f.claveMarca) || (l.origen === "auto" && f.color !== "rojo");
     if (sale) {
       if (!Number(l.excluida)) await db.query(`UPDATE rotacion_solicitud_lineas SET excluida = 1, exclusion = 'auto' WHERE id = ?`, [l.id]);
       continue;
@@ -506,16 +507,18 @@ export async function detalleProducto(companyId: number, productoId: number) {
   const ficha = fichas.find((f) => f.productoId === productoId) ?? null;
   const d = await datosSede(companyId);
   const porDia = d.ventas.get(productoId);
-  // Semanas (lunes) desde el inicio del plan o, si no hay ficha, las últimas 13.
+  // Las últimas 13 semanas (lunes) o desde que arrancó el plan si es antes;
+  // la meta solo en las semanas del plan.
   const semanas: { semana: string; vendidas: number; meta: number | null }[] = [];
-  const desde = ficha ? ficha.plan.inicio : hoy;
-  let lunes = inicioSemana(desde < hoy ? desde : hoy);
-  if (!ficha) lunes = sumarDias(lunes, -7 * 12);
+  const lunesPlan = ficha ? inicioSemana(ficha.plan.inicio) : null;
+  let lunes = sumarDias(inicioSemana(hoy), -7 * 12);
+  if (lunesPlan && lunesPlan < lunes) lunes = lunesPlan;
+  if (lunes < inicioSemana(INICIO_SEGUIMIENTO)) lunes = inicioSemana(INICIO_SEGUIMIENTO);
   while (lunes <= hoy) {
     semanas.push({
       semana: lunes,
       vendidas: vendidasEntre(porDia, lunes, sumarDias(lunes, 6)),
-      meta: ficha ? ficha.plan.metaSemanal : null,
+      meta: ficha && lunesPlan && lunes >= lunesPlan ? ficha.plan.metaSemanal : null,
     });
     lunes = sumarDias(lunes, 7);
   }

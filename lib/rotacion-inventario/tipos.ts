@@ -33,6 +33,13 @@ export const SEDES_ROTACION = [
 
 export const nombreSede = (id: number) => SEDES_ROTACION.find((s) => s.id === id)?.nombre ?? `Sede ${id}`;
 
+/**
+ * "Marcas" de Odoo que no son de nadie (productos sin marca): no se les arma
+ * solicitud. En Odoo existe una marca llamada literalmente «No Asignado».
+ */
+export const MARCAS_SIN_DUENO = ["SIN MARCA", "NO ASIGNADO"];
+export const tieneMarca = (claveMarca: string) => !MARCAS_SIN_DUENO.includes(claveMarca);
+
 export type Color = "verde" | "amarillo" | "rojo";
 export const COLORES: Color[] = ["verde", "amarillo", "rojo"];
 
@@ -136,7 +143,7 @@ export interface Plan extends PlanBase {
   diasTranscurridos: number;
   diasRestantes: number;
   vendidasPlan: number;
-  /** Lo que se debería llevar vendido a hoy. */
+  /** Lo que se debería llevar vendido a hoy (días completos: el día que arranca, 0). */
   esperadoAHoy: number;
   /** vendidasPlan ÷ esperadoAHoy × 100 (null si todavía no se esperaba nada). */
   avancePlan: number | null;
@@ -174,7 +181,9 @@ export function calcularPlan(base: PlanBase, ventas: VentasDia | undefined, disp
   const diasTranscurridos = Math.min(HORIZONTE_DIAS, Math.max(1, diasEntre(base.inicio, hoy) + 1));
   const diasRestantes = hoy > fin ? 0 : diasEntre(hoy, fin) + 1;
   const vendidasPlan = vendidasEntre(ventas, base.inicio, hoy);
-  const esperadoAHoy = Math.min(base.unidadesInicio, metaDiaria * diasTranscurridos);
+  // Días ya terminados: el primer día del plan todavía no se espera nada.
+  const diasCompletos = Math.min(HORIZONTE_DIAS, Math.max(0, diasEntre(base.inicio, hoy)));
+  const esperadoAHoy = Math.min(base.unidadesInicio, metaDiaria * diasCompletos);
   const semana = inicioSemana(hoy);
   const mes = `${hoy.slice(0, 7)}-01`;
   const vendidasSemana = vendidasEntre(ventas, semana, hoy);
