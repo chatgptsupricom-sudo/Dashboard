@@ -12,6 +12,8 @@ import {
   conciliarEnOdoo,
   cuentasBancarias,
   cuentasContables,
+  deshacerLineaVieja,
+  lineasViejasOdoo,
   esExcel,
   guardarComprobante,
   guardarEstado,
@@ -52,6 +54,7 @@ async function cuentaPedida(payload: any, id: unknown): Promise<CuentaBanco | Ne
 // GET /api/administracion/bancos?cuentas=1[&sede=9] — cuentas de banco de la sede.
 // GET /api/administracion/bancos?cuenta=<diario>&desde=YYYY-MM-DD&hasta=YYYY-MM-DD — la conciliacion del periodo
 //     (un mes o un rango, hasta MAX_DIAS_PERIODO dias).
+// GET /api/administracion/bancos?cuenta=<diario>&desde=&hasta=&viejas=1 — lineas de extracto de Odoo que no creo el panel.
 // GET /api/administracion/bancos?cuenta=<diario>&contables=1 — cuentas contables de la sede (contrapartida al aprobar).
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
@@ -74,6 +77,7 @@ export async function GET(request: NextRequest) {
     if (malo) return NextResponse.json({ error: malo }, { status: 400 });
     const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
     if (cuenta instanceof NextResponse) return cuenta;
+    if (p.get("viejas")) return NextResponse.json({ success: true, viejas: await lineasViejasOdoo(cuenta, desde, hasta) });
     return NextResponse.json({ success: true, desde, hasta, ...(await conciliacionPeriodo(cuenta, desde, hasta)) });
   } catch (e: any) {
     console.error("[bancos] conciliacion:", e?.message);
@@ -135,6 +139,7 @@ export async function POST(request: NextRequest) {
 //   {cuenta, verificar: id[, telefono]} — volver a consultar un comprobante en el banco (API de Mercantil;
 //                                         telefono = celular de quien hizo un Pago Movil)
 //   {cuenta, verificar: "pendientes", desde, hasta} — los del periodo que el banco no confirmo
+//   {cuenta, deshacer: st_line_id}       — linea vieja de Odoo: deshace su conciliacion y la borra (para rehacerla aqui)
 //   {cuenta, conciliar: huella, ...}      — aprobado: crea la linea de extracto en Odoo y la concilia contra
 //        pagos: [ids]           uno o varios cobros/pagos de Odoo (varios = suman justo el movimiento)
 //        cuenta_contable: id    una cuenta de la sede (comision, IGTF, intereses...)
@@ -166,6 +171,21 @@ export async function PATCH(request: NextRequest) {
     } catch (e: any) {
       console.error("[bancos] verificar:", e?.message);
       return NextResponse.json({ error: "No se pudo consultar el banco" }, { status: 502 });
+    }
+  }
+  if (b?.deshacer !== undefined) {
+    const id = Number(b.deshacer);
+    if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Línea inválida" }, { status: 400 });
+    const p = auth.payload as any;
+    try {
+      const r = await deshacerLineaVieja(cuenta, id, { nombre: String(p?.name || p?.nombre || ""), email: String(p?.email || "") });
+      if ("error" in r) return NextResponse.json({ error: r.error }, { status: 409 });
+      return NextResponse.json({ success: true, ...r });
+    } catch (e: any) {
+      const msg = String(e?.message || "error");
+      console.error("[bancos] deshacer en Odoo:", msg);
+      const pista = /d[ií]as pasados/i.test(msg) ? " (el usuario de Odoo que concilia tiene bloqueado modificar días pasados)" : "";
+      return NextResponse.json({ error: `Odoo no lo aceptó: ${msg.slice(0, 300)}${pista}` }, { status: 502 });
     }
   }
   if (b?.conciliar !== undefined) {
