@@ -10,13 +10,13 @@ import {
   diaDeCarpeta,
   huella,
   leerConIA,
-  rangoSemana,
 } from "@/lib/administracion/binance";
 import {
   armarEstado,
   cruzarBanco,
   cuentaSugerida,
   errorPagos,
+  errorPeriodo,
   leerFilasExcel,
   celular58,
   mismaReferencia,
@@ -622,16 +622,17 @@ async function celularesCandidatos(
   return [...new Set(lista)].filter((t) => !sufijo || t.endsWith(sufijo));
 }
 
-/** Vuelve a consultar en el banco los comprobantes de la semana que no estan confirmados. */
-export async function verificarPendientes(cuenta: CuentaBanco, lunes: string) {
-  if (!rangoSemana(lunes)) throw new Error("Semana inválida");
+/** Vuelve a consultar en el banco los comprobantes del periodo que no estan confirmados. */
+export async function verificarPendientes(cuenta: CuentaBanco, desdeDia: string, hastaDia: string) {
+  const malo = errorPeriodo(desdeDia, hastaDia);
+  if (malo) throw new Error(malo);
   await ensureTablas();
   const { rows } = await query(
     `SELECT id FROM banco_comprobantes
       WHERE journal_id = ? AND fecha BETWEEN ? AND ?
         AND (api_estado IS NULL OR api_estado IN ('no_encontrado', 'error', 'sin_telefono'))
       ORDER BY fecha, id`,
-    [cuenta.id, lunes, sumarDias(lunes, 6)],
+    [cuenta.id, desdeDia, hastaDia],
   );
   const resultado: Record<string, number> = {};
   for (const r of rows as any[]) {
@@ -1161,16 +1162,21 @@ export async function conciliarEnOdoo(
 
 // ---------- Conciliacion ----------
 
+// Margen a cada lado del periodo para cruzar: Odoo puede tener el cobro con
+// otro dia que el banco (la referencia se busca hasta 15 dias, DIAS_VENTANA).
+const MARGEN_DIAS = 15;
+
 /**
- * La semana (lunes a domingo) de una cuenta. Se cruza con una semana de margen
- * a cada lado: Odoo puede tener el cobro con otro dia que el banco.
+ * La conciliacion de una cuenta en un periodo (un mes o un rango de fechas,
+ * hasta MAX_DIAS_PERIODO dias). Se cruza con MARGEN_DIAS de margen a cada lado y
+ * se devuelve solo lo del periodo.
  */
-export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
-  if (!rangoSemana(lunes)) throw new Error("Semana inválida");
+export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, fin: string) {
+  const malo = errorPeriodo(inicio, fin);
+  if (malo) throw new Error(malo);
   await ensureTablas();
-  const domingo = sumarDias(lunes, 6);
-  const desde = sumarDias(lunes, -7);
-  const hasta = sumarDias(lunes, 13);
+  const desde = sumarDias(inicio, -MARGEN_DIAS);
+  const hasta = sumarDias(fin, MARGEN_DIAS);
   const [movs, estados, comps, amarres, pagos, concs] = await Promise.all([
     // La misma fila en dos archivos (misma huella) va una vez: la del primero.
     query(
@@ -1254,7 +1260,7 @@ export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
   const cubierto = (dia: string) => estados.rows.some((e: any) => dia >= e.desde && dia <= e.hasta);
   const cruce = cruzarBanco(movimientos, pagos, comprobantes, manuales, cubierto);
 
-  const enSemana = (dia: string) => dia >= lunes && dia <= domingo;
+  const enSemana = (dia: string) => dia >= inicio && dia <= fin;
   const deLaSemana = await Promise.all(
     cruce.movimientos
       .filter((m) => enSemana(m.fecha))
@@ -1270,16 +1276,18 @@ export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
   return {
     /** La cuenta consulta los comprobantes en el banco (API de Mercantil). */
     mercantil,
-    /** Entradas y salidas de la semana; `odoo` = ya pasado a Odoo desde el panel (con o sin conciliar). */
+    /** Entradas y salidas del periodo; `odoo` = ya pasado a Odoo desde el panel (con o sin conciliar). */
     movimientos: deLaSemana,
     comprobantes: cruce.comprobantes.filter((c) => enSemana(c.fecha)),
     pagosSinMovimiento: cruce.pagosSinMovimiento.filter((p) => enSemana(p.fecha)),
     /** Cobros y pagos de Odoo de la ventana que no tomo ningun movimiento: para amarrar a mano. */
     pagosLibres: pagos.filter((p) => !pagosTomados.has(p.id)),
-    /** Dias de la semana que no cubre ningun estado de cuenta. */
-    diasSinEstado: Array.from({ length: 7 }, (_, i) => sumarDias(lunes, i)).filter((d) => !cubierto(d)),
+    /** Dias del periodo que no cubre ningun estado de cuenta. */
+    diasSinEstado: Array.from({ length: Math.round((Date.parse(fin) - Date.parse(inicio)) / DIA_MS) + 1 }, (_, i) =>
+      sumarDias(inicio, i),
+    ).filter((d) => !cubierto(d)),
     archivos: estados.rows
-      .filter((e: any) => e.desde <= domingo && e.hasta >= lunes)
+      .filter((e: any) => e.desde <= fin && e.hasta >= inicio)
       .map((e: any) => ({
         id: e.id,
         nombre: e.archivo_nombre,
@@ -1293,4 +1301,4 @@ export async function conciliacionSemana(cuenta: CuentaBanco, lunes: string) {
   };
 }
 
-export type ConciliacionBanco = Awaited<ReturnType<typeof conciliacionSemana>>;
+export type ConciliacionBanco = Awaited<ReturnType<typeof conciliacionPeriodo>>;
