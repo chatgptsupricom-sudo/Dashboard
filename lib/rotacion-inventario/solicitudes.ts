@@ -109,7 +109,7 @@ const SELECT_SOLICITUD = `
     FROM rotacion_solicitudes s
     LEFT JOIN rotacion_solicitud_lineas l ON l.solicitud_id = s.id`;
 
-/** Solicitudes de las sedes; `marcas` (claves) limita a esas marcas (Gerente de Marca). */
+/** Solicitudes de las sedes; `marcas` (claves) limita a esas marcas (null = todas). */
 export async function listarSolicitudes(sedes: number[], marcas: string[] | null): Promise<Solicitud[]> {
   await asegurarTablas();
   if (!sedes.length || (marcas && !marcas.length)) return [];

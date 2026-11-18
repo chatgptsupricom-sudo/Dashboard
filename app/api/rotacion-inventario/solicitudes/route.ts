@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROLES_SOLICITUDES } from "@/lib/rotacion-inventario/acceso";
 import { alcanceRotacion, sedesPedidas } from "@/lib/rotacion-inventario/alcance";
 import { ErrorSolicitud, agregarProductos, envioPorN8n, listarSolicitudes } from "@/lib/rotacion-inventario/solicitudes";
 
@@ -7,9 +6,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/rotacion-inventario/solicitudes?sede=9|10|7|todas — solicitudes de
- * apoyo a las marcas (el Gerente de Marca, solo las de sus marcas).
+ * apoyo a las marcas.
  * POST {sede, productos: [ids]} — agrega esos productos a la solicitud "por
- * enviar" de su marca (Compras, Gerente de Marca y SuperAdmin).
+ * enviar" de su marca (SuperAdmin y Oscar de Compras).
  */
 export async function GET(request: NextRequest) {
   const a = await alcanceRotacion(request);
@@ -25,7 +24,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const a = await alcanceRotacion(request, ROLES_SOLICITUDES);
+  const a = await alcanceRotacion(request, { soloEdita: true });
   if (a.error) return a.error;
   const body = await request.json().catch(() => ({}));
   const sede = Number(body.sede);

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROLES_SOLICITUDES } from "@/lib/rotacion-inventario/acceso";
 import { alcanceRotacion, puedeVerSolicitud } from "@/lib/rotacion-inventario/alcance";
 import { ErrorSolicitud, enviarSolicitud, leerSolicitud } from "@/lib/rotacion-inventario/solicitudes";
 
@@ -13,7 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
  * (se mandó por otro lado).
  */
 export async function POST(request: NextRequest, ctx: Ctx) {
-  const a = await alcanceRotacion(request, ROLES_SOLICITUDES);
+  const a = await alcanceRotacion(request, { soloEdita: true });
   if (a.error) return a.error;
   const id = Number((await ctx.params).id);
   const s = id > 0 ? await leerSolicitud(id) : null;

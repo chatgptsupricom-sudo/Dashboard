@@ -535,7 +535,7 @@ function Reglas() {
         </p>
         <p>
           <b>Solicitudes a las marcas.</b> Cuando un producto pasa a rojo, el panel lo agrega solo a la solicitud «Por enviar» de su
-          marca en esa sede (una por marca). Compras o el gerente de la marca la revisa, la envía (por correo con el Excel, o la marca
+          marca en esa sede (una por marca). Compras la revisa, la envía (por correo con el Excel, o la marca
           como enviada) y anota la respuesta, el apoyo (protección de precio, nota de crédito, fondos de promoción o devolución), la
           acción acordada y, por producto, el apoyo por unidad y el precio de remate. Mientras espera envío, lo que se vende o sale de
           rojo sale de la solicitud.

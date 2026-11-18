@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROLES_SOLICITUDES } from "@/lib/rotacion-inventario/acceso";
 import { alcanceRotacion, puedeVerSolicitud } from "@/lib/rotacion-inventario/alcance";
 import { ErrorSolicitud, actualizarSolicitud, detalleSolicitud, envioPorN8n, leerSolicitud } from "@/lib/rotacion-inventario/solicitudes";
 
@@ -23,7 +22,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
 
 /** PATCH: respuesta de la marca, apoyo, acción acordada, estado y, por producto, apoyo / remate / acción. */
 export async function PATCH(request: NextRequest, ctx: Ctx) {
-  const a = await alcanceRotacion(request, ROLES_SOLICITUDES);
+  const a = await alcanceRotacion(request, { soloEdita: true });
   if (a.error) return a.error;
   const id = await idDe(ctx);
   const s = id ? await leerSolicitud(id) : null;

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { OdooUnreachableError } from "@/lib/odoo";
-import { ROL_COMPRAS } from "@/lib/rotacion-inventario/acceso";
 import { alcanceRotacion } from "@/lib/rotacion-inventario/alcance";
 import { detalleProducto, reiniciarPlan } from "@/lib/rotacion-inventario/datos";
 
@@ -10,7 +9,7 @@ export const dynamic = "force-dynamic";
  * GET /api/rotacion-inventario/producto?sede=&id= — ficha de un producto en una
  * sede: ventas por semana del plan, planes anteriores y solicitudes a la marca.
  * POST {sede, id, motivo} — reinicia su plan de 90 días con lo disponible hoy
- * (Compras y SuperAdmin), por ejemplo después de bajarle el precio.
+ * (SuperAdmin y Oscar de Compras), por ejemplo después de bajarle el precio.
  */
 export async function GET(request: NextRequest) {
   const a = await alcanceRotacion(request);
@@ -29,7 +28,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const a = await alcanceRotacion(request, [ROL_COMPRAS]);
+  const a = await alcanceRotacion(request, { soloEdita: true });
   if (a.error) return a.error;
   const body = await request.json().catch(() => ({}));
   const sede = Number(body.sede);
