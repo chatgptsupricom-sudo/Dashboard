@@ -183,7 +183,7 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/solicitudes-personal") ||
     // Semáforo de clientes: vendedores, Gerencia de Ventas, SuperAdmin y BI (lib/semaforo-clientes/acceso.ts).
     pathname.includes("/semaforo-clientes") ||
-    // Rotación de inventario: SuperAdmin, Compras, Gerente de Marca, gerencias y BI (lib/rotacion-inventario/acceso.ts).
+    // Rotación de inventario: SuperAdmin, BI, Gerencia de Ventas y Oscar de Compras (lib/rotacion-inventario/acceso.ts).
     pathname.includes("/rotacion-inventario");
 
   if (isProtectedPath) {
@@ -456,8 +456,8 @@ export default async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 
-      // 10g. Rotación de inventario (lib/rotacion-inventario/acceso.ts).
-      if (pathname.includes("/rotacion-inventario") && !puedeVerRotacion(userRole)) {
+      // 10g. Rotación de inventario: de Compras solo entra Oscar (por correo, lib/rotacion-inventario/acceso.ts).
+      if (pathname.includes("/rotacion-inventario") && !puedeVerRotacion(userRole, payload.email)) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 

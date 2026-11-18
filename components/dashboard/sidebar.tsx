@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { puedeVerRotacion } from "@/lib/rotacion-inventario/acceso";
 import { rolePermissions, UserRole } from "@/lib/types";
 import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { esRolMarketingElectro } from "@/lib/auth/marketingElectro";
@@ -658,6 +659,8 @@ export function Sidebar({
         !(isSuperAdminRole &&
           [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...gerenteMarcaSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+        // Rotación de inventario: de Compras solo Oscar (por correo, lib/rotacion-inventario/acceso.ts).
+        !(item.id === "rotacion_inventario" && !puedeVerRotacion(userRole, user?.email)) &&
         // Gerente de Operaciones: el Semáforo va dentro de su desplegable Ventas.
         !(showVentasDropdown && isGerenteOperaciones && item.id === "semaforo_clientes") &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
