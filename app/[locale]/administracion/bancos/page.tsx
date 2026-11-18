@@ -27,6 +27,7 @@ import type {
 } from "@/lib/administracion/bancosCruce";
 import { RegistrarCobroOdoo } from "@/components/administracion/RegistrarCobroOdoo";
 import { AprobarMovimiento } from "@/components/administracion/AprobarMovimiento";
+import { LineasViejasOdoo } from "@/components/administracion/LineasViejasOdoo";
 import { ArrowLeft, Banknote, CheckCircle2, FileSpreadsheet, MoreHorizontal, FolderUp, Landmark, Loader2, RefreshCw, Smartphone, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -177,7 +178,7 @@ export default function ConciliacionBancariaPage() {
   const [paginaComprobantes, setPaginaComprobantes] = useState(0);
   const [paginaMovs, setPaginaMovs] = useState(0);
   // Una tabla a la vez, como en Conciliacion Binance.
-  const [tabla, setTabla] = useState<"comprobantes" | "estado">("comprobantes");
+  const [tabla, setTabla] = useState<"comprobantes" | "estado" | "viejas">("comprobantes");
   const [registrar, setRegistrar] = useState<number | null>(null);
   const [verificando, setVerificando] = useState<number | "pendientes" | null>(null);
   const [avanceVerificar, setAvanceVerificar] = useState<{ hecho: number; total: number } | null>(null);
@@ -751,6 +752,7 @@ export default function ConciliacionBancariaPage() {
                 [
                   ["comprobantes", `Comprobantes (${comprobantes.length})`],
                   ["estado", `Estado de cuenta (${movimientos.length})`],
+                  ["viejas", "Líneas que ya estaban en Odoo"],
                 ] as const
               ).map(([clave, texto]) => (
                 <button
@@ -909,6 +911,10 @@ export default function ConciliacionBancariaPage() {
                 <Paginacion pagina={paginaComprobantes} total={comprobantes.length} cambiar={setPaginaComprobantes} />
               </CardContent>
             </Card>
+            )}
+
+            {tabla === "viejas" && cuenta && (
+              <LineasViejasOdoo cuenta={cuenta} desde={periodo.desde} hasta={periodo.hasta} alCambiar={cargar} />
             )}
 
             {tabla === "estado" && (
