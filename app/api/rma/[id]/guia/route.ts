@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { sedeSinSeguridad } from "@/lib/rma/sedesSeguridad";
 import { requireRoles } from "@/lib/auth/roles";
+import { casoDeOtraSede } from "@/lib/rma/sedeSesion";
 import { NextRequest, NextResponse } from "next/server";
 import { enviarCorreoEnviadoAgencia } from "@/lib/rma/emailEnviado";
 import { getPublicOrigin } from "@/lib/publicOrigin";
@@ -64,6 +65,8 @@ export async function POST(
 
   try {
     const { id } = await params;
+    const otraSede = await casoDeOtraSede(auth.payload, id);
+    if (otraSede) return otraSede;
 
     const existing = await query(
       `SELECT id, case_number, status, origen, company_id, odoo_partner_id,

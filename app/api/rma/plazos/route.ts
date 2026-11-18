@@ -1,4 +1,5 @@
 import { requireRoles } from "@/lib/auth/roles";
+import { sedeRma } from "@/lib/rma/sedeSesion";
 import { NextRequest, NextResponse } from "next/server";
 import { casosConPlazo, resumirPlazos } from "@/lib/rma/plazosCasos";
 import { PLAZOS } from "@/lib/rma/plazos";
@@ -23,7 +24,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = parseInt(searchParams.get("id") || "", 10) || null;
-    const companyId = parseInt(searchParams.get("company_id") || "", 10) || null;
+    const sede = sedeRma(auth.payload, searchParams.get("company_id"));
+    if (sede.error) return sede.error;
+    const companyId = sede.companyId;
     const etapa = searchParams.get("etapa") || "";
     const soloAlertas = searchParams.get("alertas") === "1";
 

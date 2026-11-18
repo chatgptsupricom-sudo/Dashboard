@@ -10,6 +10,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { useSedeRma } from "@/components/rma/SedeRma";
 
 interface OdooProduct {
   id: number;
@@ -31,6 +32,7 @@ export default function RmaNuevoPage() {
   const locale = (params?.locale as string) || "es";
 
   const { user } = useAuthStore();
+  const sede = useSedeRma();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     product_code: "",
@@ -166,6 +168,8 @@ export default function RmaNuevoPage() {
           ...form,
           created_by: user?.name || user?.email || "Usuario Actual",
           odoo_product_id: odooProductId,
+          // El SuperAdmin no tiene sede: el caso va a la que eligió arriba.
+          company_id: sede,
         }),
       });
 

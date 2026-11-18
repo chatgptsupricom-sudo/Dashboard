@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { conSede, useSedeRma } from "@/components/rma/SedeRma";
 
 export default function RmaSalidaPage() {
   const t = useTranslations("rma");
@@ -18,6 +19,7 @@ export default function RmaSalidaPage() {
   const locale = (params?.locale as string) || "es";
 
   const [saving, setSaving] = useState(false);
+  const sede = useSedeRma();
   const [exits, setExits] = useState<any[]>([]);
   const [loadingExits, setLoadingExits] = useState(true);
   const [form, setForm] = useState({
@@ -32,12 +34,12 @@ export default function RmaSalidaPage() {
 
   useEffect(() => {
     fetchExits();
-  }, []);
+  }, [sede]);
 
   const fetchExits = async () => {
     try {
       setLoadingExits(true);
-      const res = await fetch("/api/rma/exit");
+      const res = await fetch(conSede("/api/rma/exit", sede));
       const data = await res.json();
       if (data.success) setExits(data.exits);
     } catch (error) {
@@ -67,6 +69,7 @@ export default function RmaSalidaPage() {
           ...form,
           case_id: form.case_id ? parseInt(form.case_id, 10) : null,
           quantity: parseInt(form.quantity, 10) || 1,
+          company_id: sede,
         }),
       });
       const data = await res.json();

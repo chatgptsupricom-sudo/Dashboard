@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { casoDeOtraSede } from "@/lib/rma/sedeSesion";
 import { crearProductos, hayTablaProductos, leerProductos, sincronizarEnvio, type EstadoProducto } from "@/lib/rma/items";
 import { hayEstadosFlujo } from "@/lib/rma/flujo";
 import { getPublicOrigin } from "@/lib/publicOrigin";
@@ -30,6 +31,8 @@ export async function POST(
 
     const { id } = await params;
     const caseId = parseInt(id, 10);
+    const otraSede = await casoDeOtraSede(auth.payload, caseId);
+    if (otraSede) return otraSede;
     const existe = await query(`SELECT id, status FROM rma_cases WHERE id = ?`, [caseId]);
     if (!(existe.rows as any[]).length) {
       return NextResponse.json({ error: "Caso no encontrado" }, { status: 404 });
