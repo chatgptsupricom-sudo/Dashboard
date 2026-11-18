@@ -1271,7 +1271,7 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
         sugerida: m.pago ? null : await sugeridaPara(cuenta, m).catch(() => null),
       })),
   );
-  const pagosTomados = new Set(cruce.movimientos.filter((m) => m.pago).map((m) => m.pago!.id));
+  const pagosTomados = new Set(cruce.movimientos.flatMap((m) => [m.pago, ...m.otrosPagos]).filter((p) => p).map((p) => p!.id));
   for (const id of cruce.pagosConfirmadosApi) pagosTomados.add(id);
   return {
     /** La cuenta consulta los comprobantes en el banco (API de Mercantil). */

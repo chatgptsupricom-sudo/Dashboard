@@ -280,6 +280,8 @@ export type EstadoComprobante = "conciliado" | "por_revisar" | "sin_registrar" |
 export type MovimientoCruzado = Movimiento & {
   estado: EstadoMovimiento;
   pago: PagoOdoo | null;
+  /** Cobro dividido: los demas cobros del grupo (el primero es `pago`). */
+  otrosPagos: PagoOdoo[];
   coincide: Coincide | null;
   comprobante: { id: number; cliente: string; referencia: string } | null;
 };
@@ -342,10 +344,19 @@ const DIAS_VENTANA = 15;
 const DIAS_POR_REFERENCIA = 7;
 const DIAS_POR_MONTO = 3;
 
-/** Que coincide entre un movimiento y un cobro/pago. */
-export function coincidencia(m: Movimiento, p: PagoOdoo): Coincide {
-  return { referencia: mismaReferencia(p.ref, m.referencia), monto: mismoMonto(p.monto, m.monto), fecha: dias(p.fecha, m.fecha) <= DIAS_FECHA };
+/** Que coincide entre un movimiento y uno o varios cobros/pagos (el monto, sumados). */
+export function coincidencia(m: Movimiento, p: PagoOdoo | PagoOdoo[]): Coincide {
+  const ps = Array.isArray(p) ? p : [p];
+  return {
+    referencia: ps.every((x) => mismaReferencia(x.ref, m.referencia)),
+    monto: mismoMonto(ps.reduce((s, x) => s + x.monto, 0), m.monto),
+    fecha: ps.every((x) => dias(x.fecha, m.fecha) <= DIAS_FECHA),
+  };
 }
+
+/** "3626455533-1" -> "3626455533": CxC registra una transferencia en varios cobros con el mismo Memo y -1, -2... */
+const SUFIJO_DIVIDIDO = /-\d{1,2}$/;
+export const memoBase = (ref: string) => String(ref || "").trim().replace(SUFIJO_DIVIDIDO, "");
 
 /**
  * Cruza el estado de cuenta con los cobros y pagos de Odoo del mismo diario
@@ -355,9 +366,12 @@ export function coincidencia(m: Movimiento, p: PagoOdoo): Coincide {
  *
  * Movimiento con cobro/pago de Odoo (del mismo signo), por fecha, referencia y
  * monto: primero lo amarrado a mano; despues las tres ("referencia"); despues
- * dos de las tres (referencia + monto, referencia + fecha, monto + fecha) y por
- * ultimo solo la referencia: esas quedan "parcial", para revisar. En cada paso,
- * el de fecha mas cercana. Sin cobro: "sin_registrar".
+ * referencia + monto; despues un **cobro dividido** (varios cobros con el mismo
+ * Memo, uno o mas con -1, -2... al final, que suman justo el movimiento:
+ * `otrosPagos`; "referencia" si todos son de la misma fecha, si no "parcial");
+ * despues referencia + fecha, monto + fecha y por ultimo solo la referencia: esas
+ * quedan "parcial", para revisar. En cada paso, el de fecha mas cercana. Sin
+ * cobro: "sin_registrar".
  *
  * Comprobante con movimiento: a mano; misma referencia (o la referencia dentro
  * de la descripcion) + monto; la referencia del cobro de Odoo que ya se amarro
@@ -380,7 +394,7 @@ export function cruzarBanco(
   const entradas = todos.filter((m) => m.monto > 0);
   const porId = new Map(pagos.map((p) => [p.id, p]));
   const usados = new Set<number>();
-  const pagoDe = new Map<string, { pago: PagoOdoo; estado: EstadoMovimiento }>();
+  const pagoDe = new Map<string, { pago: PagoOdoo; estado: EstadoMovimiento; otros?: PagoOdoo[] }>();
   const tomar = (m: Movimiento, pago: PagoOdoo | undefined, estado: EstadoMovimiento) => {
     if (!pago || usados.has(pago.id) || pagoDe.has(m.id)) return;
     usados.add(pago.id);
@@ -398,7 +412,28 @@ export function cruzarBanco(
     [(c) => c.monto && c.fecha, "parcial"],
     [(c) => c.referencia, "parcial"],
   ];
-  for (const [ok, estado] of pasos) for (const m of todos) tomar(m, cercano(m, ok), estado);
+  const correr = ([ok, estado]: (typeof pasos)[number]) => {
+    for (const m of todos) tomar(m, cercano(m, ok), estado);
+  };
+  pasos.slice(0, 2).forEach(correr);
+  for (const m of todos) {
+    if (pagoDe.has(m.id) || !normalRef(m.referencia)) continue;
+    const grupo = pagos
+      .filter(
+        (p) =>
+          !usados.has(p.id) &&
+          p.monto > 0 === m.monto > 0 &&
+          dias(p.fecha, m.fecha) <= DIAS_VENTANA &&
+          mismaReferencia(memoBase(p.ref), m.referencia),
+      )
+      .sort((a, b) => a.ref.localeCompare(b.ref));
+    if (grupo.length < 2 || !grupo.some((p) => SUFIJO_DIVIDIDO.test(p.ref.trim()))) continue;
+    const c = coincidencia(m, grupo);
+    if (!c.monto) continue;
+    for (const p of grupo) usados.add(p.id);
+    pagoDe.set(m.id, { pago: grupo[0], otros: grupo.slice(1), estado: c.fecha ? "referencia" : "parcial" });
+  }
+  pasos.slice(2).forEach(correr);
 
   const movDePago = new Map([...pagoDe].map(([movId, { pago }]) => [pago.id, movId]));
   const porMovId = new Map(entradas.map((m) => [m.id, m] as const));
@@ -465,7 +500,8 @@ export function cruzarBanco(
       ...m,
       estado: p?.estado ?? (esComision(m) ? "comision" : "sin_registrar"),
       pago: p?.pago ?? null,
-      coincide: p ? coincidencia(m, p.pago) : null,
+      otrosPagos: p?.otros ?? [],
+      coincide: p ? coincidencia(m, [p.pago, ...(p.otros ?? [])]) : null,
       comprobante: c ? { id: c.id, cliente: c.cliente, referencia: c.referencia } : null,
     };
   });
