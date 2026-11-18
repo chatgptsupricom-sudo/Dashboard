@@ -1025,6 +1025,11 @@ export async function conciliarEnOdoo(
   let errorPendiente: string | null = null;
   let partnerId: number | null = null;
   let detalle = "";
+  // Tasa (Bs por USD) con que Odoo pasa la linea a dolares (account_dual_currency: custom_tax_today). Sin ella
+  // usa la BCV del dia y, contra un cobro registrado a la tasa acordada, la conciliacion deja diferencial
+  // cambiario (Valencia abr-2026: ~$30 mil). Con cobros/pagos: la de ellos; si no, la BCV del dia.
+  const enBolivares = /VEF|VES|BS/i.test(cuenta.moneda);
+  let tasa: number | null = null;
   if (destino.tipo === "pagos") {
     const ids = [...new Set(destino.pagos)];
     const pagos = await leer(
@@ -1049,10 +1054,15 @@ export async function conciliarEnOdoo(
     const lineas = await leer(
       "account.move.line",
       [["move_id", "in", pagos.map((p) => p.move_id[0])], ["account_id", "=", cuentaId]],
-      ["amount_residual_currency", "move_id"],
+      ["amount_residual_currency", "amount_currency", "balance", "move_id"],
     );
     if (lineas.length !== pagos.length) return { error: "No se encontró la línea de algún pago en la cuenta de pagos pendientes" };
     lineasPago = lineas.map((l) => l.id);
+    if (enBolivares) {
+      const bs = lineas.reduce((t, l) => t + Math.abs(Number(l.amount_currency) || 0), 0);
+      const usd = lineas.reduce((t, l) => t + Math.abs(Number(l.balance) || 0), 0);
+      tasa = usd > 0 ? bs / usd : null;
+    }
     errorPendiente = errorPagos(monto, lineas.map((l) => Math.abs(Number(l.amount_residual_currency) || 0)));
     detalle = pagos.map((p) => p.name).join(", ");
   } else if (destino.tipo === "cuenta") {
@@ -1068,6 +1078,20 @@ export async function conciliarEnOdoo(
   } else {
     detalle = "Pasado a Odoo sin conciliar";
   }
+
+  if (enBolivares && !tasa) {
+    // BCV del dia: la tasa del USD de la sede (rate = USD por 1 Bs).
+    const fila = (
+      await rpc<any[]>(cuenta.sede, "res.currency.rate", "search_read", [[["currency_id.name", "=", "USD"], ["company_id", "=", cuenta.sede], ["name", "<=", mov.fecha]]], {
+        fields: ["rate"],
+        order: "name desc",
+        limit: 1,
+        context: ctx,
+      })
+    )?.[0];
+    tasa = Number(fila?.rate) > 0 ? 1 / Number(fila.rate) : null;
+  }
+  if (enBolivares && !tasa) return { error: `No se encontró la tasa para el ${mov.fecha}` };
 
   const importId = `panel-${huellaMov}`;
   let linea = (await leer("account.bank.statement.line", [["unique_import_id", "=", importId]], ["move_id"]))[0];
@@ -1097,12 +1121,26 @@ export async function conciliarEnOdoo(
           unique_import_id: importId,
           ...(cuentaId ? { counterpart_account_id: cuentaId } : {}),
           ...(partnerId ? { partner_id: partnerId } : {}),
+          // Como las lineas que Caracas concilia a mano: tasa propia de la linea.
+          ...(tasa ? { custom_tax_today: tasa, custom_rate_auto: true } : {}),
         },
       ],
       { context: ctx },
     );
     if (!id) throw new Error("Odoo no devolvió la línea de extracto");
     linea = (await leer("account.bank.statement.line", [["id", "=", id]], ["move_id"]))[0];
+    if (tasa) {
+      // Control: si Odoo no la paso a dolares con esa tasa, se borra la linea recien creada y no se concilia.
+      const lineas = await leer("account.move.line", [["move_id", "=", linea.move_id[0]]], ["balance"]);
+      const usd = Math.max(0, ...lineas.map((l) => Math.abs(Number(l.balance) || 0)));
+      const esperado = Math.abs(monto) / tasa;
+      if (Math.abs(usd - esperado) > Math.max(0.05, esperado * 0.001)) {
+        await rpc(cuenta.sede, "account.bank.statement.line", "unlink", [[id]], { context: ctx });
+        return {
+          error: `Odoo pasó el movimiento a ${usd.toFixed(2)} USD y con la tasa ${tasa.toFixed(4)} son ${esperado.toFixed(2)} USD: no se concilió, para no generar diferencial cambiario`,
+        };
+      }
+    }
   }
   const asientoId = Array.isArray(linea.move_id) ? linea.move_id[0] : 0;
   const contra = cuentaId
