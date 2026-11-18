@@ -388,6 +388,8 @@ export function Sidebar({
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     // Semáforo de clientes: cartera en verde/amarillo/rojo contra su historial (lib/semaforo-clientes).
     { id: "semaforo_clientes", label: "Semáforo de clientes", icon: TrafficCone, slug: "/semaforo-clientes", absoluteHref: true },
+    // Rotación de inventario: productos en verde/amarillo/rojo por días sin venta y apoyo de las marcas (lib/rotacion-inventario).
+    { id: "rotacion_inventario", label: "Rotación de inventario", icon: Hourglass, slug: "/rotacion-inventario", absoluteHref: true },
     { id: "metas_marca", label: t("metas_marca"), icon: Target, slug: "/metas-marca" },
     { id: "stock_marca", label: t("stock_marca"), icon: Boxes, slug: "/stock-marca" },
     { id: "sorteo_caracas", label: t("sorteo_caracas"), icon: Trophy, slug: "/sorteo" },

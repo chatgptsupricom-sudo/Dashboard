@@ -90,6 +90,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_diario", // Reporte Diario de Ventas
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
       "semaforo_clientes", // Semáforo de clientes: cartera en verde/amarillo/rojo (lib/semaforo-clientes)
+      "rotacion_inventario", // Rotación de inventario: semáforo por días sin venta y apoyo de marcas (lib/rotacion-inventario)
       "crear_cliente", // Crear clientes en Odoo con validaciones (lib/clientes-odoo)
       "metas_marca", // Metas de venta por marca y cumplimiento (Ventas > Metas por Marca)
       "stock_marca", // Stock vs vendido por marca, % vendido (Ventas > Stock por Marca)
@@ -222,7 +223,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "semaforo_clientes", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "semaforo_clientes", "rotacion_inventario", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -297,6 +298,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_diario", // Reporte Diario
       "reporte_ventas", // Reporte de Ventas (de su sede, payload.cids)
       "semaforo_clientes", // Semáforo de clientes de su sede (lib/semaforo-clientes)
+      "rotacion_inventario", // Rotación de inventario de su sede, solo lectura (lib/rotacion-inventario)
       "seller_map", // Mapa de Clientes (sub-item de Ventas)
       // Leads dropdown
       "adminleads", // Leads (permiso principal del dropdown)
@@ -364,6 +366,7 @@ export const rolePermissions: RolePermissions = {
       "clasificacion_clientes_compras", // Clasificación de clientes por actividad comercial (lib/inteligencia-negocio/clasificacion)
       "ordenes_compra", // Órdenes de compra: crear/editar/enviar a aprobación
       "recepcion_packing", // Packing lists: Compras los carga, Almacén los recibe
+      "rotacion_inventario", // Rotación de inventario y solicitudes de apoyo a las marcas (lib/rotacion-inventario)
       "actualizacion_precios", // Excel de asignación por sede → listas de precios de Odoo (lib/compras/actualizacionPrecios)
     ],
   },
@@ -546,6 +549,7 @@ export const rolePermissions: RolePermissions = {
       "stock_marca",
       "reportes_comerciales",
       "semaforo_clientes", // Semáforo de clientes, las tres sedes (lib/semaforo-clientes)
+      "rotacion_inventario", // Rotación de inventario, solo lectura (lib/rotacion-inventario)
       "crear_cliente", // Crear clientes en Odoo (lib/clientes-odoo); elige Valencia o Caracas
       "seller_map",
       "spiff",
@@ -572,7 +576,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "gm_banco_imagenes", "actividad"],
+    sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "rotacion_inventario", "gm_banco_imagenes", "actividad"],
   },
   // Marketing y Electrodomésticos (lib/auth/marketingElectro.ts): lo mismo que
   // Inteligencia de Negocio menos Leads, más ventas e inventario por marca (todas
@@ -606,6 +610,7 @@ export const rolePermissions: RolePermissions = {
       "stock_marca",
       "reportes_comerciales",
       "semaforo_clientes", // Semáforo de clientes, como BI (lib/semaforo-clientes)
+      "rotacion_inventario", // Rotación de inventario, como BI (lib/rotacion-inventario)
       "seller_map",
       "spiff",
       // Desplegable Marketing
