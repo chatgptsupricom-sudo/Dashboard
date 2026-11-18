@@ -88,8 +88,12 @@ const enOdoo = (m: MovimientoCruzado) => m.estado !== "sin_registrar" && m.estad
 type MovimientoPeriodo = ConciliacionBanco["movimientos"][number];
 /** Falta pasarlo a Odoo: el panel no lo paso y su cobro/pago propuesto (si tiene) no esta conciliado alla. */
 const conciliable = (m: MovimientoPeriodo) => !m.odoo && !m.pago?.conciliado;
-/** Calza por referencia (o se amarro a mano): se aprueba con un clic, sin el dialogo. */
-const directo = (m: MovimientoPeriodo) => conciliable(m) && !!m.pago && (m.estado === "referencia" || m.estado === "manual");
+/** Se aprueba con un clic, sin el dialogo: calza por referencia (o se amarro a mano), o es una comision con su cuenta propuesta. */
+const directo = (m: MovimientoPeriodo) =>
+  conciliable(m) && (m.pago ? m.estado === "referencia" || m.estado === "manual" : m.estado === "comision" && !!m.sugerida);
+/** Contra que se concilia al aprobar con un clic. */
+const destinoDirecto = (m: MovimientoPeriodo) =>
+  m.pago ? { pagos: [m.pago, ...m.otrosPagos].map((p) => p.id) } : { cuenta_contable: m.sugerida!.id };
 
 /** Carpeta donde esta el archivo ("Comprobantes/27-10-2026/Cliente.jpg" -> "27-10-2026"). */
 function carpetaDe(ruta: string) {
@@ -354,14 +358,16 @@ export default function ConciliacionBancariaPage() {
     const res = await fetch("/api/administracion/bancos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cuenta, conciliar: m.id, pagos: [m.pago!, ...m.otrosPagos].map((p) => p.id) }),
+      body: JSON.stringify({ cuenta, conciliar: m.id, ...destinoDirecto(m) }),
     });
     return res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
   };
 
   const conciliar = async (m: MovimientoPeriodo) => {
     if (!directo(m)) return setAprobar(m);
-    const con = `${[m.pago!, ...m.otrosPagos].map((p) => p.nombre).join(" + ")} (${m.pago!.cliente})`;
+    const con = m.pago
+      ? `${[m.pago, ...m.otrosPagos].map((p) => p.nombre).join(" + ")} (${m.pago.cliente})`
+      : `la cuenta ${m.sugerida!.codigo} ${m.sugerida!.nombre}`;
     if (!confirm(`¿Conciliar en Odoo el movimiento del ${dia(m.fecha)} por ${cifra(m.monto)} con ${con}?`)) return;
     setError(null);
     setConciliando(m.id);
@@ -371,10 +377,10 @@ export default function ConciliacionBancariaPage() {
     cargar();
   };
 
-  /** Los del período que calzan por referencia (o amarrados a mano), de a uno; para al primer error. */
+  /** Los del período que se aprueban con un clic (por referencia, a mano o comisiones), de a uno; para al primer error. */
   const conciliarTodos = async () => {
     const lista = movimientos.filter(directo);
-    if (!lista.length || !confirm(`¿Conciliar en Odoo los ${lista.length} movimientos que calzan por referencia?`)) return;
+    if (!lista.length || !confirm(`¿Conciliar en Odoo los ${lista.length} movimientos listos (los que calzan por referencia y las comisiones)?`)) return;
     setError(null);
     setConciliando("todos");
     setAvanceConciliar({ hecho: 0, total: lista.length });
@@ -939,10 +945,10 @@ export default function ConciliacionBancariaPage() {
                       className="h-9"
                       disabled={conciliando !== null}
                       onClick={conciliarTodos}
-                      title="Crea en Odoo la línea de extracto de cada movimiento que calza por referencia y la concilia con su cobro o pago"
+                      title="Crea en Odoo la línea de extracto de cada movimiento listo y la concilia: con su cobro o pago si calza por referencia, o con la cuenta de comisiones"
                     >
                       {conciliando === "todos" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                      {avanceConciliar ? `Conciliando ${avanceConciliar.hecho} de ${avanceConciliar.total}` : `Aprobar los ${porConciliarRef} por referencia`}
+                      {avanceConciliar ? `Conciliando ${avanceConciliar.hecho} de ${avanceConciliar.total}` : `Aprobar los ${porConciliarRef} listos`}
                     </Button>
                   )}
                   <Button size="sm" variant="outline" className="h-9" disabled={!cuenta || !!subiendo} onClick={() => entradas.estado.current?.click()}>
