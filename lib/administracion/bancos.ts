@@ -1070,6 +1070,41 @@ export async function conciliarEnOdoo(
     if (!c) return { error: "Esa cuenta contable no es de la sede o no se puede usar de contrapartida" };
     cuentaId = c.id;
     detalle = `${c.codigo} ${c.nombre}`;
+    if (cuentaSugerida({ monto, descripcion: mov.descripcion, referencia: mov.referencia }) === "comision") {
+      // Antes se sumaban las comisiones del mes en un asiento contra Pagos Pendientes: con ese asiento abierto,
+      // registrar cada comision a gasto lo duplica. Hay que revertirlo en Odoo primero.
+      const metodos = await leer("account.payment.method.line", [["journal_id", "=", cuenta.id]], ["payment_account_id"]);
+      const pendientes = [...new Set(metodos.map((x) => x.payment_account_id?.[0]).filter(Boolean))];
+      const mes = mov.fecha.slice(0, 7);
+      const finMes = new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).toISOString().slice(0, 10);
+      const delMes = pendientes.length
+        ? await leer(
+            "account.move.line",
+            [
+              ["account_id", "in", pendientes],
+              ["parent_state", "=", "posted"],
+              ["journal_id.type", "=", "general"],
+              ["reconciled", "=", false],
+              ["date", ">=", `${mes}-01`],
+              ["date", "<=", finMes],
+              "|",
+              "|",
+              ["name", "ilike", "comisi"],
+              ["move_id.ref", "ilike", "comisi"],
+              ["move_id.ref", "ilike", "debitos%bancarios"],
+            ],
+            ["move_id", "amount_currency"],
+          )
+        : [];
+      if (delMes.length) {
+        const a = delMes[0];
+        return {
+          error:
+            `${mes} ya tiene en Odoo el asiento de comisiones del mes (${a.move_id?.[1] || ""}, ${Math.abs(Number(a.amount_currency) || 0)}): ` +
+            "si se aprueban una por una, el gasto queda dos veces. Revérsalo en Odoo primero.",
+        };
+      }
+    }
   } else if (destino.tipo === "transferencia") {
     const cia = (await leer("res.company", [["id", "=", cuenta.sede]], ["transfer_account_id"]))[0];
     if (!Array.isArray(cia?.transfer_account_id)) return { error: "La sede no tiene cuenta de transferencias internas en Odoo" };
