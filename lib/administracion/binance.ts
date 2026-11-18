@@ -62,8 +62,6 @@ export function fechaDeOrden(orderId: string, ahora = Date.now()): number | null
   const ms = INICIO_IDS_MS + Number((BigInt(orderId) * BigInt(1000)) / BigInt(2147483648));
   return ms >= Date.UTC(2023, 0, 1) && ms <= ahora + DIA_MS ? ms : null;
 }
-// Mismo calculo en SQL (sin FROM_UNIXTIME, que depende de la zona de la sesion).
-const SQL_FECHA_DE_ORDEN = "DATE_ADD('2020-01-01 00:00:00', INTERVAL CAST(order_id AS UNSIGNED) DIV 2147483648 SECOND)";
 
 /**
  * Fecha del pago: la del ID de orden y, si no sale, la de la imagen. Si las dos
@@ -351,16 +349,6 @@ async function ensureTabla() {
   await agregarColumna("binance_comprobantes", "impreso_por VARCHAR(190) NOT NULL DEFAULT ''");
   // Entrada (pago de un cliente) o salida (pago nuestro); lo de antes son entradas.
   await agregarColumna("binance_comprobantes", "tipo VARCHAR(8) NOT NULL DEFAULT 'entrada'");
-  // Los subidos antes de leer la fecha del ID de orden (fechaDelPago): sin fecha
-  // en la imagen toman la del ID; con fecha, solo si no se separan mas de un dia.
-  await db.execute(`
-    UPDATE binance_comprobantes
-       SET fecha_pago = ${SQL_FECHA_DE_ORDEN}, fecha_estimada = 0
-     WHERE order_id REGEXP '^[0-9]{15,19}$'
-       AND ${SQL_FECHA_DE_ORDEN} BETWEEN '2023-01-01' AND UTC_TIMESTAMP() + INTERVAL 1 DAY
-       AND (fecha_pago <> ${SQL_FECHA_DE_ORDEN} OR fecha_estimada > 0)
-       AND (fecha_estimada > 0 OR ABS(TIMESTAMPDIFF(SECOND, fecha_pago, ${SQL_FECHA_DE_ORDEN})) <= 86400)
-  `);
   tablaLista = true;
 }
 
