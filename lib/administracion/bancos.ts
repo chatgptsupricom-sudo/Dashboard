@@ -174,6 +174,9 @@ async function ensureTablas() {
       INDEX (journal_id, fecha)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  // Que se hizo con los asientos de diferencial al deshacer (llego despues).
+  const { rows: colsDes } = await query("SHOW COLUMNS FROM banco_deshechos LIKE 'diferencial_modo'");
+  if (!colsDes.length) await db.execute("ALTER TABLE banco_deshechos ADD COLUMN diferencial_modo VARCHAR(10) NOT NULL DEFAULT ''");
   // detalle llego despues (la tabla pudo crearse sin ella).
   const { rows: colsConc } = await query("SHOW COLUMNS FROM banco_conciliaciones LIKE 'detalle'");
   if (!colsConc.length) await db.execute("ALTER TABLE banco_conciliaciones ADD COLUMN detalle VARCHAR(255) NOT NULL DEFAULT ''");
@@ -1265,6 +1268,8 @@ export type LineaVieja = {
   contra: string[];
   /** Diferencial cambiario que genero la conciliacion (USD, ingresos - egresos). */
   diferencial: number;
+  /** Asientos de diferencial cambiario de su conciliacion. */
+  asientosDiferencial: number[];
   /** El estado de cuenta del panel tiene ese movimiento (mismo dia y monto): se puede rehacer desde el panel. */
   enPanel: boolean;
 };
@@ -1337,6 +1342,7 @@ export async function lineasViejasOdoo(cuenta: CuentaBanco, inicio: string, fin:
       estado: difs.size ? "con_diferencial" : l.is_reconciled ? "conciliada" : "sin_conciliar",
       contra,
       diferencial: Math.round(diferencial * 100) / 100,
+      asientosDiferencial: [...difs],
       enPanel: enPanel.has(`${l.date}|${monto.toFixed(2)}`),
     };
   });
@@ -1347,11 +1353,19 @@ export async function lineasViejasOdoo(cuenta: CuentaBanco, inicio: string, fin:
  * para rehacerla desde el panel sin diferencial. Solo lineas que no creo el
  * panel y cuyo movimiento esta en el estado de cuenta del panel (si no, no se
  * podria rehacer). Deshacer es el "Revertir conciliacion" de Odoo: los cobros o
- * pagos vuelven a quedar pendientes y Odoo revierte los asientos de diferencial
- * cambiario (quedan el original y su reverso, en neto cero). Queda registro en
- * `banco_deshechos`.
+ * pagos vuelven a quedar pendientes. Con `diferencial = "reverso"` Odoo revierte
+ * los asientos de diferencial cambiario (quedan el original y su reverso, en
+ * neto cero); con "borrar", despues de deshacer, el original y su reverso se pasan
+ * a borrador y se borran del todo (`force_delete`: Odoo no deja borrar un asiento
+ * con numero que no es el ultimo de su secuencia); si eso falla quedan revertidos
+ * y se avisa. Queda registro en `banco_deshechos`.
  */
-export async function deshacerLineaVieja(cuenta: CuentaBanco, stLineId: number, autor: { nombre: string; email: string }) {
+export async function deshacerLineaVieja(
+  cuenta: CuentaBanco,
+  stLineId: number,
+  autor: { nombre: string; email: string },
+  diferencialModo: "reverso" | "borrar" = "reverso",
+) {
   await ensureTablas();
   const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
   const linea = (
@@ -1371,13 +1385,31 @@ export async function deshacerLineaVieja(cuenta: CuentaBanco, stLineId: number, 
   if (!rows.length) return { error: `Primero sube el estado de cuenta del ${linea.date}: si se borra sin él, no se puede rehacer desde el panel` };
   const viejas = await lineasViejasOdoo(cuenta, String(linea.date), String(linea.date));
   const info = viejas.find((v) => v.id === stLineId);
+  const difs = info?.asientosDiferencial || [];
+  let avisoDif: string | undefined;
+  let modoHecho = diferencialModo;
   if (linea.is_reconciled || info?.contra.length) {
     await rpc(cuenta.sede, "account.bank.statement.line", "action_undo_reconciliation", [[stLineId]], { context: ctx });
   }
   await rpc(cuenta.sede, "account.bank.statement.line", "unlink", [[stLineId]], { context: ctx });
+  if (diferencialModo === "borrar" && difs.length) {
+    // Odoo no deja pasar a borrador un asiento de diferencial mientras es de una conciliacion: al deshacerla
+    // arriba lo revirtio. Ahora el original y su reverso ya no son de ninguna y se borran los dos.
+    const reversos = (
+      (await rpc<any[]>(cuenta.sede, "account.move", "search_read", [[["reversed_entry_id", "in", difs]]], { fields: ["id"], context: ctx })) || []
+    ).map((m) => m.id);
+    const borrar = [...difs, ...reversos];
+    try {
+      await rpc(cuenta.sede, "account.move", "button_draft", [borrar], { context: ctx });
+      await rpc(cuenta.sede, "account.move", "unlink", [borrar], { context: { ...ctx, force_delete: true } });
+    } catch (e: any) {
+      avisoDif = `La línea se deshizo y se borró, pero los asientos de diferencial quedaron revertidos (no se pudieron borrar: ${String(e?.message || "error").slice(0, 200)})`;
+      modoHecho = "reverso";
+    }
+  }
   await query(
-    `INSERT INTO banco_deshechos (journal_id, st_line_id, asiento, fecha, monto, descripcion, contra, diferencial, hecho_por)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO banco_deshechos (journal_id, st_line_id, asiento, fecha, monto, descripcion, contra, diferencial, diferencial_modo, hecho_por)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [
       cuenta.id,
       stLineId,
@@ -1387,10 +1419,17 @@ export async function deshacerLineaVieja(cuenta: CuentaBanco, stLineId: number, 
       String(linea.payment_ref || "").slice(0, 255),
       (info?.contra || []).join(", ").slice(0, 255),
       info?.diferencial || 0,
+      difs.length ? modoHecho : "",
       autor.email,
     ],
   );
-  return { ok: true as const, contra: info?.contra || [], diferencial: info?.diferencial || 0 };
+  return {
+    ok: true as const,
+    contra: info?.contra || [],
+    diferencial: info?.diferencial || 0,
+    diferencialModo: difs.length ? modoHecho : null,
+    aviso: avisoDif,
+  };
 }
 
 // ---------- Conciliacion ----------

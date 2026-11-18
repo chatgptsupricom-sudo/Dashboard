@@ -40,6 +40,8 @@ export function LineasViejasOdoo({
   const [aviso, setAviso] = useState<string | null>(null);
   const [elegidas, setElegidas] = useState<Set<number>>(new Set());
   const [avance, setAvance] = useState<{ hecho: number; total: number } | null>(null);
+  // Que hacer con los asientos de diferencial al deshacer: revertirlos (Odoo) o borrarlos del todo.
+  const [modoDif, setModoDif] = useState<"reverso" | "borrar">("reverso");
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -63,6 +65,7 @@ export function LineasViejasOdoo({
   const conDif = lista.filter((l) => l.estado === "con_diferencial");
   const totalDif = conDif.reduce((s, l) => s + l.diferencial, 0);
   const sinPanel = lista.filter((l) => !l.enPanel).length;
+  const elegidasConDif = lista.filter((l) => elegidas.has(l.id) && l.estado === "con_diferencial").length;
   const elegir = (l: LineaVieja, si: boolean) =>
     setElegidas((e) => {
       const n = new Set(e);
@@ -77,7 +80,12 @@ export function LineasViejasOdoo({
       !ids.length ||
       !confirm(
         `¿Deshacer la conciliación y borrar en Odoo ${ids.length} línea${ids.length === 1 ? "" : "s"} de extracto?\n\n` +
-          "Los cobros y pagos vuelven a quedar pendientes y Odoo revierte los asientos de diferencial cambiario. " +
+          "Los cobros y pagos vuelven a quedar pendientes. " +
+          (elegidasConDif
+            ? modoDif === "borrar"
+              ? `Los asientos de diferencial cambiario de ${elegidasConDif} se BORRAN del todo de Odoo. `
+              : `Los asientos de diferencial cambiario de ${elegidasConDif} se revierten (queda el original y su reverso). `
+            : "") +
           "Después se aprueban de nuevo desde el Estado de cuenta, sin diferencial.",
       )
     ) {
@@ -87,11 +95,12 @@ export function LineasViejasOdoo({
     setAviso(null);
     setAvance({ hecho: 0, total: ids.length });
     let hechas = 0;
+    const avisos: string[] = [];
     for (const id of ids) {
       const res = await fetch("/api/administracion/bancos", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cuenta, deshacer: id }),
+        body: JSON.stringify({ cuenta, deshacer: id, diferencial: modoDif }),
       });
       const j = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
       if (!j.success) {
@@ -99,10 +108,16 @@ export function LineasViejasOdoo({
         break;
       }
       hechas++;
+      if (j.aviso) avisos.push(`${dia(lista.find((l) => l.id === id)!.fecha)}: ${j.aviso}`);
       setAvance({ hecho: hechas, total: ids.length });
     }
     setAvance(null);
-    if (hechas) setAviso(`${hechas} línea${hechas === 1 ? "" : "s"} deshecha${hechas === 1 ? "" : "s"} y borrada${hechas === 1 ? "" : "s"} en Odoo. Ya se pueden aprobar desde el Estado de cuenta.`);
+    if (hechas) {
+      setAviso(
+        `${hechas} línea${hechas === 1 ? "" : "s"} deshecha${hechas === 1 ? "" : "s"} y borrada${hechas === 1 ? "" : "s"} en Odoo. Ya se pueden aprobar desde el Estado de cuenta.` +
+          (avisos.length ? ` ${avisos.join(" · ")}` : ""),
+      );
+    }
     await cargar();
     alCambiar();
   };
@@ -122,6 +137,17 @@ export function LineasViejasOdoo({
           <Button size="sm" variant="ghost" className="h-9" onClick={cargar} disabled={cargando || !!avance} aria-label="Volver a leer de Odoo">
             <RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />
           </Button>
+          {lista.some((l) => l.enPanel) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9"
+              disabled={!!avance}
+              onClick={() => setElegidas(elegidas.size ? new Set() : new Set(lista.filter((l) => l.enPanel).map((l) => l.id)))}
+            >
+              {elegidas.size ? "Quitar selección" : "Elegir todas"}
+            </Button>
+          )}
           {conDif.some((l) => l.enPanel) && (
             <Button
               size="sm"
@@ -142,6 +168,21 @@ export function LineasViejasOdoo({
       <CardContent className="space-y-3 overflow-x-auto">
         {error && <Aviso tono="rojo">{error}</Aviso>}
         {aviso && <Aviso tono="azul">{aviso}</Aviso>}
+        {elegidasConDif > 0 && (
+          <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+            <legend className="px-1 text-xs text-gray-500">
+              Asientos de diferencial cambiario de las {elegidasConDif} elegida{elegidasConDif === 1 ? "" : "s"} que lo tienen
+            </legend>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="modo-dif" checked={modoDif === "reverso"} onChange={() => setModoDif("reverso")} />
+              Revertirlos <span className="text-xs text-gray-500">(queda el original y su reverso, en neto cero)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="modo-dif" checked={modoDif === "borrar"} onChange={() => setModoDif("borrar")} />
+              Borrarlos del todo <span className="text-xs text-gray-500">(no queda rastro en Odoo, solo el registro del panel)</span>
+            </label>
+          </fieldset>
+        )}
         {sinPanel > 0 && (
           <Aviso>
             {sinPanel} línea{sinPanel === 1 ? "" : "s"} no está{sinPanel === 1 ? "" : "n"} en el estado de cuenta del panel: no se pueden borrar hasta subir el

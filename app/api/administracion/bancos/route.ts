@@ -139,7 +139,8 @@ export async function POST(request: NextRequest) {
 //   {cuenta, verificar: id[, telefono]} — volver a consultar un comprobante en el banco (API de Mercantil;
 //                                         telefono = celular de quien hizo un Pago Movil)
 //   {cuenta, verificar: "pendientes", desde, hasta} — los del periodo que el banco no confirmo
-//   {cuenta, deshacer: st_line_id}       — linea vieja de Odoo: deshace su conciliacion y la borra (para rehacerla aqui)
+//   {cuenta, deshacer: st_line_id, diferencial: "reverso"|"borrar"} — linea vieja de Odoo: deshace su conciliacion
+//        y la borra (para rehacerla aqui); sus asientos de diferencial se revierten o se borran del todo
 //   {cuenta, conciliar: huella, ...}      — aprobado: crea la linea de extracto en Odoo y la concilia contra
 //        pagos: [ids]           uno o varios cobros/pagos de Odoo (varios = suman justo el movimiento)
 //        cuenta_contable: id    una cuenta de la sede (comision, IGTF, intereses...)
@@ -178,7 +179,12 @@ export async function PATCH(request: NextRequest) {
     if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Línea inválida" }, { status: 400 });
     const p = auth.payload as any;
     try {
-      const r = await deshacerLineaVieja(cuenta, id, { nombre: String(p?.name || p?.nombre || ""), email: String(p?.email || "") });
+      const r = await deshacerLineaVieja(
+        cuenta,
+        id,
+        { nombre: String(p?.name || p?.nombre || ""), email: String(p?.email || "") },
+        b?.diferencial === "borrar" ? "borrar" : "reverso",
+      );
       if ("error" in r) return NextResponse.json({ error: r.error }, { status: 409 });
       return NextResponse.json({ success: true, ...r });
     } catch (e: any) {
