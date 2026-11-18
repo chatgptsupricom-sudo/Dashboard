@@ -312,6 +312,31 @@ app.prepare().then(() => {
   console.log("> Cron programado: foto semanal del Semáforo de clientes, lunes 6:00 (America/Caracas)");
 
   // ==========================================
+  // ROTACION DE INVENTARIO (lib/rotacion-inventario)
+  // ==========================================
+
+  // Todos los días 6:30: abre y cierra los planes de 90 días y arma las
+  // solicitudes "por enviar" a las marcas de lo que pasó a rojo, aunque nadie
+  // abra la pantalla. No le escribe a ninguna marca: eso lo hace una persona.
+  cron.schedule(
+    "30 6 * * *",
+    async () => {
+      try {
+        const response = await fetch(`http://localhost:${PORT}/api/cron/rotacion-inventario`, {
+          headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        });
+        const data = await response.json();
+        if (response.ok) console.log("Rotación de inventario:", data);
+        else console.error("Fallo la rotación de inventario:", data);
+      } catch (error) {
+        console.error("Error de red en la rotación de inventario:", error.message);
+      }
+    },
+    { scheduled: true, timezone: "America/Caracas" },
+  );
+  console.log("> Cron programado: rotación de inventario, todos los días 6:30 (America/Caracas)");
+
+  // ==========================================
   // HISTORIAL DEL CREDITO DE LOS CLIENTES (lib/cxc/historialCredito.ts)
   // ==========================================
 
