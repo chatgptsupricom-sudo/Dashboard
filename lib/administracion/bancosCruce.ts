@@ -162,6 +162,22 @@ export function armarEstado(leidas: FilaEstado[], diasExtra: string[] = []): Est
   return { filas, desde: dias[0], hasta: dias[dias.length - 1], saltos: saltosDeSaldo(filas) };
 }
 
+// ---------- Periodo ----------
+
+/** Lo mas largo que se puede pedir de una vez (un trimestre): cada vista lee Odoo entero del periodo. */
+export const MAX_DIAS_PERIODO = 93;
+
+/** null si desde..hasta es un periodo valido (YYYY-MM-DD, en orden, hasta MAX_DIAS_PERIODO dias); si no, el error. */
+export function errorPeriodo(desde: string, hasta: string): string | null {
+  const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && fechaDeCelda(d) === d;
+  if (!ok(desde) || !ok(hasta)) return "Las fechas deben ser YYYY-MM-DD";
+  if (desde > hasta) return "La fecha inicial es posterior a la final";
+  if ((Date.parse(hasta) - Date.parse(desde)) / 86400_000 + 1 > MAX_DIAS_PERIODO) {
+    return `El período no puede pasar de ${MAX_DIAS_PERIODO} días`;
+  }
+  return null;
+}
+
 // ---------- Cruce ----------
 
 export type Movimiento = FilaEstado & {

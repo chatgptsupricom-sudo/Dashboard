@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
-import { ArchivoIlegible, hayIA, rangoSemana, sedeBinance } from "@/lib/administracion/binance";
+import { ArchivoIlegible, hayIA, sedeBinance } from "@/lib/administracion/binance";
+import { errorPeriodo } from "@/lib/administracion/bancosCruce";
 import {
   amarrarComprobante,
   amarrarPago,
   borrarComprobante,
   borrarEstado,
-  conciliacionSemana,
+  conciliacionPeriodo,
   conciliarEnOdoo,
   cuentasBancarias,
   cuentasContables,
@@ -49,7 +50,8 @@ async function cuentaPedida(payload: any, id: unknown): Promise<CuentaBanco | Ne
 }
 
 // GET /api/administracion/bancos?cuentas=1[&sede=9] — cuentas de banco de la sede.
-// GET /api/administracion/bancos?cuenta=<diario>&semana=YYYY-MM-DD (lunes) — la conciliacion.
+// GET /api/administracion/bancos?cuenta=<diario>&desde=YYYY-MM-DD&hasta=YYYY-MM-DD — la conciliacion del periodo
+//     (un mes o un rango, hasta MAX_DIAS_PERIODO dias).
 // GET /api/administracion/bancos?cuenta=<diario>&contables=1 — cuentas contables de la sede (contrapartida al aprobar).
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
@@ -66,13 +68,13 @@ export async function GET(request: NextRequest) {
       if (cuenta instanceof NextResponse) return cuenta;
       return NextResponse.json({ success: true, contables: await cuentasContables(cuenta.sede) });
     }
-    const semana = p.get("semana") || "";
-    if (!rangoSemana(semana)) {
-      return NextResponse.json({ error: "La semana debe ser un lunes (YYYY-MM-DD)" }, { status: 400 });
-    }
+    const desde = p.get("desde") || "";
+    const hasta = p.get("hasta") || "";
+    const malo = errorPeriodo(desde, hasta);
+    if (malo) return NextResponse.json({ error: malo }, { status: 400 });
     const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
     if (cuenta instanceof NextResponse) return cuenta;
-    return NextResponse.json({ success: true, semana, ...(await conciliacionSemana(cuenta, semana)) });
+    return NextResponse.json({ success: true, desde, hasta, ...(await conciliacionPeriodo(cuenta, desde, hasta)) });
   } catch (e: any) {
     console.error("[bancos] conciliacion:", e?.message);
     return NextResponse.json({ error: "No se pudo cargar la conciliación (¿Odoo no responde?)" }, { status: 502 });
@@ -132,7 +134,7 @@ export async function POST(request: NextRequest) {
 //   {cuenta, comprobante, movimiento}  — comprobante <-> movimiento a mano (movimiento null = soltar)
 //   {cuenta, verificar: id[, telefono]} — volver a consultar un comprobante en el banco (API de Mercantil;
 //                                         telefono = celular de quien hizo un Pago Movil)
-//   {cuenta, verificar: "pendientes", semana} — los de la semana que el banco no confirmo
+//   {cuenta, verificar: "pendientes", desde, hasta} — los del periodo que el banco no confirmo
 //   {cuenta, conciliar: huella, ...}      — aprobado: crea la linea de extracto en Odoo y la concilia contra
 //        pagos: [ids]           uno o varios cobros/pagos de Odoo (varios = suman justo el movimiento)
 //        cuenta_contable: id    una cuenta de la sede (comision, IGTF, intereses...)
@@ -147,8 +149,9 @@ export async function PATCH(request: NextRequest) {
   if (b?.verificar !== undefined) {
     try {
       if (b.verificar === "pendientes") {
-        if (!rangoSemana(String(b?.semana || ""))) return NextResponse.json({ error: "Semana inválida" }, { status: 400 });
-        return NextResponse.json({ success: true, ...(await verificarPendientes(cuenta, b.semana)) });
+        const malo = errorPeriodo(String(b?.desde || ""), String(b?.hasta || ""));
+        if (malo) return NextResponse.json({ error: malo }, { status: 400 });
+        return NextResponse.json({ success: true, ...(await verificarPendientes(cuenta, b.desde, b.hasta)) });
       }
       const id = Number(b.verificar);
       if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Comprobante inválido" }, { status: 400 });

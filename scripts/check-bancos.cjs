@@ -96,8 +96,17 @@ assert.deepStrictEqual(
   [-20],
 );
 
+// Periodo: un mes o un rango de hasta 93 dias
+const { errorPeriodo } = m.exports;
+assert.strictEqual(errorPeriodo("2026-11-01", "2026-11-30"), null);
+assert.strictEqual(errorPeriodo("2026-09-01", "2026-11-30"), null); // 91 dias
+assert.ok(errorPeriodo("2026-08-01", "2026-11-30")); // mas de 93
+assert.ok(errorPeriodo("2026-11-30", "2026-11-01")); // al reves
+assert.ok(errorPeriodo("2026-02-30", "2026-03-01")); // fecha que no existe
+assert.ok(errorPeriodo("", "2026-11-01"));
+
 // Cruce
-const mov =(id, fecha, referencia, monto, descripcion = "") => ({ id, fecha, referencia, descripcion, monto, saldo: null });
+const mov = (id, fecha, referencia, monto, descripcion = "") => ({ id, fecha, referencia, descripcion, monto, saldo: null });
 const movimientos = [
   mov("a".repeat(64), "2026-10-27", "20467137440", 887400),
   mov("b".repeat(64), "2026-10-26", "", 136108.7, "Transf Banesco Online DE CUENTA NO.- 221021542357 A"),

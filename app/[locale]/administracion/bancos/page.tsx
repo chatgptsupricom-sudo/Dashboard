@@ -11,7 +11,7 @@ import {
   deLaPagina,
   FilaVacia,
   Paginacion,
-  semanas,
+  mesesRecientes,
   Tarjeta,
   useSedeFija,
 } from "@/components/administracion/comunes";
@@ -77,15 +77,19 @@ const EN_PARALELO: Record<Tipo, number> = { estado: 2, comprobante: 4 };
 // Para que el navegador deje elegir una carpeta entera (no esta en los tipos de React).
 const ELEGIR_CARPETA = { webkitdirectory: "", directory: "" } as Record<string, string>;
 
+/** Ultimo dia del mes "YYYY-MM". */
+const finDeMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).toISOString().slice(0, 10);
+const RANGO = "rango";
+
 const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const suma = (items: { monto: number }[]) => items.reduce((s, i) => s + i.monto, 0);
 const enOdoo = (m: MovimientoCruzado) => m.estado !== "sin_registrar" && m.estado !== "comision";
-type MovimientoSemana = ConciliacionBanco["movimientos"][number];
+type MovimientoPeriodo = ConciliacionBanco["movimientos"][number];
 /** Falta pasarlo a Odoo: el panel no lo paso y su cobro/pago propuesto (si tiene) no esta conciliado alla. */
-const conciliable = (m: MovimientoSemana) => !m.odoo && !m.pago?.conciliado;
+const conciliable = (m: MovimientoPeriodo) => !m.odoo && !m.pago?.conciliado;
 /** Calza por referencia (o se amarro a mano): se aprueba con un clic, sin el dialogo. */
-const directo = (m: MovimientoSemana) => conciliable(m) && !!m.pago && (m.estado === "referencia" || m.estado === "manual");
+const directo = (m: MovimientoPeriodo) => conciliable(m) && !!m.pago && (m.estado === "referencia" || m.estado === "manual");
 
 /** Carpeta donde esta el archivo ("Comprobantes/27-10-2026/Cliente.jpg" -> "27-10-2026"). */
 function carpetaDe(ruta: string) {
@@ -149,12 +153,15 @@ function queFalla(c: Coincide) {
 }
 
 export default function ConciliacionBancariaPage() {
-  const opciones = semanas();
+  const opciones = mesesRecientes(12);
   const fija = useSedeFija();
   const [sede, setSede] = useState(9);
   const [cuentas, setCuentas] = useState<CuentaBanco[]>([]);
   const [cuenta, setCuenta] = useState<number | null>(null);
-  const [semana, setSemana] = useState(opciones[0].value);
+  // Un mes o un rango de fechas a mano (hasta 93 dias, lo valida el servidor).
+  const [mes, setMes] = useState(opciones[0].value);
+  const [rango, setRango] = useState({ desde: `${opciones[0].value}-01`, hasta: new Date().toISOString().slice(0, 10) });
+  const periodo = mes === RANGO ? rango : { desde: `${mes}-01`, hasta: finDeMes(mes) };
   const [datos, setDatos] = useState<ConciliacionBanco | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -171,7 +178,7 @@ export default function ConciliacionBancariaPage() {
   const [verificando, setVerificando] = useState<number | "pendientes" | null>(null);
   const [avanceVerificar, setAvanceVerificar] = useState<{ hecho: number; total: number } | null>(null);
   const [conciliando, setConciliando] = useState<string | null>(null);
-  const [aprobar, setAprobar] = useState<MovimientoSemana | null>(null);
+  const [aprobar, setAprobar] = useState<MovimientoPeriodo | null>(null);
   const [avanceConciliar, setAvanceConciliar] = useState<{ hecho: number; total: number } | null>(null);
   const entradas = {
     estado: useRef<HTMLInputElement>(null),
@@ -198,14 +205,14 @@ export default function ConciliacionBancariaPage() {
     setCargando(true);
     setError(null);
     try {
-      const json = await (await fetch(`/api/administracion/bancos?cuenta=${cuenta}&semana=${semana}`)).json();
+      const json = await (await fetch(`/api/administracion/bancos?cuenta=${cuenta}&desde=${periodo.desde}&hasta=${periodo.hasta}`)).json();
       if (json.success) setDatos(json);
       else setError(json.error || "No se pudo cargar");
     } catch {
       setError("No se pudo cargar");
     }
     setCargando(false);
-  }, [cuenta, semana]);
+  }, [cuenta, periodo.desde, periodo.hasta]);
 
   useEffect(() => {
     cargar();
@@ -214,7 +221,7 @@ export default function ConciliacionBancariaPage() {
   useEffect(() => {
     setPaginaComprobantes(0);
     setPaginaMovs(0);
-  }, [cuenta, semana]);
+  }, [cuenta, periodo.desde, periodo.hasta]);
 
   // El aviso de la subida se va solo 5 s despues de terminar (no mientras el
   // mouse esta encima, para poder leer los errores).
@@ -309,7 +316,7 @@ export default function ConciliacionBancariaPage() {
   };
 
   /**
-   * Vuelve a consultar en el banco un comprobante, o los de la semana que no
+   * Vuelve a consultar en el banco un comprobante, o los del período que no
    * confirmo. Los pendientes van de a uno desde aqui (cada uno puede llevar
    * decenas de consultas a Mercantil): una sola peticion con todos se pasaria
    * del tiempo que espera el servidor.
@@ -343,7 +350,7 @@ export default function ConciliacionBancariaPage() {
   };
 
   /** Aprobado: crea la linea de extracto en Odoo y la concilia con su cobro/pago (o como comision). */
-  const pedirConciliar = async (m: MovimientoSemana) => {
+  const pedirConciliar = async (m: MovimientoPeriodo) => {
     const res = await fetch("/api/administracion/bancos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -352,7 +359,7 @@ export default function ConciliacionBancariaPage() {
     return res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
   };
 
-  const conciliar = async (m: MovimientoSemana) => {
+  const conciliar = async (m: MovimientoPeriodo) => {
     if (!directo(m)) return setAprobar(m);
     const con = `${m.pago!.nombre} (${m.pago!.cliente})`;
     if (!confirm(`¿Conciliar en Odoo el movimiento del ${dia(m.fecha)} por ${cifra(m.monto)} con ${con}?`)) return;
@@ -364,7 +371,7 @@ export default function ConciliacionBancariaPage() {
     cargar();
   };
 
-  /** Los de la semana que calzan por referencia (o amarrados a mano), de a uno; para al primer error. */
+  /** Los del período que calzan por referencia (o amarrados a mano), de a uno; para al primer error. */
   const conciliarTodos = async () => {
     const lista = movimientos.filter(directo);
     if (!lista.length || !confirm(`¿Conciliar en Odoo los ${lista.length} movimientos que calzan por referencia?`)) return;
@@ -456,7 +463,7 @@ export default function ConciliacionBancariaPage() {
             Conciliación bancaria
           </h1>
           <p className="text-gray-500 text-sm">
-            Sube el estado de cuenta y los comprobantes de la semana; el panel los cruza entre sí y con los cobros de Odoo
+            Sube el estado de cuenta y los comprobantes del período; el panel los cruza entre sí y con los cobros de Odoo
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -493,18 +500,42 @@ export default function ConciliacionBancariaPage() {
             ))}
           </select>
           <select
-            value={semana}
-            onChange={(e) => setSemana(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm bg-white"
-            aria-label="Semana"
+            value={mes}
+            onChange={(e) => setMes(e.target.value)}
+            className="border rounded-lg px-3 py-2 text-sm bg-white capitalize"
+            aria-label="Período"
           >
             {opciones.map((o) => (
               <option key={o.value} value={o.value}>
-                Semana {o.label}
+                {o.label}
               </option>
             ))}
+            <option value={RANGO}>Rango de fechas…</option>
           </select>
-          {datos && <BotonExcel archivo={`conciliacion-${cuentaElegida?.nombre || "banco"}-${semana}`} hojas={hojasExcel} />}
+          {mes === RANGO && (
+            <span className="flex items-center gap-1 text-sm">
+              <input
+                type="date"
+                value={rango.desde}
+                max={rango.hasta}
+                onChange={(e) => e.target.value && setRango((r) => ({ ...r, desde: e.target.value }))}
+                className="border rounded-lg px-2 py-2 bg-white"
+                aria-label="Desde"
+              />
+              <span className="text-gray-500">al</span>
+              <input
+                type="date"
+                value={rango.hasta}
+                min={rango.desde}
+                onChange={(e) => e.target.value && setRango((r) => ({ ...r, hasta: e.target.value }))}
+                className="border rounded-lg px-2 py-2 bg-white"
+                aria-label="Hasta"
+              />
+            </span>
+          )}
+          {datos && (
+            <BotonExcel archivo={`conciliacion-${cuentaElegida?.nombre || "banco"}-${periodo.desde}_${periodo.hasta}`} hojas={hojasExcel} />
+          )}
         </div>
       </div>
 
@@ -732,7 +763,7 @@ export default function ConciliacionBancariaPage() {
             {tabla === "comprobantes" && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-                <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
+                <CardTitle className="text-base">Comprobantes del período</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   {datos.mercantil && (
                     <Button
@@ -741,7 +772,7 @@ export default function ConciliacionBancariaPage() {
                       className="h-9"
                       disabled={!cuenta || !!subiendo || verificando !== null}
                       onClick={() => verificar("pendientes")}
-                      title="Consultar en Mercantil los comprobantes de la semana que todavía no confirmó"
+                      title="Consultar en Mercantil los comprobantes del período que todavía no confirmó"
                     >
                       {verificando === "pendientes" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
                       {avanceVerificar ? `Verificando ${avanceVerificar.hecho} de ${avanceVerificar.total}` : "Verificar pendientes"}
@@ -779,7 +810,7 @@ export default function ConciliacionBancariaPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {comprobantes.length === 0 && <FilaVacia columnas={8} texto="No hay comprobantes en esta semana." />}
+                    {comprobantes.length === 0 && <FilaVacia columnas={8} texto="No hay comprobantes en este período." />}
                     {deLaPagina(comprobantes, paginaComprobantes).map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">{dia(c.fecha)}</TableCell>
@@ -881,9 +912,11 @@ export default function ConciliacionBancariaPage() {
                   <CardTitle className="text-base">Estado de cuenta</CardTitle>
                   <p className="text-xs text-gray-500 mt-1">
                     {datos.archivos.length
-                      ? `${movimientos.length} movimientos en la semana · ${movimientos.filter(enOdoo).length} están en Odoo · ${movimientos.filter((m) => m.odoo?.conciliada || m.pago?.conciliado).length} conciliados en Odoo`
-                      : "Esta semana todavía no tiene estado de cuenta: el Excel que baja el banco (o una captura/PDF)."}
-                    {datos.archivos.length > 0 && datos.diasSinEstado.length > 0 && ` · falta el ${datos.diasSinEstado.map(dia).join(", ")}`}
+                      ? `${movimientos.length} movimientos en el período · ${movimientos.filter(enOdoo).length} están en Odoo · ${movimientos.filter((m) => m.odoo?.conciliada || m.pago?.conciliado).length} conciliados en Odoo`
+                      : "Este período todavía no tiene estado de cuenta: el Excel que baja el banco (o una captura/PDF)."}
+                    {datos.archivos.length > 0 &&
+                      datos.diasSinEstado.length > 0 &&
+                      ` · falta${datos.diasSinEstado.length > 1 ? `n ${datos.diasSinEstado.length} días:` : " el"} ${datos.diasSinEstado.slice(0, 6).map(dia).join(", ")}${datos.diasSinEstado.length > 6 ? "…" : ""}`}
                   </p>
                   {datos.archivos.map((a) => (
                     <p key={a.id} className="text-xs text-gray-500 flex items-center gap-1">
@@ -932,7 +965,7 @@ export default function ConciliacionBancariaPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {movimientos.length === 0 && <FilaVacia columnas={7} texto="No hay movimientos en esta semana." />}
+                    {movimientos.length === 0 && <FilaVacia columnas={7} texto="No hay movimientos en este período." />}
                     {deLaPagina(movimientos, paginaMovs).map((m) => (
                       <TableRow key={m.id}>
                         <TableCell className="whitespace-nowrap">{dia(m.fecha)}</TableCell>
