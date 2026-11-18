@@ -378,6 +378,8 @@ export function Sidebar({
     { id: "cxc_facturado_detallado", label: "Facturado detallado", icon: FileText, slug: "/cuentas-por-cobrar/facturado-detallado", absoluteHref: true },
     // Conciliación Binance de solo lectura para el rol CxC (la de Administración es admin_binance).
     { id: "cxc_binance", label: "Conciliación Binance", icon: Bitcoin, slug: "/cuentas-por-cobrar/binance", absoluteHref: true },
+    // Comprobantes de la conciliacion bancaria: CxC los sube y ve en que quedaron (Administracion concilia).
+    { id: "cxc_bancos", label: "Comprobantes bancarios", icon: Banknote, slug: "/cuentas-por-cobrar/bancos", absoluteHref: true },
     { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
     { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
     { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
@@ -663,7 +665,7 @@ export function Sidebar({
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") &&
         // El SuperAdmin ya la tiene completa en el desplegable "Administración".
-        !(isSuperAdminRole && item.id === "cxc_binance")
+        !(isSuperAdminRole && (item.id === "cxc_binance" || item.id === "cxc_bancos"))
     )
     .map((item) => {
       if (item.id === "actividad") {

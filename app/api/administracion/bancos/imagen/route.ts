@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
-import { sedeBinance } from "@/lib/administracion/binance";
+import { ROL_CXC, sedeBinance } from "@/lib/administracion/binance";
 import { cuentasBancarias, imagenComprobante } from "@/lib/administracion/bancos";
 import { respuestaSedeNoPermitida, SEDES_VALIDAS } from "@/lib/auth/sedeRol";
 
 // GET /api/administracion/bancos/imagen?cuenta=&id= — el comprobante tal cual se subió.
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_CXC]);
   if (auth.error) return auth.error;
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();

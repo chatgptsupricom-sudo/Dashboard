@@ -413,6 +413,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_sobregiro", // Sobregiro: uso del límite de crédito de cada cliente
       "cxc_facturado_detallado", // Facturado detallado: el reporte de Odoo de cualquier mes
       "cxc_binance", // Conciliación Binance de su sede, solo lectura (lo del Excel)
+      "cxc_bancos", // Comprobantes bancarios: subir los comprobantes de transferencias y Pago Movil de su sede
     ],
   },
   [UserRole.DISENADOR]: {

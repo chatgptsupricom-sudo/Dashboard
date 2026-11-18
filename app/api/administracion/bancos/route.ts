@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
 import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
-import { ArchivoIlegible, hayIA, sedeBinance } from "@/lib/administracion/binance";
+import { ArchivoIlegible, esRolCxC, hayIA, ROL_CXC, sedeBinance } from "@/lib/administracion/binance";
 import { errorPeriodo } from "@/lib/administracion/bancosCruce";
 import {
   amarrarComprobante,
@@ -31,6 +31,13 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const IMAGENES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 const HUELLA = /^[0-9a-f]{64}$/;
 
+// Cuentas por Cobrar solo sube los comprobantes de los clientes, los consulta en el
+// banco y ve en que quedaron (como en Binance); el estado de cuenta, conciliar,
+// registrar en Odoo y deshacer son de Administracion.
+const ROLES_BANCOS = [...ROLES_ADMINISTRACION, ROL_CXC];
+const soloAdministracion = () =>
+  NextResponse.json({ error: "Eso lo hace Administración: Cuentas por Cobrar sube y ve los comprobantes" }, { status: 403 });
+
 /**
  * Sedes que el usuario puede ver: Administracion la de su `cids` (aunque pida
  * otra), el SuperAdmin la que pida o todas. undefined = sin sede valida.
@@ -57,15 +64,17 @@ async function cuentaPedida(payload: any, id: unknown): Promise<CuentaBanco | Ne
 // GET /api/administracion/bancos?cuenta=<diario>&desde=&hasta=&viejas=1 — lineas de extracto de Odoo que no creo el panel.
 // GET /api/administracion/bancos?cuenta=<diario>&contables=1 — cuentas contables de la sede (contrapartida al aprobar).
 export async function GET(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  const auth = await requireRoles(request, ROLES_BANCOS);
   if (auth.error) return auth.error;
   const p = request.nextUrl.searchParams;
+  const cxc = esRolCxC(auth.payload);
   try {
     if (p.get("cuentas")) {
       const sedes = sedesDe(auth.payload, p.get("sede"));
       if (!sedes) return respuestaSedeNoPermitida();
       return NextResponse.json({ success: true, cuentas: await cuentasBancarias(sedes) });
     }
+    if (cxc && (p.get("contables") || p.get("viejas"))) return soloAdministracion();
     if (p.get("contables")) {
       const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
       if (cuenta instanceof NextResponse) return cuenta;
@@ -78,7 +87,21 @@ export async function GET(request: NextRequest) {
     const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
     if (cuenta instanceof NextResponse) return cuenta;
     if (p.get("viejas")) return NextResponse.json({ success: true, viejas: await lineasViejasOdoo(cuenta, desde, hasta) });
-    return NextResponse.json({ success: true, desde, hasta, ...(await conciliacionPeriodo(cuenta, desde, hasta)) });
+    const datos = await conciliacionPeriodo(cuenta, desde, hasta);
+    if (cxc) {
+      // Solo los comprobantes: nada del estado de cuenta ni de los pagos a proveedores.
+      return NextResponse.json({
+        success: true,
+        desde,
+        hasta,
+        ...datos,
+        movimientos: [],
+        pagosLibres: [],
+        pagosSinMovimiento: [],
+        archivos: [],
+      });
+    }
+    return NextResponse.json({ success: true, desde, hasta, ...datos });
   } catch (e: any) {
     console.error("[bancos] conciliacion:", e?.message);
     return NextResponse.json({ error: "No se pudo cargar la conciliación (¿Odoo no responde?)" }, { status: 502 });
@@ -88,11 +111,12 @@ export async function GET(request: NextRequest) {
 // POST /api/administracion/bancos (multipart: cuenta, archivo, tipo=estado|comprobante[, carpeta])
 // Un archivo por llamada: la pantalla manda varios y muestra el avance.
 export async function POST(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  const auth = await requireRoles(request, ROLES_BANCOS);
   if (auth.error) return auth.error;
   const email = String(auth.payload?.email || "");
   try {
     const form = await request.formData();
+    if (form.get("tipo") === "estado" && esRolCxC(auth.payload)) return soloAdministracion();
     const cuenta = await cuentaPedida(auth.payload, form.get("cuenta"));
     if (cuenta instanceof NextResponse) return cuenta;
     const subido = form.get("archivo");
@@ -147,9 +171,11 @@ export async function POST(request: NextRequest) {
 //        transferencia: true    la cuenta de transferencias internas (movimiento entre cuentas propias)
 //        sin_conciliar: true    la linea queda en Odoo para conciliarla alla
 export async function PATCH(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  const auth = await requireRoles(request, ROLES_BANCOS);
   if (auth.error) return auth.error;
   const b = await request.json().catch(() => ({}));
+  // CxC solo vuelve a consultar sus comprobantes en el banco.
+  if (esRolCxC(auth.payload) && b?.verificar === undefined) return soloAdministracion();
   const cuenta = await cuentaPedida(auth.payload, b?.cuenta);
   if (cuenta instanceof NextResponse) return cuenta;
   if (b?.verificar !== undefined) {
@@ -290,13 +316,14 @@ export async function PUT(request: NextRequest) {
 // DELETE /api/administracion/bancos?cuenta=&comprobante=id — quitar un comprobante subido por error.
 // DELETE /api/administracion/bancos?cuenta=&estado=id — quitar un archivo del estado de cuenta.
 export async function DELETE(request: NextRequest) {
-  const auth = await requireRoles(request, ROLES_ADMINISTRACION);
+  const auth = await requireRoles(request, ROLES_BANCOS);
   if (auth.error) return auth.error;
   const p = request.nextUrl.searchParams;
   const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
   if (cuenta instanceof NextResponse) return cuenta;
   const comprobante = Number(p.get("comprobante"));
   const estado = Number(p.get("estado"));
+  if (esRolCxC(auth.payload) && !(Number.isInteger(comprobante) && comprobante > 0)) return soloAdministracion();
   if (Number.isInteger(comprobante) && comprobante > 0) await borrarComprobante(cuenta, comprobante);
   else if (Number.isInteger(estado) && estado > 0) await borrarEstado(cuenta, estado);
   else return NextResponse.json({ error: "Falta qué borrar" }, { status: 400 });
