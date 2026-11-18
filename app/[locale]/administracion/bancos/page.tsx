@@ -354,14 +354,14 @@ export default function ConciliacionBancariaPage() {
     const res = await fetch("/api/administracion/bancos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cuenta, conciliar: m.id, pagos: [m.pago!.id] }),
+      body: JSON.stringify({ cuenta, conciliar: m.id, pagos: [m.pago!, ...m.otrosPagos].map((p) => p.id) }),
     });
     return res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
   };
 
   const conciliar = async (m: MovimientoPeriodo) => {
     if (!directo(m)) return setAprobar(m);
-    const con = `${m.pago!.nombre} (${m.pago!.cliente})`;
+    const con = `${[m.pago!, ...m.otrosPagos].map((p) => p.nombre).join(" + ")} (${m.pago!.cliente})`;
     if (!confirm(`¿Conciliar en Odoo el movimiento del ${dia(m.fecha)} por ${cifra(m.monto)} con ${con}?`)) return;
     setError(null);
     setConciliando(m.id);
@@ -432,9 +432,9 @@ export default function ConciliacionBancariaPage() {
         Referencia: m.referencia,
         Descripción: m.descripcion,
         Monto: m.monto,
-        "Cobro/pago en Odoo": m.pago?.nombre || (m.estado === "comision" ? "Comisión" : "No está en Odoo"),
-        "Monto en Odoo": m.pago?.monto ?? "",
-        "Memo en Odoo": m.pago?.ref || "",
+        "Cobro/pago en Odoo": m.pago ? [m.pago, ...m.otrosPagos].map((p) => p.nombre).join(" + ") : m.estado === "comision" ? "Comisión" : "No está en Odoo",
+        "Monto en Odoo": m.pago ? [m.pago, ...m.otrosPagos].reduce((s, p) => s + p.monto, 0) : "",
+        "Memo en Odoo": m.pago ? [m.pago, ...m.otrosPagos].map((p) => p.ref).join(" + ") : "",
         "Fecha en Odoo": m.pago?.fecha || "",
         "No coincide": m.coincide ? queFalla(m.coincide) : "",
         "Cliente/proveedor": m.pago?.cliente || m.comprobante?.cliente || "",
@@ -975,7 +975,16 @@ export default function ConciliacionBancariaPage() {
                         <TableCell>
                           {m.pago ? (
                             <>
-                              <Cobro pago={m.pago} coincide={m.coincide} />
+                              {[m.pago, ...m.otrosPagos].map((p) => (
+                                <span key={p.id} className="block">
+                                  <Cobro pago={p} coincide={m.otrosPagos.length ? { ...m.coincide!, monto: true } : m.coincide} />
+                                </span>
+                              ))}
+                              {m.otrosPagos.length > 0 && (
+                                <span className={`block text-xs ${m.coincide?.monto ? "text-emerald-700" : "text-red-700"}`}>
+                                  Cobro dividido: suman {cifra([m.pago, ...m.otrosPagos].reduce((s, p) => s + p.monto, 0))}
+                                </span>
+                              )}
                               {m.estado !== "referencia" && (
                                 <Badge variant="outline" className={`border-0 block w-fit mt-0.5 ${CLASE_MOV[m.estado]}`}>
                                   {m.estado === "manual" ? "A mano" : `Revisar: no coincide ${m.coincide ? queFalla(m.coincide) : ""}`}

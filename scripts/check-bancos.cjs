@@ -187,6 +187,19 @@ assert.deepStrictEqual(
     ["parcial", 9, { referencia: true, monto: false, fecha: false }],
   ],
 );
+// Cobro dividido: mismo Memo con -1, que suman el movimiento (antes tomaba solo el -1 por referencia + fecha)
+const dividido = cruzarBanco(
+  [mov("l".repeat(64), "2026-10-05", "03626455533", 498871.03)],
+  [
+    { id: 21, nombre: "PBANES/01322", fecha: "2026-10-05", monto: 19187.35, cliente: "MICROMAC", ref: "3626455533-1" },
+    { id: 20, nombre: "PBANES/01321", fecha: "2026-10-05", monto: 479683.68, cliente: "MICROMAC", ref: "3626455533" },
+  ],
+  [],
+  new Map(),
+  cubierto,
+).movimientos[0];
+assert.deepStrictEqual([dividido.estado, dividido.pago.id, dividido.otrosPagos.map((p) => p.id)], ["referencia", 20, [21]]);
+assert.deepStrictEqual(dividido.coincide, { referencia: true, monto: true, fecha: true });
 // Un cobro no se amarra con una salida del mismo monto
 assert.strictEqual(cruzarBanco([mov("h".repeat(64), "2026-10-26", "", -5000)], pagos, [], new Map(), cubierto).movimientos[0].pago, null);
 assert.deepStrictEqual(r.comprobantes.map((c) => c.estado), ["conciliado", "sin_registrar", "no_encontrado", "sin_estado"]);

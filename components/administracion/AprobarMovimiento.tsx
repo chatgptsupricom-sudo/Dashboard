@@ -53,12 +53,11 @@ export function AprobarMovimiento({
   // Cobros si es entrada, pagos si es salida; sin los ya conciliados en Odoo. El propuesto primero, despues los mas parecidos.
   const candidatos = useMemo(() => {
     if (!m) return [];
-    const lista = [...(m.pago ? [m.pago] : []), ...pagosLibres.filter((p) => p.id !== m.pago?.id)];
-    return lista
-      .filter((p) => p.monto > 0 === m.monto > 0 && !p.conciliado)
-      .sort((a, b) =>
-        a.id === m.pago?.id ? -1 : b.id === m.pago?.id ? 1 : Math.abs(a.monto - m.monto) - Math.abs(b.monto - m.monto) || diasEntre(a.fecha, m.fecha) - diasEntre(b.fecha, m.fecha),
-      );
+    const propuestos = m.pago ? [m.pago, ...m.otrosPagos] : [];
+    const otros = pagosLibres
+      .filter((p) => !propuestos.some((x) => x.id === p.id))
+      .sort((a, b) => Math.abs(a.monto - m.monto) - Math.abs(b.monto - m.monto) || diasEntre(a.fecha, m.fecha) - diasEntre(b.fecha, m.fecha));
+    return [...propuestos, ...otros].filter((p) => p.monto > 0 === m.monto > 0 && !p.conciliado);
   }, [m, pagosLibres]);
 
   useEffect(() => {
@@ -66,7 +65,7 @@ export function AprobarMovimiento({
     setError(null);
     setAviso(null);
     setFiltro("");
-    setElegidos(m.pago ? [m.pago.id] : []);
+    setElegidos(m.pago ? [m.pago, ...m.otrosPagos].map((p) => p.id) : []);
     setTextoContable(m.sugerida ? textoCuenta(m.sugerida) : "");
     setOpcion(m.pago ? "pagos" : m.sugerida ? "cuenta" : candidatos.length ? "pagos" : "sin_conciliar");
   }, [m]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -163,7 +162,7 @@ export function AprobarMovimiento({
                           <span className="font-medium">{p.nombre}</span> · {p.cliente}
                           <span className="block text-xs text-gray-500">
                             Memo {p.ref || "—"} · {dia(p.fecha)}
-                            {p.id === m.pago?.id ? " · propuesto" : ""}
+                            {p.id === m.pago?.id || m.otrosPagos.some((x) => x.id === p.id) ? " · propuesto" : ""}
                           </span>
                         </span>
                         <span className="whitespace-nowrap">{cifra(p.monto)}</span>
