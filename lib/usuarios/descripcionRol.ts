@@ -128,6 +128,7 @@ export const SECCIONES: Record<string, Seccion> = {
   cxc_sobregiro: { area: "Cuentas por Cobrar", nombre: "Sobregiro", detalle: "cuánto usa cada cliente de su límite de crédito y su historial" },
   cxc_facturado_detallado: { area: "Cuentas por Cobrar", nombre: "Facturado detallado", detalle: "el reporte de facturación de Odoo de cualquier mes" },
   cxc_binance: { area: "Cuentas por Cobrar", nombre: "Conciliación Binance", detalle: "subir los comprobantes de Binance de los clientes" },
+  cxc_bancos: { area: "Cuentas por Cobrar", nombre: "Comprobantes bancarios", detalle: "subir los comprobantes de transferencias y Pago Móvil de los clientes y ver si entraron al banco" },
   referencia_comercial: { area: "Cuentas por Cobrar", nombre: "Referencia comercial", detalle: "emitir la referencia comercial de un cliente" },
   cxc_search: { area: "Cuentas por Cobrar", nombre: "Buscar facturas", detalle: "buscar cualquier factura" },
   cxc_top_clients: { area: "Cuentas por Cobrar", nombre: "Top clientes / vendedor", detalle: "los clientes que más deben por vendedor" },
