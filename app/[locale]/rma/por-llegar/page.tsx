@@ -12,6 +12,7 @@ import { PlazoBadge } from "@/components/rma/PlazoBadge";
 import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 import { PLAZOS } from "@/lib/rma/plazos";
 import type { CasoConPlazo } from "@/lib/rma/plazosCasos";
+import { conSede, useSedeRma } from "@/components/rma/SedeRma";
 
 /**
  * Por llegar: casos con ticket abierto cuyo equipo todavía no llegó (estado
@@ -31,10 +32,11 @@ export default function RmaPorLlegarPage() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const sede = useSedeRma();
 
   const cargar = useCallback(async () => {
     try {
-      const res = await fetch("/api/rma/plazos?etapa=por_llegar");
+      const res = await fetch(conSede("/api/rma/plazos?etapa=por_llegar", sede));
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error();
       setCasos(json.casos || []);
@@ -45,7 +47,7 @@ export default function RmaPorLlegarPage() {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [sede]);
 
   useEffect(() => {
     cargar();

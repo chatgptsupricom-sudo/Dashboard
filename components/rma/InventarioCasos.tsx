@@ -2,6 +2,8 @@
 
 import { AlertaIngresosPendientes } from "@/components/rma/AlertaIngresosPendientes";
 import { AlertasPlazos } from "@/components/rma/AlertasPlazos";
+import { conSede, useSedeRma } from "@/components/rma/SedeRma";
+import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 import { PlazoBadge } from "@/components/rma/PlazoBadge";
 import type { Plazo } from "@/lib/rma/plazos";
 import { colorEstado, ESTADOS_RMA, etiquetaEstado } from "@/components/rma/estados";
@@ -45,6 +47,7 @@ export function InventarioCasos({ procedencia }: { procedencia: Procedencia }) {
   const searchParams = useSearchParams();
   const locale = (params?.locale as string) || "es";
   const esExterno = procedencia === "externo";
+  const sede = useSedeRma();
 
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,17 +72,17 @@ export function InventarioCasos({ procedencia }: { procedencia: Procedencia }) {
 
   useEffect(() => {
     fetchCases();
-  }, [page, statusFilter, origenFilter, grupo, soloMes]);
+  }, [page, statusFilter, origenFilter, grupo, soloMes, sede]);
 
   useEffect(() => {
-    fetch("/api/rma/plazos")
+    fetch(conSede("/api/rma/plazos", sede))
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (!j?.success) return;
         setPlazos(Object.fromEntries((j.casos as { id: number; plazo: Plazo }[]).map((c) => [c.id, c.plazo])));
       })
       .catch(() => {});
-  }, []);
+  }, [sede]);
 
   const fetchCases = async () => {
     try {
@@ -90,6 +93,7 @@ export function InventarioCasos({ procedencia }: { procedencia: Procedencia }) {
       if (origenFilter) q.set("origen", origenFilter);
       if (grupo) q.set("grupo", grupo);
       if (soloMes) q.set("mes", "1");
+      if (sede) q.set("company_id", String(sede));
 
       const res = await fetch(`/api/rma?${q}`);
       const data = await res.json();
@@ -264,6 +268,9 @@ export function InventarioCasos({ procedencia }: { procedencia: Procedencia }) {
                       <td className="p-4">
                         <div className="flex items-center gap-2">
                           <span className="text-blue-600 font-medium">{c.case_number}</span>
+                          {NOMBRES_SUCURSAL[c.company_id] && (
+                            <span className="text-[11px] text-slate-400">· {NOMBRES_SUCURSAL[c.company_id]}</span>
+                          )}
                           {c.origen === "portal" && (
                             <Badge className="bg-violet-100 text-violet-700 border-violet-200 border text-[11px]">
                               {t("badge_portal")}

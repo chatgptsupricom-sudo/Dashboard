@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { casoDeOtraSede, sedeRma } from "@/lib/rma/sedeSesion";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -32,7 +33,9 @@ export async function GET(request: NextRequest) {
 
     if (searchParams.get("lista") === "1") {
       const estado = searchParams.get("estado") as EstadoNota | null;
-      const notas = await listarNotas(estado && ESTADOS.includes(estado) ? estado : null);
+      const sede = sedeRma(auth.payload, searchParams.get("company_id"));
+      if (sede.error) return sede.error;
+      const notas = await listarNotas(estado && ESTADOS.includes(estado) ? estado : null, 200, undefined, sede.companyId);
       return NextResponse.json({ success: true, notas });
     }
 
@@ -41,6 +44,8 @@ export async function GET(request: NextRequest) {
     if (!caseId) {
       return NextResponse.json({ error: "case_id required" }, { status: 400 });
     }
+    const otraSede = await casoDeOtraSede(auth.payload, parseInt(caseId, 10));
+    if (otraSede) return otraSede;
 
     // Con producto: la nota de ese producto. Sin él, la última del caso
     // (envíos de un producto: las nuevas llevan su item_id, las viejas no).
@@ -80,6 +85,8 @@ export async function POST(request: NextRequest) {
     if (!caseId) {
       return NextResponse.json({ error: "case_id required" }, { status: 400 });
     }
+    const otraSede = await casoDeOtraSede(auth.payload, caseId);
+    if (otraSede) return otraSede;
 
     const images = Array.isArray(body.images)
       ? body.images

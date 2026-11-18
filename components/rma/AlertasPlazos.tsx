@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { colorEstado, etiquetaEstado } from "@/components/rma/estados";
 import { PlazoBadge } from "@/components/rma/PlazoBadge";
 import type { CasoConPlazo, ResumenPlazos } from "@/lib/rma/plazosCasos";
+import { conSede, useSedeRma } from "@/components/rma/SedeRma";
 
 /**
  * Alertas de plazos del taller (lib/rma/plazos.ts): diagnóstico de más de 48
@@ -28,11 +29,12 @@ export function AlertasPlazos() {
   const [resumen, setResumen] = useState<ResumenPlazos | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [cerradoCon, setCerradoCon] = useState<string | null>(null);
+  const sede = useSedeRma();
 
   useEffect(() => {
     let vigente = true;
     const cargar = () =>
-      fetch("/api/rma/plazos?alertas=1")
+      fetch(conSede("/api/rma/plazos?alertas=1", sede))
         .then((r) => (r.ok ? r.json() : null))
         .then((j) => {
           if (!vigente || !j?.success) return;
@@ -46,7 +48,7 @@ export function AlertasPlazos() {
       vigente = false;
       clearInterval(id);
     };
-  }, []);
+  }, [sede]);
 
   // Firma de lo que se ve: si cambia (otro caso vence), el aviso vuelve.
   const firma = casos.map((c) => `${c.id}:${c.plazo.nivel}`).join(",");

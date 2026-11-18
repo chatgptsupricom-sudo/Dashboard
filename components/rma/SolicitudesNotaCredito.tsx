@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { useSedeRma } from "@/components/rma/SedeRma";
 
 /**
  * Solicitudes de nota de crédito de RMA, las más nuevas primero. Las ve RMA
@@ -24,6 +25,8 @@ export function SolicitudesNotaCredito() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [imagen, setImagen] = useState<string | null>(null);
+  const sede = useSedeRma();
+  const visibles = sede ? notas.filter((n) => Number(n.company_id) === sede) : notas;
 
   useEffect(() => {
     (async () => {
@@ -50,7 +53,7 @@ export function SolicitudesNotaCredito() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
         </div>
-      ) : notas.length === 0 ? (
+      ) : visibles.length === 0 ? (
         <Card className="rounded-3xl border-none shadow-sm">
           <CardContent className="py-12 text-center text-slate-400">
             <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -58,7 +61,7 @@ export function SolicitudesNotaCredito() {
           </CardContent>
         </Card>
       ) : (
-        notas.map((n) => (
+        visibles.map((n) => (
           <Card key={n.id} className="rounded-3xl border-none shadow-sm">
             <CardContent className="p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">

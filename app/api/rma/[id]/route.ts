@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { casoDeOtraSede } from "@/lib/rma/sedeSesion";
 import { NextRequest, NextResponse } from "next/server";
 import { enviarCorreoReparado } from "@/lib/rma/emailReparado";
 import { getPublicOrigin } from "@/lib/publicOrigin";
@@ -25,6 +26,8 @@ export async function GET(
 
   try {
     const { id } = await params;
+    const otraSede = await casoDeOtraSede(auth.payload, id);
+    if (otraSede) return otraSede;
 
     const caseResult = await query(
       `SELECT * FROM rma_cases WHERE id = ? OR case_number = ?`,
@@ -137,6 +140,8 @@ export async function PUT(
 
   try {
     const { id } = await params;
+    const otraSede = await casoDeOtraSede(auth.payload, id);
+    if (otraSede) return otraSede;
     const body = await request.json();
     const {
       product_code,
@@ -263,7 +268,9 @@ export async function PUT(
     if (reported_fault !== undefined) { updates.push("reported_fault = ?"); values.push(reported_fault); }
     if (diagnosis !== undefined) { updates.push("diagnosis = ?"); values.push(diagnosis); }
     if (notes !== undefined) { updates.push("notes = ?"); values.push(notes); }
-    if (company_id !== undefined) { updates.push("company_id = ?"); values.push(company_id); }
+    // Solo el SuperAdmin pasa un caso a otra sede.
+    const esSuperAdmin = String(auth.payload?.role || "").toLowerCase().trim() === "superadmin";
+    if (company_id !== undefined && esSuperAdmin) { updates.push("company_id = ?"); values.push(company_id); }
 
     if (status && status !== oldStatus) {
       updates.push("status = ?");
@@ -355,6 +362,8 @@ export async function DELETE(
 
   try {
     const { id } = await params;
+    const otraSede = await casoDeOtraSede(auth.payload, id);
+    if (otraSede) return otraSede;
 
     const existing = await query("SELECT id FROM rma_cases WHERE id = ?", [id]);
     if (existing.rows.length === 0) {
