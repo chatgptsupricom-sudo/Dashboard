@@ -282,6 +282,28 @@ export interface GrupoSemaforo {
 
 const celdaVacia = (): Celda => ({ referencias: 0, unidades: 0, valor: 0 });
 
+/** Meses del plan para salir de lo que está en rojo (90 días = 3 meses). */
+export const MESES_PLAN = HORIZONTE_DIAS / 30;
+
+export interface CuotaRojo {
+  mensual: { valor: number; unidades: number };
+  semanal: { valor: number; unidades: number };
+  diaria: { valor: number; unidades: number };
+}
+
+/**
+ * Cuota para salir de lo que está en rojo en el plan de 90 días: el valor a costo y las unidades en rojo ÷ 3 al mes,
+ * ÷ 90 × 7 a la semana y ÷ 90 al día. Las unidades se redondean hacia arriba (es lo mínimo que hay que vender).
+ */
+export function cuotaRojo(rojo: Celda): CuotaRojo {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const tramo = (dias: number) => ({
+    valor: r2((rojo.valor / HORIZONTE_DIAS) * dias),
+    unidades: rojo.unidades > 0 ? Math.ceil((rojo.unidades / HORIZONTE_DIAS) * dias - 1e-9) : 0,
+  });
+  return { mensual: tramo(30), semanal: tramo(7), diaria: tramo(1) };
+}
+
 export function resumir(fichas: FichaProducto[], claveDe: (f: FichaProducto) => string): GrupoSemaforo[] {
   const grupos = new Map<string, GrupoSemaforo>();
   for (const f of fichas) {
