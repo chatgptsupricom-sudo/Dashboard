@@ -434,6 +434,19 @@ export function cruzarBanco(
     pagoDe.set(m.id, { pago: grupo[0], otros: grupo.slice(1), estado: c.fecha ? "referencia" : "parcial" });
   }
   pasos.slice(2).forEach(correr);
+  // Solo el monto: domiciliaciones y servicios que el banco cobra solo y Odoo registra dias despues con otra
+  // referencia (CEPRO ALARM: banco 04/05 ref 89, Odoo PBANES/2026/00105 12/05 Memo 877). Se propone para revisar
+  // solo si no hay duda: un unico cobro/pago libre de ese monto exacto en ±15 dias y ningun otro movimiento sin
+  // amarrar del mismo monto que lo pueda querer. Las comisiones no (montos chicos que se repiten).
+  const sinPago = todos.filter((m) => !pagoDe.has(m.id) && !esComision(m));
+  for (const m of sinPago) {
+    const candidatos = pagos.filter((p) => !usados.has(p.id) && mismoMonto(p.monto, m.monto) && dias(p.fecha, m.fecha) <= DIAS_VENTANA);
+    if (candidatos.length !== 1) continue;
+    const rivales = sinPago.filter(
+      (o) => o.id !== m.id && !pagoDe.has(o.id) && mismoMonto(o.monto, m.monto) && dias(o.fecha, candidatos[0].fecha) <= DIAS_VENTANA,
+    );
+    if (!rivales.length) tomar(m, candidatos[0], "parcial");
+  }
 
   const movDePago = new Map([...pagoDe].map(([movId, { pago }]) => [pago.id, movId]));
   const porMovId = new Map(entradas.map((m) => [m.id, m] as const));
