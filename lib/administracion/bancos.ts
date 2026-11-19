@@ -1461,7 +1461,129 @@ export async function deshacerLineaVieja(
   let avisoDif: string | undefined;
   let modoHecho = diferencialModo;
   if (linea.is_reconciled || info?.contra.length) {
-    await rpc(cuenta.sede, "account.bank.statement.line", "action_undo_reconciliation", [[stLineId]], { context: ctx });
+    // Con diferencial, la linea del banco tiene dos conciliaciones: con el cobro (la que lleva el asiento de
+    // diferencial, exchange_move_id) y con el propio asiento de diferencial. «Revertir conciliacion» las rompe
+    // juntas y Odoo, al revertir el diferencial, lo encuentra todavia conciliado con la linea del banco: «No puede
+    // hacer esta modificacion en un asiento contable conciliado» (BANES/2026/00291 / EXCH/2026/04/0045, nov-2026).
+    // Y al romper la que lleva el diferencial, la moneda dual reescribe los apuntes del cobro/pago, y como ese
+    // cobro sigue conciliado con su factura Odoo lo rechaza (PBANES/2026/00039 / FPROV/2026/04/0045, nov-2026; ni
+    // `skip_account_move_synchronization` lo evita). Por eso, con diferencial: se suelta el cobro de sus facturas, se
+    // deshace lo del banco y, si los montos del cobro quedaron iguales, se vuelve a aplicar a las mismas facturas.
+    // Si el cobro cambio, no se vuelve a aplicar (quedaria un diferencial o un saldo nuevo) y se avisa; si algo
+    // falla antes de deshacer lo del banco, se vuelve a aplicar enseguida, como estaba.
+    const sinSincronizar = { ...ctx, skip_account_move_synchronization: true };
+    const leer = async (modelo: string, dominio: any[], campos: string[]) =>
+      (await rpc<any[]>(cuenta.sede, modelo, "search_read", [dominio], { fields: campos, context: ctx })) || [];
+    const parcialesDe = (lineas: any[]) => [...new Set(lineas.flatMap((a) => [...(a.matched_debit_ids || []), ...(a.matched_credit_ids || [])]))] as number[];
+    if (difs.length) {
+      const apuntes = await leer("account.move.line", [["move_id", "in", [linea.move_id[0], ...difs]]], ["matched_debit_ids", "matched_credit_ids"]);
+      const propios = new Set(apuntes.map((a) => a.id));
+      const parciales = await leer("account.partial.reconcile", [["id", "in", parcialesDe(apuntes)]], ["exchange_move_id", "debit_move_id", "credit_move_id"]);
+      const delBanco = new Set(parciales.map((p) => p.id));
+
+      // Los cobros/pagos del otro lado y lo que tienen aplicado fuera de esta conciliacion (sus facturas).
+      const contrapartes = parciales.flatMap((p) => [p.debit_move_id[0], p.credit_move_id[0]]).filter((id) => !propios.has(id));
+      const movesPago = [
+        ...new Set((contrapartes.length ? await leer("account.move.line", [["id", "in", contrapartes]], ["move_id"]) : []).map((l) => l.move_id[0])),
+      ];
+      const camposPago = ["move_id", "account_id", "balance", "amount_currency", "reconciled", "matched_debit_ids", "matched_credit_ids"];
+      const lineasPago = movesPago.length ? await leer("account.move.line", [["move_id", "in", movesPago]], camposPago) : [];
+      const dePago = new Set(lineasPago.map((l) => l.id));
+      const aplicadas = (
+        await leer("account.partial.reconcile", [["id", "in", parcialesDe(lineasPago).filter((id) => !delBanco.has(id))]], ["debit_move_id", "credit_move_id"])
+      ).map((p) => {
+        const pago = dePago.has(p.debit_move_id[0]) ? p.debit_move_id[0] : p.credit_move_id[0];
+        const l = lineasPago.find((x) => x.id === pago)!;
+        return { id: p.id, move: l.move_id[0], nombre: String(l.move_id[1] || ""), cuentaPago: l.account_id[0], otra: pago === p.debit_move_id[0] ? p.credit_move_id[0] : p.debit_move_id[0] };
+      });
+      // Sumas de cada cobro por cuenta (los apuntes se pueden volver a crear: se comparan por cuenta, no por id).
+      const sumas = (lineas: any[]) => {
+        const m = new Map<string, { balance: number; moneda: number }>();
+        for (const l of lineas) {
+          const k = `${l.move_id[0]}|${l.account_id[0]}`;
+          const s = m.get(k) || { balance: 0, moneda: 0 };
+          m.set(k, { balance: s.balance + (Number(l.balance) || 0), moneda: s.moneda + (Number(l.amount_currency) || 0) });
+        }
+        return m;
+      };
+      const antes = sumas(lineasPago);
+
+      /** Vuelve a aplicar cada cobro a sus facturas si sus montos no cambiaron. Devuelve el aviso, si hay. */
+      const reaplicar = async (): Promise<string | undefined> => {
+        if (!aplicadas.length) return undefined;
+        const cambiado = (lineas: any[]) => {
+          const despues = sumas(lineas);
+          return [...antes].some(([k, v]) => {
+            const d = despues.get(k);
+            return !d || Math.abs(d.balance - v.balance) > 0.005 || Math.abs(d.moneda - v.moneda) > 0.005;
+          });
+        };
+        let ahora = await leer("account.move.line", [["move_id", "in", movesPago]], camposPago);
+        if (cambiado(ahora)) {
+          // La moneda dual rehizo los apuntes del pago a la BCV del dia aunque el pago tiene su tasa acordada
+          // (PBANES/2026/00039: $1.476,19 a 630 paso a $1.909,18 a 487,12, nov-2026; el pago seguia diciendo 630).
+          // Pasarlo a borrador y confirmarlo de nuevo rehace los apuntes con la tasa del pago.
+          const pagos = await leer("account.payment", [["move_id", "in", movesPago]], ["id"]);
+          try {
+            for (const p of pagos) {
+              await rpc(cuenta.sede, "account.payment", "action_draft", [[p.id]], { context: ctx });
+              await rpc(cuenta.sede, "account.payment", "action_post", [[p.id]], { context: ctx });
+            }
+          } catch {
+            // se avisa abajo con el monto como quedo
+          }
+          ahora = await leer("account.move.line", [["move_id", "in", movesPago]], camposPago);
+        }
+        const cambio = cambiado(ahora);
+        const nombres = [...new Set(aplicadas.map((a) => a.nombre))].join(", ");
+        if (cambio) {
+          return `${nombres} cambió de monto al deshacer y no se volvió a aplicar a sus facturas (quedaría un diferencial): revísalo en Odoo y aplícalo a mano`;
+        }
+        const fallas: string[] = [];
+        // Agrupadas por apunte del cobro (Node 20 en el servidor: sin Object.groupBy).
+        const grupos = new Map<string, typeof aplicadas>();
+        for (const a of aplicadas) grupos.set(`${a.move}|${a.cuentaPago}`, [...(grupos.get(`${a.move}|${a.cuentaPago}`) || []), a]);
+        for (const [clave, grupo] of grupos) {
+          const [move, cuentaPago] = clave.split("|").map(Number);
+          const lineaPago = ahora.find((l) => l.move_id[0] === move && l.account_id[0] === cuentaPago && !l.reconciled);
+          const ids = lineaPago ? [lineaPago.id, ...grupo.map((a) => a.otra)] : [];
+          try {
+            if (!ids.length) throw new Error("sin apunte");
+            await rpc(cuenta.sede, "account.move.line", "reconcile", [ids], { context: ctx });
+          } catch {
+            // reconcile() puede devolver algo que el JSON-RPC no sabe mandar aunque lo haya hecho: se mira en Odoo.
+            const hecho = ids.length && (await leer("account.move.line", [["id", "=", ids[0]], ["matching_number", "!=", false]], ["id"])).length;
+            if (!hecho) fallas.push(grupo[0].nombre);
+          }
+        }
+        return fallas.length ? `No se pudo volver a aplicar ${fallas.join(", ")} a sus facturas: aplícalo en Odoo` : undefined;
+      };
+
+      // Romper CUALQUIER conciliacion del cobro hace que la moneda dual reescriba sus apuntes, y Odoo lo rechaza
+      // mientras le quede otra (soltarlo primero de la factura choca con la del banco y al reves: PBANES/2026/00039
+      // con 7460 y 12446, nov-2026). Por eso todas las del cobro se rompen en UNA sola llamada: cuando la moneda dual
+      // escribe, ya no le queda ninguna.
+      try {
+        // 1) Las del banco que no llevan diferencial, de a una: el asiento de diferencial queda suelto y Odoo lo
+        //    puede revertir despues.
+        for (const p of parciales.filter((x) => !x.exchange_move_id)) {
+          await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [[p.id]], { context: sinSincronizar });
+        }
+        // 2) Juntas: las del banco que llevan diferencial (Odoo lo revierte) y las del cobro con sus facturas.
+        const juntas = [...parciales.filter((x) => x.exchange_move_id).map((x) => x.id), ...aplicadas.map((a) => a.id)];
+        if (juntas.length) await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [juntas], { context: sinSincronizar });
+        await rpc(cuenta.sede, "account.bank.statement.line", "action_undo_reconciliation", [[stLineId]], { context: sinSincronizar });
+      } catch (e) {
+        // Si ya se habia soltado de sus facturas, dejarlo aplicado otra vez, como estaba.
+        const siguen = aplicadas.length ? await leer("account.partial.reconcile", [["id", "in", aplicadas.map((a) => a.id)]], ["id"]).catch(() => []) : [];
+        if (aplicadas.length && !siguen.length) await reaplicar().catch(() => undefined);
+        throw e;
+      }
+      // 3) Volver a aplicar los cobros a sus facturas.
+      avisoDif = await reaplicar();
+    } else {
+      await rpc(cuenta.sede, "account.bank.statement.line", "action_undo_reconciliation", [[stLineId]], { context: sinSincronizar });
+    }
   }
   await rpc(cuenta.sede, "account.bank.statement.line", "unlink", [[stLineId]], { context: ctx });
   if (diferencialModo === "borrar" && difs.length) {
@@ -1475,7 +1597,12 @@ export async function deshacerLineaVieja(
       await rpc(cuenta.sede, "account.move", "button_draft", [borrar], { context: ctx });
       await rpc(cuenta.sede, "account.move", "unlink", [borrar], { context: { ...ctx, force_delete: true } });
     } catch (e: any) {
-      avisoDif = `La línea se deshizo y se borró, pero los asientos de diferencial quedaron revertidos (no se pudieron borrar: ${String(e?.message || "error").slice(0, 200)})`;
+      avisoDif = [
+        avisoDif,
+        `La línea se deshizo y se borró, pero los asientos de diferencial quedaron revertidos (no se pudieron borrar: ${String(e?.message || "error").slice(0, 200)})`,
+      ]
+        .filter(Boolean)
+        .join(". ");
       modoHecho = "reverso";
     }
   }

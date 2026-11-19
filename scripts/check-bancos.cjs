@@ -271,4 +271,28 @@ assert.strictEqual(em.get(3).monto, 187841.46);
 assert.ok(!em.has(4));
 assert.strictEqual(em.get(5).monto, 1000);
 
+// Solo el monto: un unico pago de ese monto exacto en ±15 dias y nadie mas lo quiere
+const pg = (id, fecha, monto, ref) => ({ id, nombre: "P/" + id, fecha, monto, cliente: "X", ref });
+const soloMonto = cruzarBanco(
+  [
+    mov("cepro", "2026-05-04", "00000000089", -37483.12, "DOMICILIACEDI CEPRO ALARM C"), // pago el 12/05 con Memo 877
+    mov("rep1", "2026-05-04", "111", -5000), // dos movimientos de 5000 y un pago: duda, nada
+    mov("rep2", "2026-05-06", "222", -5000),
+    mov("dos", "2026-05-04", "333", 700), // dos cobros de 700: duda, nada
+    mov("com", "2026-05-04", "", -12.5, "COMISION TRANSF"), // comision: no
+  ],
+  [pg(90, "2026-05-12", -37483.12, "877"), pg(91, "2026-05-10", -5000, "x"), pg(92, "2026-05-10", 700, "a"), pg(93, "2026-05-12", 700, "b"), pg(94, "2026-05-12", -12.5, "c")],
+  [],
+  new Map(),
+  () => true,
+);
+const porMov = (id) => soloMonto.movimientos.find((x) => x.id === id);
+assert.strictEqual(porMov("cepro").pago?.id, 90);
+assert.strictEqual(porMov("cepro").estado, "parcial");
+assert.ok(!porMov("cepro").coincide.fecha && !porMov("cepro").coincide.referencia && porMov("cepro").coincide.monto);
+assert.strictEqual(porMov("rep1").pago, null);
+assert.strictEqual(porMov("rep2").pago, null);
+assert.strictEqual(porMov("dos").pago, null);
+assert.strictEqual(porMov("com").estado, "comision");
+
 console.log("check-bancos: OK");
