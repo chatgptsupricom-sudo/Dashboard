@@ -6,6 +6,8 @@ import {
   SedeIC,
   FacturaReceptor,
   buscarEquivalente,
+  cobroDelPago,
+  type CobroIC,
   pendientePorPieza,
   Pieza,
   sedeDePartner,
@@ -68,6 +70,8 @@ export interface PagoIC {
   documentos: DocumentoAplicado[];
   /** Comprobantes que la sede que paga adjunto al pago en Odoo (chatter del pago o de su asiento). */
   adjuntos: AdjuntoPago[];
+  /** El cobro con que la sede que recibe lo registro en su Odoo (`cobroDelPago`), o null si todavia no. */
+  cobro: { numero: string; fecha: string; url: string } | null;
   estado: EstadoPagoIC;
 }
 
@@ -143,6 +147,7 @@ export async function pagosEntreSedes(
   if (pagos.length === 0) return [];
 
   const adjuntosPorPago = await adjuntosDePagos(pagos.map(({ p }) => p));
+  const cobroPorPago = await cobrosDeLosPagos(pagos);
 
   // Lineas por pagar/cobrar de cada pago y sus conciliaciones.
   const lineas = await leerTodo(
@@ -261,6 +266,7 @@ export async function pagosEntreSedes(
       sinAplicar: redondear(sinAplicar.get(p.id) || 0),
       documentos,
       adjuntos: adjuntosPorPago.get(p.id) || [],
+      cobro: cobroPorPago.get(p.id) ?? null,
     };
   });
 
@@ -318,6 +324,55 @@ export async function pagosEntreSedes(
             : "listo";
     return { ...x, documentos, estado };
   });
+}
+
+/**
+ * El cobro de cada pago en la sede que recibe (en su Odoo es la ficha que su gente puede abrir; el pago es de la
+ * otra empresa). Se buscan los cobros con la misma referencia, de cualquier fecha, y los de la sede que paga en
+ * ±15 dias; `cobroDelPago` elige.
+ */
+async function cobrosDeLosPagos(pagos: { p: any; pagador: SedeIC; receptor: SedeIC }[]) {
+  const receptores = [...new Set(pagos.map((x) => COMPANY_DE_SEDE[x.receptor]))];
+  const refs = [...new Set(pagos.map((x) => String(x.p.ref || "").trim()).filter((r) => r.length >= 4))];
+  const fechas = pagos.map((x) => String(x.p.date)).sort();
+  const corrida = (dia: string, n: number) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const base: any[] = [
+    ["company_id", "in", receptores],
+    ["state", "=", "posted"],
+    ["payment_type", "=", "inbound"],
+  ];
+  const nombres: any[] = [];
+  for (const s of [...new Set(pagos.map((x) => x.pagador))]) nombres.push(["partner_id.commercial_partner_id.name", "ilike", ILIKE_DE_SEDE[s]]);
+  const campos = ["name", "date", "ref", "company_id", "partner_id", "amount_company_currency_signed"];
+  const [porRef, porMonto] = await Promise.all([
+    refs.length ? leerTodo("account.payment", [...base, ["ref", "in", refs]], campos, receptores) : Promise.resolve([]),
+    leerTodo(
+      "account.payment",
+      [...base, ["date", ">=", corrida(fechas[0], -15)], ["date", "<=", corrida(fechas[fechas.length - 1], 15)], ...Array(nombres.length - 1).fill("|"), ...nombres],
+      campos,
+      receptores,
+    ),
+  ]);
+  const cobros: CobroIC[] = [...new Map([...porRef, ...porMonto].map((c) => [c.id, c])).values()].map((c) => ({
+    id: c.id,
+    numero: String(c.name || ""),
+    fecha: String(c.date || ""),
+    ref: String(c.ref || ""),
+    monto: Math.abs(Number(c.amount_company_currency_signed) || 0),
+    sede: SEDE_DE_COMPANY[idM2o(c.company_id) ?? 0],
+    deSede: sedeDePartner(nombreM2o(c.partner_id)),
+  }));
+  const usados = new Set<number>();
+  const out = new Map<number, { numero: string; fecha: string; url: string }>();
+  for (const { p, pagador, receptor } of [...pagos].sort((a, b) => String(a.p.date).localeCompare(String(b.p.date)))) {
+    const c = cobroDelPago(
+      { fecha: String(p.date), ref: String(p.ref || ""), monto: Math.abs(Number(p.amount_company_currency_signed) || 0), pagador, receptor },
+      cobros,
+      usados,
+    );
+    if (c) out.set(p.id, { numero: c.numero, fecha: c.fecha, url: enlace("account.payment", c.id, COMPANY_DE_SEDE[receptor]) });
+  }
+  return out;
 }
 
 /** Dominio de los adjuntos de unos pagos: en el pago o en su asiento (el chatter puede ser de cualquiera de los dos). */

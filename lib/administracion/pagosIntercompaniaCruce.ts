@@ -126,3 +126,36 @@ export function pendientePorPieza(pagador: Pieza[], receptor: Pieza[]): Map<numb
   }
   return pendiente;
 }
+
+// ---------- El cobro de la sede que recibe ----------
+
+export type CobroIC = { id: number; numero: string; fecha: string; ref: string; monto: number; sede: SedeIC; deSede: SedeIC | null };
+
+const refNormal = (s: string) => String(s || "").replace(/[\s\-_.]/g, "").toUpperCase();
+const diasIC = (a: string, b: string) => Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
+
+/**
+ * El cobro con que la sede que recibe registro un pago entre sedes: la misma
+ * referencia (puede registrarse semanas despues: el Zelle de Caracas del 21/04,
+ * FT26106HZCBGS, Valencia lo registro el 02/06 como PBANEP/2026/00129); si no,
+ * el unico cobro del mismo monto en ±15 dias a nombre de la sede que paga. Cada
+ * cobro con un solo pago (`usados`).
+ */
+export function cobroDelPago(
+  pago: { fecha: string; ref: string; monto: number; pagador: SedeIC; receptor: SedeIC },
+  cobros: CobroIC[],
+  usados: Set<number>,
+): CobroIC | null {
+  const libres = cobros.filter((c) => c.sede === pago.receptor && !usados.has(c.id));
+  const ref = refNormal(pago.ref);
+  const porRef = ref.length >= 4 ? libres.filter((c) => refNormal(c.ref) === ref) : [];
+  const elegido =
+    porRef.sort((a, b) => Math.abs(a.monto - pago.monto) - Math.abs(b.monto - pago.monto) || diasIC(a.fecha, pago.fecha) - diasIC(b.fecha, pago.fecha))[0] ??
+    (() => {
+      const porMonto = libres.filter((c) => c.deSede === pago.pagador && Math.abs(c.monto - pago.monto) <= 0.01 && diasIC(c.fecha, pago.fecha) <= 15);
+      return porMonto.length === 1 ? porMonto[0] : undefined;
+    })();
+  if (!elegido) return null;
+  usados.add(elegido.id);
+  return elegido;
+}
