@@ -30,6 +30,9 @@ import { respuestaSedeNoPermitida, SEDES_VALIDAS } from "@/lib/auth/sedeRol";
 const MAX_BYTES = 8 * 1024 * 1024;
 const IMAGENES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 const HUELLA = /^[0-9a-f]{64}$/;
+// Odoo (o el banco) no lo acepto. No 502: el proxy de EasyPanel cambia el cuerpo de un 502 por su propia pagina
+// y la pantalla se quedaba sin el motivo ("El servidor respondio 502").
+const ERROR_ODOO = 422;
 
 // Cuentas por Cobrar solo sube los comprobantes de los clientes, los consulta en el
 // banco y ve en que quedaron (como en Binance); el estado de cuenta, conciliar,
@@ -104,7 +107,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, desde, hasta, ...datos });
   } catch (e: any) {
     console.error("[bancos] conciliacion:", e?.message);
-    return NextResponse.json({ error: "No se pudo cargar la conciliación (¿Odoo no responde?)" }, { status: 502 });
+    return NextResponse.json({ error: "No se pudo cargar la conciliación (¿Odoo no responde?)" }, { status: ERROR_ODOO });
   }
 }
 
@@ -197,7 +200,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true, api });
     } catch (e: any) {
       console.error("[bancos] verificar:", e?.message);
-      return NextResponse.json({ error: "No se pudo consultar el banco" }, { status: 502 });
+      return NextResponse.json({ error: "No se pudo consultar el banco" }, { status: ERROR_ODOO });
     }
   }
   if (b?.deshacer !== undefined) {
@@ -217,7 +220,7 @@ export async function PATCH(request: NextRequest) {
       const msg = String(e?.message || "error");
       console.error("[bancos] deshacer en Odoo:", msg);
       const pista = /d[ií]as pasados/i.test(msg) ? " (el usuario de Odoo que concilia tiene bloqueado modificar días pasados)" : "";
-      return NextResponse.json({ error: `Odoo no lo aceptó: ${msg.slice(0, 300)}${pista}` }, { status: 502 });
+      return NextResponse.json({ error: `Odoo no lo aceptó: ${msg.slice(0, 300)}${pista}` }, { status: ERROR_ODOO });
     }
   }
   if (b?.conciliar !== undefined) {
@@ -249,7 +252,7 @@ export async function PATCH(request: NextRequest) {
       const pista = /d[ií]as pasados/i.test(msg)
         ? " (el usuario de Odoo del panel tiene bloqueado modificar días pasados: grupo «Restricciones de Usuario (Supricom)»)"
         : "";
-      return NextResponse.json({ error: `Odoo no lo aceptó: ${msg.slice(0, 300)}${pista}` }, { status: 502 });
+      return NextResponse.json({ error: `Odoo no lo aceptó: ${msg.slice(0, 300)}${pista}` }, { status: ERROR_ODOO });
     }
   }
   const movimiento = b?.movimiento ?? null;
@@ -311,7 +314,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ success: true, ...r });
   } catch (e: any) {
     console.error("[bancos] registrar en Odoo:", e?.message);
-    return NextResponse.json({ error: `Odoo no lo aceptó: ${String(e?.message || "error").slice(0, 300)}` }, { status: 502 });
+    return NextResponse.json({ error: `Odoo no lo aceptó: ${String(e?.message || "error").slice(0, 300)}` }, { status: ERROR_ODOO });
   }
 }
 

@@ -1461,6 +1461,23 @@ export async function deshacerLineaVieja(
   let avisoDif: string | undefined;
   let modoHecho = diferencialModo;
   if (linea.is_reconciled || info?.contra.length) {
+    // Con diferencial, «Revertir conciliacion» solo rompe lo de la linea del banco y Odoo, al revertir el asiento
+    // de diferencial, choca con que ese asiento sigue conciliado con el cobro: «No puede hacer esta modificacion en
+    // un asiento contable conciliado» (EXCH/2026/04/0045, nov-2026). Se rompen juntas, de una vez, las
+    // conciliaciones de la linea del banco y las de sus asientos de diferencial (solo esas: no las del cobro con
+    // sus facturas) y Odoo revierte el diferencial al hacerlo.
+    if (difs.length) {
+      const apuntes =
+        (await rpc<any[]>(
+          cuenta.sede,
+          "account.move.line",
+          "search_read",
+          [[["move_id", "in", [linea.move_id[0], ...difs]]]],
+          { fields: ["matched_debit_ids", "matched_credit_ids"], context: ctx },
+        )) || [];
+      const parciales = [...new Set(apuntes.flatMap((a) => [...(a.matched_debit_ids || []), ...(a.matched_credit_ids || [])]))];
+      if (parciales.length) await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [parciales], { context: ctx });
+    }
     await rpc(cuenta.sede, "account.bank.statement.line", "action_undo_reconciliation", [[stLineId]], { context: ctx });
   }
   await rpc(cuenta.sede, "account.bank.statement.line", "unlink", [[stLineId]], { context: ctx });
