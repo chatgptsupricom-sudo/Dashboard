@@ -31,6 +31,11 @@ assert.ok(mismaReferencia("0025505198339", "25505198339"));
 assert.ok(mismaReferencia("ACH-10092026I920175", "I920175"));
 assert.ok(!mismaReferencia("51895207", "00047710548"));
 assert.ok(!mismaReferencia("", ""));
+assert.ok(mismaReferencia("000056789", "56789")); // ceros a la izquierda
+assert.ok(mismaReferencia("0000056789", "REF: 56789 FACT 5039")); // Memo con texto
+assert.ok(mismaReferencia("1234056789", "56789")); // el banco antepone cifras
+assert.ok(!mismaReferencia("1234056789", "6789")); // 4 cifras al final no bastan
+assert.ok(!mismaReferencia("12345", "54321"));
 
 // Formato Mercantil: encabezado con datos de la empresa arriba, saldo inicial/final
 const mercantil = leerFilasExcel([
@@ -77,6 +82,29 @@ const panama = armarEstado([
 assert.deepStrictEqual(panama.filas.map((f) => f.monto), [3321.2, -1000, 136108.7, 247]);
 assert.strictEqual(panama.saltos, 0);
 
+// Columna "Movimiento" o "Valor" con signo (ingresos y egresos juntos); "Fecha valor" no es el monto
+const conMovimiento = leerFilasExcel([
+  ["Fecha", "Fecha valor", "Referencia", "Concepto", "Movimiento", "Saldo"],
+  ["03/11/2026", "03/11/2026", "111222333", "TRF RECIBIDA", "1.500,00", "11.500,00"],
+  ["03/11/2026", "03/11/2026", "444555666", "PAGO PROVEEDOR", "-500,00", "11.000,00"],
+]);
+assert.deepStrictEqual(conMovimiento.filas.map((f) => f.monto), [1500, -500]);
+assert.deepStrictEqual(leerFilasExcel([["Fecha", "Descripción", "Valor"], ["03/11/2026", "X", "-20,00"]]).filas.map((f) => f.monto), [-20]);
+// Con Monto, "Movimiento" no se usa como monto (es la descripcion)
+assert.deepStrictEqual(
+  leerFilasExcel([["Fecha", "Movimiento", "Monto"], ["03/11/2026", "TRF 0115 J000000001", "-20,00"]]).filas.map((f) => f.monto),
+  [-20],
+);
+
+// Periodo: un mes o un rango de hasta 93 dias
+const { errorPeriodo } = m.exports;
+assert.strictEqual(errorPeriodo("2026-11-01", "2026-11-30"), null);
+assert.strictEqual(errorPeriodo("2026-09-01", "2026-11-30"), null); // 91 dias
+assert.ok(errorPeriodo("2026-08-01", "2026-11-30")); // mas de 93
+assert.ok(errorPeriodo("2026-11-30", "2026-11-01")); // al reves
+assert.ok(errorPeriodo("2026-02-30", "2026-03-01")); // fecha que no existe
+assert.ok(errorPeriodo("", "2026-11-01"));
+
 // Cruce
 const mov = (id, fecha, referencia, monto, descripcion = "") => ({ id, fecha, referencia, descripcion, monto, saldo: null });
 const movimientos = [
@@ -107,10 +135,73 @@ const r = cruzarBanco(movimientos, pagos, comprobantes, new Map(), cubierto);
 const estadoMov = Object.fromEntries(r.movimientos.map((x) => [x.id[0], [x.estado, x.pago?.id ?? null]]));
 assert.deepStrictEqual(estadoMov, {
   a: ["referencia", 1],
-  b: ["por_monto", 2],
+  b: ["parcial", 2], // monto + fecha, sin referencia
   c: ["sin_registrar", null],
-  e: ["por_monto", 3],
+  d: ["sin_registrar", null], // salida sin pago ni "comision"
+  e: ["parcial", 3],
 });
+
+// Salidas: con el pago a proveedor (monto negativo) por el Memo; comision sin pago
+const salidas = cruzarBanco(
+  [mov("f".repeat(64), "2026-10-27", "13428526349", -145536.99), mov("g".repeat(64), "2026-10-27", "80558667850", -391, "COMISION PAGO MOVIL")],
+  [...pagos, { id: 6, nombre: "PBANES/4", fecha: "2026-10-26", monto: -145536.99, cliente: "Proveedor", ref: "13428526349" }],
+  [],
+  new Map(),
+  cubierto,
+);
+assert.deepStrictEqual(salidas.movimientos.map((x) => [x.estado, x.pago?.id ?? null]), [["referencia", 6], ["comision", null]]);
+assert.ok(m.exports.esComision({ monto: -10, descripcion: "COMIS. TRF" }) && !m.exports.esComision({ monto: 10, descripcion: "COMISION" }));
+assert.ok(!m.exports.esComision({ monto: -10, descripcion: "COMPRA DE PINTURA" }));
+const { cuentaSugerida, errorPagos } = m.exports;
+assert.strictEqual(cuentaSugerida({ monto: -30, descripcion: "COBRO IGTF 3%" }), "igtf");
+assert.strictEqual(cuentaSugerida({ monto: -30, descripcion: "COMISION PAGO MOVIL" }), "comision");
+assert.strictEqual(cuentaSugerida({ monto: -30, descripcion: "PAGO PROVEEDOR" }), null);
+// Varios cobros: suman justo el movimiento; uno solo puede ser mayor (cobro abonado en partes)
+assert.strictEqual(errorPagos(1000, [600, 400]), null);
+assert.ok(errorPagos(1000, [600, 500]));
+assert.strictEqual(errorPagos(-400, [1000]), null);
+assert.ok(errorPagos(1000, [400]));
+assert.ok(errorPagos(1000, [1000, 0]));
+assert.ok(errorPagos(1000, []));
+// Fecha, referencia y monto: dos de tres (o solo la referencia) quedan "parcial", con lo que coincide
+const tres = cruzarBanco(
+  [
+    mov("i".repeat(64), "2026-10-20", "0000056789", 1000), // ref + monto, fecha lejos
+    mov("j".repeat(64), "2026-10-26", "00077777", 999), // ref + fecha, monto distinto
+    mov("k".repeat(64), "2026-10-26", "11111111", 321), // solo la referencia
+  ],
+  [
+    { id: 7, nombre: "P7", fecha: "2026-10-28", monto: 1000, cliente: "", ref: "56789" },
+    { id: 8, nombre: "P8", fecha: "2026-10-27", monto: 900, cliente: "", ref: "77777" },
+    { id: 9, nombre: "P9", fecha: "2026-11-05", monto: 500, cliente: "", ref: "11111111" },
+  ],
+  [],
+  new Map(),
+  cubierto,
+);
+assert.deepStrictEqual(
+  tres.movimientos.map((x) => [x.estado, x.pago && x.pago.id, x.coincide]),
+  [
+    ["parcial", 7, { referencia: true, monto: true, fecha: false }],
+    ["parcial", 8, { referencia: true, monto: false, fecha: true }],
+    ["parcial", 9, { referencia: true, monto: false, fecha: false }],
+  ],
+);
+// Cobro dividido: mismo Memo con -1, que suman el movimiento (antes tomaba solo el -1 por referencia + fecha)
+const dividido = cruzarBanco(
+  [mov("l".repeat(64), "2026-10-05", "03626455533", 498871.03)],
+  [
+    { id: 21, nombre: "PBANES/01322", fecha: "2026-10-05", monto: 19187.35, cliente: "MICROMAC", ref: "3626455533-1" },
+    { id: 20, nombre: "PBANES/01321", fecha: "2026-10-05", monto: 479683.68, cliente: "MICROMAC", ref: "3626455533" },
+  ],
+  [],
+  new Map(),
+  cubierto,
+).movimientos[0];
+assert.deepStrictEqual([dividido.estado, dividido.pago.id, dividido.otrosPagos.map((p) => p.id)], ["referencia", 20, [21]]);
+assert.deepStrictEqual(dividido.coincide, { referencia: true, monto: true, fecha: true });
+// Un cobro no se amarra con una salida del mismo monto
+assert.strictEqual(cruzarBanco([mov("h".repeat(64), "2026-10-26", "", -5000)], pagos, [], new Map(), cubierto).movimientos[0].pago, null);
 assert.deepStrictEqual(r.comprobantes.map((c) => c.estado), ["conciliado", "sin_registrar", "no_encontrado", "sin_estado"]);
 assert.deepStrictEqual(r.pagosSinMovimiento.map((p) => p.id), [4]); // el 5 es de un dia sin estado de cuenta
 

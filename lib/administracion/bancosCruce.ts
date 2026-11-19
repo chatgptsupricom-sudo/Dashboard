@@ -31,6 +31,8 @@ const COLUMNAS: Record<string, RegExp> = {
   referencia: /referencia|^ref\b|^documento|^nro|^numero|comprobante/,
   descripcion: /descripcion|concepto|detalle|transaccion/,
   monto: /^monto|^importe/,
+  // Solo si no hay Monto/Importe ni Debito + Credito: en algunos bancos "Movimiento" es la descripcion.
+  montoOtro: /^movimiento|^valor/,
   credito: /credito|abono|haber|deposito/,
   debito: /debito|cargo|debe|retiro/,
   saldo: /saldo|balance/,
@@ -122,6 +124,7 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
     const titulos = (celdas[h] || []).map((c) => sinAcentos(String(c ?? "")));
     const col = (clave: string) => titulos.findIndex((t) => t && COLUMNAS[clave].test(t));
     const c = Object.fromEntries(Object.keys(COLUMNAS).map((k) => [k, col(k)]));
+    if (c.monto < 0 && (c.credito < 0 || c.debito < 0)) c.monto = c.montoOtro;
     if (c.fecha < 0 || (c.monto < 0 && (c.credito < 0 || c.debito < 0))) continue;
     const filas: FilaEstado[] = [];
     const dias: string[] = [];
@@ -159,6 +162,22 @@ export function armarEstado(leidas: FilaEstado[], diasExtra: string[] = []): Est
   return { filas, desde: dias[0], hasta: dias[dias.length - 1], saltos: saltosDeSaldo(filas) };
 }
 
+// ---------- Periodo ----------
+
+/** Lo mas largo que se puede pedir de una vez (un trimestre): cada vista lee Odoo entero del periodo. */
+export const MAX_DIAS_PERIODO = 93;
+
+/** null si desde..hasta es un periodo valido (YYYY-MM-DD, en orden, hasta MAX_DIAS_PERIODO dias); si no, el error. */
+export function errorPeriodo(desde: string, hasta: string): string | null {
+  const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && fechaDeCelda(d) === d;
+  if (!ok(desde) || !ok(hasta)) return "Las fechas deben ser YYYY-MM-DD";
+  if (desde > hasta) return "La fecha inicial es posterior a la final";
+  if ((Date.parse(hasta) - Date.parse(desde)) / 86400_000 + 1 > MAX_DIAS_PERIODO) {
+    return `El período no puede pasar de ${MAX_DIAS_PERIODO} días`;
+  }
+  return null;
+}
+
 // ---------- Cruce ----------
 
 export type Movimiento = FilaEstado & {
@@ -166,6 +185,7 @@ export type Movimiento = FilaEstado & {
   id: string;
 };
 
+/** Cobro (monto +) o pago a proveedor (monto -) de Odoo. ref = el Memo del pago. */
 export type PagoOdoo = {
   id: number;
   nombre: string;
@@ -173,6 +193,8 @@ export type PagoOdoo = {
   monto: number;
   cliente: string;
   ref: string;
+  /** Ya conciliado en Odoo con una linea de extracto (`is_matched`). */
+  conciliado?: boolean;
 };
 
 export type ComprobanteBanco = {
@@ -219,13 +241,48 @@ export type VerificacionApi = {
   yaConsultada?: boolean;
 };
 
-/** Como se amarro el movimiento con el cobro de Odoo. */
-export type EstadoMovimiento = "referencia" | "manual" | "por_monto" | "sin_registrar";
+/**
+ * Como se amarro el movimiento con el cobro/pago de Odoo: referencia = coinciden
+ * fecha, referencia y monto; parcial = coinciden dos de las tres, o solo la
+ * referencia (para revisar, `coincide` dice cuales); comision = salida sin pago
+ * que dice "comision".
+ */
+export type EstadoMovimiento = "referencia" | "parcial" | "manual" | "sin_registrar" | "comision";
+
+/** Que coincide entre el movimiento del banco y el cobro/pago de Odoo. */
+export type Coincide = { referencia: boolean; monto: boolean; fecha: boolean };
+
+/** Comision del banco: se concilia contra la cuenta de gastos bancarios, sin pago de Odoo. */
+export const esComision = (m: { monto: number; descripcion: string; referencia?: string }) =>
+  m.monto < 0 && /comisi|\bcomis\b/i.test(`${m.descripcion} ${m.referencia || ""}`);
+
+/** Cuenta que se propone para un movimiento sin cobro/pago (la elige o cambia quien aprueba). */
+export function cuentaSugerida(m: { monto: number; descripcion: string; referencia?: string }): "igtf" | "comision" | null {
+  if (m.monto < 0 && /igtf|grandes transacciones/i.test(`${m.descripcion} ${m.referencia || ""}`)) return "igtf";
+  return esComision(m) ? "comision" : null;
+}
+
+/**
+ * Si los cobros/pagos elegidos cubren el movimiento (lo que les falta conciliar,
+ * en la moneda del diario): uno solo puede ser mayor (un cobro que el banco
+ * abono en varias partes); varios tienen que sumar justo el movimiento. null = ok.
+ */
+export function errorPagos(monto: number, pendientes: number[]): string | null {
+  const objetivo = Math.abs(monto);
+  if (!pendientes.length) return "Elige al menos un cobro o pago";
+  if (pendientes.some((p) => p < 0.005)) return "Uno de ellos ya está conciliado en Odoo";
+  const total = pendientes.reduce((s, p) => s + p, 0);
+  if (pendientes.length === 1) return total + 0.005 >= objetivo ? null : `Le quedan ${total.toFixed(2)} por conciliar y el movimiento es por ${objetivo.toFixed(2)}`;
+  return Math.abs(total - objetivo) < 0.01 ? null : `Suman ${total.toFixed(2)} y el movimiento es por ${objetivo.toFixed(2)}`;
+}
 export type EstadoComprobante = "conciliado" | "por_revisar" | "sin_registrar" | "no_encontrado" | "sin_estado";
 
 export type MovimientoCruzado = Movimiento & {
   estado: EstadoMovimiento;
   pago: PagoOdoo | null;
+  /** Cobro dividido: los demas cobros del grupo (el primero es `pago`). */
+  otrosPagos: PagoOdoo[];
+  coincide: Coincide | null;
   comprobante: { id: number; cliente: string; referencia: string } | null;
 };
 
@@ -245,33 +302,76 @@ export const normalRef = (s: string) =>
     .replace(/[^A-Z0-9]/g, "")
     .replace(/^0+/, "");
 
+/** La referencia entera y cada numero de 4+ cifras que trae (el Memo puede decir "REF 56789 FACT 5039"), sin ceros adelante. */
+function tokensRef(s: string) {
+  const t = new Set<string>();
+  const todo = normalRef(s);
+  if (todo) t.add(todo);
+  for (const d of String(s || "").match(/\d{4,}/g) || []) {
+    const n = d.replace(/^0+/, "");
+    if (n.length >= 4) t.add(n);
+  }
+  return [...t];
+}
+
 /**
- * Dos referencias son la misma operacion si terminan igual en 6 caracteres o
- * mas: el banco la muestra con ceros o un prefijo ("00000694003" / "694003",
- * "20467137440" / "67137440", "ACH-10092026I920175" / "I920175").
+ * Dos referencias son la misma operacion si son iguales sin los ceros de
+ * adelante ("000056789" / "56789") o si una termina con la otra (al menos 5
+ * caracteres; con 6 basta aunque la corta sea mas larga): el banco la muestra con
+ * un prefijo ("00000694003" / "694003", "20467137440" / "67137440",
+ * "ACH-10092026I920175" / "I920175"). Si el Memo trae texto, cuenta cualquiera de
+ * sus numeros.
  */
 export function mismaReferencia(a: string, b: string) {
-  const x = normalRef(a);
-  const y = normalRef(b);
-  if (!x || !y) return false;
-  if (x === y) return x.length >= 4;
-  let comun = 0;
-  while (comun < x.length && comun < y.length && x[x.length - 1 - comun] === y[y.length - 1 - comun]) comun++;
-  return comun >= 6;
+  for (const x of tokensRef(a)) {
+    for (const y of tokensRef(b)) {
+      if (x === y && x.length >= 4) return true;
+      const corto = Math.min(x.length, y.length);
+      let comun = 0;
+      while (comun < corto && x[x.length - 1 - comun] === y[y.length - 1 - comun]) comun++;
+      if (corto >= 5 && comun >= Math.min(6, corto)) return true;
+    }
+  }
+  return false;
 }
 
 // Odoo puede tener el cobro con otra fecha que el banco (lo registran el dia
-// del comprobante y el banco lo abona al otro dia, o al reves).
+// del comprobante y el banco lo abona al otro dia, o al reves): hasta 3 dias es
+// "misma fecha". Sin la fecha, la referencia se busca hasta 15 dias.
+const DIAS_FECHA = 3;
+const DIAS_VENTANA = 15;
+// Los comprobantes siguen con sus margenes.
 const DIAS_POR_REFERENCIA = 7;
 const DIAS_POR_MONTO = 3;
 
+/** Que coincide entre un movimiento y uno o varios cobros/pagos (el monto, sumados). */
+export function coincidencia(m: Movimiento, p: PagoOdoo | PagoOdoo[]): Coincide {
+  const ps = Array.isArray(p) ? p : [p];
+  return {
+    referencia: ps.every((x) => mismaReferencia(x.ref, m.referencia)),
+    monto: mismoMonto(ps.reduce((s, x) => s + x.monto, 0), m.monto),
+    fecha: ps.every((x) => dias(x.fecha, m.fecha) <= DIAS_FECHA),
+  };
+}
+
+/** "3626455533-1" -> "3626455533": CxC registra una transferencia en varios cobros con el mismo Memo y -1, -2... */
+const SUFIJO_DIVIDIDO = /-\d{1,2}$/;
+export const memoBase = (ref: string) => String(ref || "").trim().replace(SUFIJO_DIVIDIDO, "");
+
 /**
- * Cruza las entradas del estado de cuenta con los cobros de Odoo del mismo
- * diario y con los comprobantes de los clientes. Solo entradas (monto > 0).
+ * Cruza el estado de cuenta con los cobros y pagos de Odoo del mismo diario
+ * (entradas con cobros, salidas con pagos: el signo del monto los separa) y las
+ * entradas con los comprobantes de los clientes. Una salida sin pago que dice
+ * "comision" queda "comision".
  *
- * Movimiento con cobro de Odoo: primero lo amarrado a mano; despues misma
- * referencia + mismo monto; despues mismo monto con la fecha mas cercana (hasta
- * 3 dias): eso queda "por_monto", para revisar. Sin cobro: "sin_registrar".
+ * Movimiento con cobro/pago de Odoo (del mismo signo), por fecha, referencia y
+ * monto: primero lo amarrado a mano; despues las tres ("referencia"); despues
+ * referencia + monto; despues un **cobro dividido** (varios cobros con el mismo
+ * Memo, uno o mas con -1, -2... al final, que suman justo el movimiento:
+ * `otrosPagos`; "referencia" si todos son de la misma fecha, si no "parcial");
+ * despues referencia + fecha, monto + fecha y por ultimo solo la referencia: esas
+ * quedan "parcial", para revisar. En cada paso, el de fecha mas cercana. Sin
+ * cobro: "sin_registrar".
  *
  * Comprobante con movimiento: a mano; misma referencia (o la referencia dentro
  * de la descripcion) + monto; la referencia del cobro de Odoo que ya se amarro
@@ -290,25 +390,53 @@ export function cruzarBanco(
   manuales: Map<string, number>,
   cubierto: (dia: string) => boolean,
 ) {
-  const entradas = movimientos.filter((m) => m.monto > 0).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const todos = [...movimientos].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const entradas = todos.filter((m) => m.monto > 0);
   const porId = new Map(pagos.map((p) => [p.id, p]));
   const usados = new Set<number>();
-  const pagoDe = new Map<string, { pago: PagoOdoo; estado: EstadoMovimiento }>();
+  const pagoDe = new Map<string, { pago: PagoOdoo; estado: EstadoMovimiento; otros?: PagoOdoo[] }>();
   const tomar = (m: Movimiento, pago: PagoOdoo | undefined, estado: EstadoMovimiento) => {
     if (!pago || usados.has(pago.id) || pagoDe.has(m.id)) return;
     usados.add(pago.id);
     pagoDe.set(m.id, { pago, estado });
   };
-  for (const m of entradas) tomar(m, porId.get(manuales.get(m.id) ?? -1), "manual");
-  const cercano = (m: Movimiento, ok: (p: PagoOdoo) => boolean, max: number) =>
+  for (const m of todos) tomar(m, porId.get(manuales.get(m.id) ?? -1), "manual");
+  const cercano = (m: Movimiento, ok: (c: Coincide) => boolean) =>
     pagos
-      .filter((p) => !usados.has(p.id) && mismoMonto(p.monto, m.monto) && dias(p.fecha, m.fecha) <= max && ok(p))
+      .filter((p) => !usados.has(p.id) && p.monto > 0 === m.monto > 0 && dias(p.fecha, m.fecha) <= DIAS_VENTANA && ok(coincidencia(m, p)))
       .sort((a, b) => dias(a.fecha, m.fecha) - dias(b.fecha, m.fecha))[0];
-  for (const m of entradas) tomar(m, cercano(m, (p) => mismaReferencia(p.ref, m.referencia), DIAS_POR_REFERENCIA), "referencia");
-  for (const m of entradas) tomar(m, cercano(m, () => true, DIAS_POR_MONTO), "por_monto");
+  const pasos: [(c: Coincide) => boolean, EstadoMovimiento][] = [
+    [(c) => c.referencia && c.monto && c.fecha, "referencia"],
+    [(c) => c.referencia && c.monto, "parcial"],
+    [(c) => c.referencia && c.fecha, "parcial"],
+    [(c) => c.monto && c.fecha, "parcial"],
+    [(c) => c.referencia, "parcial"],
+  ];
+  const correr = ([ok, estado]: (typeof pasos)[number]) => {
+    for (const m of todos) tomar(m, cercano(m, ok), estado);
+  };
+  pasos.slice(0, 2).forEach(correr);
+  for (const m of todos) {
+    if (pagoDe.has(m.id) || !normalRef(m.referencia)) continue;
+    const grupo = pagos
+      .filter(
+        (p) =>
+          !usados.has(p.id) &&
+          p.monto > 0 === m.monto > 0 &&
+          dias(p.fecha, m.fecha) <= DIAS_VENTANA &&
+          mismaReferencia(memoBase(p.ref), m.referencia),
+      )
+      .sort((a, b) => a.ref.localeCompare(b.ref));
+    if (grupo.length < 2 || !grupo.some((p) => SUFIJO_DIVIDIDO.test(p.ref.trim()))) continue;
+    const c = coincidencia(m, grupo);
+    if (!c.monto) continue;
+    for (const p of grupo) usados.add(p.id);
+    pagoDe.set(m.id, { pago: grupo[0], otros: grupo.slice(1), estado: c.fecha ? "referencia" : "parcial" });
+  }
+  pasos.slice(2).forEach(correr);
 
   const movDePago = new Map([...pagoDe].map(([movId, { pago }]) => [pago.id, movId]));
-  const porMovId = new Map(entradas.map((m) => [m.id, m]));
+  const porMovId = new Map(entradas.map((m) => [m.id, m] as const));
   const movsUsados = new Set<string>();
   // Cobros de Odoo que tomo un comprobante confirmado por la API del banco: la plata esta en el banco.
   const usadosApi = new Set<number>();
@@ -365,20 +493,22 @@ export function cruzarBanco(
   });
 
   const compDeMov = new Map(salidaComp.filter((c) => c.movimiento).map((c) => [c.movimiento!.id, c]));
-  const salidaMovs: MovimientoCruzado[] = entradas.map((m) => {
+  const salidaMovs: MovimientoCruzado[] = todos.map((m) => {
     const c = compDeMov.get(m.id);
     const p = pagoDe.get(m.id);
     return {
       ...m,
-      estado: p?.estado ?? "sin_registrar",
+      estado: p?.estado ?? (esComision(m) ? "comision" : "sin_registrar"),
       pago: p?.pago ?? null,
+      otrosPagos: p?.otros ?? [],
+      coincide: p ? coincidencia(m, [p.pago, ...(p.otros ?? [])]) : null,
       comprobante: c ? { id: c.id, cliente: c.cliente, referencia: c.referencia } : null,
     };
   });
   return {
     movimientos: salidaMovs,
     comprobantes: salidaComp,
-    /** Cobros de Odoo que no estan en el estado de cuenta, en dias que el estado cubre. */
+    /** Cobros y pagos de Odoo que no estan en el estado de cuenta, en dias que el estado cubre. */
     pagosSinMovimiento: pagos.filter((p) => !usados.has(p.id) && !usadosApi.has(p.id) && cubierto(p.fecha)),
     /** Cobros de Odoo cuyo comprobante confirmo el banco por la API (no estan en el estado de cuenta). */
     pagosConfirmadosApi: usadosApi,
