@@ -183,8 +183,8 @@ function CobroPago({ p }: { p: PagoIC }) {
 function Comprobantes({ p }: { p: PagoIC }) {
   if (p.adjuntos.length === 0) {
     return (
-      <p className="pt-1 text-xs text-gray-500">
-        Sin comprobante: {N(p.pagador)} no lo adjuntó al pago en Odoo.
+      <p className="pt-1 text-xs font-medium text-red-700">
+        Sin comprobante: {N(p.pagador)} no lo adjuntó en Odoo. Pídeselo para poder verlo aquí.
       </p>
     );
   }
@@ -532,14 +532,16 @@ export default function PagosEntreSedesPage() {
                                 </div>
                                 <div className="text-xs text-gray-500 truncate" title={p.ref}>
                                   <EnlaceOdoo url={p.url} de={p.pagador}>{p.numero}</EnlaceOdoo> · {p.diario}
-                                  <CobroPago p={p} />
                                   {p.ref ? ` · ${p.ref}` : ""}
                                 </div>
-                                {p.adjuntos.length > 0 && (
+                                <CobroPago p={p} />
+                                {p.adjuntos.length > 0 ? (
                                   <div className="mt-0.5 inline-flex items-center gap-1 text-xs text-blue-700">
                                     <Paperclip className="h-3 w-3" />
                                     {p.adjuntos.length === 1 ? "1 comprobante" : `${p.adjuntos.length} comprobantes`}
                                   </div>
+                                ) : (
+                                  <div className="mt-0.5 text-xs text-red-700">Sin comprobante: {N(p.pagador)} no lo adjuntó en Odoo</div>
                                 )}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap">
