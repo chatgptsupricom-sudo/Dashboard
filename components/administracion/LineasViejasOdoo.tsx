@@ -139,7 +139,7 @@ export function LineasViejasOdoo({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="ghost" className="h-9" onClick={cargar} disabled={cargando || !!avance} aria-label="Volver a leer de Odoo">
+          <Button size="sm" variant="ghost" className="h-9" onClick={() => cargar()} disabled={cargando || !!avance} aria-label="Volver a leer de Odoo">
             <RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />
           </Button>
           {lista.some((l) => l.enPanel) && (
