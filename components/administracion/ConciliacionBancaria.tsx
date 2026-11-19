@@ -31,6 +31,7 @@ import {
   ArrowLeft,
   Banknote,
   CheckCircle2,
+  ExternalLink,
   FileSpreadsheet,
   FolderUp,
   Landmark,
@@ -98,6 +99,15 @@ const ELEGIR_CARPETA = { webkitdirectory: "", directory: "" } as Record<string, 
 const finDeMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).toISOString().slice(0, 10);
 const RANGO = "rango";
 
+const ODOO_URL = (process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com").replace(/\/$/, "");
+/**
+ * Donde se ve en Odoo un movimiento conciliado: el asiento de la linea de
+ * extracto que creo el panel o, si se concilio alla, el cobro/pago.
+ */
+const enlaceConciliado = (m: MovimientoPeriodo) =>
+  m.odoo?.asientoId
+    ? `${ODOO_URL}/web#id=${m.odoo.asientoId}&model=account.move&view_type=form`
+    : `${ODOO_URL}/web#id=${m.pago?.id}&model=account.payment&view_type=form`;
 const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const suma = (items: { monto: number }[]) => items.reduce((s, i) => s + i.monto, 0);
@@ -487,7 +497,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
         "No coincide": m.coincide ? queFalla(m.coincide) : "",
         "Cliente/proveedor": m.pago?.cliente || m.comprobante?.cliente || "",
         Comprobante: m.comprobante?.referencia || "",
-        "En Odoo": m.odoo ? (m.odoo.conciliada ? `Conciliado: ${m.odoo.detalle}` : "Pasado sin conciliar") : m.pago?.conciliado ? "Conciliado" : "No",
+        "En Odoo": m.odoo ? (m.odoo.conciliada ? `Conciliado (${m.odoo.asiento}): ${m.odoo.detalle}` : `Pasado sin conciliar (${m.odoo.asiento})`) : m.pago?.conciliado ? "Conciliado" : "No",
       })),
     },
     {
@@ -944,7 +954,14 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                               <TableCell className={`text-right whitespace-nowrap align-top ${m.monto < 0 ? "text-red-700" : ""}`}>{cifra(m.monto)}</TableCell>
                               <TableCell className="align-top">
                                 {m.odoo ? (
-                                  <span className="text-xs text-gray-700">{m.odoo.detalle}</span>
+                                  <span className="text-xs text-gray-700">
+                                    {m.odoo.asiento && (
+                                      <a href={enlaceConciliado(m)} target="_blank" rel="noreferrer" className="block font-medium text-blue-600 hover:underline">
+                                        {m.odoo.asiento}
+                                      </a>
+                                    )}
+                                    {m.odoo.detalle}
+                                  </span>
                                 ) : m.pago ? (
                                   <>
                                     {[m.pago, ...m.otrosPagos].map((p) => (
@@ -981,13 +998,20 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap align-top">
                                 {yaConciliado(m) ? (
-                                  <span
-                                    className={`text-xs inline-flex items-center gap-1 ${m.odoo && !m.odoo.conciliada ? "text-amber-700" : "text-emerald-700"}`}
-                                    title={m.odoo ? `Aprobado por ${m.odoo.por} el ${dia(m.odoo.el.slice(0, 10))}` : "Ya estaba conciliado en Odoo"}
+                                  <a
+                                    href={enlaceConciliado(m)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`text-xs inline-flex items-center gap-1 hover:underline ${m.odoo && !m.odoo.conciliada ? "text-amber-700" : "text-emerald-700"}`}
+                                    title={
+                                      (m.odoo ? `Aprobado por ${m.odoo.por} el ${dia(m.odoo.el.slice(0, 10))}` : "Ya estaba conciliado en Odoo") +
+                                      " · abrir en Odoo"
+                                    }
                                   >
                                     <CheckCircle2 className="h-4 w-4" />
                                     {m.odoo && !m.odoo.conciliada ? "En Odoo, falta conciliar allá" : "Conciliado"}
-                                  </span>
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
                                 ) : (
                                   <span className="inline-flex items-center gap-1">
                                     <Button
