@@ -1465,6 +1465,10 @@ export async function deshacerLineaVieja(
     // diferencial, exchange_move_id) y con el propio asiento de diferencial. «Revertir conciliacion» las rompe
     // juntas y Odoo, al revertir el diferencial, lo encuentra todavia conciliado con la linea del banco: «No puede
     // hacer esta modificacion en un asiento contable conciliado» (BANES/2026/00291 / EXCH/2026/04/0045, nov-2026).
+    // Y al romper la que lleva el diferencial, la moneda dual vuelve a escribir el cobro, que Odoo pasa a sus apuntes
+    // (`_synchronize_to_moves`); como el cobro sigue conciliado con su factura, Odoo lo rechaza (PBANES/2026/00039,
+    // nov-2026). `skip_account_move_synchronization` (contexto estandar de Odoo) deja los apuntes del cobro como estan.
+    const sinSincronizar = { ...ctx, skip_account_move_synchronization: true };
     // Se rompen de a una: primero las que no llevan diferencial (asi el asiento de diferencial queda suelto) y al
     // final la que lo lleva, que es cuando Odoo lo revierte. Solo las de la linea del banco y de sus asientos de
     // diferencial: no las del cobro con sus facturas.
@@ -1485,9 +1489,9 @@ export async function deshacerLineaVieja(
           })) || []
         : [];
       parciales.sort((a, b) => Number(!!a.exchange_move_id) - Number(!!b.exchange_move_id));
-      for (const p of parciales) await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [[p.id]], { context: ctx });
+      for (const p of parciales) await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [[p.id]], { context: sinSincronizar });
     }
-    await rpc(cuenta.sede, "account.bank.statement.line", "action_undo_reconciliation", [[stLineId]], { context: ctx });
+    await rpc(cuenta.sede, "account.bank.statement.line", "action_undo_reconciliation", [[stLineId]], { context: sinSincronizar });
   }
   await rpc(cuenta.sede, "account.bank.statement.line", "unlink", [[stLineId]], { context: ctx });
   if (diferencialModo === "borrar" && difs.length) {
