@@ -243,4 +243,32 @@ assert.strictEqual(celular58("0412-5075239"), "584125075239");
 assert.strictEqual(celular58("+58 412-507-5239"), "584125075239");
 assert.strictEqual(celular58("04**-***5239"), null);
 
+// Lineas viejas de Odoo con el monto mal cargado
+const { distanciaMonto, emparejarViejas } = m.exports;
+assert.strictEqual(distanciaMonto(187841.46, 187841.46), 0);
+assert.ok(distanciaMonto(187841.5, 187841.46) > 0); // redondeada
+assert.ok(distanciaMonto(1878414.6, 187841.46) !== null); // coma corrida
+assert.strictEqual(distanciaMonto(-5000, 5000), null); // otro signo
+assert.strictEqual(distanciaMonto(190000, 187841.46), null); // otro monto
+const viejas = [
+  { id: 1, fecha: "2026-04-06", monto: -95700, ref: "13313559299" },
+  { id: 2, fecha: "2026-04-06", monto: -28710.4, ref: "13313559299" }, // decimales mal
+  { id: 3, fecha: "2026-04-06", monto: 187841.5, ref: "" }, // redondeada, sin ref
+  { id: 4, fecha: "2026-04-07", monto: 500, ref: "" }, // otro dia, sin ref: no
+  { id: 5, fecha: "2026-04-08", monto: 1000.3, ref: "77777777" }, // otro dia con la misma ref
+];
+const movsPanel = [
+  { fecha: "2026-04-06", monto: -95700, referencia: "00013313559299" },
+  { fecha: "2026-04-06", monto: -28710, referencia: "00013313559299" },
+  { fecha: "2026-04-06", monto: 187841.46, referencia: "38080585" },
+  { fecha: "2026-04-06", monto: 500, referencia: "" },
+  { fecha: "2026-04-06", monto: 1000, referencia: "0077777777" },
+];
+const em = emparejarViejas(viejas, movsPanel);
+assert.strictEqual(em.get(1).monto, -95700);
+assert.strictEqual(em.get(2).monto, -28710);
+assert.strictEqual(em.get(3).monto, 187841.46);
+assert.ok(!em.has(4));
+assert.strictEqual(em.get(5).monto, 1000);
+
 console.log("check-bancos: OK");

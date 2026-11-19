@@ -186,7 +186,8 @@ export function LineasViejasOdoo({
         {sinPanel > 0 && (
           <Aviso>
             {sinPanel} línea{sinPanel === 1 ? "" : "s"} no está{sinPanel === 1 ? "" : "n"} en el estado de cuenta del panel: no se pueden borrar hasta subir el
-            estado de cuenta de esos días (si no, no habría cómo rehacerlas).
+            estado de cuenta de esos días (si no, no habría cómo rehacerlas). Se emparejan también las que Odoo tiene con los decimales mal (hasta
+            1 Bs o 0,1 % de diferencia, o la coma corrida) por el mismo día o la misma referencia.
           </Aviso>
         )}
         {cargando && !lineas ? (
@@ -232,7 +233,20 @@ export function LineasViejasOdoo({
                     {l.estado === "con_diferencial" && <span className="block text-xs text-red-700 mt-0.5">{cifra(l.diferencial)} USD</span>}
                   </TableCell>
                   <TableCell className="text-xs">{l.contra.join(", ") || "—"}</TableCell>
-                  <TableCell className="text-xs">{l.enPanel ? "Sí" : <span className="text-amber-700">Falta el estado de cuenta</span>}</TableCell>
+                  <TableCell className="text-xs">
+                    {!l.enPanel || !l.movPanel ? (
+                      <span className="text-amber-700">Falta el estado de cuenta</span>
+                    ) : Math.abs(l.movPanel.monto - l.monto) < 0.005 && l.movPanel.fecha === l.fecha ? (
+                      "Sí"
+                    ) : (
+                      // Odoo la tiene mal cargada (decimales o fecha): al rehacerla queda con lo del banco.
+                      <span className="text-amber-700">
+                        Sí, en el banco {cifra(l.movPanel.monto)}
+                        {l.movPanel.fecha !== l.fecha ? ` del ${dia(l.movPanel.fecha)}` : ""}
+                        {l.movPanel.referencia ? ` · ref ${l.movPanel.referencia}` : ""}
+                      </span>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
