@@ -10,8 +10,10 @@ import { terminosSinIC } from "@/lib/intercompania";
  *
  *   días = saldo al cierre ÷ movimiento del mes × días del mes
  *
- * - Cobro (DSO): exactamente el de la tarjeta de CxC (lib/cxc/dso.ts): CxC a
- *   crédito al cierre ÷ ventas a crédito del mes, con IVA.
+ * - Cobro (DSO): el de la tarjeta de CxC (lib/cxc/dso.ts): CxC a crédito al
+ *   cierre ÷ ventas a crédito del mes, con IVA, pero CON las negociaciones
+ *   especiales (`valueConEspeciales`): el ciclo de caja mezcla el cobro con
+ *   inventario y pago, que cuentan todo. La tarjeta de CxC las deja fuera.
  * - Inventario (DIO): valor del inventario al cierre (suma de
  *   stock.valuation.layer hasta esa fecha) ÷ costo de lo que salió a clientes
  *   en el mes (capas de los movimientos Existencias → Cliente, menos las
@@ -137,9 +139,12 @@ export async function diasPromedio(companyIds: number[], mes: string, seriesList
   ]);
   const dso = await calcularDSO(companyIds, inicio, finMes, hoy, series);
 
-  const cobro: Indicador = dso.value === null
-    ? { dias: null, saldo: dso.carteraAbierta, movimiento: dso.ventasNetas, motivo: "Sin ventas a crédito en el período" }
-    : { dias: dso.value, saldo: dso.carteraAbierta, movimiento: dso.ventasNetas };
+  // Con las negociaciones especiales adentro (ver arriba).
+  const saldoCobro = Math.round((dso.carteraAbierta + dso.especiales.saldo) * 100) / 100;
+  const ventasCobro = Math.round((dso.ventasNetas + dso.especiales.ventas) * 100) / 100;
+  const cobro: Indicador = dso.valueConEspeciales === null
+    ? { dias: null, saldo: saldoCobro, movimiento: ventasCobro, motivo: "Sin ventas a crédito en el período" }
+    : { dias: dso.valueConEspeciales, saldo: saldoCobro, movimiento: ventasCobro };
   // Las capas de salida restan valor (negativas) y las de pagos/facturas
   // de proveedor tienen saldo acreedor (negativo): se les cambia el signo.
   const inv = indicador(inventario, -costoVendido, dias, "Sin salidas de inventario a clientes en el período", "Sin inventario valorizado al cierre");

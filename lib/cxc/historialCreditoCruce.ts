@@ -9,6 +9,10 @@ export interface FotoCredito {
   cliente: string;
   rif: string;
   vendedor: string;
+  /** Usuario de Odoo del vendedor (para el Histórico de Cupo de crédito). */
+  vendedorId?: number | null;
+  /** Estado del cliente (lib/cxc/sobregiro.ts → nombreZona). */
+  zona?: string;
   limite: number;
   usado: number;
   vencido: number;
