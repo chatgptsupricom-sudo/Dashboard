@@ -18,7 +18,7 @@ const diasEntre = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(
 const textoCuenta = (c: CuentaContable) => `${c.codigo} ${c.nombre}`;
 
 const OPCIONES: { valor: Opcion; titulo: string; detalle: string }[] = [
-  { valor: "pagos", titulo: "Cobro(s) o pago(s) de Odoo", detalle: "Uno solo, o varios que sumen justo el movimiento." },
+  { valor: "pagos", titulo: "Cobro(s) o pago(s) de Odoo", detalle: "Uno solo, o varios que sumen justo el movimiento. Incluye transferencias internas y asientos que quedaron en pendientes." },
   { valor: "cuenta", titulo: "Cuenta contable", detalle: "Comisión, IGTF, intereses, gastos…" },
   { valor: "transferencia", titulo: "Transferencia entre cuentas propias", detalle: "Va a la cuenta de transferencias internas; se concilia con la otra cuenta cuando su movimiento esté." },
   { valor: "sin_conciliar", titulo: "Pasar a Odoo sin conciliar", detalle: "Crea la línea en el extracto de Odoo y se termina en la conciliación de Odoo." },

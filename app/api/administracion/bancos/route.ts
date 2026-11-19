@@ -225,7 +225,9 @@ export async function PATCH(request: NextRequest) {
     const entero = (v: unknown) => Number.isInteger(Number(v)) && Number(v) > 0;
     let destino: Destino;
     if (Array.isArray(b?.pagos)) {
-      if (!b.pagos.length || b.pagos.length > 50 || !b.pagos.every(entero)) return NextResponse.json({ error: "Pagos inválidos" }, { status: 400 });
+      // Un id negativo es el apunte de un asiento contable en las cuentas de pendientes (ver pagosOdoo).
+      const idOdoo = (v: unknown) => Number.isInteger(Number(v)) && Number(v) !== 0;
+      if (!b.pagos.length || b.pagos.length > 50 || !b.pagos.every(idOdoo)) return NextResponse.json({ error: "Pagos inválidos" }, { status: 400 });
       destino = { tipo: "pagos", pagos: b.pagos.map(Number) };
     } else if (b?.cuenta_contable !== undefined) {
       if (!entero(b.cuenta_contable)) return NextResponse.json({ error: "Cuenta contable inválida" }, { status: 400 });
@@ -261,7 +263,7 @@ export async function PATCH(request: NextRequest) {
       await amarrarComprobante(cuenta, id, movimiento);
     } else {
       const pago = b?.pago_id === null ? null : Number(b?.pago_id);
-      if (!movimiento || (pago !== null && (!Number.isInteger(pago) || pago <= 0))) {
+      if (!movimiento || (pago !== null && (!Number.isInteger(pago) || pago === 0))) {
         return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
       }
       await amarrarPago(cuenta, movimiento, pago, String(auth.payload?.email || ""));
