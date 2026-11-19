@@ -43,9 +43,10 @@ export function LineasViejasOdoo({
   // Que hacer con los asientos de diferencial al deshacer: revertirlos (Odoo) o borrarlos del todo.
   const [modoDif, setModoDif] = useState<"reverso" | "borrar">("reverso");
 
-  const cargar = useCallback(async () => {
+  // Despues de deshacer se recarga sin borrar el error: si no, el motivo por el que Odoo no lo acepto no se veia.
+  const cargar = useCallback(async (limpiarError = true) => {
     setCargando(true);
-    setError(null);
+    if (limpiarError) setError(null);
     try {
       const j = await (await fetch(`/api/administracion/bancos?cuenta=${cuenta}&desde=${desde}&hasta=${hasta}&viejas=1`)).json();
       if (!j.success) throw new Error(j.error);
@@ -104,7 +105,11 @@ export function LineasViejasOdoo({
       });
       const j = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
       if (!j.success) {
-        setError(`${dia(lista.find((l) => l.id === id)!.fecha)}: ${j.error || "no se pudo deshacer"}`);
+        const l = lista.find((x) => x.id === id)!;
+        setError(
+          `No se pudo deshacer ${l.asiento} (${dia(l.fecha)}, ${cifra(l.monto)}): ${j.error || "no se pudo deshacer"}` +
+            (hechas ? `. Antes se deshicieron ${hechas}; se paró ahí.` : ". No se deshizo ninguna."),
+        );
         break;
       }
       hechas++;
@@ -118,7 +123,7 @@ export function LineasViejasOdoo({
           (avisos.length ? ` ${avisos.join(" · ")}` : ""),
       );
     }
-    await cargar();
+    await cargar(false);
     alCambiar();
   };
 
