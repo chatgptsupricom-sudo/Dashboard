@@ -575,3 +575,59 @@ export function celular58(texto: string): string | null {
   if (/^\d{10}$/.test(d)) return "58" + d;
   return null;
 }
+
+// ---------- Lineas viejas de Odoo contra el estado de cuenta del panel ----------
+
+export type MovPanel = { fecha: string; monto: number; referencia: string };
+export type LineaOdooVieja = { id: number; fecha: string; monto: number; ref: string };
+
+const diasEntreFechas = (a: string, b: string) => Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
+
+/**
+ * Que tan lejos esta el monto de Odoo del del banco (0 = igual), o null si no
+ * es el mismo movimiento. Hubo lineas cargadas a mano en Odoo con los decimales
+ * mal: redondeadas o cortadas (hasta 1 unidad o 0,1 %) o con la coma corrida
+ * (x10, x100). Siempre el mismo signo.
+ */
+export function distanciaMonto(odoo: number, banco: number): number | null {
+  if (!odoo || !banco || odoo > 0 !== banco > 0) return null;
+  const a = Math.abs(odoo);
+  const b = Math.abs(banco);
+  if (Math.abs(a - b) < 0.005) return 0;
+  if (Math.abs(a - b) <= Math.max(1, b * 0.001)) return Math.abs(a - b) / b;
+  for (const escala of [10, 100, 0.1, 0.01]) {
+    if (Math.abs(a * escala - b) <= Math.max(0.05, b * 0.0001)) return 0.5; // coma corrida
+  }
+  return null;
+}
+
+/**
+ * Empareja cada linea vieja de Odoo con un movimiento del estado de cuenta del
+ * panel (cada movimiento con una sola linea): mismo dia y mismo monto; o, con el
+ * monto mal cargado (`distanciaMonto`), mismo dia o la misma referencia hasta 3
+ * dias. Primero los pares mas parecidos.
+ */
+export function emparejarViejas(lineas: LineaOdooVieja[], movs: MovPanel[]): Map<number, MovPanel> {
+  const pares: { linea: number; mov: number; puntos: number }[] = [];
+  lineas.forEach((l, i) => {
+    movs.forEach((m, j) => {
+      const dist = distanciaMonto(l.monto, m.monto);
+      if (dist === null) return;
+      const dias = diasEntreFechas(l.fecha, m.fecha);
+      const ref = !!l.ref && !!m.referencia && mismaReferencia(l.ref, m.referencia);
+      if (dias > (ref ? DIAS_FECHA : 0)) return;
+      pares.push({ linea: i, mov: j, puntos: dist + dias / 10 - (ref ? 0.01 : 0) });
+    });
+  });
+  pares.sort((a, b) => a.puntos - b.puntos);
+  const usadas = new Set<number>();
+  const tomados = new Set<number>();
+  const res = new Map<number, MovPanel>();
+  for (const p of pares) {
+    if (usadas.has(p.linea) || tomados.has(p.mov)) continue;
+    usadas.add(p.linea);
+    tomados.add(p.mov);
+    res.set(lineas[p.linea].id, movs[p.mov]);
+  }
+  return res;
+}

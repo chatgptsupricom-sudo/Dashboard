@@ -15,6 +15,7 @@ import {
   armarEstado,
   cruzarBanco,
   cuentaSugerida,
+  emparejarViejas,
   errorPagos,
   errorPeriodo,
   leerFilasExcel,
@@ -23,6 +24,7 @@ import {
   type ComprobanteBanco,
   type EstadoLeido,
   type FilaEstado,
+  type MovPanel,
   type Movimiento,
   type PagoOdoo,
   type VerificacionApi,
@@ -1337,8 +1339,10 @@ export type LineaVieja = {
   diferencial: number;
   /** Asientos de diferencial cambiario de su conciliacion. */
   asientosDiferencial: number[];
-  /** El estado de cuenta del panel tiene ese movimiento (mismo dia y monto): se puede rehacer desde el panel. */
+  /** El estado de cuenta del panel tiene ese movimiento: se puede rehacer desde el panel. */
   enPanel: boolean;
+  /** El movimiento del panel que le corresponde (`emparejarViejas`: puede tener el monto distinto si Odoo lo tiene mal cargado). */
+  movPanel: MovPanel | null;
 };
 
 /**
@@ -1377,11 +1381,16 @@ export async function lineasViejasOdoo(cuenta: CuentaBanco, inicio: string, fin:
   for (const a of difApuntes) difPorAsiento.set(a.move_id[0], (difPorAsiento.get(a.move_id[0]) || 0) - Number(a.balance || 0));
   const fullDif = new Map(fulls.map((f) => [f.id, f.exchange_move_id?.[0]]));
 
+  // Con 3 dias de margen: una linea mal cargada se empareja tambien por referencia en dias cercanos.
   const { rows } = await query(
-    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, monto FROM banco_movimientos WHERE journal_id = ? AND fecha BETWEEN ? AND ?`,
+    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, monto, referencia FROM banco_movimientos
+      WHERE journal_id = ? AND fecha BETWEEN DATE_SUB(?, INTERVAL 3 DAY) AND DATE_ADD(?, INTERVAL 3 DAY)`,
     [cuenta.id, inicio, fin],
   );
-  const enPanel = new Set(rows.map((r: any) => `${r.fecha}|${Number(r.monto).toFixed(2)}`));
+  const delPanel = emparejarViejas(
+    lineas.map((l) => ({ id: l.id, fecha: String(l.date), monto: Number(l.amount) || 0, ref: String(l.payment_ref || "") })),
+    rows.map((r: any) => ({ fecha: r.fecha, monto: Number(r.monto), referencia: String(r.referencia || "") })),
+  );
 
   return lineas.map((l) => {
     const moveId = l.move_id[0];
@@ -1410,7 +1419,8 @@ export async function lineasViejasOdoo(cuenta: CuentaBanco, inicio: string, fin:
       contra,
       diferencial: Math.round(diferencial * 100) / 100,
       asientosDiferencial: [...difs],
-      enPanel: enPanel.has(`${l.date}|${monto.toFixed(2)}`),
+      enPanel: delPanel.has(l.id),
+      movPanel: delPanel.get(l.id) ?? null,
     };
   });
 }
@@ -1444,14 +1454,9 @@ export async function deshacerLineaVieja(
   if (!linea) return { error: "Esa línea no existe en Odoo o es de otro diario" };
   if (String(linea.unique_import_id || "").startsWith("panel-")) return { error: "Esa línea la creó el panel: deshazla en Odoo" };
   const monto = Number(linea.amount) || 0;
-  const { rows } = await query("SELECT 1 FROM banco_movimientos WHERE journal_id = ? AND fecha = ? AND ABS(monto - ?) < 0.005 LIMIT 1", [
-    cuenta.id,
-    linea.date,
-    monto,
-  ]);
-  if (!rows.length) return { error: `Primero sube el estado de cuenta del ${linea.date}: si se borra sin él, no se puede rehacer desde el panel` };
   const viejas = await lineasViejasOdoo(cuenta, String(linea.date), String(linea.date));
   const info = viejas.find((v) => v.id === stLineId);
+  if (!info?.enPanel) return { error: `Primero sube el estado de cuenta del ${linea.date}: si se borra sin él, no se puede rehacer desde el panel` };
   const difs = info?.asientosDiferencial || [];
   let avisoDif: string | undefined;
   let modoHecho = diferencialModo;
