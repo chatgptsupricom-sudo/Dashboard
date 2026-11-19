@@ -68,4 +68,20 @@ assert.strictEqual(buscarEquivalente("5039017", "in_refund", "2026-10-29", 24005
   assert.strictEqual(pendientePorPieza([pz(1, 80, "2026-10-01")], [pz(9, 30, "2026-10-01"), pz(8, 50, "2026-10-02")]).get(1), 0);
 }
 
+// El cobro de la sede que recibe
+{
+  const { cobroDelPago } = m.exports;
+  const cobro = (id, fecha, ref, monto, deSede = "caracas", sede = "valencia") => ({ id, numero: "C/" + id, fecha, ref, monto, sede, deSede });
+  const pago = { fecha: "2026-04-21", ref: "FT26106HZCBGS", monto: 1400, pagador: "caracas", receptor: "valencia" };
+  // Misma referencia aunque sea semanas despues y otro contacto (Banesco Panama de Valencia, 02/06).
+  assert.strictEqual(cobroDelPago(pago, [cobro(1, "2026-06-02", " ft26106hzcbgs", 1400, null), cobro(2, "2026-04-22", "otra", 1400)], new Set()).id, 1);
+  // Sin referencia: el unico del mismo monto en ±15 dias a nombre de la sede que paga.
+  assert.strictEqual(cobroDelPago({ ...pago, ref: "" }, [cobro(3, "2026-04-25", "x", 1400), cobro(4, "2026-05-30", "y", 1400)], new Set()).id, 3);
+  // Dos del mismo monto: duda, nada.
+  assert.strictEqual(cobroDelPago({ ...pago, ref: "" }, [cobro(5, "2026-04-25", "x", 1400), cobro(6, "2026-04-26", "y", 1400)], new Set()), null);
+  // Otra sede o ya usado: nada.
+  const usados = new Set([7]);
+  assert.strictEqual(cobroDelPago(pago, [cobro(7, "2026-04-21", "FT26106HZCBGS", 1400), cobro(8, "2026-04-21", "FT26106HZCBGS", 1400, "caracas", "panama")], usados), null);
+}
+
 console.log("check-pagos-intercompania: OK");

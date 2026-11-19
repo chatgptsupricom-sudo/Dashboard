@@ -161,6 +161,24 @@ function BotonCopiar({ texto }: { texto: string }) {
 
 const tamano = (b: number) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
+/**
+ * El cobro con que la sede que recibe registró el pago: es la ficha que su gente sí puede abrir en Odoo (el pago es
+ * de la otra empresa). Sin cobro, se dice que falta registrarlo.
+ */
+function CobroPago({ p }: { p: PagoIC }) {
+  return p.cobro ? (
+    <span className="block text-xs text-gray-600">
+      Cobro en {N(p.receptor)}:{" "}
+      <EnlaceOdoo url={p.cobro.url} de={p.receptor}>
+        {p.cobro.numero}
+      </EnlaceOdoo>{" "}
+      · {fechaCorta(p.cobro.fecha)}
+    </span>
+  ) : (
+    <span className="block text-xs text-amber-700">{N(p.receptor)} todavía no registró el cobro</span>
+  );
+}
+
 /** Los comprobantes que la sede que paga adjuntó al pago en Odoo. */
 function Comprobantes({ p }: { p: PagoIC }) {
   if (p.adjuntos.length === 0) {
@@ -203,6 +221,7 @@ function TarjetaPago({ p, sede, soloPendientes }: { p: PagoIC; sede: string | nu
             </p>
             <p className="text-sm text-gray-600">
               <EnlaceOdoo url={p.url} de={p.pagador}>{p.numero}</EnlaceOdoo> · {p.diario}
+              <CobroPago p={p} />
             </p>
             {p.ref && <p className="text-xs text-gray-500 break-words">{p.ref}</p>}
             <Comprobantes p={p} />
@@ -371,6 +390,7 @@ export default function PagosEntreSedesPage() {
                         "Monto en su moneda": p.montoMoneda,
                         Estado: estado(p, sede).texto,
                         Comprobantes: p.adjuntos.map((a) => a.nombre).join(", "),
+                        "Cobro de quien recibe": p.cobro?.numero || "",
                       };
                       if (p.documentos.length === 0) return [fila];
                       return p.documentos.map((d) => ({
@@ -512,6 +532,7 @@ export default function PagosEntreSedesPage() {
                                 </div>
                                 <div className="text-xs text-gray-500 truncate" title={p.ref}>
                                   <EnlaceOdoo url={p.url} de={p.pagador}>{p.numero}</EnlaceOdoo> · {p.diario}
+                                  <CobroPago p={p} />
                                   {p.ref ? ` · ${p.ref}` : ""}
                                 </div>
                                 {p.adjuntos.length > 0 && (
