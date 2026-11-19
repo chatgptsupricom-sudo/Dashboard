@@ -2,6 +2,8 @@ import { callOdooRPC } from "@/lib/odoo";
 import { facturasDelPeriodo } from "@/lib/cxc/efectividad";
 import type { SeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { CORTE_ODOO } from "@/lib/smartbit";
+import { esEspecial, especialesPorSede, especialesVigentes } from "@/lib/cxc/negociacionesEspeciales";
+import { dsoPorTramo, grupoDso, plazosDeDocs, diasDePlazo, type DocDso, type GrupoDso, type TramoDso } from "@/lib/cxc/dsoPlazos";
 
 /**
  * KPI "DSO" (días promedio de cobro) del mes, en su forma estándar:
@@ -42,6 +44,18 @@ import { CORTE_ODOO } from "@/lib/smartbit";
  *
  * Antes de abril 2026 Odoo no tiene las ventas (están en Smartbit), así que
  * esos meses salen sin DSO.
+ *
+ * ── Negociaciones especiales y tipo de cobro (nov-2026) ──
+ * Los clientes que CxC marca como negociación especial
+ * (lib/cxc/negociacionesEspeciales.ts: plazo extendido, refinanciamiento,
+ * cuotas…) sesgaban el número general: su saldo y sus ventas salen del DSO
+ * general (`value`) y se muestran aparte (`especiales`, con su propio DSO);
+ * `valueConEspeciales` es el número de antes, con todo. Además, el DSO se abre
+ * por tipo de cobro (plazo de pago de cada factura, `porPlazo`,
+ * lib/cxc/dsoPlazos.ts): cada tramo con su DSO, su plazo promedio y los días
+ * de atraso contra ese plazo. Las sumas por tramo salen de los saldos de cada
+ * factura: no restan los pagos sin aplicar, así que no dan exacto la CxC del
+ * libro.
  */
 
 export interface DsoCliente {
@@ -55,6 +69,12 @@ export interface DsoCliente {
   dias: number;
   /** `null` si no tuvo ventas a crédito en la ventana. */
   dso: number | null;
+  /** Todo lo suyo es de negociación especial (fuera del DSO general). */
+  especial: boolean;
+  /** Especial solo en alguna sede (vista de varias sedes): sigue en el general por lo demás. */
+  especialParcial: boolean;
+  /** Plazo de su factura más reciente con saldo, en días. */
+  plazoDias: number | null;
 }
 
 export interface DsoResultado {
@@ -72,6 +92,12 @@ export interface DsoResultado {
   clientesIncluidos: number;
   /** Clientes con saldo a crédito al cierre, ordenados por saldo. */
   clientes: DsoCliente[];
+  /** DSO con las negociaciones especiales adentro (el cálculo de antes). */
+  valueConEspeciales: number | null;
+  /** Saldo, ventas del período y DSO de las negociaciones especiales. */
+  especiales: GrupoDso;
+  /** DSO por tipo de cobro (plazo de pago), sin las negociaciones especiales. */
+  porPlazo: TramoDso[];
 }
 
 const DIA_MS = 24 * 60 * 60 * 1000;
@@ -113,28 +139,100 @@ export async function calcularDSO(
   if (desdeCliente < corteOdoo) desdeCliente.setTime(corteOdoo.getTime());
   const diasCliente = Math.max(1, Math.floor((corte.getTime() - desdeCliente.getTime()) / DIA_MS) + 1);
 
-  const [cxc, ventasMes, ventasCliente] = await Promise.all([
+  const [cxc, ventasMes, ventasCliente, especialesSet] = await Promise.all([
     series.carteraCEI(corte),
     facturasDelPeriodo(companyIds, fechaLocal(inicio), fechaLocal(corte)),
     facturasDelPeriodo(companyIds, fechaLocal(desdeCliente), fechaLocal(corte)),
+    especialesVigentes(companyIds, fechaLocal(corte)),
   ]);
-  const ventas = ventasMes.reduce((s, f) => s + (Number(f.amount_total_signed) || 0), 0);
+  const ventasTodas = ventasMes.reduce((s, f) => s + (Number(f.amount_total_signed) || 0), 0);
 
-  // ── Detalle por cliente (empresa) ──
+  // ── Documentos a crédito con saldo al cierre ──
   const { saldos, credito } = series.saldosEn(corte);
   const ids = [...saldos.keys()].filter((id) => credito.has(id));
   const moves: any[] = [];
   for (let i = 0; i < ids.length; i += 5000) {
-    moves.push(...((await callOdooRPC<any[]>("account.move", "read", [ids.slice(i, i + 5000)], { fields: ["id", "commercial_partner_id"] })) || []));
+    moves.push(...((await callOdooRPC<any[]>("account.move", "read", [ids.slice(i, i + 5000)], {
+      fields: ["id", "commercial_partner_id", "company_id", "move_type", "invoice_date", "invoice_date_due", "reversed_entry_id"],
+    })) || []));
   }
-  const porCliente = new Map<number, { name: string; saldo: number; ventas: number }>();
-  const cliente = (v: any) => {
-    const pid = idDe(v) || 0;
-    if (!porCliente.has(pid)) porCliente.set(pid, { name: v?.[1] || "Sin cliente", saldo: 0, ventas: 0 });
+
+  // Un documento por factura/NC: su saldo al cierre y su venta del período.
+  const docs = new Map<number, DocDso & { nombre: string }>();
+  const doc = (m: any): DocDso & { nombre: string } => {
+    let d = docs.get(m.id);
+    if (!d) {
+      d = {
+        id: m.id,
+        companyId: idDe(m.company_id) || 0,
+        partnerId: idDe(m.commercial_partner_id) || 0,
+        nombre: m.commercial_partner_id?.[1] || "Sin cliente",
+        esNC: m.move_type === "out_refund",
+        revierte: idDe(m.reversed_entry_id) ?? null,
+        fecha: m.invoice_date || null,
+        vence: m.invoice_date_due || null,
+        saldo: 0,
+        venta: 0,
+      };
+      docs.set(m.id, d);
+    }
+    return d;
+  };
+  for (const m of moves) doc(m).saldo += saldos.get(m.id) || 0;
+  for (const f of ventasMes) doc(f).venta += Number(f.amount_total_signed) || 0;
+  const lista = [...docs.values()];
+
+  // NC cuya factura no está entre los documentos: se lee el plazo de esa factura.
+  const faltan = [...new Set(lista.filter((d) => d.esNC && d.revierte && !docs.has(d.revierte)).map((d) => d.revierte as number))];
+  const plazoExterno = new Map<number, number | null>();
+  for (let i = 0; i < faltan.length; i += 2000) {
+    const leidas = (await callOdooRPC<any[]>("account.move", "read", [faltan.slice(i, i + 2000)], { fields: ["id", "invoice_date", "invoice_date_due"] })) || [];
+    for (const f of leidas) plazoExterno.set(f.id, diasDePlazo(f.invoice_date, f.invoice_date_due));
+  }
+  const plazos = plazosDeDocs(lista, plazoExterno);
+
+  // ── Negociaciones especiales: fuera del número general, aparte con su DSO ──
+  const especial = (d: { companyId: number; partnerId: number }) => esEspecial(especialesSet, d.companyId, d.partnerId);
+  const grupoEsp = grupoDso(lista.filter(especial), dias);
+  // Su saldo sale del libro, en la misma base que la CxC general: así también
+  // se restan sus pagos sin aplicar (un cliente que paga por cuotas los tiene)
+  // y el general no queda subestimado.
+  let saldoEspLibro = 0;
+  for (const [cid, partners] of especialesPorSede(especialesSet, companyIds)) {
+    saldoEspLibro += (await series.carteraCEI(corte, cid, partners)).total;
+  }
+  const especiales: GrupoDso = {
+    ...grupoEsp,
+    saldo: Math.round(saldoEspLibro * 100) / 100,
+    dso: grupoEsp.ventas > 0 ? Math.round((saldoEspLibro / grupoEsp.ventas) * dias) : null,
+  };
+  const cxcGeneral = cxc.total - saldoEspLibro;
+  const ventas = ventasTodas - grupoEsp.ventas;
+
+  // ── Detalle por cliente (empresa) ──
+  // `especial` = todo lo suyo es de negociación especial; `especialParcial` =
+  // solo en alguna sede (vista de varias sedes): ese cliente sigue en el general.
+  type Acum = { name: string; saldo: number; ventas: number; esp: boolean; gen: boolean; plazo: { fecha: string; dias: number } | null };
+  const porCliente = new Map<number, Acum>();
+  const cliente = (pid: number, name: string) => {
+    if (!porCliente.has(pid)) porCliente.set(pid, { name, saldo: 0, ventas: 0, esp: false, gen: false, plazo: null });
     return porCliente.get(pid)!;
   };
-  for (const m of moves) cliente(m.commercial_partner_id).saldo += saldos.get(m.id) || 0;
-  for (const f of ventasCliente) cliente(f.commercial_partner_id).ventas += Number(f.amount_total_signed) || 0;
+  for (const d of lista) {
+    if (Math.abs(d.saldo) < 0.005) continue;
+    const c = cliente(d.partnerId, d.nombre);
+    c.saldo += d.saldo;
+    if (especial(d)) c.esp = true;
+    else c.gen = true;
+    const p = plazos.get(d.id);
+    if (!d.esNC && p != null && d.fecha && (!c.plazo || d.fecha > c.plazo.fecha)) c.plazo = { fecha: d.fecha, dias: p };
+  }
+  for (const f of ventasCliente) {
+    const c = cliente(idDe(f.commercial_partner_id) || 0, f.commercial_partner_id?.[1] || "Sin cliente");
+    c.ventas += Number(f.amount_total_signed) || 0;
+    if (esEspecial(especialesSet, idDe(f.company_id) || 0, idDe(f.commercial_partner_id) || 0)) c.esp = true;
+    else c.gen = true;
+  }
 
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const clientes: DsoCliente[] = [...porCliente]
@@ -146,16 +244,22 @@ export async function calcularDSO(
       ventasNetas: r2(c.ventas),
       dias: diasCliente,
       dso: c.ventas > 0 ? Math.round((c.saldo / c.ventas) * diasCliente) : null,
+      especial: c.esp && !c.gen,
+      especialParcial: c.esp && c.gen,
+      plazoDias: c.plazo?.dias ?? null,
     }))
     .sort((a, b) => b.saldo - a.saldo);
 
   return {
-    value: ventas > 0 ? Math.round((cxc.total / ventas) * dias) : null,
-    carteraAbierta: r2(cxc.total),
+    value: ventas > 0 ? Math.round((cxcGeneral / ventas) * dias) : null,
+    carteraAbierta: r2(cxcGeneral),
     ventasNetas: r2(ventas),
     dias,
     ventanaMovil,
-    clientesIncluidos: clientes.length,
+    clientesIncluidos: clientes.filter((c) => !c.especial).length,
     clientes,
+    valueConEspeciales: ventasTodas > 0 ? Math.round((cxc.total / ventasTodas) * dias) : null,
+    especiales,
+    porPlazo: dsoPorTramo(lista.filter((d) => !especial(d)), plazos, dias),
   };
 }

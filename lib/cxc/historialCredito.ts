@@ -25,12 +25,12 @@ import { esICExcluido } from "@/lib/intercompania";
  * recuperar. Un exceso que empieza y termina dentro de la misma hora no se ve.
  */
 
-const FOTOS = "cxc_credito_fotos";
+export const FOTOS = "cxc_credito_fotos";
 const EVENTOS = "cxc_credito_eventos";
 export const SEDES_HISTORIAL = [9, 10, 7];
 
 let tablasListas = false;
-async function asegurarTablas() {
+export async function asegurarTablas() {
   if (tablasListas) return;
   await query(
     `CREATE TABLE IF NOT EXISTS ${FOTOS} (
@@ -67,6 +67,12 @@ async function asegurarTablas() {
       INDEX idx_partner (partner_id)
     )`,
   );
+  // Vendedor (id de Odoo) y zona, para el Histórico de Cupo de crédito
+  // (lib/cupo-credito/historico.ts). Las fotos de antes quedan sin ellos.
+  const { rows: cols } = await query(`SHOW COLUMNS FROM ${FOTOS}`);
+  const tiene = new Set((cols as any[]).map((c) => String(c.Field)));
+  if (!tiene.has("vendedor_id")) await query(`ALTER TABLE ${FOTOS} ADD COLUMN vendedor_id INT NULL AFTER vendedor`);
+  if (!tiene.has("zona")) await query(`ALTER TABLE ${FOTOS} ADD COLUMN zona VARCHAR(80) NOT NULL DEFAULT '' AFTER vendedor_id`);
   tablasListas = true;
 }
 
@@ -127,11 +133,12 @@ export async function registrarSede(cid: number): Promise<{ clientes: number; ev
   for (let i = 0; i < actuales.length; i += 400) {
     const lote = actuales.slice(i, i + 400);
     await db.query(
-      `INSERT INTO ${FOTOS} (company_id, partner_id, fecha, cliente, rif, vendedor, limite, usado, vencido, estado, actualizado_el)
+      `INSERT INTO ${FOTOS} (company_id, partner_id, fecha, cliente, rif, vendedor, vendedor_id, zona, limite, usado, vencido, estado, actualizado_el)
        VALUES ?
-       ON DUPLICATE KEY UPDATE cliente = VALUES(cliente), rif = VALUES(rif), vendedor = VALUES(vendedor), limite = VALUES(limite),
+       ON DUPLICATE KEY UPDATE cliente = VALUES(cliente), rif = VALUES(rif), vendedor = VALUES(vendedor), vendedor_id = VALUES(vendedor_id),
+         zona = VALUES(zona), limite = VALUES(limite),
          usado = VALUES(usado), vencido = VALUES(vencido), estado = VALUES(estado), actualizado_el = VALUES(actualizado_el)`,
-      [lote.map((c) => [cid, c.partnerId, hoy, c.cliente.slice(0, 255), c.rif.slice(0, 40), c.vendedor.slice(0, 150), c.limite, c.usado, c.vencido, c.estado, ahora])],
+      [lote.map((c) => [cid, c.partnerId, hoy, c.cliente.slice(0, 255), c.rif.slice(0, 40), c.vendedor.slice(0, 150), c.vendedorId ?? null, (c.zona || "").slice(0, 80), c.limite, c.usado, c.vencido, c.estado, ahora])],
     );
   }
   if (eventos.length) {
