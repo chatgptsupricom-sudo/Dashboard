@@ -16,6 +16,7 @@ import { enviarCorreoActualizacion } from "@/lib/rma/emailActualizacion";
 import { errorEstadoNotaCredito } from "@/lib/rma/notaCredito";
 import { errorNotaEnCurso } from "@/lib/notas-credito/rma";
 import { errorEstadoFlujo } from "@/lib/rma/flujo";
+import { asegurarColumnaCedula } from "@/lib/seguridad/columnaCedula";
 
 export async function GET(
   request: NextRequest,
@@ -100,6 +101,7 @@ export async function GET(
     // (lib/rma/sedesSeguridad.ts) las registra RMA desde esta pantalla.
     let actas: { ingresos: any[]; despachos: any[] } = { ingresos: [], despachos: [] };
     try {
+      await asegurarColumnaCedula();
       const [ing, des] = await Promise.all([
         query(
           `SELECT id, nd_numero, fecha_entrega, recibido_rma_nombre, created_at
@@ -107,7 +109,7 @@ export async function GET(
           [caseData.id],
         ),
         query(
-          `SELECT id, nd_numero, fecha_despacho, cliente_retira, almacenista_nombre, created_at
+          `SELECT id, nd_numero, fecha_despacho, cliente_retira, cedula_retira, almacenista_nombre, created_at
              FROM seguridad_despachos WHERE rma_case_id = ? ORDER BY id`,
           [caseData.id],
         ),

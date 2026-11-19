@@ -15,6 +15,8 @@ import {
   type ProductoDespacho,
 } from "@/lib/seguridad/productosEnvio";
 import { guiaDeIngreso, siguienteGuia } from "@/lib/seguridad/guia";
+import { cedulaValida, normalizarCedula } from "@/lib/seguridad/cedulaRetira";
+import { asegurarColumnaCedula } from "@/lib/seguridad/columnaCedula";
 
 
 
@@ -238,6 +240,10 @@ export async function POST(request: NextRequest) {
     if (!clienteRetira) {
       errors.push("Escribe el nombre del cliente que retira");
     }
+    // Constancia de quién recibió: nombre, cédula y firma.
+    const cedulaRetira = normalizarCedula(body.cedula_retira);
+    if (!cedulaRetira) errors.push("Escribe la cédula de quien recibe el equipo");
+    else if (!cedulaValida(cedulaRetira)) errors.push("La cédula de quien recibe no es válida");
 
     if (typeof body.accesorios_integros !== "boolean") {
       errors.push("accesorios_integros es obligatorio (true o false)");
@@ -310,11 +316,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
     }
 
+    await asegurarColumnaCedula();
     const result = await query(
       `INSERT INTO seguridad_despachos
         (ingreso_id, rma_case_id, fecha_despacho, almacenista_nombre, facturas_json,
-         cliente_retira, accesorios_integros, observaciones, firma_url, nd_numero, cids)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         cliente_retira, cedula_retira, accesorios_integros, observaciones, firma_url, nd_numero, cids)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         ingresoId,
         rmaCaseId,
@@ -322,6 +329,7 @@ export async function POST(request: NextRequest) {
         almacenistaNombre,
         facturasJson,
         clienteRetira,
+        cedulaRetira,
         body.accesorios_integros ? 1 : 0,
         truncate(body.observaciones, MAX.observaciones),
         null,

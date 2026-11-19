@@ -140,17 +140,20 @@ export async function GET(
 
   // Sede sin Seguridad (lib/rma/sedesSeguridad.ts): entrega RMA y firma
   // quien retira; no hay Almacén ni Seguridad en el acta.
+  // Constancia de quién recibió: nombre y cédula bajo su firma.
+  const cedulaRecibe = (d as any).cedula_retira ? `C.I. ${(d as any).cedula_retira}` : "";
+  const recibe = [d.cliente_retira || "", cedulaRecibe].filter(Boolean).join(" · ");
   const bloquesFirma = (
     sedeSinSeguridad((d as any).cids)
       ? [
           { rol: "tecnico", titulo: "Entrega por RMA", cargo: d.almacenista_nombre },
-          { rol: "cliente", titulo: "Recibe", cargo: d.cliente_retira || "" },
+          { rol: "cliente", titulo: "Recibe", cargo: recibe },
         ]
       : [
           { rol: "tecnico", titulo: tecnico.nombre, cargo: tecnico.cargo },
           { rol: "almacen", titulo: "Almacén", cargo: d.almacenista_nombre },
           { rol: "seguridad", titulo: "Seguridad de OSC", cargo: "" },
-          { rol: "cliente", titulo: "Recibe", cargo: d.cliente_retira || "" },
+          { rol: "cliente", titulo: "Recibe", cargo: recibe },
         ]
   )
     .map(({ rol, titulo, cargo }) => {
@@ -332,6 +335,10 @@ export async function GET(
     <div class="field">
       <span class="label">Cliente que retira</span>
       <span class="value">${esc(d.cliente_retira) || "&mdash;"}</span>
+    </div>
+    <div class="field">
+      <span class="label">C&eacute;dula de quien retira</span>
+      <span class="value">${esc((d as any).cedula_retira) || "&mdash;"}</span>
     </div>
     <div class="field">
       <span class="label">Accesorios &iacute;ntegros</span>
