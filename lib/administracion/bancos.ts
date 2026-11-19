@@ -1541,16 +1541,24 @@ export async function deshacerLineaVieja(
         return fallas.length ? `No se pudo volver a aplicar ${fallas.join(", ")} a sus facturas: aplícalo en Odoo` : undefined;
       };
 
-      // 1) Soltar los cobros de sus facturas.
-      for (const a of aplicadas) await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [[a.id]], { context: ctx });
-      // 2) Deshacer lo del banco, de a una: primero las que no llevan diferencial (asi el asiento de diferencial
-      //    queda suelto) y al final la que lo lleva, que es cuando Odoo lo revierte.
+      // Romper CUALQUIER conciliacion del cobro hace que la moneda dual reescriba sus apuntes, y Odoo lo rechaza
+      // mientras le quede otra (soltarlo primero de la factura choca con la del banco y al reves: PBANES/2026/00039
+      // con 7460 y 12446, nov-2026). Por eso todas las del cobro se rompen en UNA sola llamada: cuando la moneda dual
+      // escribe, ya no le queda ninguna.
       try {
-        parciales.sort((a, b) => Number(!!a.exchange_move_id) - Number(!!b.exchange_move_id));
-        for (const p of parciales) await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [[p.id]], { context: sinSincronizar });
+        // 1) Las del banco que no llevan diferencial, de a una: el asiento de diferencial queda suelto y Odoo lo
+        //    puede revertir despues.
+        for (const p of parciales.filter((x) => !x.exchange_move_id)) {
+          await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [[p.id]], { context: sinSincronizar });
+        }
+        // 2) Juntas: las del banco que llevan diferencial (Odoo lo revierte) y las del cobro con sus facturas.
+        const juntas = [...parciales.filter((x) => x.exchange_move_id).map((x) => x.id), ...aplicadas.map((a) => a.id)];
+        if (juntas.length) await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [juntas], { context: sinSincronizar });
         await rpc(cuenta.sede, "account.bank.statement.line", "action_undo_reconciliation", [[stLineId]], { context: sinSincronizar });
       } catch (e) {
-        await reaplicar().catch(() => undefined); // dejar el cobro aplicado a sus facturas, como estaba
+        // Si ya se habia soltado de sus facturas, dejarlo aplicado otra vez, como estaba.
+        const siguen = aplicadas.length ? await leer("account.partial.reconcile", [["id", "in", aplicadas.map((a) => a.id)]], ["id"]).catch(() => []) : [];
+        if (aplicadas.length && !siguen.length) await reaplicar().catch(() => undefined);
         throw e;
       }
       // 3) Volver a aplicar los cobros a sus facturas.
