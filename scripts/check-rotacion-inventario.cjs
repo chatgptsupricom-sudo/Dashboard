@@ -84,6 +84,14 @@ assert.strictEqual(grupos[1].porColor.amarillo.referencias, 1);
 assert.deepStrictEqual(margenRemate(100, 20, 90), { costoNeto: 80, margen: 11.1 });
 assert.deepStrictEqual(margenRemate(100, null, null), { costoNeto: 100, margen: null });
 
+// Cuota para salir del rojo en 90 días: ÷ 3 al mes
+const cuota = m.exports.cuotaRojo({ referencias: 4, unidades: 100, valor: 9000 });
+assert.deepStrictEqual(cuota.mensual, { valor: 3000, unidades: 34 });
+assert.deepStrictEqual(cuota.semanal, { valor: 700, unidades: 8 });
+assert.deepStrictEqual(cuota.diaria, { valor: 100, unidades: 2 });
+assert.deepStrictEqual(m.exports.cuotaRojo({ referencias: 1, unidades: 90, valor: 0 }).mensual, { valor: 0, unidades: 30 });
+assert.deepStrictEqual(m.exports.cuotaRojo({ referencias: 0, unidades: 0, valor: 0 }).diaria, { valor: 0, unidades: 0 });
+
 // Marcas sin dueño: no se les pide apoyo
 assert.strictEqual(tieneMarca("NO ASIGNADO"), false);
 assert.strictEqual(tieneMarca("SIN MARCA"), false);

@@ -17,6 +17,8 @@ import {
   INICIO_SEGUIMIENTO,
   LIMITE_AMARILLO,
   LIMITE_VERDE,
+  MESES_PLAN,
+  cuotaRojo,
   etiquetaMes,
   folio,
   nombreSede,
@@ -322,7 +324,7 @@ export default function PantallaRotacion() {
 
       {pestana === "semaforo" && datos && total && (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             {COLORES.map((c) => {
               const celda = total.porColor[c];
               return (
@@ -346,6 +348,7 @@ export default function PantallaRotacion() {
                 </button>
               );
             })}
+            <TarjetaCuotaRojo rojo={total.porColor.rojo} />
           </div>
           <Card>
             <CardContent className="p-4 space-y-2">
@@ -463,6 +466,29 @@ export default function PantallaRotacion() {
   );
 }
 
+/** Lo que está en rojo repartido en el plan de 90 días: la cuota a vender cada mes, semana y día. */
+function TarjetaCuotaRojo({ rojo }: { rojo: GrupoSemaforo["total"] }) {
+  const cuota = cuotaRojo(rojo);
+  return (
+    <div className="rounded-xl border border-red-200 bg-white p-4">
+      <p className="text-xs font-medium flex items-center gap-2 text-red-700">
+        <Luz color="rojo" /> Cuota para salir del rojo · {HORIZONTE_DIAS} días
+      </p>
+      <p className="text-2xl font-bold text-gray-800 mt-1">
+        {usd(cuota.mensual.valor)}
+        <span className="text-sm font-medium text-gray-500"> / mes</span>
+      </p>
+      <p className="text-[11px] text-gray-500 mt-1">
+        {num(cuota.mensual.unidades)} unidades al mes · lo que está en rojo ÷ {MESES_PLAN}
+      </p>
+      <p className="text-[11px] text-gray-500">
+        Semana: {usd(cuota.semanal.valor)} · {num(cuota.semanal.unidades)} u. — Día: {usd(cuota.diaria.valor)} ·{" "}
+        {num(cuota.diaria.unidades)} u.
+      </p>
+    </div>
+  );
+}
+
 function TablaGrupos({ grupos, titulo, abrir }: { grupos: GrupoSemaforo[]; titulo: Agrupar; abrir: (clave: string) => void }) {
   return (
     <div className="overflow-x-auto">
@@ -477,6 +503,9 @@ function TablaGrupos({ grupos, titulo, abrir }: { grupos: GrupoSemaforo[]; titul
                 </span>
               </th>
             ))}
+            <th className="text-right px-3 py-2 font-medium whitespace-nowrap" title={`Lo que está en rojo ÷ ${MESES_PLAN} meses`}>
+              Cuota rojo / mes
+            </th>
             <th className="text-right px-3 py-2 font-medium">Total</th>
             <th className="px-3 py-2 font-medium min-w-[140px]">Mezcla</th>
           </tr>
@@ -497,6 +526,16 @@ function TablaGrupos({ grupos, titulo, abrir }: { grupos: GrupoSemaforo[]; titul
                   )}
                 </td>
               ))}
+              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-red-700">
+                {g.porColor.rojo.referencias ? (
+                  <>
+                    {usd(cuotaRojo(g.porColor.rojo).mensual.valor)}
+                    <span className="block text-[10px] text-slate-400">{num(cuotaRojo(g.porColor.rojo).mensual.unidades)} u.</span>
+                  </>
+                ) : (
+                  <span className="text-slate-300">—</span>
+                )}
+              </td>
               <td className="px-3 py-2 text-right font-semibold tabular-nums whitespace-nowrap">{usd(g.total.valor)}</td>
               <td className="px-3 py-2">
                 <BarraColores porColor={g.porColor} />
@@ -524,7 +563,9 @@ function Reglas() {
         </p>
         <p>
           <b>Semáforo.</b> Verde de 0 a {LIMITE_VERDE} días, amarillo de {LIMITE_VERDE + 1} a {LIMITE_AMARILLO}, rojo más de{" "}
-          {LIMITE_AMARILLO}. Una sola venta lo vuelve a verde: el avance del plan dice si de verdad está rotando.
+          {LIMITE_AMARILLO}. Una sola venta lo vuelve a verde: el avance del plan dice si de verdad está rotando. La cuota para
+          salir del rojo es lo que está en rojo (valor a costo y unidades) ÷ {MESES_PLAN} meses: lo que hay que vender cada mes
+          para salir de él en {HORIZONTE_DIAS} días (semana = ÷ {HORIZONTE_DIAS} × 7; día = ÷ {HORIZONTE_DIAS}).
         </p>
         <p>
           <b>Plan de {HORIZONTE_DIAS} días.</b> Arranca el día que el panel ve el producto con stock (o cuando Compras lo reinicia,
