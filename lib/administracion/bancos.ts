@@ -15,6 +15,7 @@ import {
   armarEstado,
   cruzarBanco,
   cuentaSugerida,
+  emparejarViejas,
   errorPagos,
   errorPeriodo,
   leerFilasExcel,
@@ -23,6 +24,7 @@ import {
   type ComprobanteBanco,
   type EstadoLeido,
   type FilaEstado,
+  type MovPanel,
   type Movimiento,
   type PagoOdoo,
   type VerificacionApi,
@@ -217,38 +219,84 @@ export async function cuentasBancarias(sedes: number[]): Promise<CuentaBanco[]> 
   return cacheCuentas.cuentas.filter((c) => sedes.includes(c.sede));
 }
 
+/** Cuentas de Recibos/Pagos Pendientes del diario (las de sus metodos de pago). */
+async function pendientesDelDiario(cuenta: CuentaBanco): Promise<number[]> {
+  const metodos = await callOdooRPCEstricto<any[]>(
+    "account.payment.method.line",
+    "search_read",
+    [[["journal_id", "=", cuenta.id]]],
+    { fields: ["payment_account_id"], context: { allowed_company_ids: [cuenta.sede] } },
+  );
+  return [...new Set((metodos || []).map((m) => (Array.isArray(m.payment_account_id) ? m.payment_account_id[0] : 0)).filter(Boolean))];
+}
+
 /**
- * Cobros (monto +) y pagos a proveedores (monto -) de Odoo en el diario, sin
- * borradores, anulados ni transferencias internas. `ref` es el Memo del pago:
- * ahi CxC y Administracion escriben la referencia del banco.
+ * Lo que espera su linea del banco en Odoo, en el diario y el periodo:
+ * - cobros (monto +) y pagos (monto -), tambien las transferencias internas
+ *   (cambios de bolivares a Criptos, entre bancos propios), sin borradores ni
+ *   anulados. `ref` es el Memo: ahi CxC y Administracion ponen la referencia del banco.
+ * - asientos contables que dejaron algo sin conciliar en las cuentas de pendientes
+ *   del diario sin ser un pago (devolucion de viaticos, tasa de aduana, intereses,
+ *   un pago por error...). Van con id NEGATIVO (= -id del apunte, account.move.line)
+ *   para no chocar con los ids de account.payment.
  */
 async function pagosOdoo(cuenta: CuentaBanco, desde: string, hasta: string): Promise<PagoOdoo[]> {
-  const pagos = await callOdooRPCEstricto<any[]>(
-    "account.payment",
-    "search_read",
-    [
+  const ctx = { allowed_company_ids: [cuenta.sede] };
+  const [pagos, pendientes] = await Promise.all([
+    callOdooRPCEstricto<any[]>(
+      "account.payment",
+      "search_read",
       [
-        ["journal_id", "=", cuenta.id],
-        ["state", "not in", ["draft", "cancel"]],
-        ["is_internal_transfer", "=", false],
-        ["date", ">=", desde],
-        ["date", "<=", hasta],
+        [
+          ["journal_id", "=", cuenta.id],
+          ["state", "not in", ["draft", "cancel"]],
+          ["date", ">=", desde],
+          ["date", "<=", hasta],
+        ],
       ],
-    ],
-    {
-      fields: ["name", "date", "amount", "payment_type", "partner_id", "ref", "is_matched"],
-      context: { allowed_company_ids: [cuenta.sede] },
-    },
-  );
-  return (pagos || []).map((p) => ({
-    id: p.id,
-    nombre: String(p.name || ""),
-    fecha: String(p.date),
-    monto: (Number(p.amount) || 0) * (p.payment_type === "outbound" ? -1 : 1),
-    cliente: Array.isArray(p.partner_id) ? String(p.partner_id[1]) : "",
-    ref: String(p.ref || ""),
-    conciliado: !!p.is_matched,
-  }));
+      { fields: ["name", "date", "amount", "payment_type", "partner_id", "ref", "is_matched"], context: ctx },
+    ),
+    pendientesDelDiario(cuenta),
+  ]);
+  const apuntes = pendientes.length
+    ? await callOdooRPCEstricto<any[]>(
+        "account.move.line",
+        "search_read",
+        [
+          [
+            ["account_id", "in", pendientes],
+            ["parent_state", "=", "posted"],
+            ["reconciled", "=", false],
+            ["payment_id", "=", false],
+            ["statement_line_id", "=", false],
+            ["amount_currency", "!=", 0],
+            ["date", ">=", desde],
+            ["date", "<=", hasta],
+          ],
+        ],
+        { fields: ["move_id", "date", "amount_currency", "partner_id", "name", "ref"], context: ctx },
+      )
+    : [];
+  return [
+    ...(pagos || []).map((p) => ({
+      id: p.id,
+      nombre: String(p.name || ""),
+      fecha: String(p.date),
+      monto: (Number(p.amount) || 0) * (p.payment_type === "outbound" ? -1 : 1),
+      cliente: Array.isArray(p.partner_id) ? String(p.partner_id[1]) : "",
+      ref: String(p.ref || ""),
+      conciliado: !!p.is_matched,
+    })),
+    ...(apuntes || []).map((a) => ({
+      id: -a.id,
+      nombre: Array.isArray(a.move_id) ? String(a.move_id[1]) : "",
+      fecha: String(a.date),
+      monto: Number(a.amount_currency) || 0,
+      cliente: Array.isArray(a.partner_id) ? String(a.partner_id[1]) : String(a.name || ""),
+      ref: String(a.ref || a.name || ""),
+      conciliado: false,
+    })),
+  ];
 }
 
 // ---------- Estado de cuenta ----------
@@ -1052,12 +1100,32 @@ export async function conciliarEnOdoo(
   let tasa: number | null = null;
   if (destino.tipo === "pagos") {
     const ids = [...new Set(destino.pagos)];
-    const pagos = await leer(
-      "account.payment",
-      [["id", "in", ids]],
-      ["name", "journal_id", "state", "payment_type", "outstanding_account_id", "partner_id", "move_id"],
-    );
-    if (pagos.length !== ids.length) return { error: "Uno de los pagos no existe en Odoo" };
+    // id negativo = apunte de un asiento contable en las cuentas de pendientes (ver pagosOdoo).
+    const idsPago = ids.filter((i) => i > 0);
+    const idsApunte = ids.filter((i) => i < 0).map((i) => -i);
+    const pagos = idsPago.length
+      ? await leer(
+          "account.payment",
+          [["id", "in", idsPago]],
+          ["name", "journal_id", "state", "payment_type", "outstanding_account_id", "partner_id", "move_id"],
+        )
+      : [];
+    if (pagos.length !== idsPago.length) return { error: "Uno de los pagos no existe en Odoo" };
+    const campos = ["amount_residual_currency", "amount_currency", "balance", "move_id", "account_id", "partner_id", "parent_state", "reconciled"];
+    const apuntes = idsApunte.length ? await leer("account.move.line", [["id", "in", idsApunte]], campos) : [];
+    if (apuntes.length !== idsApunte.length) return { error: "Uno de los asientos no existe en Odoo" };
+    if (apuntes.length) {
+      const pendientes = new Set(await pendientesDelDiario(cuenta));
+      for (const a of apuntes) {
+        const nombre = a.move_id?.[1] || `apunte ${a.id}`;
+        if (!pendientes.has(a.account_id?.[0])) return { error: `${nombre} no está en una cuenta de pendientes de este banco` };
+        if (a.parent_state !== "posted") return { error: `${nombre} no está publicado en Odoo` };
+        if (a.reconciled) return { error: `${nombre} ya está conciliado en Odoo` };
+        if (Number(a.amount_currency) > 0 !== monto > 0) {
+          return { error: `${nombre} es una ${Number(a.amount_currency) > 0 ? "entrada" : "salida"} y el movimiento es una ${monto > 0 ? "entrada" : "salida"}` };
+        }
+      }
+    }
     for (const p of pagos) {
       if (!Array.isArray(p.journal_id) || p.journal_id[0] !== cuenta.id) return { error: `${p.name} es de otro diario` };
       if (p.state !== "posted") return { error: `${p.name} no está confirmado en Odoo` };
@@ -1066,17 +1134,18 @@ export async function conciliarEnOdoo(
       }
       if (!Array.isArray(p.outstanding_account_id)) return { error: `${p.name} no tiene cuenta de pagos pendientes` };
     }
-    const cuentasPend = new Set(pagos.map((p) => p.outstanding_account_id[0]));
-    if (cuentasPend.size > 1) return { error: "Los pagos elegidos usan cuentas de pendientes distintas: concílialos por separado" };
-    cuentaId = pagos[0].outstanding_account_id[0];
-    const partners = new Set(pagos.map((p) => (Array.isArray(p.partner_id) ? p.partner_id[0] : 0)));
-    partnerId = partners.size === 1 ? [...partners][0] || null : null;
-    const lineas = await leer(
-      "account.move.line",
-      [["move_id", "in", pagos.map((p) => p.move_id[0])], ["account_id", "=", cuentaId]],
-      ["amount_residual_currency", "amount_currency", "balance", "move_id"],
+    const cuentasPend = new Set([...pagos.map((p) => p.outstanding_account_id[0]), ...apuntes.map((a) => a.account_id[0])]);
+    if (cuentasPend.size > 1) return { error: "Lo elegido usa cuentas de pendientes distintas: concílialo por separado" };
+    cuentaId = [...cuentasPend][0];
+    const partners = new Set(
+      [...pagos, ...apuntes].map((p) => (Array.isArray(p.partner_id) ? p.partner_id[0] : 0)),
     );
-    if (lineas.length !== pagos.length) return { error: "No se encontró la línea de algún pago en la cuenta de pagos pendientes" };
+    partnerId = partners.size === 1 ? [...partners][0] || null : null;
+    const lineasPagos = pagos.length
+      ? await leer("account.move.line", [["move_id", "in", pagos.map((p) => p.move_id[0])], ["account_id", "=", cuentaId]], campos)
+      : [];
+    if (lineasPagos.length !== pagos.length) return { error: "No se encontró la línea de algún pago en la cuenta de pagos pendientes" };
+    const lineas = [...lineasPagos, ...apuntes];
     lineasPago = lineas.map((l) => l.id);
     if (enBolivares) {
       const bs = lineas.reduce((t, l) => t + Math.abs(Number(l.amount_currency) || 0), 0);
@@ -1084,7 +1153,7 @@ export async function conciliarEnOdoo(
       tasa = usd > 0 ? bs / usd : null;
     }
     errorPendiente = errorPagos(monto, lineas.map((l) => Math.abs(Number(l.amount_residual_currency) || 0)));
-    detalle = pagos.map((p) => p.name).join(", ");
+    detalle = [...pagos.map((p) => p.name), ...apuntes.map((a) => a.move_id?.[1] || "")].join(", ");
   } else if (destino.tipo === "cuenta") {
     const c = (await cuentasContables(cuenta.sede)).find((x) => x.id === destino.cuentaId);
     if (!c) return { error: "Esa cuenta contable no es de la sede o no se puede usar de contrapartida" };
@@ -1270,8 +1339,10 @@ export type LineaVieja = {
   diferencial: number;
   /** Asientos de diferencial cambiario de su conciliacion. */
   asientosDiferencial: number[];
-  /** El estado de cuenta del panel tiene ese movimiento (mismo dia y monto): se puede rehacer desde el panel. */
+  /** El estado de cuenta del panel tiene ese movimiento: se puede rehacer desde el panel. */
   enPanel: boolean;
+  /** El movimiento del panel que le corresponde (`emparejarViejas`: puede tener el monto distinto si Odoo lo tiene mal cargado). */
+  movPanel: MovPanel | null;
 };
 
 /**
@@ -1310,11 +1381,16 @@ export async function lineasViejasOdoo(cuenta: CuentaBanco, inicio: string, fin:
   for (const a of difApuntes) difPorAsiento.set(a.move_id[0], (difPorAsiento.get(a.move_id[0]) || 0) - Number(a.balance || 0));
   const fullDif = new Map(fulls.map((f) => [f.id, f.exchange_move_id?.[0]]));
 
+  // Con 3 dias de margen: una linea mal cargada se empareja tambien por referencia en dias cercanos.
   const { rows } = await query(
-    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, monto FROM banco_movimientos WHERE journal_id = ? AND fecha BETWEEN ? AND ?`,
+    `SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, monto, referencia FROM banco_movimientos
+      WHERE journal_id = ? AND fecha BETWEEN DATE_SUB(?, INTERVAL 3 DAY) AND DATE_ADD(?, INTERVAL 3 DAY)`,
     [cuenta.id, inicio, fin],
   );
-  const enPanel = new Set(rows.map((r: any) => `${r.fecha}|${Number(r.monto).toFixed(2)}`));
+  const delPanel = emparejarViejas(
+    lineas.map((l) => ({ id: l.id, fecha: String(l.date), monto: Number(l.amount) || 0, ref: String(l.payment_ref || "") })),
+    rows.map((r: any) => ({ fecha: r.fecha, monto: Number(r.monto), referencia: String(r.referencia || "") })),
+  );
 
   return lineas.map((l) => {
     const moveId = l.move_id[0];
@@ -1343,7 +1419,8 @@ export async function lineasViejasOdoo(cuenta: CuentaBanco, inicio: string, fin:
       contra,
       diferencial: Math.round(diferencial * 100) / 100,
       asientosDiferencial: [...difs],
-      enPanel: enPanel.has(`${l.date}|${monto.toFixed(2)}`),
+      enPanel: delPanel.has(l.id),
+      movPanel: delPanel.get(l.id) ?? null,
     };
   });
 }
@@ -1377,14 +1454,9 @@ export async function deshacerLineaVieja(
   if (!linea) return { error: "Esa línea no existe en Odoo o es de otro diario" };
   if (String(linea.unique_import_id || "").startsWith("panel-")) return { error: "Esa línea la creó el panel: deshazla en Odoo" };
   const monto = Number(linea.amount) || 0;
-  const { rows } = await query("SELECT 1 FROM banco_movimientos WHERE journal_id = ? AND fecha = ? AND ABS(monto - ?) < 0.005 LIMIT 1", [
-    cuenta.id,
-    linea.date,
-    monto,
-  ]);
-  if (!rows.length) return { error: `Primero sube el estado de cuenta del ${linea.date}: si se borra sin él, no se puede rehacer desde el panel` };
   const viejas = await lineasViejasOdoo(cuenta, String(linea.date), String(linea.date));
   const info = viejas.find((v) => v.id === stLineId);
+  if (!info?.enPanel) return { error: `Primero sube el estado de cuenta del ${linea.date}: si se borra sin él, no se puede rehacer desde el panel` };
   const difs = info?.asientosDiferencial || [];
   let avisoDif: string | undefined;
   let modoHecho = diferencialModo;
