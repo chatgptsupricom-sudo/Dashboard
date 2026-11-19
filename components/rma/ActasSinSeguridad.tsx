@@ -16,6 +16,7 @@ import { CheckRow, FirmaCampo, PersonaSelect, type Persona } from "@/components/
 import { SignaturePad } from "@/components/seguridad/SignaturePad";
 import { NOMBRES_SUCURSAL } from "@/lib/servicio-tecnico/sucursales";
 import { fechaCorta } from "@/components/rma/estados";
+import { MAX_CEDULA, cedulaValida } from "@/lib/seguridad/cedulaRetira";
 
 /**
  * Recepción y entrega del equipo en una sede sin Seguridad
@@ -50,6 +51,7 @@ export type ActasCaso = {
     nd_numero: string | null;
     fecha_despacho: string;
     cliente_retira: string | null;
+    cedula_retira?: string | null;
     almacenista_nombre: string | null;
     created_at: string;
   }[];
@@ -188,6 +190,7 @@ export default function ActasSinSeguridad({ caso, items, actas, onCambio, onAdju
               <span>
                 Entregado el {fechaCorta(d.fecha_despacho)}
                 {d.cliente_retira ? ` a ${d.cliente_retira}` : ""}
+                {d.cedula_retira ? ` (C.I. ${d.cedula_retira})` : ""}
                 {d.almacenista_nombre ? ` · por ${d.almacenista_nombre}` : ""}
               </span>
               <a
@@ -581,6 +584,7 @@ function DialogoEntrega({
   );
   const [agencia, setAgencia] = useState<string>(caso.entrega_agencia || "");
   const [retira, setRetira] = useState<string>(salePor === "sucursal" ? caso.client_name || "" : "");
+  const [cedula, setCedula] = useState("");
   const [firmaCliente, setFirmaCliente] = useState<string | null>(null);
   const [entrega, setEntrega] = useState("");
   const [firmaRma, setFirmaRma] = useState<string | null>(null);
@@ -594,6 +598,7 @@ function DialogoEntrega({
     if (accesorios === null) faltan.push("responde si los accesorios están íntegros");
     if (salePor === "agencia" && !agencia.trim()) faltan.push("la agencia");
     if (!retira.trim()) faltan.push(salePor === "sucursal" ? "quién retira" : "quién se lleva el equipo");
+    if (!cedulaValida(cedula)) faltan.push("la cédula de quien se lleva el equipo");
     if (!firmaCliente) faltan.push("la firma de quien retira");
     if (!entrega.trim()) faltan.push("quién entrega por RMA");
     if (!firmaRma) faltan.push("la firma de RMA");
@@ -609,6 +614,7 @@ function DialogoEntrega({
       sale_por: salePor,
       agencia: salePor === "agencia" ? agencia.trim() : null,
       cliente_retira: retira.trim(),
+      cedula_retira: cedula.trim(),
       accesorios_integros: accesorios,
       observaciones: observaciones.trim() || null,
       firmas: {
@@ -664,6 +670,7 @@ function DialogoEntrega({
               onChange={(v) => {
                 setSalePor(v);
                 setRetira(v === "sucursal" ? caso.client_name || "" : "");
+                setCedula("");
               }}
               opciones={[
                 ["sucursal", "Lo retira el cliente"],
@@ -693,6 +700,18 @@ function DialogoEntrega({
                   <span className="text-red-500">*</span>
                 </label>
                 <input className={campo} value={retira} onChange={(e) => setRetira(e.target.value.slice(0, 175))} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Cédula <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className={`${campo} font-mono`}
+                  value={cedula}
+                  placeholder="V-12345678"
+                  autoComplete="off"
+                  onChange={(e) => setCedula(e.target.value.toUpperCase().slice(0, MAX_CEDULA))}
+                />
               </div>
               <FirmaCampo
                 etiqueta={salePor === "sucursal" ? "Firma de quien retira" : "Firma de quien se lo lleva"}

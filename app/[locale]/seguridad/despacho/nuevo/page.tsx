@@ -14,6 +14,7 @@ import {
   type RolFirmaDespacho,
 } from "@/lib/seguridad/despachoFirmas";
 import { fechaCorta } from "@/lib/seguridad/formato";
+import { MAX_CEDULA, cedulaValida } from "@/lib/seguridad/cedulaRetira";
 
 function todayISO() {
   const d = new Date();
@@ -101,6 +102,7 @@ export default function NuevoDespachoPage() {
   const [accesorios, setAccesorios] = useState<boolean | null>(null);
   const [observaciones, setObservaciones] = useState("");
   const [clienteRetira, setClienteRetira] = useState("");
+  const [cedulaRetira, setCedulaRetira] = useState("");
   const [firmas, setFirmas] = useState<Partial<Record<RolFirmaDespacho, Firma>>>({});
   const setFirma = (rol: RolFirmaDespacho, cambios: Partial<Firma>) =>
     setFirmas((prev) => ({ ...prev, [rol]: { nombre: "", data: null, ...prev[rol], ...cambios } }));
@@ -152,6 +154,7 @@ export default function NuevoDespachoPage() {
     setSalen([]);
     setFirmas({});
     setClienteRetira("");
+    setCedulaRetira("");
     setError(null);
     if (!id) return;
     setCargandoDetalle(true);
@@ -202,6 +205,10 @@ export default function NuevoDespachoPage() {
       setError(tf("error_cliente_retira"));
       return;
     }
+    if (!cedulaValida(cedulaRetira)) {
+      setError(tf("error_cedula_retira"));
+      return;
+    }
     const faltan = requeridas.filter((r) => {
       const f = firmas[r.rol];
       return !f?.data || (r.rol !== "cliente" && !f.nombre);
@@ -218,6 +225,7 @@ export default function NuevoDespachoPage() {
       accesorios_integros: accesorios,
       observaciones: observaciones.trim().slice(0, 5000) || undefined,
       cliente_retira: clienteRetira.trim().slice(0, 200),
+      cedula_retira: cedulaRetira.trim(),
       firmas: Object.fromEntries(
         requeridas.map((r) => [
           r.rol,
@@ -374,16 +382,30 @@ export default function NuevoDespachoPage() {
                     <Dato etiqueta={tfi("field_serial")} valor={detalle.ingreso.serial || "—"} mono />
                   </>
                 )}
-                <div className="sm:col-span-2">
+                <div>
                   <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-1">
                     {tf("field_cliente_retira")} <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={clienteRetira}
-                    onChange={(e) => setClienteRetira(e.target.value.slice(0, 200))}
+                    onChange={(e) => setClienteRetira(e.target.value.slice(0, 175))}
                     placeholder={tf("cliente_retira_placeholder")}
                     className="w-full h-11 px-3 border border-violet-300 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-1">
+                    {tf("field_cedula_retira")} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="text"
+                    autoComplete="off"
+                    value={cedulaRetira}
+                    onChange={(e) => setCedulaRetira(e.target.value.toUpperCase().slice(0, MAX_CEDULA))}
+                    placeholder={tf("cedula_retira_placeholder")}
+                    className="w-full h-11 px-3 border border-violet-300 rounded-[10px] text-sm font-mono bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
                   />
                 </div>
                 <div>
@@ -488,6 +510,9 @@ export default function NuevoDespachoPage() {
                         <p className="block text-xs font-semibold text-slate-600 mb-1.5">{tf("field_cliente_retira")}</p>
                         <p className="h-11 px-3 flex items-center rounded-[10px] bg-slate-50 border border-slate-100 text-sm text-slate-800 truncate">
                           {clienteRetira.trim() || <span className="text-slate-400">{tf("cliente_retira_arriba")}</span>}
+                          {clienteRetira.trim() && cedulaRetira.trim() && (
+                            <span className="ml-1 font-mono text-xs text-slate-500">· C.I. {cedulaRetira.trim()}</span>
+                          )}
                         </p>
                       </div>
                     ) : (

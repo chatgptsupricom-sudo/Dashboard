@@ -29,6 +29,7 @@ type Despacho = {
   fecha_despacho: string;
   almacenista_nombre: string;
   cliente_retira: string | null;
+  cedula_retira?: string | null;
   facturas_json: string | null;
   firma_url: string | null;
   promedio_calificacion: number | null;
@@ -328,6 +329,9 @@ export default function DespachoListPage() {
                             <div className="truncate max-w-[200px]">
                               {d.cliente_retira || "—"}
                             </div>
+                            {d.cedula_retira && (
+                              <div className="font-mono text-[11px] font-normal text-slate-500">C.I. {d.cedula_retira}</div>
+                            )}
                             <div className="md:hidden text-[11px] text-slate-500 truncate max-w-[200px]">
                               {d.almacenista_nombre}
                             </div>

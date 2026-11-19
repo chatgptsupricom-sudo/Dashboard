@@ -559,7 +559,10 @@ export function DetalleCasoRma() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     <Dato etiqueta={t("fecha")} valor={fechaCorta(d.fecha_despacho)} />
                     <Dato etiqueta={t("entrego")} valor={d.almacenista_nombre} />
-                    <Dato etiqueta={t("retiro")} valor={d.cliente_retira} />
+                    <Dato
+                      etiqueta={t("retiro")}
+                      valor={d.cliente_retira && d.cedula_retira ? `${d.cliente_retira} · C.I. ${d.cedula_retira}` : d.cliente_retira}
+                    />
                   </div>
                   <SiNo valor={d.accesorios_integros} si={t("accesorios_ok")} no={t("accesorios_no")} />
                   {d.observaciones && <p className="text-xs text-slate-600">{d.observaciones}</p>}
