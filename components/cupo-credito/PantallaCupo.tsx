@@ -561,7 +561,7 @@ function HistoricoCupo({ sede, alta, soloCartera }: { sede: string; alta: number
         </button>
       ),
     },
-    { clave: "usoInicio", titulo: "Uso al inicio", tipo: "porcentaje" },
+    { clave: "usoInicio", titulo: "Uso al inicio", tipo: "porcentaje", mostrar: (v) => pct(v.usoInicio) },
     { clave: "usoFin", titulo: "Uso al final", tipo: "porcentaje", mostrar: (v) => <BarraUso usoPct={v.usoFin} alta={alta} />, excel: (v) => v.usoFin },
     {
       clave: "cambioPts",
@@ -574,7 +574,7 @@ function HistoricoCupo({ sede, alta, soloCartera }: { sede: string; alta: number
           </span>
         ),
     },
-    { clave: "usoPromedio", titulo: "Uso promedio", tipo: "porcentaje" },
+    { clave: "usoPromedio", titulo: "Uso promedio", tipo: "porcentaje", mostrar: (v) => pct(v.usoPromedio) },
     { clave: "limiteFin", titulo: "Cupo al final", tipo: "dinero", sumar: true },
     { clave: "usadoFin", titulo: "Usado al final", tipo: "dinero", sumar: true },
     { clave: "excedidosFin", titulo: "Excedidos al final", tipo: "numero", sumar: true },
