@@ -1479,16 +1479,26 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
   const enSemanaHuellas = new Set(movs.rows.map((r: any) => r.huella));
   const filasConc = concs.rows.filter((r: any) => enSemanaHuellas.has(r.huella));
   const idsLinea = filasConc.map((r: any) => Number(r.st_line_id));
-  // id de la linea -> si ya esta conciliada (una "sin conciliar" pudo terminarse en Odoo).
-  const vivas = new Map<number, boolean>(
+  // id de la linea -> si ya esta conciliada (una "sin conciliar" pudo terminarse en Odoo) y su asiento.
+  const vivas = new Map<number, { conciliada: boolean; asientoId: number; asiento: string }>(
     idsLinea.length
       ? ((await callOdooRPCEstricto<any[]>("account.bank.statement.line", "search_read", [[["id", "in", idsLinea]]], {
-          fields: ["is_reconciled"],
+          fields: ["is_reconciled", "move_id"],
           context: { allowed_company_ids: [cuenta.sede] },
-        })) || []).map((l) => [l.id, !!l.is_reconciled])
+        })) || []).map((l) => [
+          l.id,
+          {
+            conciliada: !!l.is_reconciled,
+            asientoId: Array.isArray(l.move_id) ? Number(l.move_id[0]) : 0,
+            asiento: Array.isArray(l.move_id) ? String(l.move_id[1]) : "",
+          },
+        ])
       : [],
   );
-  const conciliadoEnOdoo = new Map<string, { stLineId: number; detalle: string; conciliada: boolean; por: string; el: string }>(
+  const conciliadoEnOdoo = new Map<
+    string,
+    { stLineId: number; asientoId: number; asiento: string; detalle: string; conciliada: boolean; por: string; el: string }
+  >(
     filasConc
       .filter((r: any) => vivas.has(Number(r.st_line_id)))
       .map((r: any) => [
@@ -1496,7 +1506,7 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
         {
           stLineId: Number(r.st_line_id),
           detalle: String(r.detalle || ""),
-          conciliada: vivas.get(Number(r.st_line_id))!,
+          ...vivas.get(Number(r.st_line_id))!,
           por: r.aprobado_por,
           el: new Date(r.created_at).toISOString(),
         },
