@@ -1511,12 +1511,30 @@ export async function deshacerLineaVieja(
       /** Vuelve a aplicar cada cobro a sus facturas si sus montos no cambiaron. Devuelve el aviso, si hay. */
       const reaplicar = async (): Promise<string | undefined> => {
         if (!aplicadas.length) return undefined;
-        const ahora = await leer("account.move.line", [["move_id", "in", movesPago]], camposPago);
-        const despues = sumas(ahora);
-        const cambio = [...antes].find(([k, v]) => {
-          const d = despues.get(k);
-          return !d || Math.abs(d.balance - v.balance) > 0.005 || Math.abs(d.moneda - v.moneda) > 0.005;
-        });
+        const cambiado = (lineas: any[]) => {
+          const despues = sumas(lineas);
+          return [...antes].some(([k, v]) => {
+            const d = despues.get(k);
+            return !d || Math.abs(d.balance - v.balance) > 0.005 || Math.abs(d.moneda - v.moneda) > 0.005;
+          });
+        };
+        let ahora = await leer("account.move.line", [["move_id", "in", movesPago]], camposPago);
+        if (cambiado(ahora)) {
+          // La moneda dual rehizo los apuntes del pago a la BCV del dia aunque el pago tiene su tasa acordada
+          // (PBANES/2026/00039: $1.476,19 a 630 paso a $1.909,18 a 487,12, nov-2026; el pago seguia diciendo 630).
+          // Pasarlo a borrador y confirmarlo de nuevo rehace los apuntes con la tasa del pago.
+          const pagos = await leer("account.payment", [["move_id", "in", movesPago]], ["id"]);
+          try {
+            for (const p of pagos) {
+              await rpc(cuenta.sede, "account.payment", "action_draft", [[p.id]], { context: ctx });
+              await rpc(cuenta.sede, "account.payment", "action_post", [[p.id]], { context: ctx });
+            }
+          } catch {
+            // se avisa abajo con el monto como quedo
+          }
+          ahora = await leer("account.move.line", [["move_id", "in", movesPago]], camposPago);
+        }
+        const cambio = cambiado(ahora);
         const nombres = [...new Set(aplicadas.map((a) => a.nombre))].join(", ");
         if (cambio) {
           return `${nombres} cambió de monto al deshacer y no se volvió a aplicar a sus facturas (quedaría un diferencial): revísalo en Odoo y aplícalo a mano`;
