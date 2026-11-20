@@ -148,6 +148,8 @@ export const SECCIONES: Record<string, Seccion> = {
   compras: { area: "Compras", nombre: "Compras", detalle: "los reportes de Compras" },
   sugeridos: { area: "Compras", nombre: "Sugerencia de compras", detalle: "qué comprar según lo que se vende y lo que hay" },
   moq: { area: "Compras", nombre: "MOQ", detalle: "cantidades mínimas de compra" },
+  validar_factura: { area: "Compras", nombre: "Validar factura", detalle: "ver qué productos de una factura de compra no están en Odoo y crearlos" },
+  actualizacion_precios: { area: "Compras", nombre: "Actualización de precios", detalle: "poner el precio definitivo del Excel en las listas de precios de Odoo" },
   menor_rotacion: { area: "Compras", nombre: "Menor rotación", detalle: "los productos que menos se venden" },
   mayor_rotacion: { area: "Compras", nombre: "Mayor rotación", detalle: "los productos que más se venden y su riesgo de quiebre" },
   cobertura: { area: "Compras", nombre: "Cobertura", detalle: "para cuántos días alcanza el inventario" },

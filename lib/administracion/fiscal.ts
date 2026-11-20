@@ -6,6 +6,7 @@ import {
   leerTodo,
   nombreM2o,
   redondear,
+  sumarDias,
 } from "@/lib/administracion/lectura";
 import { empresaDeCompanyId } from "@/lib/administracion/empresas";
 
@@ -153,6 +154,11 @@ export interface DatosFiscal {
   aplicaVenezuela: boolean;
   aplicaPanama: boolean;
   impuestos: ImpuestoMes[];
+  comprobantesVentas: Comprobante[];
+  retencionesVentas: Record<"iva" | "islr", ResumenRetenciones>;
+  detalleImpuestos: { id: number; numero: string; sede: string; fecha: string; contacto: string; impuesto: string; tasa: number; base: number; monto: number; ventas: boolean; nc: boolean; iva: boolean }[];
+  notasCreditoEmitidas: { id: number; numero: string; cliente: string; sede: string; registro: string; fechaDocumento: string; total: number }[];
+  corte: string;
   retencionesIva: ResumenRetenciones;
   retencionesIslr: ResumenRetenciones;
   retencionesItbms: ResumenRetenciones;
@@ -171,6 +177,7 @@ export interface DatosFiscal {
     cobradoFacturasMes: number;
   }[];
   documentos: ConteoDocumentos[];
+  ventasDetalle: { id: number; numero: string; fecha: string; cliente: string; sede: string; fiscal: boolean; total: number; igtf: number }[];
   compras: CompraDelMes[];
   clasesRetencionIva: ClaseRetencionIva[];
   clasesRetencionIslr: ClaseRetencionIslr[];
@@ -248,26 +255,34 @@ export async function fetchFiscal(
 ): Promise<DatosFiscal> {
   const ve = companyIds.filter((id) => SEDES_VE.includes(id));
   const pa = companyIds.filter((id) => id === SEDE_PA);
+  const diaSiguiente = sumarDias(hasta, 1);
+  // Odoo guarda create_date en UTC. La medianoche de Venezuela es 04:00 UTC y la de Panamá 05:00.
+  function periodoDocumentos(prefijo: "" | "move_id.") {
+    const campo = (nombre: string) => prefijo + nombre;
+    const rangoNC = (sedes: number[], hora: string) => [
+      "&", "&", [campo("company_id"), "in", sedes],
+      [campo("create_date"), ">=", desde + " " + hora], [campo("create_date"), "<", diaSiguiente + " " + hora],
+    ];
+    return [
+      "|", "&", "&", [campo("move_type"), "in", ["in_invoice", "out_invoice", "in_refund"]],
+      [campo("invoice_date"), ">=", desde], [campo("invoice_date"), "<=", hasta],
+      "&", [campo("move_type"), "=", "out_refund"], "|", ...rangoNC(ve, "04:00:00"), ...rangoNC(pa, "05:00:00"),
+    ];
+  }
+  const fechaPeriodo = (m: any): string => {
+    if (m.move_type !== "out_refund") return m.invoice_date;
+    const zona = idM2o(m.company_id) === SEDE_PA ? "America/Panama" : "America/Caracas";
+    return new Date(m.create_date.replace(" ", "T") + "Z").toLocaleDateString("sv-SE", { timeZone: zona });
+  };
   const vacio = Promise.resolve([] as any[]);
-  const lineasImpuestoDelMes = (tipos: string[]) => [
-    ["company_id", "in", companyIds],
-    ["parent_state", "=", "posted"],
-    ["display_type", "=", "tax"],
-    ["move_id.move_type", "in", tipos],
-    ["move_id.invoice_date", ">=", desde],
-    ["move_id.invoice_date", "<=", hasta],
-  ];
 
   const [
-    impuestoVentas,
-    impuestoCompras,
     ivaMes,
     islrMes,
     ivaPendientes,
     islrPendientes,
     itbmsMes,
     itbmsPendientes,
-    sinRetencion,
     libros,
     companias,
     documentosMes,
@@ -276,22 +291,19 @@ export async function fetchFiscal(
     impuestosOdoo,
     tasasUsd,
   ] = await Promise.all([
-    // Por impuesto, para dejar fuera el IGTF y la retencion de ITBMS.
-    agrupar("account.move.line", lineasImpuestoDelMes(["out_invoice", "out_refund"]), ["balance:sum"], ["company_id", "tax_line_id"], companyIds),
-    agrupar("account.move.line", lineasImpuestoDelMes(["in_invoice", "in_refund"]), ["balance:sum"], ["company_id", "tax_line_id"], companyIds),
     ve.length
       ? leerTodo(
           "account.wh.iva",
-          [["company_id", "in", ve], ["type", "=", "in_invoice"], ["date", ">=", desde], ["date", "<=", hasta]],
-          ["name", "number", "partner_id", "company_id", "date", "state", "total_tax_ret", "currency_id", "create_date"],
+          [["company_id", "in", ve], ["type", "in", ["in_invoice", "out_invoice", "out_debit", "out_refund"]], ["date", ">=", desde], ["date", "<=", hasta]],
+          ["type", "name", "number", "partner_id", "company_id", "date", "state", "total_tax_ret", "currency_id", "create_date"],
           ve,
         )
       : vacio,
     ve.length
       ? leerTodo(
           "account.wh.islr.doc",
-          [["company_id", "in", ve], ["type", "=", "in_invoice"], ["date_ret", ">=", desde], ["date_ret", "<=", hasta]],
-          ["name", "number", "partner_id", "company_id", "date_ret", "state", "amount_total_ret", "currency_id", "create_date"],
+          [["company_id", "in", ve], ["type", "in", ["in_invoice", "out_invoice", "out_refund"]], ["date_ret", ">=", desde], ["date_ret", "<=", hasta]],
+          ["type", "name", "number", "partner_id", "company_id", "date_ret", "state", "amount_total_ret", "currency_id", "create_date"],
           ve,
         )
       : vacio,
@@ -329,22 +341,6 @@ export async function fetchFiscal(
           pa,
         )
       : vacio,
-    ve.length
-      ? leerTodo(
-          "account.move",
-          [
-            ["company_id", "in", ve],
-            ["move_type", "=", "in_invoice"],
-            ["state", "=", "posted"],
-            ["invoice_date", ">=", desde],
-            ["invoice_date", "<=", hasta],
-            ["amount_tax_signed", "!=", 0],
-            ["wh_iva_id", "=", false],
-          ],
-          ["name", "ref", "partner_id", "company_id", "invoice_date", "amount_tax_signed"],
-          ve,
-        )
-      : vacio,
     // Los libros sin fechas ("Este mes", oct-2026 Caracas) se ubican despues por create_date.
     ve.length
       ? leerTodo(
@@ -365,68 +361,56 @@ export async function fetchFiscal(
     ve.length
       ? leerTodo("res.company", [["id", "in", ve]], ["account_credit_wh_igtf_id"], ve)
       : vacio,
-    ve.length
-      ? leerTodo(
+    leerTodo(
           "account.move",
           [
-            ["company_id", "in", ve],
-            ["move_type", "in", ["out_invoice", "out_refund", "in_invoice", "in_refund"]],
+            ["company_id", "in", companyIds],
             ["state", "=", "posted"],
-            ["invoice_date", ">=", desde],
-            ["invoice_date", "<=", hasta],
+            ...periodoDocumentos(""),
           ],
-          ["name", "ref", "nro_ctrl", "partner_id", "company_id", "move_type", "invoice_date",
+          ["name", "ref", "nro_ctrl", "partner_id", "company_id", "move_type", "invoice_date", "create_date",
             "amount_total_signed", "wh_iva_id", "islr_wh_doc_id"],
-          ve,
-        )
-      : vacio,
+          companyIds,
+        ),
     // Base de cada documento por impuesto de linea (tax_ids es many2many: una
     // linea con IVA + IGTF sale en los dos grupos; el de IGTF no se usa).
-    ve.length
-      ? agrupar(
+    agrupar(
           "account.move.line",
           [
-            ["company_id", "in", ve],
+            ["company_id", "in", companyIds],
             ["parent_state", "=", "posted"],
             ["display_type", "=", "product"],
-            ["move_id.move_type", "in", ["out_invoice", "out_refund", "in_invoice", "in_refund"]],
-            ["move_id.invoice_date", ">=", desde],
-            ["move_id.invoice_date", "<=", hasta],
+            ...periodoDocumentos("move_id."),
           ],
           ["balance:sum"],
           ["move_id", "tax_ids"],
-          ve,
-        )
-      : vacio,
+          companyIds,
+        ),
     // Impuesto de cada documento en USD (balance = moneda de la empresa).
-    ve.length
-      ? agrupar(
+    agrupar(
           "account.move.line",
           [
-            ["company_id", "in", ve],
+            ["company_id", "in", companyIds],
             ["parent_state", "=", "posted"],
             ["display_type", "=", "tax"],
-            ["move_id.move_type", "in", ["out_invoice", "out_refund", "in_invoice", "in_refund"]],
-            ["move_id.invoice_date", ">=", desde],
-            ["move_id.invoice_date", "<=", hasta],
+            ...periodoDocumentos("move_id."),
           ],
           ["balance:sum", "tax_base_amount:sum"],
           ["move_id", "tax_line_id"],
-          ve,
-        )
-      : vacio,
+          companyIds,
+        ),
     leerTodo(
       "account.tax",
       [["company_id", "in", companyIds], ["active", "in", [true, false]]],
-      ["name", "amount", "tax_group_id"],
+      ["name", "amount", "tax_group_id", "type_tax_use", "active", "company_id"],
       companyIds,
     ),
     // Tasa BCV (bolivares por USD) para las retenciones en bolivares de facturas en USD.
     ve.length
       ? leerTodo(
           "res.currency.rate",
-          [["company_id", "in", ve.slice(0, 1)], ["currency_id.name", "=", "USD"]],
-          ["name", "inverse_rate"],
+          [["company_id", "in", ve], ["currency_id.name", "=", "USD"]],
+          ["name", "inverse_rate", "company_id"],
           ve,
           "name asc",
         )
@@ -466,15 +450,16 @@ export async function fetchFiscal(
       ? leerTodo(
           "account.move",
           [["id", "in", idsFacturasRet]],
-          ["currency_id", "invoice_date", "amount_tax", "amount_tax_signed", "amount_untaxed", "amount_untaxed_signed"],
+          ["company_id", "currency_id", "invoice_date", "amount_tax", "amount_tax_signed", "amount_untaxed", "amount_untaxed_signed"],
           ve,
         )
       : vacio,
   ]);
   // Tasa BCV vigente a una fecha (antes de la primera cargada, la primera).
-  const bsPorUsdAl = (fecha: string): number | null => {
+  const bsPorUsdAl = (fecha: string, companyId: number | null): number | null => {
     let tasa: number | null = null;
     for (const r of tasasUsd) {
+      if (idM2o(r.company_id) !== companyId) continue;
       const v = Number(r.inverse_rate) || 0;
       if (v <= 0) continue;
       if (String(r.name).slice(0, 10) > fecha) return tasa ?? v;
@@ -496,7 +481,7 @@ export async function fetchFiscal(
       baseUsd,
       // USD por bolivar de la propia factura.
       tasaVef: enVef ? (tax ? ivaUsd / tax : base ? baseUsd / base : null) : null,
-      bsPorUsd: f.invoice_date ? bsPorUsdAl(f.invoice_date) : null,
+      bsPorUsd: f.invoice_date ? bsPorUsdAl(f.invoice_date, idM2o(f.company_id)) : null,
     });
   });
   const lineaIva = new Map<number, { retencion: number; factura: number | null; porcentaje: number }>();
@@ -569,44 +554,56 @@ export async function fetchFiscal(
       sede: empresaDeCompanyId(idM2o(r.company_id) || 0),
       fecha: r[fechaCampo] || "",
       estado,
-      monto: redondear(Math.abs(usd ?? (Number(r[montoCampo]) || 0))),
-      moneda: usd === null ? "VEF" : usd !== undefined || tipo === "islr" ? "USD" : nombreM2o(r.currency_id, "USD"),
+      monto: (r.type === "out_refund" ? -1 : 1) * redondear(Math.abs(usd ?? (Number(r[montoCampo]) || 0))),
+      moneda: usd === null ? "VEF" : usd !== undefined || (tipo === "islr" && !r.type?.startsWith("out_")) ? "USD" : nombreM2o(r.currency_id, "USD"),
       diasEnBorrador:
         estado === "borrador" && r.create_date ? diasEntre(String(r.create_date).slice(0, 10), hoy) : null,
     };
   };
 
-  const ivaDelMes = ivaMes.map(comprobante("iva", "total_tax_ret", "date"));
-  const islrDelMes = islrMes.map(comprobante("islr", "amount_total_ret", "date_ret"));
+  const ivaDelMes = ivaMes.filter(r => r.type === "in_invoice").map(comprobante("iva", "total_tax_ret", "date"));
+  const islrDelMes = islrMes.filter(r => r.type === "in_invoice").map(comprobante("islr", "amount_total_ret", "date_ret"));
+  const ivaVentas = ivaMes.filter(r => r.type !== "in_invoice").map(comprobante("iva", "total_tax_ret", "date"));
+  const islrVentas = islrMes.filter(r => r.type !== "in_invoice").map(comprobante("islr", "amount_total_ret", "date_ret"));
   const itbmsDelMes = itbmsMes.map(comprobante("itbms", "total_itbms_retenido", "date"));
 
   // Clase de cada impuesto: IVA/ITBMS (tasa > 0), exento (0 o negativo, como la
   // retencion de ITBMS de Panama) o IGTF.
-  const claseImpuesto = new Map<number, "iva" | "exento" | "igtf">();
+  const claseImpuesto = new Map<number, "iva" | "exento" | "igtf" | "otro">();
   impuestosOdoo.forEach((t: any) => {
     const igtf = /igtf/i.test(String(t.name)) || /igtf/i.test(nombreM2o(t.tax_group_id));
-    claseImpuesto.set(t.id, igtf ? "igtf" : Number(t.amount) > 0 ? "iva" : "exento");
+    const grupo = nombreM2o(t.tax_group_id);
+    const esIva = /\b(?:IVA|ITBMS)\b/i.test(grupo) && !/reten/i.test(grupo);
+    claseImpuesto.set(t.id, igtf ? "igtf" : esIva && Number(t.amount) > 0 ? "iva" : esIva && Number(t.amount) === 0 ? "exento" : "otro");
   });
 
   // IVA / ITBMS del mes por sede: debito (ventas) − credito (compras), solo con
   // los impuestos de clase "iva".
+  const moves = new Map(documentosMes.map(m => [m.id, m]));
+  const taxes = new Map(impuestosOdoo.map(t => [t.id, t]));
+  const detalleImpuestos: DatosFiscal["detalleImpuestos"] = [];
   const porSede = new Map<number, { debito: number; credito: number }>();
-  const sumarImpuesto = (grupos: any[], lado: "debito" | "credito") =>
-    grupos.forEach((g: any) => {
-      const cid = idM2o(g.company_id) || 0;
+  for (const g of lineasDeImpuesto) {
+    const m = moves.get(idM2o(g.move_id));
+    const t = taxes.get(idM2o(g.tax_line_id));
+    if (!m || !t) throw new Error("No se pudo identificar la factura o el impuesto de un apunte fiscal.");
+    const cid = idM2o(m.company_id)!;
+    const ventas = m.move_type.startsWith("out_");
+    const nc = m.move_type.endsWith("_refund");
+    const monto = redondear(Number(g.balance) * (ventas ? -1 : 1));
+    const iva = claseImpuesto.get(t.id) === "iva";
+    detalleImpuestos.push({ id: m.id, numero: m.name, fecha: fechaPeriodo(m), contacto: nombreM2o(m.partner_id),
+      sede: empresaDeCompanyId(cid), impuesto: t.name, tasa: Number(t.amount), ventas, nc, iva, monto,
+      base: redondear(Math.abs(Number(g.tax_base_amount)) * (nc ? -1 : 1)) });
+    if (iva) {
       const fila = porSede.get(cid) || { debito: 0, credito: 0 };
+      fila[ventas ? "debito" : "credito"] += monto;
       porSede.set(cid, fila);
-      if (claseImpuesto.get(idM2o(g.tax_line_id) || 0) !== "iva") return;
-      // balance: el IVA de ventas es credito (negativo), el de compras debito; las NC al reves.
-      const balance = Number(g.balance) || 0;
-      fila[lado] += lado === "debito" ? -balance : balance;
-    });
-  sumarImpuesto(impuestoVentas, "debito");
-  sumarImpuesto(impuestoCompras, "credito");
+    }
+  }
   const impuestos: ImpuestoMes[] = companyIds
-    .filter((cid) => porSede.has(cid))
     .map((cid) => {
-      const f = porSede.get(cid)!;
+      const f = porSede.get(cid) || { debito: 0, credito: 0 };
       return {
         sede: empresaDeCompanyId(cid),
         impuesto: cid === SEDE_PA ? ("ITBMS" as const) : ("IVA" as const),
@@ -683,6 +680,8 @@ export async function fetchFiscal(
   };
   const conteos = new Map<string, ConteoDocumentos>();
   const igtfFacturas = new Map<number, { facturas: number; base: number; cobrado: number }>();
+  const notasCreditoEmitidas: DatosFiscal["notasCreditoEmitidas"] = [];
+  const ventasDetalle: DatosFiscal["ventasDetalle"] = [];
   const compras: CompraDelMes[] = [];
   documentosMes.forEach((m: any) => {
     const cid = idM2o(m.company_id) || 0;
@@ -702,6 +701,19 @@ export async function fetchFiscal(
     else c.montoFiscal = redondear(c.montoFiscal + total);
     c.iva = redondear(c.iva + (d?.iva || 0));
     conteos.set(clave, c);
+
+    if (tipo === "nc_ventas") {
+      notasCreditoEmitidas.push({ id: m.id, numero: m.name, cliente: nombreM2o(m.partner_id), sede: c.sede,
+        registro: fechaPeriodo(m), fechaDocumento: m.invoice_date, total: redondear(total) });
+    }
+
+    const fiscal = tipo === "ventas" && clase !== "sin_impuesto";
+    if (fiscal || ((tipo === "ventas" || tipo === "nc_ventas") && d && d.igtf > 0)) {
+      ventasDetalle.push({
+        id: m.id, numero: m.name || "", fecha: fechaPeriodo(m), cliente: nombreM2o(m.partner_id, "Sin cliente"),
+        sede: c.sede, fiscal, total, igtf: (tipo === "nc_ventas" ? -1 : 1) * (d?.igtf || 0),
+      });
+    }
 
     // El IGTF de una NC de cliente se devuelve: resta.
     if ((m.move_type === "out_invoice" || m.move_type === "out_refund") && d && d.igtf > 0) {
@@ -746,7 +758,7 @@ export async function fetchFiscal(
   // --- Clasificacion de retenciones del mes (sin anuladas) ---
   const validasIva = new Map<number, number>(); // retencion -> company
   ivaMes.forEach((r: any) => {
-    if (estadoDe(r.state) !== "anulado") validasIva.set(r.id, idM2o(r.company_id) || 0);
+    if (r.type === "in_invoice" && estadoDe(r.state) !== "anulado") validasIva.set(r.id, idM2o(r.company_id) || 0);
   });
   const clasesIva = new Map<string, ClaseRetencionIva & { _comp: Set<number>; _fact: Set<number> }>();
   usdPorLineaIva.forEach((u, lineaId) => {
@@ -777,7 +789,7 @@ export async function fetchFiscal(
 
   const validasIslr = new Map<number, number>();
   islrMes.forEach((r: any) => {
-    if (estadoDe(r.state) !== "anulado") validasIslr.set(r.id, idM2o(r.company_id) || 0);
+    if (r.type === "in_invoice" && estadoDe(r.state) !== "anulado") validasIslr.set(r.id, idM2o(r.company_id) || 0);
   });
   const clasesIslr = new Map<string, ClaseRetencionIslr & { _comp: Set<number>; _fact: Set<number> }>();
   lineasIslr.forEach((l: any) => {
@@ -857,25 +869,23 @@ export async function fetchFiscal(
     aplicaVenezuela: ve.length > 0,
     aplicaPanama: pa.length > 0,
     impuestos,
+    retencionesVentas: { iva: resumir(ivaVentas), islr: resumir(islrVentas) },
+    comprobantesVentas: [...ivaVentas, ...islrVentas].sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    detalleImpuestos,
+    corte: hasta,
     retencionesIva: resumir(ivaDelMes),
     retencionesIslr: resumir(islrDelMes),
     retencionesItbms: resumir(itbmsDelMes),
     comprobantesPendientes: pendientes,
     comprobantesDelMes: [...ivaDelMes, ...islrDelMes, ...itbmsDelMes].sort((a, b) => b.fecha.localeCompare(a.fecha)),
-    facturasSinRetencionIva: sinRetencion
-      .map((f: any) => ({
-        id: f.id,
-        numero: f.name || "",
-        referencia: f.ref || "",
-        proveedor: nombreM2o(f.partner_id, "Sin proveedor"),
-        sede: empresaDeCompanyId(idM2o(f.company_id) || 0),
-        fecha: f.invoice_date || "",
-        iva: redondear(Math.abs(Number(f.amount_tax_signed) || 0)),
-      }))
-      .sort((a: FacturaSinRetencion, b: FacturaSinRetencion) => b.iva - a.iva),
+    facturasSinRetencionIva: compras.filter(c => !c.esNotaCredito && c.iva > 0 && !c.conRetencionIva && c.sede !== empresaDeCompanyId(SEDE_PA))
+      .map(c => ({ id: c.id, numero: c.numero, referencia: c.facturaProveedor, proveedor: c.proveedor, sede: c.sede, fecha: c.fecha, iva: c.iva }))
+      .sort((a, b) => b.iva - a.iva),
     libros: librosFiscales,
     igtf,
     documentos,
+    ventasDetalle,
+    notasCreditoEmitidas: notasCreditoEmitidas.sort((a, b) => b.registro.localeCompare(a.registro) || b.id - a.id),
     compras,
     clasesRetencionIva,
     clasesRetencionIslr,

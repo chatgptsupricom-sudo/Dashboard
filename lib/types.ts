@@ -372,6 +372,7 @@ export const rolePermissions: RolePermissions = {
       "recepcion_packing", // Packing lists: Compras los carga, Almacén los recibe
       "rotacion_inventario", // Rotación de inventario y solicitudes de apoyo a las marcas (lib/rotacion-inventario)
       "actualizacion_precios", // Excel de asignación por sede → listas de precios de Odoo (lib/compras/actualizacionPrecios)
+      "validar_factura", // Factura de compra → SKU que faltan en Odoo y crearlos (lib/compras/validarFactura)
     ],
   },
   [UserRole.RMA]: {
