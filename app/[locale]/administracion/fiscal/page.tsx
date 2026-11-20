@@ -5,14 +5,12 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Aviso,
   BotonExcel,
   EncabezadoAdmin,
   EstadoCarga,
   FilaVacia,
   NOMBRE_SEDE,
   Pestanas,
-  Tarjeta,
   fechaCorta,
   mesActual,
   money,
@@ -26,8 +24,8 @@ import type {
   ResumenRetenciones,
   TipoDocumento,
 } from "@/lib/administracion/fiscal";
-import { CheckCircle2, FileText, XCircle } from "lucide-react";
-import { type ComponentProps, type ReactNode, useState } from "react";
+import { CheckCircle2, ChevronRight, FileText, XCircle } from "lucide-react";
+import { type ReactNode, useState } from "react";
 
 type Respuesta = DatosFiscal & { success: true; hoy: string; mes: string };
 type Vista = "pendientes" | "sin_retencion" | "mes" | "compras";
@@ -55,7 +53,7 @@ const CLASE: Record<ClaseFiscal, { label: string; badge: string }> = {
 function montoPorMoneda(r: ResumenRetenciones) {
   if (r.porMoneda.length === 0) return "$0";
   return r.porMoneda
-    .map((m) => (m.moneda === "USD" ? money(m.monto) : `${m.moneda} ${m.monto.toLocaleString("es-VE")}`))
+    .map((m) => (m.moneda === "USD" ? money(m.monto, 2) : `${m.moneda} ${m.monto.toLocaleString("es-VE")}`))
     .join(" + ");
 }
 
@@ -81,7 +79,12 @@ export default function FiscalPage() {
     filtroCompras === "todas" ? true : filtroCompras === "fiscales" ? c.clase !== "sin_impuesto" : c.clase === "sin_impuesto",
   );
 
-  const tarjetaRet = (titulo: string, tipo: Comprobante["tipo"], r: ResumenRetenciones, ventas = false) => (
+  function revisar(v: Vista) {
+    setVista(v);
+    document.getElementById("documentos-fiscales")?.scrollIntoView({ block: "start" });
+  }
+
+  const tarjetaRet = (titulo: string, tipo: Comprobante["tipo"], r: ResumenRetenciones) => r.confirmados + r.borradores + r.anulados === 0 ? null : (
     <TarjetaDetalle
       titulo={titulo}
       valor={montoPorMoneda(r)}
@@ -90,7 +93,8 @@ export default function FiscalPage() {
       }`}
       tono={r.borradores > 0 ? "ambar" : "neutro"}
     >
-      <TablaComprobantes ventas={ventas} comprobantes={(ventas ? datos!.comprobantesVentas : datos!.comprobantesDelMes).filter(c => c.tipo === tipo)} todasLasSedes={!empresa} conDias={false} vacio="Sin retenciones en el mes." />
+      {tipo !== "itbms" && <p className="p-3 text-sm text-muted-foreground">Los importes en USD pueden incluir conversiones estimadas a partir de la factura y su tasa.</p>}
+      <TablaComprobantes comprobantes={datos!.comprobantesDelMes.filter(c => c.tipo === tipo)} todasLasSedes={!empresa} conDias={false} vacio="Sin retenciones en el mes." />
     </TarjetaDetalle>
   );
 
@@ -99,7 +103,7 @@ export default function FiscalPage() {
       <EncabezadoAdmin
         icono={<FileText className="h-7 w-7 text-blue-600" />}
         titulo="Fiscal"
-        subtitulo="SENIAT (Valencia y Caracas) y DGI (Panamá): retenciones, libros, IVA/ITBMS e IGTF del mes, desde Odoo"
+        subtitulo="Compras, ventas y cierre fiscal del período según los registros de Odoo."
         empresa={empresa}
         setEmpresa={setEmpresa}
         mes={mes}
@@ -120,7 +124,20 @@ export default function FiscalPage() {
                   })),
                 },
                 {
-                  nombre: "Retenciones del mes",
+                  nombre: "Impuestos por documento",
+                  filas: datos.detalleImpuestos.map(f => ({
+                    Sede: NOMBRE_SEDE[f.sede], Operación: f.ventas ? "Venta" : "Compra",
+                    Fecha: f.fecha, Documento: f.numero, Contacto: f.contacto, Impuesto: f.impuesto,
+                    Tasa: f.tasa, "Base USD": f.base, "Impuesto USD": f.monto,
+                  })),
+                },
+                {
+                  nombre: "Retenciones de clientes",
+                  filas: datos.comprobantesVentas.map(c => ({ Sede: NOMBRE_SEDE[c.sede], Fecha: c.fecha,
+                    Documento: c.numero, Cliente: c.proveedor, Tipo: TIPO[c.tipo], Estado: c.estado, Moneda: c.moneda, Monto: c.monto })),
+                },
+                {
+                  nombre: "Retenciones de proveedores",
                   filas: datos.comprobantesDelMes.map((c) => ({
                     Tipo: TIPO[c.tipo],
                     Sede: NOMBRE_SEDE[c.sede] || c.sede,
@@ -225,75 +242,67 @@ export default function FiscalPage() {
 
       {!cargando && datos && (
         <>
-          <section aria-label="Compras">
-            <h2 className="mb-2 font-semibold">Compras</h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-none lg:grid-flow-col lg:auto-cols-fr">
-              {datos.aplicaVenezuela && (<TarjetaDetalle
-                titulo="Compras fiscales"
-                valor={comprasF.fiscales}
-                detalle={`de ${comprasF.total} facturas de compra · ${comprasF.gravadas} con IVA`}
-              >
-                  <Documentos filas={datos.compras.filter(c => !c.esNotaCredito && c.clase !== "sin_impuesto").map(c => ({ ...c, contacto: c.proveedor, monto: c.total }))} importe="Total" />
-                </TarjetaDetalle>)}
-              {datos.aplicaVenezuela && tarjetaRet("Retenciones de IVA del mes", "iva", datos.retencionesIva)}
-              {datos.aplicaVenezuela && tarjetaRet("Retenciones de ISLR del mes", "islr", datos.retencionesIslr)}
-              {datos.aplicaPanama && tarjetaRet("Retenciones de ITBMS del mes", "itbms", datos.retencionesItbms)}
-              {datos.aplicaVenezuela && (<TarjetaDetalle
-                titulo="Facturas con IVA sin retención"
-                valor={datos.facturasSinRetencionIva.length}
-                detalle={`${money(datos.facturasSinRetencionIva.reduce((s, f) => s + f.iva, 0), 2)} de IVA`}
-                tono={datos.facturasSinRetencionIva.length > 0 ? "ambar" : "verde"}
-              >
-                  <Documentos filas={datos.facturasSinRetencionIva.map(f => ({ ...f, contacto: f.proveedor, monto: f.iva }))} importe="IVA" />
-                </TarjetaDetalle>)}
+          <section className="rounded-xl border bg-white p-4" aria-label="Por revisar">
+            <h2 className="font-semibold mb-2">Por revisar</h2>
+            <div className="flex flex-wrap gap-3 text-sm">
+              {datos.facturasSinRetencionIva.length > 0 && <button className="text-amber-800 underline" onClick={() => revisar("sin_retencion")}>{datos.facturasSinRetencionIva.length} compras con IVA sin comprobante de retención</button>}
+              {datos.comprobantesPendientes.length > 0 && <button className="text-amber-800 underline" onClick={() => revisar("pendientes")}>{datos.comprobantesPendientes.length} retenciones de proveedores en borrador · todos los períodos</button>}
+              {!datos.facturasSinRetencionIva.length && !datos.comprobantesPendientes.length && <span className="text-muted-foreground">Sin pendientes en estas revisiones.</span>}
             </div>
           </section>
-          <section aria-label="Ventas">
-              <h2 className="mb-2 font-semibold">Ventas</h2>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {datos.aplicaVenezuela && (<TarjetaDetalle
-                titulo="Facturas fiscales de venta"
-                valor={ventasF.fiscales}
-                detalle={`de ${ventasF.total} facturas del mes · ${money(ventasF.monto)}`}
-              >
-                  <Documentos filas={datos.ventasDetalle.filter(v => v.fiscal).map(v => ({ ...v, contacto: v.cliente, monto: v.total }))} importe="Total" />
-                </TarjetaDetalle>)}
-                {datos.igtf.map(i => (
-                  <TarjetaDetalle
-                  key={i.sede}
-                  titulo={`IGTF cobrado · ${NOMBRE_SEDE[i.sede] || i.sede}`}
-                  valor={money(i.cobradoFacturasMes, 2)}
-                  detalle={`${i.facturasMes} facturas · base ${money(i.baseMes)}`}
-                >
-                  <Documentos filas={datos.ventasDetalle.filter(v => v.sede === i.sede && v.igtf !== 0).map(v => ({ ...v, contacto: v.cliente, monto: v.igtf }))} importe="IGTF" />
-                </TarjetaDetalle>
-                ))}
-                {datos.impuestosVentas.map(i => (
-                  <TarjetaDetalle key={i.id} titulo={`${i.nombre} · ${NOMBRE_SEDE[i.sede] || i.sede}`}
-                    valor={money(i.monto, 2)} detalle={`${i.documentos.length} documentos del mes`}>
-                    <Table>
-                      <TableHeader><TableRow><TableHead>Documento</TableHead><TableHead className="text-right">Impuesto (USD)</TableHead></TableRow></TableHeader>
-                      <TableBody>
-                        {i.documentos.length === 0 && <FilaVacia columnas={2} texto="Sin documentos en el mes." />}
-                        {i.documentos.map(d => (
-                          <TableRow key={d.id}><TableCell>{d.numero}</TableCell><TableCell className="text-right">{money(d.monto, 2)}</TableCell></TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+          {(["Compras", "Ventas"] as const).map(lado => {
+            const ventas = lado === "Ventas";
+            const f = ventas ? ventasF : comprasF;
+            const filas = ventas
+              ? datos.ventasDetalle.filter(v => v.fiscal).map(v => ({ ...v, contacto: v.cliente, monto: v.total }))
+              : datos.compras.filter(c => !c.esNotaCredito && c.clase !== "sin_impuesto").map(c => ({ ...c, contacto: c.proveedor, monto: c.total }));
+            const impuestos = datos.detalleImpuestos.filter(i => i.ventas === ventas);
+            const retClientes = datos.comprobantesVentas;
+            return (
+              <section key={lado} aria-label={lado} className="space-y-2">
+                <h2 className="text-lg font-semibold">{lado}</h2>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <TarjetaDetalle titulo={lado + " fiscales"} valor={money(f.monto, 2)} detalle={`${f.fiscales} facturas · ${f.gravadas} gravadas · ${f.fiscales - f.gravadas} exentas`}>
+                    <Documentos filas={filas} importe="Total" />
                   </TarjetaDetalle>
-                ))}
-                {datos.aplicaVenezuela && tarjetaRet("IVA retenido por clientes", "iva", datos.retencionesVentas.iva, true)}
-                {datos.aplicaVenezuela && tarjetaRet("ISLR retenido por clientes", "islr", datos.retencionesVentas.islr, true)}
-              </div>
-            </section>
-
-          {datos.comprobantesPendientes.length > 0 && (
-            <Aviso>
-              Hay <b>{datos.comprobantesPendientes.length}</b> comprobantes de retención en borrador (de cualquier mes).
-              Un comprobante sin confirmar no sale en el TXT/XML ni en la declaración.
-            </Aviso>
-          )}
-
+                  {datos.impuestos.map(i => {
+                    const lineas = impuestos.filter(t => t.sede === i.sede && t.iva);
+                    return <TarjetaDetalle key={i.sede} titulo={`${i.impuesto} de ${lado.toLowerCase()} · ${NOMBRE_SEDE[i.sede]}`}
+                      valor={money(ventas ? i.debitoVentas : i.creditoCompras, 2)} detalle="Facturas y notas de crédito">
+                      <DetalleImpuestos filas={lineas} />
+                    </TarjetaDetalle>;
+                  })}
+                  {!ventas && datos.aplicaVenezuela && tarjetaRet("IVA retenido a proveedores", "iva", datos.retencionesIva)}
+                  {!ventas && datos.aplicaVenezuela && tarjetaRet("ISLR retenido a proveedores", "islr", datos.retencionesIslr)}
+                  {!ventas && datos.aplicaPanama && tarjetaRet("ITBMS retenido a proveedores", "itbms", datos.retencionesItbms)}
+                  {ventas && datos.igtf.map(i => (
+                    <TarjetaDetalle key={i.sede} titulo={`IGTF facturado · ${NOMBRE_SEDE[i.sede]}`}
+                      valor={money(i.cobradoFacturasMes, 2)} detalle={`${i.facturasMes} facturas · base neta ${money(i.baseMes, 2)}`}>
+                      <p className="p-3 text-sm">Saldo contable por enterar al {fechaCorta(datos.corte)}: {money(i.porPagar, 2)} · {i.cuenta}</p>
+                      <Documentos filas={datos.ventasDetalle.filter(v => v.sede === i.sede && v.igtf !== 0).map(v => ({ ...v, contacto: v.cliente, monto: v.igtf }))} importe="IGTF" />
+                    </TarjetaDetalle>
+                  ))}
+                  {ventas && retClientes.length > 0 && (
+                    <TarjetaDetalle titulo="Retenciones de clientes" valor={`${retClientes.length} comprobantes`}
+                      detalle={`IVA: ${montoPorMoneda(datos.retencionesVentas.iva)} · ISLR: ${montoPorMoneda(datos.retencionesVentas.islr)}`}>
+                      <TablaComprobantes ventas comprobantes={retClientes} conDias={false} todasLasSedes={!empresa} vacio="Sin comprobantes." />
+                    </TarjetaDetalle>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-3 flex-wrap text-sm">
+                  {!ventas && !datos.comprobantesDelMes.length && <p className="text-muted-foreground">Sin retenciones a proveedores registradas en el mes.</p>}
+                  {ventas && datos.aplicaVenezuela && !retClientes.length && <p className="text-muted-foreground">Sin retenciones de clientes registradas en el mes.</p>}
+                  <Dialog><DialogTrigger className="text-blue-700 underline">Ver todos los impuestos de {lado.toLowerCase()}</DialogTrigger>
+                    <DialogContent className="sm:max-w-5xl"><DialogTitle>Impuestos de {lado.toLowerCase()}</DialogTitle>
+                      <DialogDescription>Apuntes fiscales publicados del período.</DialogDescription>
+                      <DetalleImpuestos filas={impuestos} />
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </section>
+            );
+          })}
+          <h2 className="text-lg font-semibold">Cierre del mes</h2>
           <div className="grid lg:grid-cols-2 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -310,7 +319,7 @@ export default function FiscalPage() {
                       <TableHead className="px-2 sm:px-4">Sede</TableHead>
                       <TableHead className="text-right">Débito (ventas)</TableHead>
                       <TableHead className="text-right">Crédito (compras)</TableHead>
-                      <TableHead className="text-right pr-4">Neto</TableHead>
+                      <TableHead className="text-right pr-4">Diferencia según facturas</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -338,8 +347,8 @@ export default function FiscalPage() {
             {datos.aplicaVenezuela && (
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Libros e IGTF</CardTitle>
-                  <p className="text-sm text-gray-500">Libros de compra y venta del mes y el IGTF retenido por enterar.</p>
+                  <CardTitle className="text-base">Libros fiscales</CardTitle>
+                  <p className="text-sm text-gray-500">Estado del período en Odoo.</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -363,74 +372,14 @@ export default function FiscalPage() {
                       </div>
                     ))}
                   </div>
-                  {datos.igtf.length > 0 && (
-                    <div className="border-t pt-3 space-y-2">
-                      {datos.igtf.map((i) => (
-                        <div key={i.sede} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                          <span className="font-medium">IGTF · {NOMBRE_SEDE[i.sede] || i.sede}</span>
-                          <span className="text-gray-500">causado en el mes {money(i.causadoMes, 2)}</span>
-                          <span className="ml-auto font-semibold">por enterar {money(i.porPagar, 2)}</span>
-                          <span className="w-full text-xs text-gray-500">
-                            En facturas de cliente: {i.facturasMes} con 3 % IGTF sobre {money(i.baseMes, 2)} pagados en
-                            divisas = {money(i.cobradoFacturasMes, 2)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             )}
           </div>
 
           {datos.aplicaVenezuela && (
-            <div className="grid lg:grid-cols-2 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Facturas fiscales del mes</CardTitle>
-                  <p className="text-sm text-gray-500">
-                    Fiscal = alguna línea con IVA o exenta (0% EXEMPT). Sin impuesto en ninguna línea no es fiscal
-                    (nota de entrega, importación, intercompañía). Montos en USD.
-                  </p>
-                </CardHeader>
-                <CardContent className="p-0 overflow-x-auto">
-                  <Table>
-                    <TableHeader className="bg-slate-50">
-                      <TableRow>
-                        <TableHead className="px-2 sm:px-4">Documento</TableHead>
-                        <TableHead className="text-right">Con IVA</TableHead>
-                        <TableHead className="text-right">Exentas</TableHead>
-                        <TableHead className="text-right">No fiscales</TableHead>
-                        <TableHead className="text-right pr-4">Monto fiscal</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {datos.documentos.length === 0 ? (
-                        <FilaVacia columnas={5} texto="Sin documentos publicados en el mes." />
-                      ) : (
-                        datos.documentos.map((d) => (
-                          <TableRow key={`${d.sede}-${d.tipo}`}>
-                            <TableCell className="px-2 sm:px-4 text-sm">
-                              {DOCUMENTO[d.tipo]}
-                              <div className="text-[11px] text-gray-400">
-                                {NOMBRE_SEDE[d.sede] || d.sede} · {d.total} en total
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">{d.gravadas}</TableCell>
-                            <TableCell className="text-right">{d.exentas}</TableCell>
-                            <TableCell className="text-right text-gray-500">{d.sinImpuesto}</TableCell>
-                            <TableCell className="text-right pr-4">
-                              {money(d.montoFiscal)}
-                              {d.iva > 0 && <div className="text-[11px] text-gray-400">IVA {money(d.iva, 2)}</div>}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-
+            <details className="rounded-xl border bg-white p-4">
+              <summary className="cursor-pointer font-medium">Detalle de retenciones a proveedores por porcentaje y concepto</summary>
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Clasificación de retenciones del mes</CardTitle>
@@ -487,10 +436,10 @@ export default function FiscalPage() {
                   </Table>
                 </CardContent>
               </Card>
-            </div>
+            </details>
           )}
 
-          <Card>
+          <Card id="documentos-fiscales">
             <CardContent className="p-0">
               <div className="px-2 sm:px-4 pt-2">
                 <Pestanas<Vista>
@@ -569,16 +518,19 @@ export default function FiscalPage() {
   );
 }
 
-function TarjetaDetalle({ children, ...props }: ComponentProps<typeof Tarjeta> & { children: ReactNode }) {
+function TarjetaDetalle({ children, ...props }: { titulo: string; valor: ReactNode; detalle?: ReactNode; tono?: "ambar" | "verde" | "neutro"; children: ReactNode }) {
   return (
     <Dialog>
-      <div className="relative rounded-xl hover:ring-1 hover:ring-blue-400">
-        <Tarjeta {...props} />
-        <DialogTrigger asChild>
-          <button type="button" aria-label={`Ver detalle de ${props.titulo}`}
-            className="absolute inset-0 cursor-pointer rounded-xl focus-visible:outline-2 focus-visible:outline-blue-600" />
-        </DialogTrigger>
-      </div>
+      <DialogTrigger asChild>
+        <button type="button" aria-label={`Ver detalle de ${props.titulo}`}
+          className="group flex min-h-28 w-full flex-col rounded-xl border bg-card p-4 text-left shadow-sm transition hover:border-blue-400 focus-visible:outline-2 focus-visible:outline-blue-600">
+          <span className="flex w-full items-start justify-between gap-2 text-sm font-medium text-muted-foreground">
+            {props.titulo}<ChevronRight aria-hidden="true" className="size-4 shrink-0 text-slate-400 group-hover:text-blue-600" />
+          </span>
+          <span className="mt-2 text-xl font-semibold tabular-nums">{props.valor}</span>
+          <span className={`mt-1 text-xs ${props.tono === "ambar" ? "text-amber-700" : "text-muted-foreground"}`}>{props.detalle}</span>
+        </button>
+      </DialogTrigger>
       <DialogContent className="sm:max-w-4xl">
         <DialogTitle>{props.titulo}</DialogTitle>
         <DialogDescription>{props.valor} · {props.detalle}</DialogDescription>
@@ -586,6 +538,31 @@ function TarjetaDetalle({ children, ...props }: ComponentProps<typeof Tarjeta> &
       </DialogContent>
     </Dialog>
   );
+}
+
+function EnlaceFactura({ id, numero }: { id: number; numero: string }) {
+  const base = (process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com").replace(/\/$/, "");
+  return <a className="text-blue-700 underline" href={`${base}/web#id=${id}&model=account.move&view_type=form`} target="_blank" rel="noreferrer">{numero}</a>;
+}
+
+function DetalleImpuestos({ filas }: { filas: DatosFiscal["detalleImpuestos"] }) {
+  const [busca, setBusca] = useState("");
+  const termino = busca.trim().toLowerCase();
+  const visibles = filas.filter(f => [f.numero, f.fecha, f.contacto, f.impuesto, f.sede].join(" ").toLowerCase().includes(termino));
+  const facturas = filas.reduce((s,f) => s + (f.nc ? 0 : f.monto), 0);
+  const notas = filas.reduce((s,f) => s + (f.nc ? f.monto : 0), 0);
+  return <div className="space-y-3">
+    <p className="text-sm">Facturas {money(facturas, 2)} · Notas de crédito {money(notas, 2)} · Neto {money(facturas + notas, 2)}</p>
+    <input className="w-full rounded-md border px-3 py-2" aria-label="Buscar documento, contacto o impuesto" placeholder="Buscar documento, contacto o impuesto" value={busca} onChange={e => setBusca(e.target.value)} />
+    <div className="max-h-[52vh] overflow-auto"><Table><TableHeader><TableRow>
+      {["Documento", "Fecha", "Contacto", "Impuesto", "Tasa", "Base (USD)", "Impuesto (USD)"].map(t => <TableHead key={t}>{t}</TableHead>)}
+    </TableRow></TableHeader><TableBody>
+      {visibles.map((f,i) => <TableRow key={i}><TableCell><EnlaceFactura id={f.id} numero={f.numero} /></TableCell>
+        <TableCell>{fechaCorta(f.fecha)}</TableCell><TableCell>{f.contacto}</TableCell><TableCell>{f.impuesto}</TableCell>
+        <TableCell>{f.tasa}%</TableCell><TableCell>{money(f.base, 2)}</TableCell><TableCell>{money(f.monto, 2)}</TableCell></TableRow>)}
+      {!visibles.length && <FilaVacia columnas={7} texto="Sin documentos para esta selección." />}
+    </TableBody></Table></div>
+  </div>;
 }
 
 function Documentos({ filas, importe }: {
@@ -602,7 +579,7 @@ function Documentos({ filas, importe }: {
         {!filas.length && <FilaVacia columnas={4} texto="Sin documentos en el mes." />}
         {filas.map(f => (
           <TableRow key={f.id}>
-            <TableCell>{f.numero}<div className="text-xs text-muted-foreground">{NOMBRE_SEDE[f.sede] || f.sede}</div></TableCell>
+            <TableCell><EnlaceFactura id={f.id} numero={f.numero} /><div className="text-xs text-muted-foreground">{NOMBRE_SEDE[f.sede] || f.sede}</div></TableCell>
             <TableCell>{fechaCorta(f.fecha)}</TableCell><TableCell>{f.contacto}</TableCell>
             <TableCell className="text-right">{money(f.monto, 2)}</TableCell>
           </TableRow>
@@ -646,6 +623,7 @@ function TablaComprobantes({
                 <TableCell className="px-2 sm:px-4">
                   <div className="text-xs font-medium">{TIPO[c.tipo]}</div>
                   <div className="font-mono text-[11px] text-gray-500">{c.numero || "sin número"}</div>
+                  {conDias && <div className="text-xs text-muted-foreground">Período: {c.fecha?.slice(0, 7) || "Sin fecha"}</div>}
                   {todasLasSedes && <div className="text-[11px] text-gray-400">{NOMBRE_SEDE[c.sede] || c.sede}</div>}
                 </TableCell>
                 <TableCell className="text-sm whitespace-normal">{c.proveedor}</TableCell>
