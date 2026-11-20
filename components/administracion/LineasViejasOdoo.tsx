@@ -97,24 +97,30 @@ export function LineasViejasOdoo({
     setAvance({ hecho: 0, total: ids.length });
     let hechas = 0;
     const avisos: string[] = [];
-    for (const id of ids) {
+    // Una que Odoo rechaza no frena a las demas: se sigue y al final se dice cuales quedaron y por que.
+    const fallas: string[] = [];
+    for (const [n, id] of ids.entries()) {
       const res = await fetch("/api/administracion/bancos", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cuenta, deshacer: id, diferencial: modoDif }),
       });
       const j = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
+      setAvance({ hecho: n + 1, total: ids.length });
+      const l = lista.find((x) => x.id === id)!;
       if (!j.success) {
-        const l = lista.find((x) => x.id === id)!;
-        setError(
-          `No se pudo deshacer ${l.asiento} (${dia(l.fecha)}, ${cifra(l.monto)}): ${j.error || "no se pudo deshacer"}` +
-            (hechas ? `. Antes se deshicieron ${hechas}; se paró ahí.` : ". No se deshizo ninguna."),
-        );
-        break;
+        fallas.push(`${l.asiento} (${dia(l.fecha)}, ${cifra(l.monto)}): ${j.error || "no se pudo deshacer"}`);
+        continue;
       }
       hechas++;
-      if (j.aviso) avisos.push(`${dia(lista.find((l) => l.id === id)!.fecha)}: ${j.aviso}`);
-      setAvance({ hecho: hechas, total: ids.length });
+      if (j.aviso) avisos.push(`${l.asiento}: ${j.aviso}`);
+    }
+    if (fallas.length) {
+      setError(
+        `No se pudieron deshacer ${fallas.length} de ${ids.length}: ` +
+          fallas.slice(0, 5).join(" · ") +
+          (fallas.length > 5 ? ` · y ${fallas.length - 5} más` : ""),
+      );
     }
     setAvance(null);
     if (hechas) {
