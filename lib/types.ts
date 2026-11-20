@@ -103,6 +103,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_tiempo_cobro", // Tiempo de cobro (días de emisión a pago completo)
       "cxc_incobrables", // Incobrables marcados a mano, con justificación
       "cxc_sobregiro", // Sobregiro: uso del límite de crédito de cada cliente
+      "cupo_credito", // Cupo de crédito de su sede: por cliente, vendedor, zona e histórico (lib/cupo-credito)
       "cxc_facturado_detallado", // Facturado detallado: el reporte de Odoo de cualquier mes
       "rma", // Servicio Técnico / RMA
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
