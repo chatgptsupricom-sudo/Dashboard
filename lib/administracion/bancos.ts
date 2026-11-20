@@ -1564,13 +1564,16 @@ export async function deshacerLineaVieja(
       // con 7460 y 12446, nov-2026). Por eso todas las del cobro se rompen en UNA sola llamada: cuando la moneda dual
       // escribe, ya no le queda ninguna.
       try {
-        // 1) Las del banco que no llevan diferencial, de a una: el asiento de diferencial queda suelto y Odoo lo
-        //    puede revertir despues.
-        for (const p of parciales.filter((x) => !x.exchange_move_id)) {
+        // 1) De a una, las que no tocan el cobro (la linea del banco con el asiento de diferencial): el diferencial
+        //    queda suelto y Odoo lo puede revertir despues.
+        // 2) Juntas, TODAS las que tocan el cobro: con el banco, con el diferencial (a veces el diferencial esta
+        //    conciliado con el cobro y no con el banco: BANES/2026/00294 / PBANES/2026/00059, 7467 y 7468) y con sus
+        //    facturas. Si una de esas se rompe sola, al cobro le queda otra y Odoo rechaza que la moneda dual lo reescriba.
+        const tocaPago = (x: any) => dePago.has(x.debit_move_id[0]) || dePago.has(x.credit_move_id[0]);
+        for (const p of parciales.filter((x) => !tocaPago(x))) {
           await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [[p.id]], { context: sinSincronizar });
         }
-        // 2) Juntas: las del banco que llevan diferencial (Odoo lo revierte) y las del cobro con sus facturas.
-        const juntas = [...parciales.filter((x) => x.exchange_move_id).map((x) => x.id), ...aplicadas.map((a) => a.id)];
+        const juntas = [...parciales.filter(tocaPago).map((x) => x.id), ...aplicadas.map((a) => a.id)];
         if (juntas.length) await rpc(cuenta.sede, "account.partial.reconcile", "unlink", [juntas], { context: sinSincronizar });
         await rpc(cuenta.sede, "account.bank.statement.line", "action_undo_reconciliation", [[stLineId]], { context: sinSincronizar });
       } catch (e) {
