@@ -153,6 +153,9 @@ export interface DatosFiscal {
   aplicaVenezuela: boolean;
   aplicaPanama: boolean;
   impuestos: ImpuestoMes[];
+  comprobantesVentas: Comprobante[];
+  retencionesVentas: Record<"iva" | "islr", ResumenRetenciones>;
+  impuestosVentas: { id: number; sede: string; nombre: string; monto: number; documentos: { id: number; numero: string; monto: number }[] }[];
   retencionesIva: ResumenRetenciones;
   retencionesIslr: ResumenRetenciones;
   retencionesItbms: ResumenRetenciones;
@@ -278,21 +281,21 @@ export async function fetchFiscal(
     tasasUsd,
   ] = await Promise.all([
     // Por impuesto, para dejar fuera el IGTF y la retencion de ITBMS.
-    agrupar("account.move.line", lineasImpuestoDelMes(["out_invoice", "out_refund"]), ["balance:sum"], ["company_id", "tax_line_id"], companyIds),
+    agrupar("account.move.line", lineasImpuestoDelMes(["out_invoice", "out_refund"]), ["balance:sum"], ["company_id", "tax_line_id", "move_id"], companyIds),
     agrupar("account.move.line", lineasImpuestoDelMes(["in_invoice", "in_refund"]), ["balance:sum"], ["company_id", "tax_line_id"], companyIds),
     ve.length
       ? leerTodo(
           "account.wh.iva",
-          [["company_id", "in", ve], ["type", "=", "in_invoice"], ["date", ">=", desde], ["date", "<=", hasta]],
-          ["name", "number", "partner_id", "company_id", "date", "state", "total_tax_ret", "currency_id", "create_date"],
+          [["company_id", "in", ve], ["type", "in", ["in_invoice", "out_invoice", "out_debit", "out_refund"]], ["date", ">=", desde], ["date", "<=", hasta]],
+          ["type", "name", "number", "partner_id", "company_id", "date", "state", "total_tax_ret", "currency_id", "create_date"],
           ve,
         )
       : vacio,
     ve.length
       ? leerTodo(
           "account.wh.islr.doc",
-          [["company_id", "in", ve], ["type", "=", "in_invoice"], ["date_ret", ">=", desde], ["date_ret", "<=", hasta]],
-          ["name", "number", "partner_id", "company_id", "date_ret", "state", "amount_total_ret", "currency_id", "create_date"],
+          [["company_id", "in", ve], ["type", "in", ["in_invoice", "out_invoice", "out_refund"]], ["date_ret", ">=", desde], ["date_ret", "<=", hasta]],
+          ["type", "name", "number", "partner_id", "company_id", "date_ret", "state", "amount_total_ret", "currency_id", "create_date"],
           ve,
         )
       : vacio,
@@ -419,7 +422,7 @@ export async function fetchFiscal(
     leerTodo(
       "account.tax",
       [["company_id", "in", companyIds], ["active", "in", [true, false]]],
-      ["name", "amount", "tax_group_id"],
+      ["name", "amount", "tax_group_id", "type_tax_use", "active", "company_id"],
       companyIds,
     ),
     // Tasa BCV (bolivares por USD) para las retenciones en bolivares de facturas en USD.
@@ -570,15 +573,17 @@ export async function fetchFiscal(
       sede: empresaDeCompanyId(idM2o(r.company_id) || 0),
       fecha: r[fechaCampo] || "",
       estado,
-      monto: redondear(Math.abs(usd ?? (Number(r[montoCampo]) || 0))),
-      moneda: usd === null ? "VEF" : usd !== undefined || tipo === "islr" ? "USD" : nombreM2o(r.currency_id, "USD"),
+      monto: (r.type === "out_refund" ? -1 : 1) * redondear(Math.abs(usd ?? (Number(r[montoCampo]) || 0))),
+      moneda: usd === null ? "VEF" : usd !== undefined || (tipo === "islr" && !r.type?.startsWith("out_")) ? "USD" : nombreM2o(r.currency_id, "USD"),
       diasEnBorrador:
         estado === "borrador" && r.create_date ? diasEntre(String(r.create_date).slice(0, 10), hoy) : null,
     };
   };
 
-  const ivaDelMes = ivaMes.map(comprobante("iva", "total_tax_ret", "date"));
-  const islrDelMes = islrMes.map(comprobante("islr", "amount_total_ret", "date_ret"));
+  const ivaDelMes = ivaMes.filter(r => r.type === "in_invoice").map(comprobante("iva", "total_tax_ret", "date"));
+  const islrDelMes = islrMes.filter(r => r.type === "in_invoice").map(comprobante("islr", "amount_total_ret", "date_ret"));
+  const ivaVentas = ivaMes.filter(r => r.type !== "in_invoice").map(comprobante("iva", "total_tax_ret", "date"));
+  const islrVentas = islrMes.filter(r => r.type !== "in_invoice").map(comprobante("islr", "amount_total_ret", "date_ret"));
   const itbmsDelMes = itbmsMes.map(comprobante("itbms", "total_itbms_retenido", "date"));
 
   // Clase de cada impuesto: IVA/ITBMS (tasa > 0), exento (0 o negativo, como la
@@ -756,7 +761,7 @@ export async function fetchFiscal(
   // --- Clasificacion de retenciones del mes (sin anuladas) ---
   const validasIva = new Map<number, number>(); // retencion -> company
   ivaMes.forEach((r: any) => {
-    if (estadoDe(r.state) !== "anulado") validasIva.set(r.id, idM2o(r.company_id) || 0);
+    if (r.type === "in_invoice" && estadoDe(r.state) !== "anulado") validasIva.set(r.id, idM2o(r.company_id) || 0);
   });
   const clasesIva = new Map<string, ClaseRetencionIva & { _comp: Set<number>; _fact: Set<number> }>();
   usdPorLineaIva.forEach((u, lineaId) => {
@@ -787,7 +792,7 @@ export async function fetchFiscal(
 
   const validasIslr = new Map<number, number>();
   islrMes.forEach((r: any) => {
-    if (estadoDe(r.state) !== "anulado") validasIslr.set(r.id, idM2o(r.company_id) || 0);
+    if (r.type === "in_invoice" && estadoDe(r.state) !== "anulado") validasIslr.set(r.id, idM2o(r.company_id) || 0);
   });
   const clasesIslr = new Map<string, ClaseRetencionIslr & { _comp: Set<number>; _fact: Set<number> }>();
   lineasIslr.forEach((l: any) => {
@@ -857,6 +862,24 @@ export async function fetchFiscal(
     });
   }
 
+  const porImpuesto = new Map<number, DatosFiscal["impuestosVentas"][number]>();
+  const impuestosConMovimientos = new Set(impuestoVentas.map(g => idM2o(g.tax_line_id)));
+  for (const t of impuestosOdoo) {
+    const sede = empresaDeCompanyId(idM2o(t.company_id) || 0);
+    if (claseImpuesto.get(t.id) === "igtf" && igtf.some(i => i.sede === sede)) continue;
+    if (!impuestosConMovimientos.has(t.id) && !(t.active && t.type_tax_use === "sale" && Number(t.amount) !== 0)) continue;
+    porImpuesto.set(t.id, {
+      id: t.id, sede, nombre: [nombreM2o(t.tax_group_id), t.name].filter(Boolean).join(" · "), monto: 0, documentos: [],
+    });
+  }
+  for (const g of impuestoVentas) {
+    const impuesto = porImpuesto.get(idM2o(g.tax_line_id) || 0);
+    if (!impuesto) continue;
+    const monto = redondear(-Number(g.balance));
+    impuesto.monto = redondear(impuesto.monto + monto);
+    impuesto.documentos.push({ id: idM2o(g.move_id) || 0, numero: nombreM2o(g.move_id), monto });
+  }
+
   const pendientes = [
     ...ivaPendientes.map(comprobante("iva", "total_tax_ret", "date")),
     ...islrPendientes.map(comprobante("islr", "amount_total_ret", "date_ret")),
@@ -867,6 +890,9 @@ export async function fetchFiscal(
     aplicaVenezuela: ve.length > 0,
     aplicaPanama: pa.length > 0,
     impuestos,
+    retencionesVentas: { iva: resumir(ivaVentas), islr: resumir(islrVentas) },
+    comprobantesVentas: [...ivaVentas, ...islrVentas].sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    impuestosVentas: [...porImpuesto.values()],
     retencionesIva: resumir(ivaDelMes),
     retencionesIslr: resumir(islrDelMes),
     retencionesItbms: resumir(itbmsDelMes),

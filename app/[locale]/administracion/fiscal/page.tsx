@@ -81,7 +81,7 @@ export default function FiscalPage() {
     filtroCompras === "todas" ? true : filtroCompras === "fiscales" ? c.clase !== "sin_impuesto" : c.clase === "sin_impuesto",
   );
 
-  const tarjetaRet = (titulo: string, tipo: Comprobante["tipo"], r: ResumenRetenciones) => (
+  const tarjetaRet = (titulo: string, tipo: Comprobante["tipo"], r: ResumenRetenciones, ventas = false) => (
     <TarjetaDetalle
       titulo={titulo}
       valor={montoPorMoneda(r)}
@@ -90,7 +90,7 @@ export default function FiscalPage() {
       }`}
       tono={r.borradores > 0 ? "ambar" : "neutro"}
     >
-      <TablaComprobantes comprobantes={datos!.comprobantesDelMes.filter(c => c.tipo === tipo)} todasLasSedes={!empresa} conDias={false} vacio="Sin retenciones en el mes." />
+      <TablaComprobantes ventas={ventas} comprobantes={(ventas ? datos!.comprobantesVentas : datos!.comprobantesDelMes).filter(c => c.tipo === tipo)} todasLasSedes={!empresa} conDias={false} vacio="Sin retenciones en el mes." />
     </TarjetaDetalle>
   );
 
@@ -248,17 +248,16 @@ export default function FiscalPage() {
                 </TarjetaDetalle>)}
             </div>
           </section>
-          {datos.aplicaVenezuela && (
-            <section aria-label="Ventas">
+          <section aria-label="Ventas">
               <h2 className="mb-2 font-semibold">Ventas</h2>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-none lg:grid-flow-col lg:auto-cols-fr">
-                <TarjetaDetalle
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {datos.aplicaVenezuela && (<TarjetaDetalle
                 titulo="Facturas fiscales de venta"
                 valor={ventasF.fiscales}
                 detalle={`de ${ventasF.total} facturas del mes · ${money(ventasF.monto)}`}
               >
                   <Documentos filas={datos.ventasDetalle.filter(v => v.fiscal).map(v => ({ ...v, contacto: v.cliente, monto: v.total }))} importe="Total" />
-                </TarjetaDetalle>
+                </TarjetaDetalle>)}
                 {datos.igtf.map(i => (
                   <TarjetaDetalle
                   key={i.sede}
@@ -269,9 +268,24 @@ export default function FiscalPage() {
                   <Documentos filas={datos.ventasDetalle.filter(v => v.sede === i.sede && v.igtf !== 0).map(v => ({ ...v, contacto: v.cliente, monto: v.igtf }))} importe="IGTF" />
                 </TarjetaDetalle>
                 ))}
+                {datos.impuestosVentas.map(i => (
+                  <TarjetaDetalle key={i.id} titulo={`${i.nombre} · ${NOMBRE_SEDE[i.sede] || i.sede}`}
+                    valor={money(i.monto, 2)} detalle={`${i.documentos.length} documentos del mes`}>
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Documento</TableHead><TableHead className="text-right">Impuesto (USD)</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {i.documentos.length === 0 && <FilaVacia columnas={2} texto="Sin documentos en el mes." />}
+                        {i.documentos.map(d => (
+                          <TableRow key={d.id}><TableCell>{d.numero}</TableCell><TableCell className="text-right">{money(d.monto, 2)}</TableCell></TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TarjetaDetalle>
+                ))}
+                {datos.aplicaVenezuela && tarjetaRet("IVA retenido por clientes", "iva", datos.retencionesVentas.iva, true)}
+                {datos.aplicaVenezuela && tarjetaRet("ISLR retenido por clientes", "islr", datos.retencionesVentas.islr, true)}
               </div>
             </section>
-          )}
 
           {datos.comprobantesPendientes.length > 0 && (
             <Aviso>
@@ -599,11 +613,13 @@ function Documentos({ filas, importe }: {
 }
 
 function TablaComprobantes({
+  ventas = false,
   comprobantes,
   todasLasSedes,
   conDias,
   vacio,
 }: {
+  ventas?: boolean;
   comprobantes: Comprobante[];
   todasLasSedes: boolean;
   conDias: boolean;
@@ -615,7 +631,7 @@ function TablaComprobantes({
         <TableHeader className="bg-slate-50">
           <TableRow>
             <TableHead className="px-2 sm:px-4">Comprobante</TableHead>
-            <TableHead>Proveedor</TableHead>
+            <TableHead>{ventas ? "Cliente" : "Proveedor"}</TableHead>
             <TableHead className="text-center hidden sm:table-cell">Fecha</TableHead>
             <TableHead className="text-right">Monto</TableHead>
             <TableHead className="text-center pr-4">{conDias ? "Días" : "Estado"}</TableHead>
