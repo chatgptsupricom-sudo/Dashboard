@@ -1,5 +1,6 @@
 "use client";
 
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -26,7 +27,7 @@ import type {
   TipoDocumento,
 } from "@/lib/administracion/fiscal";
 import { CheckCircle2, FileText, XCircle } from "lucide-react";
-import { useState } from "react";
+import { type ComponentProps, type ReactNode, useState } from "react";
 
 type Respuesta = DatosFiscal & { success: true; hoy: string; mes: string };
 type Vista = "pendientes" | "sin_retencion" | "mes" | "compras";
@@ -80,15 +81,17 @@ export default function FiscalPage() {
     filtroCompras === "todas" ? true : filtroCompras === "fiscales" ? c.clase !== "sin_impuesto" : c.clase === "sin_impuesto",
   );
 
-  const tarjetaRet = (titulo: string, r: ResumenRetenciones) => (
-    <Tarjeta
+  const tarjetaRet = (titulo: string, tipo: Comprobante["tipo"], r: ResumenRetenciones) => (
+    <TarjetaDetalle
       titulo={titulo}
       valor={montoPorMoneda(r)}
       detalle={`${r.confirmados} confirmadas${r.borradores ? ` · ${r.borradores} en borrador` : ""}${
         r.anulados ? ` · ${r.anulados} anuladas` : ""
       }`}
       tono={r.borradores > 0 ? "ambar" : "neutro"}
-    />
+    >
+      <TablaComprobantes comprobantes={datos!.comprobantesDelMes.filter(c => c.tipo === tipo)} todasLasSedes={!empresa} conDias={false} vacio="Sin retenciones en el mes." />
+    </TarjetaDetalle>
   );
 
   return (
@@ -222,42 +225,53 @@ export default function FiscalPage() {
 
       {!cargando && datos && (
         <>
-          {datos.aplicaVenezuela && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Tarjeta
-                titulo="Facturas fiscales de venta"
-                valor={ventasF.fiscales}
-                detalle={`de ${ventasF.total} facturas del mes · ${money(ventasF.monto)}`}
-              />
-              <Tarjeta
+          <section aria-label="Compras">
+            <h2 className="mb-2 font-semibold">Compras</h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-none lg:grid-flow-col lg:auto-cols-fr">
+              {datos.aplicaVenezuela && (<TarjetaDetalle
                 titulo="Compras fiscales"
                 valor={comprasF.fiscales}
                 detalle={`de ${comprasF.total} facturas de compra · ${comprasF.gravadas} con IVA`}
-              />
-              {datos.igtf.map((i) => (
-                <Tarjeta
-                  key={i.sede}
-                  titulo={`IGTF cobrado · ${NOMBRE_SEDE[i.sede] || i.sede}`}
-                  valor={money(i.cobradoFacturasMes, 2)}
-                  detalle={`${i.facturasMes} facturas · base ${money(i.baseMes)}`}
-                />
-              ))}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {datos.aplicaVenezuela && tarjetaRet("Retenciones de IVA del mes", datos.retencionesIva)}
-            {datos.aplicaVenezuela && tarjetaRet("Retenciones de ISLR del mes", datos.retencionesIslr)}
-            {datos.aplicaPanama && tarjetaRet("Retenciones de ITBMS del mes", datos.retencionesItbms)}
-            {datos.aplicaVenezuela && (
-              <Tarjeta
+              >
+                  <Documentos filas={datos.compras.filter(c => !c.esNotaCredito && c.clase !== "sin_impuesto").map(c => ({ ...c, contacto: c.proveedor, monto: c.total }))} importe="Total" />
+                </TarjetaDetalle>)}
+              {datos.aplicaVenezuela && tarjetaRet("Retenciones de IVA del mes", "iva", datos.retencionesIva)}
+              {datos.aplicaVenezuela && tarjetaRet("Retenciones de ISLR del mes", "islr", datos.retencionesIslr)}
+              {datos.aplicaPanama && tarjetaRet("Retenciones de ITBMS del mes", "itbms", datos.retencionesItbms)}
+              {datos.aplicaVenezuela && (<TarjetaDetalle
                 titulo="Facturas con IVA sin retención"
                 valor={datos.facturasSinRetencionIva.length}
                 detalle={`${money(datos.facturasSinRetencionIva.reduce((s, f) => s + f.iva, 0), 2)} de IVA`}
                 tono={datos.facturasSinRetencionIva.length > 0 ? "ambar" : "verde"}
-              />
-            )}
-          </div>
+              >
+                  <Documentos filas={datos.facturasSinRetencionIva.map(f => ({ ...f, contacto: f.proveedor, monto: f.iva }))} importe="IVA" />
+                </TarjetaDetalle>)}
+            </div>
+          </section>
+          {datos.aplicaVenezuela && (
+            <section aria-label="Ventas">
+              <h2 className="mb-2 font-semibold">Ventas</h2>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-none lg:grid-flow-col lg:auto-cols-fr">
+                <TarjetaDetalle
+                titulo="Facturas fiscales de venta"
+                valor={ventasF.fiscales}
+                detalle={`de ${ventasF.total} facturas del mes · ${money(ventasF.monto)}`}
+              >
+                  <Documentos filas={datos.ventasDetalle.filter(v => v.fiscal).map(v => ({ ...v, contacto: v.cliente, monto: v.total }))} importe="Total" />
+                </TarjetaDetalle>
+                {datos.igtf.map(i => (
+                  <TarjetaDetalle
+                  key={i.sede}
+                  titulo={`IGTF cobrado · ${NOMBRE_SEDE[i.sede] || i.sede}`}
+                  valor={money(i.cobradoFacturasMes, 2)}
+                  detalle={`${i.facturasMes} facturas · base ${money(i.baseMes)}`}
+                >
+                  <Documentos filas={datos.ventasDetalle.filter(v => v.sede === i.sede && v.igtf !== 0).map(v => ({ ...v, contacto: v.cliente, monto: v.igtf }))} importe="IGTF" />
+                </TarjetaDetalle>
+                ))}
+              </div>
+            </section>
+          )}
 
           {datos.comprobantesPendientes.length > 0 && (
             <Aviso>
@@ -538,6 +552,49 @@ export default function FiscalPage() {
         </>
       )}
     </div>
+  );
+}
+
+function TarjetaDetalle({ children, ...props }: ComponentProps<typeof Tarjeta> & { children: ReactNode }) {
+  return (
+    <Dialog>
+      <div className="relative rounded-xl hover:ring-1 hover:ring-blue-400">
+        <Tarjeta {...props} />
+        <DialogTrigger asChild>
+          <button type="button" aria-label={`Ver detalle de ${props.titulo}`}
+            className="absolute inset-0 cursor-pointer rounded-xl focus-visible:outline-2 focus-visible:outline-blue-600" />
+        </DialogTrigger>
+      </div>
+      <DialogContent className="sm:max-w-4xl">
+        <DialogTitle>{props.titulo}</DialogTitle>
+        <DialogDescription>{props.valor} · {props.detalle}</DialogDescription>
+        <div className="max-h-[65vh] overflow-auto">{children}</div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Documentos({ filas, importe }: {
+  filas: { id: number; numero: string; fecha: string; sede: string; contacto: string; monto: number }[];
+  importe: string;
+}) {
+  return (
+    <Table>
+      <TableHeader><TableRow>
+        <TableHead>Documento</TableHead><TableHead>Fecha</TableHead><TableHead>Contacto</TableHead>
+        <TableHead className="text-right">{importe} (USD)</TableHead>
+      </TableRow></TableHeader>
+      <TableBody>
+        {!filas.length && <FilaVacia columnas={4} texto="Sin documentos en el mes." />}
+        {filas.map(f => (
+          <TableRow key={f.id}>
+            <TableCell>{f.numero}<div className="text-xs text-muted-foreground">{NOMBRE_SEDE[f.sede] || f.sede}</div></TableCell>
+            <TableCell>{fechaCorta(f.fecha)}</TableCell><TableCell>{f.contacto}</TableCell>
+            <TableCell className="text-right">{money(f.monto, 2)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
