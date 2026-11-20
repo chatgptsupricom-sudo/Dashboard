@@ -1513,8 +1513,10 @@ export async function deshacerLineaVieja(
       const antes = sumas(lineasPago);
 
       /** Vuelve a aplicar cada cobro a sus facturas si sus montos no cambiaron. Devuelve el aviso, si hay. */
+      // Tambien sin facturas: un cobro que no estaba aplicado a nada cambia igual de monto al deshacer
+      // (PBANES/2026/00059: $29,05 a 485,23 paso a $28,94, nov-2026) y hay que devolverlo a su tasa.
       const reaplicar = async (): Promise<string | undefined> => {
-        if (!aplicadas.length) return undefined;
+        if (!movesPago.length) return undefined;
         const cambiado = (lineas: any[]) => {
           const despues = sumas(lineas);
           return [...antes].some(([k, v]) => {
@@ -1539,10 +1541,13 @@ export async function deshacerLineaVieja(
           ahora = await leer("account.move.line", [["move_id", "in", movesPago]], camposPago);
         }
         const cambio = cambiado(ahora);
-        const nombres = [...new Set(aplicadas.map((a) => a.nombre))].join(", ");
+        const nombres = [...new Set(lineasPago.map((l) => String(l.move_id[1] || "")))].join(", ");
         if (cambio) {
-          return `${nombres} cambió de monto al deshacer y no se volvió a aplicar a sus facturas (quedaría un diferencial): revísalo en Odoo y aplícalo a mano`;
+          return aplicadas.length
+            ? `${nombres} cambió de monto al deshacer y no se volvió a aplicar a sus facturas (quedaría un diferencial): revísalo en Odoo y aplícalo a mano`
+            : `${nombres} cambió de monto al deshacer y no se pudo devolver a su tasa: revísalo en Odoo (borrador y confirmar)`;
         }
+        if (!aplicadas.length) return undefined;
         const fallas: string[] = [];
         // Agrupadas por apunte del cobro (Node 20 en el servidor: sin Object.groupBy).
         const grupos = new Map<string, typeof aplicadas>();
