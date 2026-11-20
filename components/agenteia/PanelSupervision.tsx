@@ -177,7 +177,7 @@ export default function PanelSupervision({ onPendientes }: { onPendientes?: (n: 
         /* 1. Usuarios */
         <>
           <p className="text-[13px] text-slate-600">
-            Conversaciones de los usuarios que usan el agente. Las de un SuperAdmin no aparecen. Una revisión automática
+            Conversaciones de los usuarios que usan el agente. Las de Presidencia no aparecen. Una revisión automática
             marca las que parecen ajenas a la empresa o sospechosas; es una ayuda, conviene leerlas antes de concluir.
           </p>
           {!usuarios && !error && cargando("Cargando usuarios…")}

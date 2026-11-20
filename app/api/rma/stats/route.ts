@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { sedeRma } from "@/lib/rma/sedeSesion";
 import { NextRequest, NextResponse } from "next/server";
 import { hayTablaProductos } from "@/lib/rma/items";
 import { hayColumnaExterno } from "@/lib/rma/procedencia";
@@ -63,7 +64,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const companyId = parseInt(searchParams.get("company_id") || "", 10) || null;
+    const sede = sedeRma(auth.payload, searchParams.get("company_id"));
+    if (sede.error) return sede.error;
+    const companyId = sede.companyId;
     const filtroSede = companyId ? "AND c.company_id = ?" : "";
     const params = companyId ? [companyId] : [];
 

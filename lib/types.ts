@@ -90,6 +90,8 @@ export const rolePermissions: RolePermissions = {
       "reporte_diario", // Reporte Diario de Ventas
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
       "semaforo_clientes", // Semáforo de clientes: cartera en verde/amarillo/rojo (lib/semaforo-clientes)
+      "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
+      "rotacion_inventario", // Rotación de inventario: semáforo por días sin venta y apoyo de marcas (lib/rotacion-inventario)
       "crear_cliente", // Crear clientes en Odoo con validaciones (lib/clientes-odoo)
       "metas_marca", // Metas de venta por marca y cumplimiento (Ventas > Metas por Marca)
       "stock_marca", // Stock vs vendido por marca, % vendido (Ventas > Stock por Marca)
@@ -101,6 +103,7 @@ export const rolePermissions: RolePermissions = {
       "cxc_tiempo_cobro", // Tiempo de cobro (días de emisión a pago completo)
       "cxc_incobrables", // Incobrables marcados a mano, con justificación
       "cxc_sobregiro", // Sobregiro: uso del límite de crédito de cada cliente
+      "cupo_credito", // Cupo de crédito de su sede: por cliente, vendedor, zona e histórico (lib/cupo-credito)
       "cxc_facturado_detallado", // Facturado detallado: el reporte de Odoo de cualquier mes
       "rma", // Servicio Técnico / RMA
       "banco_imagenes", // Banco de Imágenes (AdminLeads)
@@ -181,6 +184,7 @@ export const rolePermissions: RolePermissions = {
       "actividad",
       "top_clientes",
       "semaforo_clientes", // Semáforo de su cartera (lib/semaforo-clientes)
+      "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
       "spiff",
       "planificacion_visitas",
       "banco_imagenes_seller",
@@ -222,7 +226,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "semaforo_clientes", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "semaforo_clientes", "cupo_credito", "rotacion_inventario", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -297,6 +301,8 @@ export const rolePermissions: RolePermissions = {
       "reporte_diario", // Reporte Diario
       "reporte_ventas", // Reporte de Ventas (de su sede, payload.cids)
       "semaforo_clientes", // Semáforo de clientes de su sede (lib/semaforo-clientes)
+      "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
+      "rotacion_inventario", // Rotación de inventario de su sede, solo lectura (lib/rotacion-inventario)
       "seller_map", // Mapa de Clientes (sub-item de Ventas)
       // Leads dropdown
       "adminleads", // Leads (permiso principal del dropdown)
@@ -364,6 +370,7 @@ export const rolePermissions: RolePermissions = {
       "clasificacion_clientes_compras", // Clasificación de clientes por actividad comercial (lib/inteligencia-negocio/clasificacion)
       "ordenes_compra", // Órdenes de compra: crear/editar/enviar a aprobación
       "recepcion_packing", // Packing lists: Compras los carga, Almacén los recibe
+      "rotacion_inventario", // Rotación de inventario y solicitudes de apoyo a las marcas (lib/rotacion-inventario)
       "actualizacion_precios", // Excel de asignación por sede → listas de precios de Odoo (lib/compras/actualizacionPrecios)
       "validar_factura", // Factura de compra → SKU que faltan en Odoo y crearlos (lib/compras/validarFactura)
     ],
@@ -527,6 +534,7 @@ export const rolePermissions: RolePermissions = {
       "inventory",
       "bi_dias_promedio", // Días promedio de cobro, inventario y pago
       "bi_por_llegar", // Productos en camino y si ya se vendieron (lib/inteligencia-negocio/porLlegar.ts)
+      "bi_precios", // Inteligencia de precios: listas de la competencia ordenadas vs Supricom (lib/inteligencia-negocio/precios)
       "bi_rotacion_productos", // Rotación productos: el Dashboard de Productos de AdminLeads, con costo, fuera del desplegable Leads
       "bi_reportes", // Desplegable Reportes: Facturación, Productos, Clientes (lib/inteligencia-negocio/reportes.ts)
       "bi_clasificacion", // Desplegable Clasificación: productos, clientes y por marca (lib/inteligencia-negocio/clasificacion)
@@ -547,6 +555,8 @@ export const rolePermissions: RolePermissions = {
       "stock_marca",
       "reportes_comerciales",
       "semaforo_clientes", // Semáforo de clientes, las tres sedes (lib/semaforo-clientes)
+      "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
+      "rotacion_inventario", // Rotación de inventario, solo lectura (lib/rotacion-inventario)
       "crear_cliente", // Crear clientes en Odoo (lib/clientes-odoo); elige Valencia o Caracas
       "seller_map",
       "spiff",
@@ -573,7 +583,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "gm_banco_imagenes", "actividad"],
+    sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "rotacion_inventario", "gm_banco_imagenes", "actividad"],
   },
   // Marketing y Electrodomésticos (lib/auth/marketingElectro.ts): lo mismo que
   // Inteligencia de Negocio menos Leads, más ventas e inventario por marca (todas
@@ -607,6 +617,8 @@ export const rolePermissions: RolePermissions = {
       "stock_marca",
       "reportes_comerciales",
       "semaforo_clientes", // Semáforo de clientes, como BI (lib/semaforo-clientes)
+      "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
+      "rotacion_inventario", // Rotación de inventario, como BI (lib/rotacion-inventario)
       "seller_map",
       "spiff",
       // Desplegable Marketing

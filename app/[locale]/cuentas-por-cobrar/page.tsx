@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { descargarExcel } from "@/lib/excel";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import DetalleDso from "@/components/cxc/DetalleDso";
 import { BANDAS, COLOR_BANDA, type Banda } from "@/lib/cxc/bandas";
 import { ColumnHeader } from "@/components/compras/column-header";
 
@@ -151,6 +152,9 @@ export default function CxcDashboardPage() {
   const [salespersonFilter, setSalespersonFilter] = useState("");
 
   const userCids = user?.cids;
+  // Negociaciones especiales del DSO: las marcan CxC, Administración y el SuperAdmin.
+  const rolUsuario = String(user?.role || "").toLowerCase().trim();
+  const puedeMarcarEspeciales = rolUsuario === "superadmin" || rolUsuario === "cuentas por cobrar" || rolUsuario.startsWith("administraci");
 
   // Modal state - Flow: salesperson → invoices → invoice detail → client invoices
   const [invoicesModal, setInvoicesModal] = useState<{ open: boolean; userId: number; userName: string }>({ open: false, userId: 0, userName: "" });
@@ -444,7 +448,7 @@ export default function CxcDashboardPage() {
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${data.kpis.dso.value === null ? "bg-slate-300" : getTrafficDot(data.kpis.dso.value, umbral(data.kpis.dso.meta, true), true)}`} />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">DSO (Días Cobro)</span>
-                  <Ayuda texto={`DSO = CxC crédito al cierre ÷ ventas a crédito del mes × días del mes. Usa la misma CxC final que Efectividad. En el mes en curso se calcula con los días que van del mes: los primeros días hay pocas ventas contra toda la cartera y el DSO sale alto; se estabiliza hacia mitad de mes. ${AYUDA_CXC}`} />
+                  <Ayuda texto={`DSO = CxC crédito al cierre ÷ ventas a crédito del mes × días del mes, sin los clientes con negociación especial (se ven aparte en el detalle, junto con el DSO por plazo de pago). Usa la misma CxC final que Efectividad. En el mes en curso se calcula con los días que van del mes: los primeros días hay pocas ventas contra toda la cartera y el DSO sale alto; se estabiliza hacia mitad de mes. ${AYUDA_CXC}`} />
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">{peso("dso", 10)}</span>
               </div>
@@ -456,6 +460,12 @@ export default function CxcDashboardPage() {
                 <span>CxC crédito al cierre: {formatCurrency(data.kpis.dso.carteraAbierta)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">Ventas crédito {data.kpis.dso.ventanaMovil ? `últimos ${data.kpis.dso.dias} días` : "del mes"}: {formatCurrency(data.kpis.dso.ventasNetas)}{data.kpis.dso.ventanaMovil ? "" : ` · ${data.kpis.dso.dias} días`}</div>
+              {data.kpis.dso.especiales?.clientes > 0 && (
+                <div className="text-xs text-violet-700 mt-1">
+                  Sin {data.kpis.dso.especiales.clientes} negociación{data.kpis.dso.especiales.clientes === 1 ? "" : "es"} especial{data.kpis.dso.especiales.clientes === 1 ? "" : "es"}
+                  {data.kpis.dso.valueConEspeciales != null ? ` · con ellas: ${data.kpis.dso.valueConEspeciales} días` : ""}
+                </div>
+              )}
             </div>
 
             {/* Informativa: sin meta ni peso. Es la cartera vencida antes de 2025
@@ -789,7 +799,7 @@ export default function CxcDashboardPage() {
           <div className="space-y-5">
             {/* ── STATUS BANNER ── */}
             {(() => {
-              const isPaid = invoiceDetail.paymentState === "paid" || invoiceDetail.amountResidual <= 0;
+              const isPaid = invoiceDetail.paymentState === "paid" || Math.abs(invoiceDetail.amountResidual) < 0.005;
               const isPartial = !isPaid && (invoiceDetail.paymentState === "partial" || (invoiceDetail.amountPaid > 0 && invoiceDetail.amountResidual > 0));
               const isOverdue = !isPaid && !isPartial && invoiceDetail.amountResidual > 0 && invoiceDetail.invoiceDateDue && new Date(invoiceDetail.invoiceDateDue) < new Date();
               return (
@@ -1012,7 +1022,7 @@ export default function CxcDashboardPage() {
                           <td className="py-2.5 px-4 text-slate-500">{formatDate(p.date)}</td>
                           <td className="py-2.5 px-4 text-right text-slate-600">{p.debit > 0 ? formatCurrency(p.debit) : "—"}</td>
                           <td className="py-2.5 px-4 text-right text-emerald-600 font-medium">{p.credit > 0 ? formatCurrency(p.credit) : "—"}</td>
-                          <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(Math.abs(p.amount_residual || 0))}</td>
+                          <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(p.amount_residual || 0)}</td>
                           <td className="py-2.5 px-4 text-center">
                             {p.reconciled ? (
                               <span className="inline-block w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] font-bold leading-5 text-center">✓</span>
@@ -1463,63 +1473,15 @@ export default function CxcDashboardPage() {
               </>
             )}
 
-            {/* ── DSO Detail ── */}
+            {/* ── DSO Detail (components/cxc/DetalleDso.tsx) ── */}
             {kpiData.type === "dso" && (
-              <>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest block mb-1">CxC crédito al cierre</span>
-                    <span className="text-lg font-bold text-blue-800">{formatCurrency(kpiData.summary.carteraAbierta)}</span>
-                  </div>
-                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest block mb-1">{kpiData.summary.ventanaMovil ? `Ventas crédito últimos ${kpiData.summary.dias} días` : "Ventas crédito del mes"}</span>
-                    <span className="text-lg font-bold text-emerald-800">{formatCurrency(kpiData.summary.ventasNetas)}</span>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">DSO</span>
-                    <span className="text-lg font-bold text-slate-800">{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</span>
-                    <span className="text-[10px] text-slate-400 block">{kpiData.summary.dias} días del período</span>
-                  </div>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">Fórmula</span>
-                  <p className="text-xs text-slate-600">
-                    DSO = CxC a crédito al cierre ÷ Ventas a crédito {kpiData.summary.ventanaMovil ? "del período" : "del mes"} × Días {kpiData.summary.ventanaMovil ? "del período" : "del mes"}
-                    {" "}= {formatCurrency(kpiData.summary.carteraAbierta)} ÷ {formatCurrency(kpiData.summary.ventasNetas)} × {kpiData.summary.dias}
-                    {" "}= <strong>{kpiData.summary.dso !== null ? `${kpiData.summary.dso} días` : "N/A"}</strong>
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Saldo contable a crédito (sin Incobrables, Supricom ni SUPER TECHNO) y facturas a crédito menos sus notas de crédito, con IVA. Mes en curso: al día de hoy y, mientras el mes lleve menos de 30 días, con las ventas de los últimos 30 días (con 1 o 2 días de ventas el DSO se dispara).
-                    Por cliente, la misma fórmula con su saldo y sus ventas a crédito de los últimos 90 días (con un solo mes, un cliente que compró poco ese mes sale con un DSO enorme); sin ventas en esos días no hay DSO (—).
-                  </p>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-slate-50/80">
-                        <th className="text-left py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Saldo al cierre</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ventas crédito 90 días</th>
-                        <th className="text-right py-2.5 px-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">DSO</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {kpiData.clientes.map((c: any) => (
-                        <tr key={c.partnerId} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
-                          <td className="py-2.5 px-3 font-medium text-slate-700 max-w-[200px] truncate">{c.partnerName}</td>
-                          <td className="py-2.5 px-3 text-right font-medium text-slate-800">{formatCurrency(c.saldo)}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-600">{formatCurrency(c.ventasNetas)}</td>
-                          <td className="py-2.5 px-3 text-right">
-                            <span className={c.dso == null ? "text-slate-400" : c.dso > 60 ? "text-red-600 font-bold" : c.dso > 45 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
-                              {c.dso == null ? "—" : c.dso.toLocaleString("es-VE", { maximumFractionDigits: 2 })}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
+              <DetalleDso
+                data={kpiData}
+                empresa={empresa}
+                companyIdMarca={empresa ? ({ valencia: 9, caracas: 10, panama: 7 } as Record<string, number>)[empresa] ?? 0 : [7, 9, 10].includes(Number(userCids)) ? Number(userCids) : 0}
+                puedeMarcar={puedeMarcarEspeciales}
+                onCambio={() => { fetchKpiDetail("dso", "Detalle DSO (Días Cobro)"); fetchData(); }}
+              />
             )}
           </div>
         )}

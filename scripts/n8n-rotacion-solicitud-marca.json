@@ -1,0 +1,94 @@
+{
+  "name": "Rotación - Solicitud a la marca",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rotacion-marca",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "b2e1d3f4-0001-4c3a-9a10-rotacion0001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "rotacion-marca"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $('Webhook').first().json.body || {};\nif (b.evento !== 'rotacion_solicitud_marca' || !Array.isArray(b.para) || b.para.length === 0) return [];\nconst esc = (s) => String(s ?? '').replace(/[&<>\"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\nconst usd = (n) => Number(n || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });\nconst filas = (b.productos || []).slice(0, 40).map((p) => '<tr><td style=\"padding:4px 8px;border:1px solid #ddd\">' + esc(p.codigo) + '</td><td style=\"padding:4px 8px;border:1px solid #ddd\">' + esc(p.producto) + '</td><td style=\"padding:4px 8px;border:1px solid #ddd;text-align:right\">' + esc(p.unidades) + '</td><td style=\"padding:4px 8px;border:1px solid #ddd;text-align:right\">' + esc(p.dias_sin_venta) + '</td></tr>').join('');\nconst mas = (b.productos || []).length > 40 ? '<p>… y ' + ((b.productos.length) - 40) + ' más en el Excel adjunto.</p>' : '';\nconst html = '<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#111\">' + esc(b.mensaje).replace(/\\n/g, '<br>') +\n  '<table style=\"border-collapse:collapse;margin-top:16px;font-size:12px\"><tr style=\"background:#1e293b;color:#fff\"><th style=\"padding:4px 8px\">Código</th><th style=\"padding:4px 8px\">Producto</th><th style=\"padding:4px 8px\">Unidades</th><th style=\"padding:4px 8px\">Días sin venta</th></tr>' + filas + '</table>' + mas + '</div>';\nconst adj = b.adjunto || {};\nreturn [{\n  json: { to: b.para.join(','), cc: (b.cc || []).join(','), subject: b.asunto, html },\n  binary: adj.base64 ? { adjunto: { data: adj.base64, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', fileName: adj.nombre || 'solicitud.xlsx' } } : {},\n}];"
+      },
+      "id": "b2e1d3f4-0002-4c3a-9a10-rotacion0002",
+      "name": "Armar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "ccList": "={{ $json.cc }}",
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "adjunto"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b2e1d3f4-0003-4c3a-9a10-rotacion0003",
+      "name": "Enviar",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Cuenta del panel"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Armar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar correo": {
+      "main": [
+        [
+          {
+            "node": "Enviar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

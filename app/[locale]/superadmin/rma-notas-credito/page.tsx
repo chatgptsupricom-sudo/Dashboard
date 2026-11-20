@@ -1,6 +1,7 @@
 "use client";
 
 import { SolicitudesNotaCredito } from "@/components/rma/SolicitudesNotaCredito";
+import { SelectorSedeRma } from "@/components/rma/SedeRma";
 import { FileCheck2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -20,6 +21,7 @@ export default function SuperAdminNotasCreditoRmaPage() {
         </div>
       </div>
 
+      <SelectorSedeRma />
       <SolicitudesNotaCredito />
     </div>
   );

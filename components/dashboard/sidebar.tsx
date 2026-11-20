@@ -328,6 +328,8 @@ export function Sidebar({
     { id: "bi_dias_promedio", label: "Días promedio", icon: Timer, slug: "/dias-promedio" },
     // Productos en camino y si ya se vendieron en la sede (lib/inteligencia-negocio/porLlegar.ts).
     { id: "bi_por_llegar", label: "Por llegar", icon: Truck, slug: "/por-llegar" },
+    // Precios de la competencia ordenados y comparados con Supricom (lib/inteligencia-negocio/precios).
+    { id: "bi_precios", label: "Inteligencia de precios", icon: DollarSign, slug: "/precios" },
     // El Dashboard de Productos de AdminLeads (rotación de SKUs), para BI fuera del desplegable Leads.
     { id: "bi_rotacion_productos", label: "Rotación productos", icon: Boxes, slug: "/adminleads/dashboard", absoluteHref: true },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
@@ -389,6 +391,10 @@ export function Sidebar({
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     // Semáforo de clientes: cartera en verde/amarillo/rojo contra su historial (lib/semaforo-clientes).
     { id: "semaforo_clientes", label: "Semáforo de clientes", icon: TrafficCone, slug: "/semaforo-clientes", absoluteHref: true },
+    // Cupo de crédito: consumo del límite por cliente, vendedor (equipo) y zona, con histórico (lib/cupo-credito).
+    { id: "cupo_credito", label: "Cupo de crédito", icon: CreditCard, slug: "/cupo-credito", absoluteHref: true },
+    // Rotación de inventario: productos en verde/amarillo/rojo por días sin venta y apoyo de las marcas (lib/rotacion-inventario).
+    { id: "rotacion_inventario", label: "Rotación de inventario", icon: Hourglass, slug: "/rotacion-inventario", absoluteHref: true },
     { id: "metas_marca", label: t("metas_marca"), icon: Target, slug: "/metas-marca" },
     { id: "stock_marca", label: t("stock_marca"), icon: Boxes, slug: "/stock-marca" },
     { id: "sorteo_caracas", label: t("sorteo_caracas"), icon: Trophy, slug: "/sorteo" },
@@ -620,7 +626,7 @@ export function Sidebar({
   // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
   // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
   const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
-  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes", "crear_cliente"];
+  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes", "cupo_credito", "crear_cliente"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -661,7 +667,7 @@ export function Sidebar({
           [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...gerenteMarcaSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         // Gerente de Operaciones: el Semáforo va dentro de su desplegable Ventas.
-        !(showVentasDropdown && isGerenteOperaciones && item.id === "semaforo_clientes") &&
+        !(showVentasDropdown && isGerenteOperaciones && ["semaforo_clientes", "cupo_credito"].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") &&
         // El SuperAdmin ya la tiene completa en el desplegable "Administración".
@@ -1513,6 +1519,13 @@ export function Sidebar({
                               permission: "semaforo_clientes",
                             }]
                           : []),
+                        ...((isSuperAdminRole || isBIRole || isGerenteOperaciones) && allowedSections.includes("cupo_credito")
+                          ? [{
+                              label: "Cupo de crédito",
+                              href: `/${locale}/cupo-credito`,
+                              permission: "cupo_credito",
+                            }]
+                          : []),
                         ...((isSuperAdminRole || isBIRole) && allowedSections.includes("crear_cliente")
                           ? [{
                               label: t("crear_cliente"),
@@ -2136,6 +2149,7 @@ export function Sidebar({
                           items: [
                             { label: "Días promedio", slug: "dias-promedio" },
                             { label: "Por llegar", slug: "por-llegar" },
+                            { label: "Inteligencia de precios", slug: "precios" },
                           ],
                         },
                         {

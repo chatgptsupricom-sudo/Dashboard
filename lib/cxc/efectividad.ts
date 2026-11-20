@@ -207,7 +207,7 @@ export async function facturasDelPeriodo(companyIds: number[], desde: string, ha
         ["invoice_date", ">=", desde],
         ["invoice_date", "<=", hasta],
       ]],
-      { fields: ["id", "name", "partner_id", "commercial_partner_id", "company_id", "invoice_user_id", "move_type", "invoice_date", "amount_total_signed", "invoice_payment_term_id", "reversed_entry_id"], order: "id asc", limit: 5000, offset },
+      { fields: ["id", "name", "partner_id", "commercial_partner_id", "company_id", "invoice_user_id", "move_type", "invoice_date", "invoice_date_due", "amount_total_signed", "invoice_payment_term_id", "reversed_entry_id"], order: "id asc", limit: 5000, offset },
     )) || [];
     out.push(...page);
     if (page.length < 5000) break;

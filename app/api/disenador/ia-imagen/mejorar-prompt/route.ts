@@ -1,5 +1,7 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
+import { filtroDueno } from "@/lib/disenos/alcance";
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
@@ -47,7 +49,12 @@ export async function POST(request: NextRequest) {
       buffer = Buffer.from(await image.arrayBuffer());
       mime = image.type || "image/png";
     } else if (sourceDesignId) {
-      const r = await query(`SELECT image_data, image_mime FROM designer_designs WHERE id = ?`, [sourceDesignId]);
+      await ensureDesignerDesignsTable();
+      const dueno = filtroDueno(auth.payload);
+      const r = await query(
+        `SELECT image_data, image_mime FROM designer_designs WHERE id = ?${dueno.sql}`,
+        [sourceDesignId, ...dueno.params]
+      );
       const row = r.rows?.[0];
       if (!row?.image_data) {
         return NextResponse.json({ success: false, error: "El diseño de origen no existe" }, { status: 200 });

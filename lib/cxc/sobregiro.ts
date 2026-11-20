@@ -3,6 +3,7 @@ import { esInterno, esRelacionada } from "@/lib/cxc/cobros";
 import { COMPANY_NAMES } from "@/lib/cxc/alcance";
 import { nombresPlazos } from "@/lib/cxc/credito";
 import { esICExcluido } from "@/lib/intercompania";
+import { ZONAS_MAPA, claveZona } from "@/lib/mapaClientes/zonas";
 
 /**
  * Sobregiro: cuánto del límite de crédito usa cada cliente, sede por sede.
@@ -36,6 +37,11 @@ export interface ClienteSobregiro {
   companyId: number;
   sede: string;
   vendedor: string;
+  /** Usuario de Odoo del vendedor (res.partner.user_id); null sin vendedor. */
+  vendedorId: number | null;
+  /** Estado / provincia del cliente en Odoo (state_id); "" sin ubicar. */
+  zona: string;
+  ciudad: string;
   plazo: string;
   limite: number;
   usado: number;
@@ -54,6 +60,21 @@ export interface ClienteSobregiro {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const idDe = (v: any): number | undefined => (Array.isArray(v) ? v[0] : v) || undefined;
 const nombreDe = (v: any): string => (Array.isArray(v) ? v[1] : "") || "";
+
+/**
+ * Nombre del estado con el que se agrupa por zona: el mismo cruce del Mapa de
+ * clientes (lib/mapaClientes/zonas.ts), así "Bolivar (EC)" y "Bolívar (VE)"
+ * caen juntos y "Vargas" sale La Guaira. Un estado que no es del país de la
+ * sede queda con su nombre de Odoo sin el país entre paréntesis.
+ */
+export function nombreZona(estado: string, cid: number): string {
+  if (!estado) return "";
+  const clave = claveZona(estado);
+  // Primero el país de la sede; si no, el otro (clientes de Valencia o Caracas
+  // con un estado de Panamá: "Ciudad de Panamá" y "PANAMA" van juntos).
+  const [propio, otro] = cid === 7 ? (["PA", "VE"] as const) : (["VE", "PA"] as const);
+  return ZONAS_MAPA[propio][clave] || ZONAS_MAPA[otro][clave] || estado.replace(/\s*\(.*?\)\s*/g, " ").trim();
+}
 
 function hoyStr() {
   const d = new Date();
@@ -79,7 +100,7 @@ async function leerClientes(ids: number[], cid: number): Promise<any[]> {
   const out: any[] = [];
   for (let i = 0; i < ids.length; i += 500) {
     const page = await callOdooRPCEstricto<any[]>("res.partner", "search_read", [[["id", "in", ids.slice(i, i + 500)]]], {
-      fields: ["id", "name", "vat", "credit_limit", "user_id", "property_payment_term_id"],
+      fields: ["id", "name", "vat", "credit_limit", "user_id", "property_payment_term_id", "state_id", "city"],
       context: { allowed_company_ids: [cid], active_test: false },
     });
     out.push(...(page || []));
@@ -132,7 +153,7 @@ async function sobregiroDeSede(cid: number): Promise<ClienteSobregiro[]> {
   const vistos = new Set(leidos.map((p) => p.id));
   const restringidos = ids
     .filter((id) => !vistos.has(id))
-    .map((id) => ({ id, name: nombreEnLibro.get(id) || `Contacto ${id}`, vat: "", credit_limit: 0, user_id: false, property_payment_term_id: false }));
+    .map((id) => ({ id, name: nombreEnLibro.get(id) || `Contacto ${id}`, vat: "", credit_limit: 0, user_id: false, property_payment_term_id: false, state_id: false, city: "" }));
   const partners = [...leidos, ...restringidos].filter((p) => !esInterno(p.name || "") && !esRelacionada(p.name || "") && !esICExcluido(p.id));
 
   const plazos = await nombresPlazos(
@@ -158,6 +179,9 @@ async function sobregiroDeSede(cid: number): Promise<ClienteSobregiro[]> {
       companyId: cid,
       sede: COMPANY_NAMES[cid] || String(cid),
       vendedor: nombreDe(p.user_id) || "Sin vendedor",
+      vendedorId: idDe(p.user_id) ?? null,
+      zona: nombreZona(nombreDe(p.state_id), cid),
+      ciudad: String(p.city || "").trim(),
       plazo: plazos.get(idDe(p.property_payment_term_id) as number) || "",
       limite,
       usado: u,

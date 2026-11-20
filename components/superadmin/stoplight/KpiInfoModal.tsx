@@ -46,7 +46,7 @@ export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
     return (
       <div className="text-sm text-slate-600 leading-relaxed space-y-3">
         <p><strong>{t("info_que_mide")}</strong> {def.descripcion}</p>
-        <p><strong>Meta:</strong> {meta}{periodo}.</p>
+        <p><strong>Meta:</strong> {`${meta}${periodo}`.replace(/\.$/, "")}.</p>
         <p><strong>Fuente:</strong> {fuente}</p>
       </div>
     );
@@ -86,6 +86,7 @@ export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
           <p><strong>{t("info_formula")}</strong> DSO = CxC a crédito al cierre del mes ÷ Ventas a crédito del mes × Días del mes</p>
           <p><strong>Mismo período:</strong> los tres términos son del mes elegido; en el mes en curso, al día de hoy.</p>
           <p><strong>CxC y ventas:</strong> saldo contable a crédito sin Incobrables, Supricom ni SUPER TECHNO, y facturas a crédito menos notas de crédito, con IVA.</p>
+          <p><strong>Negociaciones especiales:</strong> los clientes que CxC marca con un acuerdo de pago especial (plazo extendido, refinanciamiento, cuotas) quedan fuera del número general y se miden aparte, junto con el DSO de cada plazo de pago, en el detalle del DSO del Dashboard de CxC.</p>
           <p><strong>{t("info_semaforo")}</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
         </>
       )}

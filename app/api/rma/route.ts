@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { sedeRma } from "@/lib/rma/sedeSesion";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { crearProductos, hayTablaProductos } from "@/lib/rma/items";
@@ -14,7 +15,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
-    const companyId = searchParams.get("company_id") || "";
+    const sede = sedeRma(auth.payload, searchParams.get("company_id"));
+    if (sede.error) return sede.error;
+    const companyId = sede.companyId;
     const origen = searchParams.get("origen") || "";
     // supricom = vendido por Supricom, externo = no comprado en Supricom.
     const procedencia = leerProcedencia(searchParams.get("procedencia"));
@@ -47,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     if (companyId) {
       where += " AND c.company_id = ?";
-      params.push(parseInt(companyId, 10));
+      params.push(companyId);
     }
 
     if (origen) {
@@ -148,7 +151,12 @@ export async function POST(request: NextRequest) {
         : Number(company_id) || null;
     if (!sedeCaso) {
       return NextResponse.json(
-        { error: "No se pudo determinar la sede del caso: el usuario no tiene sede asignada" },
+        {
+          error:
+            rol === "superadmin"
+              ? "Elige la sede del caso arriba (Valencia, Caracas o Panamá) antes de crearlo"
+              : "No se pudo determinar la sede del caso: el usuario no tiene sede asignada",
+        },
         { status: 400 }
       );
     }

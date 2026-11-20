@@ -2,6 +2,7 @@
 
 import { colorEstado, etiquetaEstado } from "@/components/rma/estados";
 import { AlertasPlazos } from "@/components/rma/AlertasPlazos";
+import { conSede, useSedeRma } from "@/components/rma/SedeRma";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -63,6 +64,7 @@ function KpiCard({ label, metrica, datos, color, icon, filtro, soloSupricom, enl
   const [cases, setCases] = useState<any[] | null>(null);
   const [loadingCases, setLoadingCases] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sede = useSedeRma();
 
   const value = datos.stats[metrica] || 0;
   const supricom = datos.porProcedencia.supricom[metrica] || 0;
@@ -73,14 +75,14 @@ function KpiCard({ label, metrica, datos, color, icon, filtro, soloSupricom, enl
     if (!filtro) return;
     try {
       setLoadingCases(true);
-      const res = await fetch(`/api/rma?${q}&limit=10`);
+      const res = await fetch(conSede(`/api/rma?${q}&limit=10`, sede));
       const data = await res.json();
       if (data.success) setCases(data.cases);
     } catch {
     } finally {
       setLoadingCases(false);
     }
-  }, [filtro, q]);
+  }, [filtro, q, sede]);
 
   const abrir = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -191,11 +193,12 @@ export default function RmaDashboardPage() {
 
   const [datos, setDatos] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const sede = useSedeRma();
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/rma/stats");
+        const res = await fetch(conSede("/api/rma/stats", sede));
         const data = await res.json();
         if (data.success) setDatos(data);
       } catch (error) {
@@ -204,7 +207,7 @@ export default function RmaDashboardPage() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [sede]);
 
   if (loading) {
     return (

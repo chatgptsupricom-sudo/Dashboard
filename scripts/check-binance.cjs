@@ -63,4 +63,28 @@ assert.strictEqual(conciliadoEl(conc({ estado: "manual", amarradoEl: "2026-11-06
 assert.strictEqual(conciliadoEl(conc({ estado: "no_encontrado", binance: null })), null);
 assert.strictEqual(conciliadoEl(conc({ estado: "por_monto_hora" })), null);
 
+// Fecha del pago desde el ID de orden (comprobantes de nov-2026 con su fecha leída, al segundo).
+const { fechaDeOrden, fechaDelPago } = m.exports;
+const AHORA = Date.parse("2026-11-18T12:00:00Z");
+for (const [id, fecha] of [
+  ["466357290377854976", "2026-11-18T11:28:56Z"],
+  ["464897680034603008", "2026-11-10T14:40:52Z"],
+  ["465333687950229504", "2026-11-12T23:04:44Z"],
+  ["466059610272808961", "2026-11-16T20:58:38Z"],
+  ["464992149916786868", "2026-11-11T02:54:03Z"],
+]) {
+  assert.ok(Math.abs(fechaDeOrden(id, AHORA) - Date.parse(fecha)) < 1000, id);
+}
+// Los 12 de Caracas que quedaron "sin fecha": PC es del domingo 15 (Caracas), no del 16.
+assert.strictEqual(new Date(fechaDeOrden("465899515582201856", AHORA)).toISOString().slice(0, 19), "2026-11-16T00:16:08");
+// ID que no es de Binance Pay o da una fecha imposible: va la de la imagen.
+const imagen = Date.parse("2026-11-16T15:00:00Z");
+assert.strictEqual(fechaDelPago("12345678", imagen, AHORA), imagen);
+assert.strictEqual(fechaDelPago("999999999999999999", imagen, AHORA), imagen);
+assert.strictEqual(fechaDelPago("12345678", null, AHORA), null);
+// Manda el ID aunque la imagen diga otra hora (ej. UTC leída como Caracas)...
+assert.strictEqual(fechaDelPago("466010327628775424", Date.parse("2026-11-16T18:36:09Z"), AHORA), fechaDeOrden("466010327628775424", AHORA));
+// ...salvo que se separen más de un día: la IA leyó mal un dígito alto del ID.
+assert.strictEqual(fechaDelPago("456010327628775424", imagen, AHORA), imagen);
+
 console.log("check-binance: OK");

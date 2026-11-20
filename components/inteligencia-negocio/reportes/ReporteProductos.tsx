@@ -14,6 +14,7 @@ type Fila = {
   marca: string;
   categoria: string;
   costo: number | null;
+  precioVenta: number | null;
   margen: number | null;
   venta: number;
   unidades: number;
@@ -28,6 +29,7 @@ const COLUMNAS: Columna<Fila>[] = [
   { clave: "marca", titulo: "Marca" },
   { clave: "categoria", titulo: "Categoría", ancho: "min-w-[160px]" },
   { clave: "costo", titulo: "Costo del producto", tipo: "dinero" },
+  { clave: "precioVenta", titulo: "Precio de venta", tipo: "dinero" },
   { clave: "margen", titulo: "Margen de ganancia %", tipo: "porcentaje" },
   { clave: "venta", titulo: "Venta $", tipo: "dinero", sumar: true },
   { clave: "unidades", titulo: "Und vendidas", tipo: "numero", sumar: true },
@@ -107,7 +109,8 @@ export function ReporteProductos() {
           <Aviso tono="azul">
             Venta en USD sin IVA, menos notas de crédito, sin las empresas del grupo. Costo: el promedio de lo vendido en el
             mes según Odoo; si no se vendió, el costo actual del producto en Odoo. Margen = (venta − costo de lo vendido) ÷
-            venta. Inventario: unidades en el almacén principal al cierre del último día del mes (hoy, si es el mes en
+            venta. Precio de venta: el de hoy en la lista de precios principal de la sede (con las dos sedes, el de Valencia y
+            si no tiene, el de Caracas). Inventario: unidades en el almacén principal al cierre del último día del mes (hoy, si es el mes en
             curso). Último ingreso: la última recepción de compra o traslado entre sedes hasta ese día.
           </Aviso>
         </>

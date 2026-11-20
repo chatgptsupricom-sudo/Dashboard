@@ -43,6 +43,8 @@ async function crearOMigrar(): Promise<void> {
       image_data LONGBLOB NULL,
       image_mime VARCHAR(100) NULL,
       created_by VARCHAR(255) NOT NULL DEFAULT '',
+      -- Dueño (correo del token): cada diseñador ve solo lo suyo (lib/disenos/alcance.ts).
+      created_by_email VARCHAR(255) NULL,
       category VARCHAR(80) NULL,
       -- Fecha del diseño: la que cuenta para los KPIs. Es distinta de
       -- created_at (cuándo se subió): un lote que se sube todo junto puede
@@ -55,7 +57,8 @@ async function crearOMigrar(): Promise<void> {
       INDEX idx_category (category),
       INDEX idx_deleted_at (deleted_at),
       INDEX idx_design_date (design_date),
-      INDEX idx_created_at (created_at)
+      INDEX idx_created_at (created_at),
+      INDEX idx_created_by_email (created_by_email)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
@@ -91,5 +94,12 @@ async function crearOMigrar(): Promise<void> {
     await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD COLUMN design_date DATE NULL`);
     await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD INDEX idx_design_date (design_date)`);
     await query(`UPDATE designer_designs SET design_date = DATE(created_at) WHERE design_date IS NULL`);
+  }
+
+  // `created_by_email` (dueño por correo) se agregó después: las filas viejas
+  // quedan en NULL y se reconocen por el nombre (lib/disenos/alcance.ts).
+  if (!tiene.has("created_by_email")) {
+    await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD COLUMN created_by_email VARCHAR(255) NULL`);
+    await ignorarSiYaExiste(`ALTER TABLE designer_designs ADD INDEX idx_created_by_email (created_by_email)`);
   }
 }

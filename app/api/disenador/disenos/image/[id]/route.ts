@@ -1,5 +1,7 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { ensureDesignerDesignsTable } from "@/lib/designerDesigns";
+import { filtroDueno } from "@/lib/disenos/alcance";
 import { NextRequest } from "next/server";
 
 const ROLES = ["diseñador"]; // superadmin siempre pasa via requireRoles
@@ -14,10 +16,12 @@ export async function GET(
 
   try {
     const { id } = await params;
+    await ensureDesignerDesignsTable();
+    const dueno = filtroDueno(auth.payload);
 
     const result = await query(
-      `SELECT image_data, image_mime FROM designer_designs WHERE id = ?`,
-      [id]
+      `SELECT image_data, image_mime FROM designer_designs WHERE id = ?${dueno.sql}`,
+      [id, ...dueno.params]
     );
     const row = result.rows?.[0];
 
@@ -32,7 +36,7 @@ export async function GET(
     return new Response(new Uint8Array(buf), {
       headers: {
         "Content-Type": row.image_mime || "image/png",
-        "Cache-Control": "public, max-age=31536000, immutable",
+        "Cache-Control": "private, max-age=31536000, immutable",
       },
     });
   } catch (error: any) {

@@ -14,9 +14,10 @@ import { db } from "@/lib/db";
  *    la alerta, si la hubo.
  * Las dos tablas se crean solas.
  *
- * Las conversaciones de un SuperAdmin no se revisan ni se muestran, ni
- * siquiera a otro SuperAdmin. Un uid del que no se sabe el correo tampoco se
- * muestra: sin correo no se puede descartar que sea un SuperAdmin.
+ * Las conversaciones de Presidencia (PRESIDENCIA) nunca se muestran; las de los
+ * demás SuperAdmin sí, pero no pasan por la revisión con IA. Un uid del que no
+ * se sabe el correo no se muestra: sin correo no se puede descartar que sea de
+ * Presidencia.
  *
  * La revisión la hace un modelo barato sobre los mensajes NUEVOS del usuario,
  * al guardarse la conversación; su costo no entra en agenteia_consumo (igual
@@ -176,13 +177,13 @@ export async function revisarChat(uid: string, chatId: string, titulo: string, m
 
 // ───────────────────────── Lectura (solo SuperAdmin) ─────────────────────────
 
-async function correosSuperadmin(): Promise<Set<string>> {
-  const [filas] = await db.execute(
-    `SELECT uc.email FROM users_config uc JOIN roles r ON r.id = uc.role_id
-     WHERE LOWER(TRIM(r.name)) = 'superadmin'`,
-  );
-  return new Set((filas as any[]).map((f) => normCorreo(f.email)).filter(Boolean));
-}
+// Correo de login (Odoo) de Presidencia: Hercilio Camacho, Gabriel Camacho y
+// María Eugenia Segovia (su login es administracion@).
+const PRESIDENCIA = new Set([
+  "hercilio.camacho@supricom.com",
+  "gabriel.camacho@supricom.com",
+  "administracion@supricom.com",
+]);
 
 export type UsuarioSupervisado = {
   uid: string;
@@ -194,7 +195,7 @@ export type UsuarioSupervisado = {
   pendientes: number;
 };
 
-/** Usuarios con conversaciones que el SuperAdmin puede leer (nunca un SuperAdmin). */
+/** Usuarios con conversaciones que el SuperAdmin puede leer (nunca Presidencia). */
 export async function usuariosSupervisados(): Promise<UsuarioSupervisado[]> {
   await ensureTablas();
   // El correo sale de agenteia_usuarios y, para conversaciones anteriores a
@@ -203,8 +204,7 @@ export async function usuariosSupervisados(): Promise<UsuarioSupervisado[]> {
     db.query(
       `SELECT ch.uid, COUNT(*) AS chats, MAX(ch.updated_at) AS ultimo,
               COALESCE(MAX(u.email)${conConsumo ? ", MAX(c.email)" : ""}) AS email,
-              COALESCE(MAX(u.nombre)${conConsumo ? ", MAX(c.nombre)" : ""}) AS nombre,
-              COALESCE(MAX(u.superadmin), 0) AS superadmin
+              COALESCE(MAX(u.nombre)${conConsumo ? ", MAX(c.nombre)" : ""}) AS nombre
        FROM agenteia_chats ch
        LEFT JOIN agenteia_usuarios u ON u.uid = ch.uid
        ${conConsumo ? "LEFT JOIN (SELECT uid, MAX(email) AS email, MAX(nombre) AS nombre FROM agenteia_consumo GROUP BY uid) c ON c.uid = ch.uid" : ""}
@@ -216,7 +216,6 @@ export async function usuariosSupervisados(): Promise<UsuarioSupervisado[]> {
   } catch {
     return []; // todavía no existe agenteia_chats
   }
-  const supers = await correosSuperadmin();
   const [rev] = await db.query(
     "SELECT uid, SUM(alerta = 1) AS alertas, SUM(alerta = 1 AND vista = 0) AS pendientes FROM agenteia_revision GROUP BY uid",
   );
@@ -228,7 +227,7 @@ export async function usuariosSupervisados(): Promise<UsuarioSupervisado[]> {
       const email = normCorreo(f.email) || (uid.includes("@") ? normCorreo(uid) : "");
       return { f, uid, email };
     })
-    .filter(({ f, email }) => email && !supers.has(email) && !Number(f.superadmin))
+    .filter(({ email }) => email && !PRESIDENCIA.has(email))
     .map(({ f, uid, email }) => ({
       uid,
       email,

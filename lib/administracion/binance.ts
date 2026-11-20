@@ -51,6 +51,29 @@ const MARGEN_OTRA_ZONA_MS = 13 * 3600_000;
 // Mediodia del lunes: donde queda un comprobante sin fecha que Binance no encontro.
 const MEDIODIA_MS = 12 * 3600_000;
 
+/**
+ * Binance Pay arma el ID de orden con el momento del pago: ID ÷ 2³¹ = segundos
+ * desde el 1-ene-2020 UTC (nov-2026: 50 de 50 comprobantes con su fecha, al
+ * segundo). No esta documentado; null si no da una fecha creible (otro formato).
+ */
+const INICIO_IDS_MS = Date.UTC(2020, 0, 1);
+export function fechaDeOrden(orderId: string, ahora = Date.now()): number | null {
+  if (!/^\d{15,19}$/.test(orderId)) return null;
+  const ms = INICIO_IDS_MS + Number((BigInt(orderId) * BigInt(1000)) / BigInt(2147483648));
+  return ms >= Date.UTC(2023, 0, 1) && ms <= ahora + DIA_MS ? ms : null;
+}
+
+/**
+ * Fecha del pago: la del ID de orden y, si no sale, la de la imagen. Si las dos
+ * se separan mas de un dia, la IA leyo mal un digito alto del ID: va la imagen.
+ */
+export function fechaDelPago(orderId: string, fechaImagen: number | null, ahora = Date.now()): number | null {
+  const deOrden = fechaDeOrden(orderId, ahora);
+  if (deOrden === null) return fechaImagen;
+  if (fechaImagen !== null && Math.abs(deOrden - fechaImagen) > DIA_MS) return fechaImagen;
+  return deOrden;
+}
+
 export class BinanceNoConfigurado extends Error {
   constructor() {
     super("Falta configurar BINANCE_API_KEY y BINANCE_API_SECRET en el servidor");
@@ -1180,7 +1203,7 @@ export async function leerConIA(
   }
 }
 
-/** fechaMs null = la captura no trae la fecha. horaTelefono = minutos del dia del reloj de la barra de estado. */
+/** fechaMs = la del ID de orden o la de la captura (fechaDelPago); null = ninguna. horaTelefono = minutos del dia del reloj de la barra de estado. */
 export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number | null; horaTelefono: number | null };
 
 /**
@@ -1201,10 +1224,10 @@ export async function leerComprobante(datos: Buffer, mime: string): Promise<Leid
   }
   const h = /^(\d{1,2}):(\d{2})/.exec(String(l?.hora_telefono || ""));
   const horaTelefono = h && +h[1] < 24 && +h[2] < 60 ? +h[1] * 60 + +h[2] : null;
-  if (!m) return { orderId, monto, moneda, fechaMs: null, horaTelefono };
-  const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  const local = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null;
   // Sin "UTC" en el comprobante se toma la hora de Caracas.
-  return { orderId, monto, moneda, fechaMs: l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS, horaTelefono };
+  const fechaImagen = local === null ? null : l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS;
+  return { orderId, monto, moneda, fechaMs: fechaDelPago(orderId, fechaImagen), horaTelefono };
 }
 
 const INSTRUCCIONES_ESTADO =

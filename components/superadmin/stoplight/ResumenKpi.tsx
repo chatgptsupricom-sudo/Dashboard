@@ -9,7 +9,7 @@
 // contenido solo cuando muestra el mismo mes del Stoplight.
 
 import { useTranslations } from "next-intl";
-import { getKpiCellColor, KPI_MAS_ES_MEJOR, KPI_MENOS_ES_MEJOR, nivelSemaforo, NIVEL_UI } from "@/lib/stoplight/scoring";
+import { getKpiCellColor, KPI_MAS_ES_MEJOR, KPI_MENOS_ES_MEJOR, nivelSemaforo, NIVEL_UI, sinMeta } from "@/lib/stoplight/scoring";
 import type { LecturaKpi } from "@/lib/stoplight/lectura";
 import { BarraLectura, ChipNivel, TEXTO_NIVEL, useTextosLectura } from "./lecturaUI";
 
@@ -104,7 +104,7 @@ export default function ResumenKpi(props: ResumenKpiProps) {
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="text-3xl font-semibold tracking-tight text-slate-900 tabular-nums">{valor}</span>
             {metaTexto && <span className="text-sm text-slate-400 tabular-nums">{metaTexto}</span>}
-            <ChipNivel nivel={lectura.nivel} pct={lectura.pct} />
+            <ChipNivel nivel={lectura.nivel} pct={lectura.pct} conMeta={!sinMeta(kpi.goalDefault, kpi.id)} />
           </div>
           <div className="mt-3">
             <BarraLectura lectura={lectura} alto="h-2.5" />

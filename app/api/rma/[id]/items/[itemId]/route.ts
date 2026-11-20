@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { casoDeOtraSede } from "@/lib/rma/sedeSesion";
 import { espejarPrimeroEnCaso, leerProductos, sincronizarEnvio, type EstadoProducto } from "@/lib/rma/items";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { NextRequest, NextResponse } from "next/server";
@@ -53,6 +54,8 @@ export async function PUT(
   try {
     const { id, itemId } = await params;
     const caseId = parseInt(id, 10);
+    const otraSede = await casoDeOtraSede(auth.payload, caseId);
+    if (otraSede) return otraSede;
     const { productos, producto } = await productoDelCaso(caseId, parseInt(itemId, 10));
     if (!producto) {
       return NextResponse.json({ error: "Producto no encontrado en este caso" }, { status: 404 });
@@ -144,6 +147,8 @@ export async function DELETE(
   try {
     const { id, itemId } = await params;
     const caseId = parseInt(id, 10);
+    const otraSede = await casoDeOtraSede(auth.payload, caseId);
+    if (otraSede) return otraSede;
     const { productos, producto } = await productoDelCaso(caseId, parseInt(itemId, 10));
     if (!producto) {
       return NextResponse.json({ error: "Producto no encontrado en este caso" }, { status: 404 });
