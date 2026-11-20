@@ -171,6 +171,7 @@ export interface DatosFiscal {
     cobradoFacturasMes: number;
   }[];
   documentos: ConteoDocumentos[];
+  ventasDetalle: { id: number; numero: string; fecha: string; cliente: string; sede: string; fiscal: boolean; total: number; igtf: number }[];
   compras: CompraDelMes[];
   clasesRetencionIva: ClaseRetencionIva[];
   clasesRetencionIslr: ClaseRetencionIslr[];
@@ -683,6 +684,7 @@ export async function fetchFiscal(
   };
   const conteos = new Map<string, ConteoDocumentos>();
   const igtfFacturas = new Map<number, { facturas: number; base: number; cobrado: number }>();
+  const ventasDetalle: DatosFiscal["ventasDetalle"] = [];
   const compras: CompraDelMes[] = [];
   documentosMes.forEach((m: any) => {
     const cid = idM2o(m.company_id) || 0;
@@ -702,6 +704,14 @@ export async function fetchFiscal(
     else c.montoFiscal = redondear(c.montoFiscal + total);
     c.iva = redondear(c.iva + (d?.iva || 0));
     conteos.set(clave, c);
+
+    const fiscal = tipo === "ventas" && clase !== "sin_impuesto";
+    if (fiscal || ((tipo === "ventas" || tipo === "nc_ventas") && d && d.igtf > 0)) {
+      ventasDetalle.push({
+        id: m.id, numero: m.name || "", fecha: m.invoice_date || "", cliente: nombreM2o(m.partner_id, "Sin cliente"),
+        sede: c.sede, fiscal, total, igtf: (tipo === "nc_ventas" ? -1 : 1) * (d?.igtf || 0),
+      });
+    }
 
     // El IGTF de una NC de cliente se devuelve: resta.
     if ((m.move_type === "out_invoice" || m.move_type === "out_refund") && d && d.igtf > 0) {
@@ -876,6 +886,7 @@ export async function fetchFiscal(
     libros: librosFiscales,
     igtf,
     documentos,
+    ventasDetalle,
     compras,
     clasesRetencionIva,
     clasesRetencionIslr,
