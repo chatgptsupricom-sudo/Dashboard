@@ -266,8 +266,9 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
 
   const cargar = useCallback(async () => {
     if (!cuenta) return;
+    // No borra el error: despues de aprobar se recarga, y el motivo por el que Odoo no lo acepto se perdia
+    // (nov-2026, Victor aprobaba y «no pasaba nada»). Se borra al cambiar de cuenta o periodo (efecto de abajo).
     setCargando(true);
-    setError(null);
     try {
       const json = await (await fetch(`/api/administracion/bancos?cuenta=${cuenta}&desde=${periodo.desde}&hasta=${periodo.hasta}`)).json();
       if (json.success) setDatos(json);
@@ -279,6 +280,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   }, [cuenta, periodo.desde, periodo.hasta]);
 
   useEffect(() => {
+    setError(null);
     cargar();
   }, [cargar]);
 
@@ -449,13 +451,20 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
     setError(null);
     setConciliando("todos");
     setAvanceConciliar({ hecho: 0, total: listos.length });
+    // Uno que Odoo rechaza (ej. una comision del mes con el asiento mensual abierto) no frena a los demas: se sigue
+    // y al final se dicen cuales quedaron y por que.
+    const fallas: string[] = [];
     for (const [n, m] of listos.entries()) {
       const j = await pedirConciliar(m);
       setAvanceConciliar({ hecho: n + 1, total: listos.length });
-      if (!j.success) {
-        setError(`${dia(m.fecha)} ${m.referencia || ""}: ${j.error || "no se pudo conciliar en Odoo"}`);
-        break;
-      }
+      if (!j.success) fallas.push(`${dia(m.fecha)} ${m.referencia || ""} (${cifra(m.monto)}): ${j.error || "no se pudo conciliar en Odoo"}`);
+    }
+    if (fallas.length) {
+      setError(
+        `Se conciliaron ${listos.length - fallas.length} de ${listos.length}. No se pudieron ${fallas.length}: ` +
+          fallas.slice(0, 5).join(" · ") +
+          (fallas.length > 5 ? ` · y ${fallas.length - 5} más` : ""),
+      );
     }
     setConciliando(null);
     setAvanceConciliar(null);
