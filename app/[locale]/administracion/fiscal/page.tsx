@@ -318,7 +318,7 @@ export default function FiscalPage() {
                   {!ventas && !datos.comprobantesDelMes.length && <p className="text-muted-foreground">Sin retenciones a proveedores registradas en el mes.</p>}
                   {ventas && datos.aplicaVenezuela && !retClientes.length && <p className="text-muted-foreground">Sin retenciones de clientes registradas en el mes.</p>}
                   <Dialog><DialogTrigger className="text-blue-700 underline">Ver todos los impuestos de {lado.toLowerCase()}</DialogTrigger>
-                    <DialogContent className="sm:max-w-5xl"><DialogTitle>Impuestos de {lado.toLowerCase()}</DialogTitle>
+                    <DialogContent className="w-[calc(100%-2rem)] max-h-[90dvh] grid-cols-1 overflow-y-auto sm:max-w-5xl"><DialogTitle>Impuestos de {lado.toLowerCase()}</DialogTitle>
                       <DialogDescription>Apuntes fiscales publicados del período.</DialogDescription>
                       <DetalleImpuestos filas={impuestos} />
                     </DialogContent>
@@ -556,7 +556,7 @@ function TarjetaDetalle({ children, ...props }: { titulo: string; valor: ReactNo
           <span className={`mt-1 text-xs ${props.tono === "ambar" ? "text-amber-700" : "text-muted-foreground"}`}>{props.detalle}</span>
         </button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className="w-[calc(100%-2rem)] max-h-[90dvh] grid-cols-1 overflow-y-auto sm:max-w-4xl">
         <DialogTitle>{props.titulo}</DialogTitle>
         <DialogDescription>{props.valor} · {props.detalle}</DialogDescription>
         <div className="max-h-[65vh] overflow-auto">{children}</div>
@@ -583,7 +583,7 @@ function DetalleImpuestos({ filas }: { filas: DatosFiscal["detalleImpuestos"] })
       {["Documento", "Fecha", "Contacto", "Impuesto", "Tasa", "Base (USD)", "Impuesto (USD)"].map(t => <TableHead key={t}>{t}</TableHead>)}
     </TableRow></TableHeader><TableBody>
       {visibles.map((f,i) => <TableRow key={i}><TableCell><EnlaceFactura id={f.id} numero={f.numero} /></TableCell>
-        <TableCell>{fechaCorta(f.fecha)}</TableCell><TableCell>{f.contacto}</TableCell><TableCell>{f.impuesto}</TableCell>
+        <TableCell>{fechaCorta(f.fecha)}</TableCell><TableCell className="min-w-36 whitespace-normal break-words">{f.contacto}</TableCell><TableCell>{f.impuesto}</TableCell>
         <TableCell>{f.tasa}%</TableCell><TableCell>{money(f.base, 2)}</TableCell><TableCell>{money(f.monto, 2)}</TableCell></TableRow>)}
       {!visibles.length && <FilaVacia columnas={7} texto="Sin documentos para esta selección." />}
     </TableBody></Table></div>
