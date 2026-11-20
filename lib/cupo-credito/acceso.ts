@@ -5,14 +5,17 @@ import { SEDES_VALIDAS, sedeDelToken } from "@/lib/auth/sedeRol";
  * Quién ve Cupo de crédito (/cupo-credito) y qué parte:
  * - Vendedor: solo su cartera (clientes con él como vendedor en Odoo) y el
  *   histórico de su cartera.
- * - Gerencia de Ventas y Gerente de Operaciones (Gerencia Comercial): toda
- *   su sede (`cids`), con el consolidado por vendedor (equipo) y por zona.
+ * - Gerencia de Ventas y Gerente de Operaciones (Gerencia Comercial) y
+ *   Cuentas por Cobrar: toda su sede (`cids`), con el consolidado por
+ *   vendedor (equipo) y por zona.
  * - SuperAdmin (Directiva) e Inteligencia de Negocio: eligen sede.
  * Solo lee: Odoo y las fotos de `cxc_credito_fotos`.
  */
 export const ROLES_VENDEDOR = ["vendedor", "seller"];
 export const ROLES_GERENCIA = ["gerencia de ventas", "gerente de operaciones"];
-export const ROLES_CUPO = [...ROLES_VENDEDOR, ...ROLES_GERENCIA, ROL_BI];
+/** Cuentas por Cobrar ve lo mismo que la gerencia: su sede entera. */
+export const ROL_CXC = "cuentas por cobrar";
+export const ROLES_CUPO = [...ROLES_VENDEDOR, ...ROLES_GERENCIA, ROL_CXC, ROL_BI];
 
 const normalizar = (rol: unknown) => String(rol ?? "").toLowerCase().trim();
 
