@@ -124,6 +124,13 @@ export default function FiscalPage() {
                   })),
                 },
                 {
+                  nombre: "NC emitidas por registro",
+                  filas: datos.notasCreditoEmitidas.map(n => ({
+                    Sede: NOMBRE_SEDE[n.sede], Nota: n.numero, Cliente: n.cliente,
+                    Registro: n.registro, "Fecha del documento": n.fechaDocumento, "Total acreditado (USD)": n.total,
+                  })),
+                },
+                {
                   nombre: "Impuestos por documento",
                   filas: datos.detalleImpuestos.map(f => ({
                     Sede: NOMBRE_SEDE[f.sede], Operación: f.ventas ? "Venta" : "Compra",
@@ -265,6 +272,24 @@ export default function FiscalPage() {
                   <TarjetaDetalle titulo={lado + " fiscales"} valor={money(f.monto, 2)} detalle={`${f.fiscales} facturas · ${f.gravadas} gravadas · ${f.fiscales - f.gravadas} exentas`}>
                     <Documentos filas={filas} importe="Total" />
                   </TarjetaDetalle>
+                  {ventas && (
+                    <TarjetaDetalle titulo="Notas de crédito emitidas" valor={money(datos.notasCreditoEmitidas.reduce((s, n) => s + n.total, 0), 2)}
+                      detalle={`${datos.notasCreditoEmitidas.length} notas publicadas · por fecha de registro`}>
+                      <Table>
+                        <TableHeader><TableRow>
+                          {["Nota", "Cliente", "Registro en Odoo", "Fecha del documento", "Total acreditado (USD)"].map(t => <TableHead key={t}>{t}</TableHead>)}
+                        </TableRow></TableHeader>
+                        <TableBody>
+                          {datos.notasCreditoEmitidas.map(n => <TableRow key={n.id}>
+                            <TableCell><EnlaceFactura id={n.id} numero={n.numero} /><div className="text-xs text-muted-foreground">{NOMBRE_SEDE[n.sede]}</div></TableCell>
+                            <TableCell>{n.cliente}</TableCell><TableCell>{fechaCorta(n.registro)}</TableCell>
+                            <TableCell>{fechaCorta(n.fechaDocumento)}</TableCell><TableCell className="text-right">{money(n.total, 2)}</TableCell>
+                          </TableRow>)}
+                          {!datos.notasCreditoEmitidas.length && <FilaVacia columnas={5} texto="Sin notas de crédito emitidas registradas en el período." />}
+                        </TableBody>
+                      </Table>
+                    </TarjetaDetalle>
+                  )}
                   {datos.impuestos.map(i => {
                     const lineas = impuestos.filter(t => t.sede === i.sede && t.iva);
                     return <TarjetaDetalle key={i.sede} titulo={`${i.impuesto} de ${lado.toLowerCase()} · ${NOMBRE_SEDE[i.sede]}`}
@@ -308,7 +333,7 @@ export default function FiscalPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">IVA / ITBMS del mes</CardTitle>
                 <p className="text-sm text-gray-500">
-                  Impuesto de las facturas publicadas del mes, en USD. Es la referencia para cuadrar la declaración, no
+                  Importes en USD. Las notas de crédito de ventas se asignan al mes en que se crearon en Odoo. Solo se incluyen las publicadas. Es la referencia para cuadrar la declaración, no
                   la reemplaza (no descuenta retenciones ni excedentes de meses anteriores).
                 </p>
               </CardHeader>

@@ -6,6 +6,7 @@ import {
   leerTodo,
   nombreM2o,
   redondear,
+  sumarDias,
 } from "@/lib/administracion/lectura";
 import { empresaDeCompanyId } from "@/lib/administracion/empresas";
 
@@ -156,6 +157,7 @@ export interface DatosFiscal {
   comprobantesVentas: Comprobante[];
   retencionesVentas: Record<"iva" | "islr", ResumenRetenciones>;
   detalleImpuestos: { id: number; numero: string; sede: string; fecha: string; contacto: string; impuesto: string; tasa: number; base: number; monto: number; ventas: boolean; nc: boolean; iva: boolean }[];
+  notasCreditoEmitidas: { id: number; numero: string; cliente: string; sede: string; registro: string; fechaDocumento: string; total: number }[];
   corte: string;
   retencionesIva: ResumenRetenciones;
   retencionesIslr: ResumenRetenciones;
@@ -253,6 +255,25 @@ export async function fetchFiscal(
 ): Promise<DatosFiscal> {
   const ve = companyIds.filter((id) => SEDES_VE.includes(id));
   const pa = companyIds.filter((id) => id === SEDE_PA);
+  const diaSiguiente = sumarDias(hasta, 1);
+  // Odoo guarda create_date en UTC. La medianoche de Venezuela es 04:00 UTC y la de Panamá 05:00.
+  function periodoDocumentos(prefijo: "" | "move_id.") {
+    const campo = (nombre: string) => prefijo + nombre;
+    const rangoNC = (sedes: number[], hora: string) => [
+      "&", "&", [campo("company_id"), "in", sedes],
+      [campo("create_date"), ">=", desde + " " + hora], [campo("create_date"), "<", diaSiguiente + " " + hora],
+    ];
+    return [
+      "|", "&", "&", [campo("move_type"), "in", ["in_invoice", "out_invoice", "in_refund"]],
+      [campo("invoice_date"), ">=", desde], [campo("invoice_date"), "<=", hasta],
+      "&", [campo("move_type"), "=", "out_refund"], "|", ...rangoNC(ve, "04:00:00"), ...rangoNC(pa, "05:00:00"),
+    ];
+  }
+  const fechaPeriodo = (m: any): string => {
+    if (m.move_type !== "out_refund") return m.invoice_date;
+    const zona = idM2o(m.company_id) === SEDE_PA ? "America/Panama" : "America/Caracas";
+    return new Date(m.create_date.replace(" ", "T") + "Z").toLocaleDateString("sv-SE", { timeZone: zona });
+  };
   const vacio = Promise.resolve([] as any[]);
 
   const [
@@ -344,12 +365,10 @@ export async function fetchFiscal(
           "account.move",
           [
             ["company_id", "in", companyIds],
-            ["move_type", "in", ["out_invoice", "out_refund", "in_invoice", "in_refund"]],
             ["state", "=", "posted"],
-            ["invoice_date", ">=", desde],
-            ["invoice_date", "<=", hasta],
+            ...periodoDocumentos(""),
           ],
-          ["name", "ref", "nro_ctrl", "partner_id", "company_id", "move_type", "invoice_date",
+          ["name", "ref", "nro_ctrl", "partner_id", "company_id", "move_type", "invoice_date", "create_date",
             "amount_total_signed", "wh_iva_id", "islr_wh_doc_id"],
           companyIds,
         ),
@@ -361,9 +380,7 @@ export async function fetchFiscal(
             ["company_id", "in", companyIds],
             ["parent_state", "=", "posted"],
             ["display_type", "=", "product"],
-            ["move_id.move_type", "in", ["out_invoice", "out_refund", "in_invoice", "in_refund"]],
-            ["move_id.invoice_date", ">=", desde],
-            ["move_id.invoice_date", "<=", hasta],
+            ...periodoDocumentos("move_id."),
           ],
           ["balance:sum"],
           ["move_id", "tax_ids"],
@@ -376,9 +393,7 @@ export async function fetchFiscal(
             ["company_id", "in", companyIds],
             ["parent_state", "=", "posted"],
             ["display_type", "=", "tax"],
-            ["move_id.move_type", "in", ["out_invoice", "out_refund", "in_invoice", "in_refund"]],
-            ["move_id.invoice_date", ">=", desde],
-            ["move_id.invoice_date", "<=", hasta],
+            ...periodoDocumentos("move_id."),
           ],
           ["balance:sum", "tax_base_amount:sum"],
           ["move_id", "tax_line_id"],
@@ -577,7 +592,7 @@ export async function fetchFiscal(
     const nc = m.move_type.endsWith("_refund");
     const monto = redondear(Number(g.balance) * (ventas ? -1 : 1));
     const iva = claseImpuesto.get(t.id) === "iva";
-    detalleImpuestos.push({ id: m.id, numero: m.name, fecha: m.invoice_date, contacto: nombreM2o(m.partner_id),
+    detalleImpuestos.push({ id: m.id, numero: m.name, fecha: fechaPeriodo(m), contacto: nombreM2o(m.partner_id),
       sede: empresaDeCompanyId(cid), impuesto: t.name, tasa: Number(t.amount), ventas, nc, iva, monto,
       base: redondear(Math.abs(Number(g.tax_base_amount)) * (nc ? -1 : 1)) });
     if (iva) {
@@ -665,6 +680,7 @@ export async function fetchFiscal(
   };
   const conteos = new Map<string, ConteoDocumentos>();
   const igtfFacturas = new Map<number, { facturas: number; base: number; cobrado: number }>();
+  const notasCreditoEmitidas: DatosFiscal["notasCreditoEmitidas"] = [];
   const ventasDetalle: DatosFiscal["ventasDetalle"] = [];
   const compras: CompraDelMes[] = [];
   documentosMes.forEach((m: any) => {
@@ -686,10 +702,15 @@ export async function fetchFiscal(
     c.iva = redondear(c.iva + (d?.iva || 0));
     conteos.set(clave, c);
 
+    if (tipo === "nc_ventas") {
+      notasCreditoEmitidas.push({ id: m.id, numero: m.name, cliente: nombreM2o(m.partner_id), sede: c.sede,
+        registro: fechaPeriodo(m), fechaDocumento: m.invoice_date, total: redondear(total) });
+    }
+
     const fiscal = tipo === "ventas" && clase !== "sin_impuesto";
     if (fiscal || ((tipo === "ventas" || tipo === "nc_ventas") && d && d.igtf > 0)) {
       ventasDetalle.push({
-        id: m.id, numero: m.name || "", fecha: m.invoice_date || "", cliente: nombreM2o(m.partner_id, "Sin cliente"),
+        id: m.id, numero: m.name || "", fecha: fechaPeriodo(m), cliente: nombreM2o(m.partner_id, "Sin cliente"),
         sede: c.sede, fiscal, total, igtf: (tipo === "nc_ventas" ? -1 : 1) * (d?.igtf || 0),
       });
     }
@@ -864,6 +885,7 @@ export async function fetchFiscal(
     igtf,
     documentos,
     ventasDetalle,
+    notasCreditoEmitidas: notasCreditoEmitidas.sort((a, b) => b.registro.localeCompare(a.registro) || b.id - a.id),
     compras,
     clasesRetencionIva,
     clasesRetencionIslr,
