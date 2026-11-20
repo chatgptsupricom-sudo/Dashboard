@@ -70,7 +70,10 @@ const nombreDe = (v: any): string => (Array.isArray(v) ? v[1] : "") || "";
 export function nombreZona(estado: string, cid: number): string {
   if (!estado) return "";
   const clave = claveZona(estado);
-  return ZONAS_MAPA[cid === 7 ? "PA" : "VE"][clave] || estado.replace(/\s*\(.*?\)\s*/g, " ").trim();
+  // Primero el país de la sede; si no, el otro (clientes de Valencia o Caracas
+  // con un estado de Panamá: "Ciudad de Panamá" y "PANAMA" van juntos).
+  const [propio, otro] = cid === 7 ? (["PA", "VE"] as const) : (["VE", "PA"] as const);
+  return ZONAS_MAPA[propio][clave] || ZONAS_MAPA[otro][clave] || estado.replace(/\s*\(.*?\)\s*/g, " ").trim();
 }
 
 function hoyStr() {

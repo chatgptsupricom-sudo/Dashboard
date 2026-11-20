@@ -301,7 +301,7 @@ export default function DetalleDso({
                           onClick={() => setForm(form?.partnerId === c.partnerId ? null : { partnerId: c.partnerId, nombre: c.partnerName, motivo: "", hasta: "" })}
                           className="text-violet-700 hover:underline"
                         >
-                          Negociación especial
+                          Marcar especial
                         </button>
                       )}
                     </td>
