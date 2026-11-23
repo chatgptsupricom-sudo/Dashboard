@@ -27,6 +27,7 @@ import type {
 import { RegistrarCobroOdoo } from "@/components/administracion/RegistrarCobroOdoo";
 import { AprobarMovimiento } from "@/components/administracion/AprobarMovimiento";
 import { LineasViejasOdoo } from "@/components/administracion/LineasViejasOdoo";
+import { CierreMesBanco } from "@/components/administracion/CierreMesBanco";
 import {
   ArrowLeft,
   Banknote,
@@ -461,26 +462,24 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
     cargar();
   };
 
-  /** Deshace en Odoo una conciliacion que hizo el panel (por si se aprobo contra lo que no era). */
+  /** Deshace en Odoo una conciliacion que hizo el panel (por si se aprobo contra lo que no era). Pide el motivo, que se guarda. */
   const revertir = async (m: MovimientoPeriodo) => {
     if (!m.odoo) return;
     const contra = m.odoo.detalle ? ` contra ${m.odoo.detalle}` : "";
-    if (
-      !confirm(
-        `¿Revertir la conciliación del ${dia(m.fecha)} por ${cifra(m.monto)}${contra}?\n\n` +
-          "En Odoo se borra la línea del banco que creó el panel (" +
-          (m.odoo.asiento || "su asiento") +
-          ") y el cobro/pago vuelve a quedar pendiente, con su monto y aplicado a sus facturas como estaba. Después se puede aprobar de nuevo contra lo correcto.",
-      )
-    ) {
-      return;
-    }
+    const motivo = prompt(
+      `¿Por qué se revierte la conciliación del ${dia(m.fecha)} por ${cifra(m.monto)}${contra}? (queda guardado)\n\n` +
+        "En Odoo se borra la línea del banco que creó el panel (" +
+        (m.odoo.asiento || "su asiento") +
+        ") y el cobro/pago vuelve a quedar pendiente, con su monto y aplicado a sus facturas como estaba. Después se puede aprobar de nuevo contra lo correcto.",
+    )?.trim();
+    if (!motivo) return;
+    if (motivo.length < 5) return setError("Escribe un motivo más claro para revertir");
     setError(null);
     setConciliando(`r-${m.id}`);
     const res = await fetch("/api/administracion/bancos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cuenta, revertir: m.odoo.stLineId }),
+      body: JSON.stringify({ cuenta, revertir: m.odoo.stLineId, motivo }),
     });
     const j = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
     setConciliando(null);
@@ -490,13 +489,16 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   };
 
   const movimientos = datos?.movimientos || [];
+  // Meses cerrados: sus movimientos ya no se concilian ni se revierten (el servidor tampoco lo deja).
+  const cerrados = useMemo(() => new Set(datos?.cerrados || []), [datos]);
+  const abierto = (m: { fecha: string }) => !cerrados.has(m.fecha.slice(0, 7));
   const comprobantes = datos?.comprobantes || [];
   const sinMovimiento = datos?.pagosSinMovimiento || [];
   const moneda = cuentaElegida?.moneda || "";
 
   /** Los listos del período, de a uno; para al primer error. */
   const conciliarTodos = async () => {
-    const listos = movimientos.filter(directo);
+    const listos = movimientos.filter((m) => directo(m) && abierto(m));
     if (!listos.length || !confirm(`¿Conciliar en Odoo los ${listos.length} movimientos listos (los que calzan por referencia y las comisiones)?`)) return;
     setError(null);
     setConciliando("todos");
@@ -542,7 +544,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
 
   /** Concilia los marcados contra una misma cuenta contable, de a uno; los que Odoo rechaza no frenan a los demas. */
   const conciliarMarcados = async () => {
-    const lista = movimientos.filter((m) => marcados.has(m.id) && conciliable(m));
+    const lista = movimientos.filter((m) => marcados.has(m.id) && conciliable(m) && abierto(m));
     const c = contables?.find((x) => x.id === cuentaLote);
     if (!lista.length || !c) return;
     if (!confirm(`¿Conciliar en Odoo los ${lista.length} movimientos marcados (${cifra(suma(lista))}) contra ${c.codigo} ${c.nombre}?`)) return;
@@ -934,7 +936,8 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                     {botonSubirEstado("default")}
                   </CardContent>
                 </Card>
-              ) : (
+              ) : null)}
+            {!cxc && pestana === "conciliar" && datos.archivos.length > 0 && (
                 <div className="space-y-4">
                   <Card>
                     <CardContent className="p-4 space-y-3">
@@ -1073,7 +1076,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                           <TableRow>
                             <TableHead className="w-8">
                               {(() => {
-                                const dePagina = deLaPagina(visibles, paginaMovs).filter(conciliable);
+                                const dePagina = deLaPagina(visibles, paginaMovs).filter((m) => conciliable(m) && abierto(m));
                                 const todos = dePagina.length > 0 && dePagina.every((m) => marcados.has(m.id));
                                 return (
                                   <input
@@ -1107,7 +1110,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                           {deLaPagina(visibles, paginaMovs).map((m) => (
                             <TableRow key={m.id} className={marcados.has(m.id) ? "bg-blue-50/60" : undefined}>
                               <TableCell className="align-top">
-                                {conciliable(m) && (
+                                {conciliable(m) && abierto(m) && (
                                   <input
                                     type="checkbox"
                                     aria-label={`Marcar el movimiento del ${dia(m.fecha)}`}
@@ -1196,7 +1199,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
                                 ) : null}
-                                {m.odoo && (
+                                {m.odoo && abierto(m) && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -1209,7 +1212,9 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                                     Revertir
                                   </Button>
                                 )}
-                                {yaConciliado(m) ? null : (
+                                {yaConciliado(m) ? null : !abierto(m) ? (
+                                  <span className="text-xs text-gray-500">Mes cerrado</span>
+                                ) : (
                                   <span className="inline-flex items-center gap-1">
                                     <Button
                                       size="sm"
@@ -1245,7 +1250,17 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                     </CardContent>
                   </Card>
                 </div>
-              ))}
+              )}
+            {!cxc && pestana === "conciliar" && mes !== RANGO && cuenta && (
+              <CierreMesBanco
+                cuenta={cuenta}
+                mes={mes}
+                moneda={moneda}
+                version={datos}
+                subirEstado={botonSubirEstado("default")}
+                alCambiar={cargar}
+              />
+            )}
 
             {/* ---------- Comprobantes de los clientes ---------- */}
             {(cxc || pestana === "comprobantes") && (

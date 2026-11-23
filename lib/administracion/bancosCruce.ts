@@ -162,6 +162,32 @@ export function armarEstado(leidas: FilaEstado[], diasExtra: string[] = []): Est
   return { filas, desde: dias[0], hasta: dias[dias.length - 1], saltos: saltosDeSaldo(filas) };
 }
 
+// ---------- Saldos del estado de cuenta ----------
+
+/**
+ * Saldo inicial y final de unos movimientos (los de un mes) segun el saldo que
+ * trae cada fila. Los archivos vienen en cualquier orden (Banesco va del mas nuevo
+ * al mas viejo): el final es el del ultimo dia con saldo cuyo saldo no es el saldo
+ * previo (saldo - monto) de otro movimiento de ese dia, mas lo que haya despues sin
+ * saldo; el inicial = final - suma de los montos. `cuadra` = algun movimiento
+ * arranca justo en ese inicial y el final no es ambiguo (si no, falta una fila).
+ * null si ninguno trae saldo.
+ */
+export function saldosDelMes(movs: { fecha: string; monto: number; saldo: number | null }[]) {
+  const c = (n: number) => Math.round(n * 100);
+  const con = movs.filter((m) => m.saldo !== null);
+  if (!con.length) return null;
+  const ultimoDia = con.reduce((d, m) => (m.fecha > d ? m.fecha : d), "");
+  const delDia = con.filter((m) => m.fecha === ultimoDia);
+  const previos = delDia.map((m) => c(m.saldo! - m.monto));
+  const finales = delDia.filter((m, i) => !previos.some((p, j) => j !== i && p === c(m.saldo!)));
+  const despues = movs.filter((m) => m.fecha > ultimoDia).reduce((s, m) => s + c(m.monto), 0);
+  const final = c((finales.length === 1 ? finales[0] : delDia[delDia.length - 1]).saldo!) + despues;
+  const inicial = final - movs.reduce((s, m) => s + c(m.monto), 0);
+  const cuadra = finales.length === 1 && con.some((m) => c(m.saldo! - m.monto) === inicial);
+  return { inicial: inicial / 100, final: final / 100, cuadra };
+}
+
 // ---------- Periodo ----------
 
 /** Lo mas largo que se puede pedir de una vez (un trimestre): cada vista lee Odoo entero del periodo. */

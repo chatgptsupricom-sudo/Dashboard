@@ -77,8 +77,14 @@ export function LineasViejasOdoo({
 
   const deshacer = async () => {
     const ids = lista.filter((l) => elegidas.has(l.id)).map((l) => l.id);
+    if (!ids.length) return;
+    // El motivo queda guardado con cada linea deshecha (banco_deshechos.motivo); uno para todas las elegidas.
+    const motivo = prompt(
+      `¿Por qué se deshace la conciliación de ${ids.length === 1 ? "esta línea" : `estas ${ids.length} líneas`}? (queda guardado)`,
+    )?.trim();
+    if (!motivo) return;
+    if (motivo.length < 5) return setError("Escribe un motivo más claro para desconciliar");
     if (
-      !ids.length ||
       !confirm(
         `¿Deshacer la conciliación y borrar en Odoo ${ids.length} línea${ids.length === 1 ? "" : "s"} de extracto?\n\n` +
           "Los cobros y pagos vuelven a quedar pendientes. " +
@@ -103,7 +109,7 @@ export function LineasViejasOdoo({
       const res = await fetch("/api/administracion/bancos", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cuenta, deshacer: id, diferencial: modoDif }),
+        body: JSON.stringify({ cuenta, deshacer: id, diferencial: modoDif, motivo }),
       });
       const j = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
       setAvance({ hecho: n + 1, total: ids.length });
