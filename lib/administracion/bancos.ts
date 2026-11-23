@@ -1141,6 +1141,14 @@ export async function conciliarEnOdoo(
       [...pagos, ...apuntes].map((p) => (Array.isArray(p.partner_id) ? p.partner_id[0] : 0)),
     );
     partnerId = partners.size === 1 ? [...partners][0] || null : null;
+    // La localizacion de Venezuela no deja crear la linea del banco con un contacto sin RIF («El Proveedor/Cliente
+    // no posee Documento Fiscal»): pasa con las transferencias internas, cuyo contacto es la propia empresa
+    // («OFFICE SOLUTIONS CENTER 2004, C.A. - B», sin RIF, nov-2026). El contacto en la linea es solo informativo
+    // (la conciliacion va por los apuntes), asi que sin RIF va sin contacto.
+    if (partnerId) {
+      const p = (await leer("res.partner", [["id", "=", partnerId]], ["vat"]))[0];
+      if (!String(p?.vat || "").trim()) partnerId = null;
+    }
     const lineasPagos = pagos.length
       ? await leer("account.move.line", [["move_id", "in", pagos.map((p) => p.move_id[0])], ["account_id", "=", cuentaId]], campos)
       : [];
