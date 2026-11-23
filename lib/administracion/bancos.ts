@@ -22,6 +22,7 @@ import {
   leerFilasExcel,
   celular58,
   mismaReferencia,
+  saldosDelMes,
   type ComprobanteBanco,
   type EstadoLeido,
   type FilaEstado,
@@ -180,6 +181,27 @@ async function ensureTablas() {
   // Que se hizo con los asientos de diferencial al deshacer (llego despues).
   const { rows: colsDes } = await query("SHOW COLUMNS FROM banco_deshechos LIKE 'diferencial_modo'");
   if (!colsDes.length) await db.execute("ALTER TABLE banco_deshechos ADD COLUMN diferencial_modo VARCHAR(10) NOT NULL DEFAULT ''");
+  // Por que se desconcilio (lo escribe quien lo hace; llego despues).
+  const { rows: colsMot } = await query("SHOW COLUMNS FROM banco_deshechos LIKE 'motivo'");
+  if (!colsMot.length) await db.execute("ALTER TABLE banco_deshechos ADD COLUMN motivo VARCHAR(500) NOT NULL DEFAULT ''");
+  // Meses cerrados: conciliados y cuadrados con Odoo, ya no se tocan. Reabrir deja la fila (historial).
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS banco_cierres (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      journal_id INT NOT NULL,
+      company_id INT NOT NULL,
+      mes CHAR(7) NOT NULL,
+      sin_movimientos TINYINT NOT NULL DEFAULT 0,
+      saldo_banco DECIMAL(20,2) NOT NULL,
+      saldo_libros DECIMAL(20,2) NOT NULL,
+      cerrado_por VARCHAR(190) NOT NULL DEFAULT '',
+      cerrado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      reabierto_por VARCHAR(190) NULL,
+      reabierto_at DATETIME NULL,
+      motivo_reapertura VARCHAR(500) NULL,
+      INDEX (journal_id, mes)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
   // detalle llego despues (la tabla pudo crearse sin ella).
   const { rows: colsConc } = await query("SHOW COLUMNS FROM banco_conciliaciones LIKE 'detalle'");
   if (!colsConc.length) await db.execute("ALTER TABLE banco_conciliaciones ADD COLUMN detalle VARCHAR(255) NOT NULL DEFAULT ''");
@@ -424,6 +446,22 @@ export async function guardarEstado(
     veces.set(base, n);
     return [estadoId, cuenta.id, f.fecha, f.referencia, f.descripcion, f.monto, f.saldo, huella(Buffer.from(`${base}|${n}`))];
   });
+  // Un mes cerrado no recibe movimientos nuevos (los que ya estaban, de un archivo que se solapa, si).
+  const cerrados = new Set(await mesesCerrados(cuenta.id));
+  const enCerrados = valores.filter((v) => cerrados.has(String(v[2]).slice(0, 7)));
+  if (enCerrados.length) {
+    const { rows: ya } = await query(
+      `SELECT DISTINCT huella FROM banco_movimientos WHERE journal_id = ? AND huella IN (${enCerrados.map(() => "?").join(",")})`,
+      [cuenta.id, ...enCerrados.map((v) => v[7])],
+    );
+    const tenia = new Set(ya.map((r: any) => r.huella));
+    const nuevos = enCerrados.filter((v) => !tenia.has(v[7]));
+    if (nuevos.length) {
+      await db.execute("DELETE FROM banco_estados WHERE id = ?", [estadoId]);
+      const meses = [...new Set(nuevos.map((v) => String(v[2]).slice(0, 7)))].join(", ");
+      throw new MesCerrado(`El archivo trae ${nuevos.length} movimiento(s) nuevo(s) de ${meses}, que ya está cerrado`);
+    }
+  }
   for (let i = 0; i < valores.length; i += 200) {
     const tanda = valores.slice(i, i + 200);
     await db.execute(
@@ -445,6 +483,13 @@ export async function guardarEstado(
 /** Borra un archivo del estado de cuenta y sus movimientos (los que otro archivo tambien trae se quedan). */
 export async function borrarEstado(cuenta: CuentaBanco, estadoId: number) {
   await ensureTablas();
+  const { rows } = await query(
+    `SELECT DISTINCT DATE_FORMAT(fecha, '%Y-%m') AS mes FROM banco_movimientos WHERE estado_id = ? AND journal_id = ?`,
+    [estadoId, cuenta.id],
+  );
+  const cerrados = new Set(await mesesCerrados(cuenta.id));
+  const tocados = rows.map((r: any) => r.mes).filter((m: string) => cerrados.has(m));
+  if (tocados.length) throw new MesCerrado(`Ese archivo trae movimientos de ${tocados.join(", ")}, que ya está cerrado`);
   await query("DELETE FROM banco_movimientos WHERE estado_id = ? AND journal_id = ?", [estadoId, cuenta.id]);
   await query("DELETE FROM banco_estados WHERE id = ? AND journal_id = ?", [estadoId, cuenta.id]);
 }
@@ -960,6 +1005,12 @@ export async function amarrarComprobante(cuenta: CuentaBanco, id: number, movimi
 /** Amarra a mano un movimiento con un cobro de Odoo (null = soltarlo). Un cobro va con un solo movimiento. */
 export async function amarrarPago(cuenta: CuentaBanco, movimiento: string, pagoId: number | null, email: string) {
   await ensureTablas();
+  const { rows } = await query(
+    "SELECT DATE_FORMAT(MIN(fecha), '%Y-%m-%d') AS fecha FROM banco_movimientos WHERE journal_id = ? AND huella = ?",
+    [cuenta.id, movimiento],
+  );
+  const cerrado = rows[0]?.fecha ? await errorMesCerrado(cuenta.id, rows[0].fecha) : null;
+  if (cerrado) throw new MesCerrado(cerrado);
   await query("DELETE FROM banco_amarres WHERE journal_id = ? AND (huella = ? OR pago_odoo_id = ?)", [
     cuenta.id,
     movimiento,
@@ -1075,6 +1126,8 @@ export async function conciliarEnOdoo(
   );
   const mov = rows[0];
   if (!mov) return { error: "Ese movimiento ya no está en el estado de cuenta" };
+  const cerrado = await errorMesCerrado(cuenta.id, mov.fecha);
+  if (cerrado) return { error: cerrado };
   const monto = Number(mov.monto);
   const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
   const leer = async (modelo: string, dominio: any[], campos: string[]) =>
@@ -1464,8 +1517,8 @@ export async function deshacerLineaVieja(
   stLineId: number,
   autor: { nombre: string; email: string },
   diferencialModo: "reverso" | "borrar" = "reverso",
-  /** dePanel: revertir una conciliacion que hizo el panel (boton «Revertir» de la pestaña Conciliar). */
-  opciones: { dePanel?: boolean } = {},
+  /** dePanel: revertir una conciliacion que hizo el panel (boton «Revertir» de la pestaña Conciliar). motivo: por que (se guarda). */
+  opciones: { dePanel?: boolean; motivo?: string } = {},
 ) {
   await ensureTablas();
   const dePanel = !!opciones.dePanel;
@@ -1477,6 +1530,8 @@ export async function deshacerLineaVieja(
     })
   )?.[0];
   if (!linea) return { error: "Esa línea no existe en Odoo o es de otro diario" };
+  const cerrado = await errorMesCerrado(cuenta.id, String(linea.date));
+  if (cerrado) return { error: cerrado };
   const delPanel = String(linea.unique_import_id || "").startsWith("panel-");
   if (dePanel !== delPanel) {
     return { error: dePanel ? "Esa línea no la creó el panel: deshazla en «Líneas viejas de Odoo»" : "Esa línea la creó el panel: revértela desde Conciliar" };
@@ -1719,8 +1774,8 @@ export async function deshacerLineaVieja(
     }
   }
   await query(
-    `INSERT INTO banco_deshechos (journal_id, st_line_id, asiento, fecha, monto, descripcion, contra, diferencial, diferencial_modo, hecho_por)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO banco_deshechos (journal_id, st_line_id, asiento, fecha, monto, descripcion, contra, diferencial, diferencial_modo, hecho_por, motivo)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     [
       cuenta.id,
       stLineId,
@@ -1732,6 +1787,7 @@ export async function deshacerLineaVieja(
       info?.diferencial || 0,
       difs.length ? modoHecho : "",
       autor.email,
+      String(opciones.motivo || "").slice(0, 500),
     ],
   );
   // La del panel deja de figurar como conciliada: el movimiento vuelve a Listos / Por revisar.
@@ -1869,6 +1925,8 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
   const pagosTomados = new Set(cruce.movimientos.flatMap((m) => [m.pago, ...m.otrosPagos]).filter((p) => p).map((p) => p!.id));
   for (const id of cruce.pagosConfirmadosApi) pagosTomados.add(id);
   return {
+    /** Meses cerrados de la cuenta (YYYY-MM): sus movimientos ya no se tocan. */
+    cerrados: await mesesCerrados(cuenta.id),
     /** La cuenta consulta los comprobantes en el banco (API de Mercantil). */
     mercantil,
     /** Entradas y salidas del periodo; `odoo` = ya pasado a Odoo desde el panel (con o sin conciliar). */
@@ -1897,3 +1955,206 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
 }
 
 export type ConciliacionBanco = Awaited<ReturnType<typeof conciliacionPeriodo>>;
+
+// ---------- Cierre del mes ----------
+
+/** Algo que toca un mes cerrado: la ruta responde 409 con el mensaje. */
+export class MesCerrado extends Error {}
+
+const finDeMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).toISOString().slice(0, 10);
+const nombreMes = (mes: string) =>
+  new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7) - 1, 1)).toLocaleDateString("es-VE", { month: "long", year: "numeric", timeZone: "UTC" });
+const hoyCaracas = () => new Date(Date.now() - 4 * 3600_000).toISOString().slice(0, 10);
+
+/** Meses cerrados (sin reabrir) de la cuenta, YYYY-MM. */
+export async function mesesCerrados(journalId: number): Promise<string[]> {
+  await ensureTablas();
+  const { rows } = await query("SELECT DISTINCT mes FROM banco_cierres WHERE journal_id = ? AND reabierto_at IS NULL ORDER BY mes", [journalId]);
+  return rows.map((r: any) => String(r.mes));
+}
+
+/** null si el dia (YYYY-MM-DD) es de un mes abierto; si no, el mensaje para la pantalla. */
+async function errorMesCerrado(journalId: number, dia: string): Promise<string | null> {
+  const mes = dia.slice(0, 7);
+  return (await mesesCerrados(journalId)).includes(mes)
+    ? `${nombreMes(mes)} ya está cerrado en esta cuenta: no se puede modificar (solo el SuperAdmin lo reabre)`
+    : null;
+}
+
+/**
+ * Saldo en libros del banco en Odoo al cierre del dia: la cuenta del diario
+ * (`default_account_id`), donde caen las lineas de extracto. En la moneda del
+ * diario (bolivares = amount_currency); un diario sin moneda es de la moneda de la sede.
+ */
+async function saldoLibros(cuenta: CuentaBanco, hasta: string): Promise<number> {
+  const ctx = { allowed_company_ids: [cuenta.sede] };
+  const diario = (await callOdooRPCEstricto<any[]>("account.journal", "read", [[cuenta.id]], { fields: ["default_account_id"], context: ctx }))?.[0];
+  const cuentaId = Array.isArray(diario?.default_account_id) ? diario.default_account_id[0] : 0;
+  if (!cuentaId) throw new Error("El diario no tiene cuenta del banco en Odoo");
+  const grupos = await callOdooRPCEstricto<any[]>(
+    "account.move.line",
+    "read_group",
+    [[["account_id", "=", cuentaId], ["parent_state", "=", "posted"], ["date", "<=", hasta]], ["balance:sum", "amount_currency:sum"], ["account_id"]],
+    { context: ctx, lazy: false },
+  );
+  const g = grupos?.[0];
+  return g ? Math.round(Number(cuenta.moneda ? g.amount_currency : g.balance) * 100) / 100 : 0;
+}
+
+const filaMov = (r: any) => ({ fecha: String(r.fecha), monto: Number(r.monto), saldo: r.saldo === null ? null : Number(r.saldo) });
+
+/**
+ * Como quedo el mes de la cuenta: saldo final del banco (el del estado de cuenta;
+ * sin movimientos, el que traia del mes anterior) contra el saldo en libros de
+ * Odoo al ultimo dia, lineas del banco sin conciliar en Odoo, dias sin estado de
+ * cuenta, el cierre y lo que se desconcilio en el mes (con su motivo).
+ */
+export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
+  await ensureTablas();
+  const inicio = `${mes}-01`;
+  const fin = finDeMes(mes);
+  const [movs, estados, historial, deshechos, previo, ultimoAntes] = await Promise.all([
+    query(
+      `SELECT DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, m.monto, m.saldo
+         FROM banco_movimientos m
+         JOIN (SELECT MIN(id) AS id FROM banco_movimientos WHERE journal_id = ? AND fecha BETWEEN ? AND ? GROUP BY huella) u ON u.id = m.id
+        ORDER BY m.fecha, m.id`,
+      [cuenta.id, inicio, fin],
+    ),
+    query(
+      `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
+         FROM banco_estados WHERE journal_id = ? AND desde <= ? AND hasta >= ?`,
+      [cuenta.id, fin, inicio],
+    ),
+    query(
+      `SELECT sin_movimientos, saldo_banco, saldo_libros, cerrado_por, cerrado_at, reabierto_por, reabierto_at, motivo_reapertura
+         FROM banco_cierres WHERE journal_id = ? AND mes = ? ORDER BY id DESC`,
+      [cuenta.id, mes],
+    ),
+    query(
+      `SELECT asiento, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, monto, descripcion, motivo, hecho_por, created_at
+         FROM banco_deshechos WHERE journal_id = ? AND fecha BETWEEN ? AND ? ORDER BY created_at DESC`,
+      [cuenta.id, inicio, fin],
+    ),
+    query(
+      "SELECT mes, saldo_banco FROM banco_cierres WHERE journal_id = ? AND mes < ? AND reabierto_at IS NULL ORDER BY mes DESC LIMIT 1",
+      [cuenta.id, mes],
+    ),
+    query("SELECT DATE_FORMAT(MAX(fecha), '%Y-%m-%d') AS dia FROM banco_movimientos WHERE journal_id = ? AND fecha < ?", [cuenta.id, inicio]),
+  ]);
+  const lista = movs.rows.map(filaMov);
+  const saldos = saldosDelMes(lista);
+  const cubierto = (dia: string) => estados.rows.some((e: any) => dia >= e.desde && dia <= e.hasta);
+  const dias = Array.from({ length: Number(fin.slice(8)) }, (_, i) => sumarDias(inicio, i));
+
+  // Con que saldo arranco el mes: el del cierre del mes anterior o, si no, el del ultimo dia con movimientos antes.
+  const mesAnterior = sumarDias(inicio, -1).slice(0, 7);
+  let anterior: { saldo: number; fuente: string } | null = null;
+  if (previo.rows[0]?.mes === mesAnterior) {
+    anterior = { saldo: Number(previo.rows[0].saldo_banco), fuente: `cierre de ${nombreMes(mesAnterior)}` };
+  } else if (ultimoAntes.rows[0]?.dia) {
+    const dia = String(ultimoAntes.rows[0].dia);
+    const { rows } = await query(
+      `SELECT DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, m.monto, m.saldo FROM banco_movimientos m
+         JOIN (SELECT MIN(id) AS id FROM banco_movimientos WHERE journal_id = ? AND fecha = ? GROUP BY huella) u ON u.id = m.id`,
+      [cuenta.id, dia],
+    );
+    const s = saldosDelMes(rows.map(filaMov));
+    if (s) anterior = { saldo: s.final, fuente: `estado de cuenta del ${dia.split("-").reverse().join("/")}` };
+  }
+
+  const ctx = { allowed_company_ids: [cuenta.sede] };
+  const [libros, sinConciliar] = await Promise.all([
+    saldoLibros(cuenta, fin),
+    callOdooRPCEstricto<number>(
+      "account.bank.statement.line",
+      "search_count",
+      [[["journal_id", "=", cuenta.id], ["date", ">=", inicio], ["date", "<=", fin], ["is_reconciled", "=", false]]],
+      { context: ctx },
+    ),
+  ]);
+  const cierres = historial.rows.map((r: any) => ({
+    sinMovimientos: !!r.sin_movimientos,
+    saldoBanco: Number(r.saldo_banco),
+    saldoLibros: Number(r.saldo_libros),
+    cerradoPor: String(r.cerrado_por),
+    cerradoEl: new Date(r.cerrado_at).toISOString(),
+    reabiertoPor: r.reabierto_por ? String(r.reabierto_por) : null,
+    reabiertoEl: r.reabierto_at ? new Date(r.reabierto_at).toISOString() : null,
+    motivoReapertura: r.motivo_reapertura ? String(r.motivo_reapertura) : null,
+  }));
+  return {
+    mes,
+    /** El mes ya termino (no se cierra un mes en curso). */
+    terminado: fin < hoyCaracas(),
+    movimientos: lista.length,
+    /** Saldo inicial y final segun el estado de cuenta (null = sus filas no traen saldo); cuadra = no falta ninguna fila. */
+    estado: saldos,
+    /** Con que saldo arranco el mes (cierre o estado de cuenta anterior); sin movimientos es tambien el final. */
+    anterior,
+    saldoLibros: libros,
+    diasSinEstado: dias.filter((d) => !cubierto(d)),
+    lineasSinConciliar: Number(sinConciliar) || 0,
+    cierre: cierres.find((c: { reabiertoEl: string | null }) => !c.reabiertoEl) ?? null,
+    historial: cierres,
+    deshechos: deshechos.rows.map((r: any) => ({
+      asiento: String(r.asiento),
+      fecha: String(r.fecha),
+      monto: Number(r.monto),
+      descripcion: String(r.descripcion),
+      motivo: String(r.motivo || ""),
+      por: String(r.hecho_por),
+      el: new Date(r.created_at).toISOString(),
+    })),
+  };
+}
+
+export type CuadreMes = Awaited<ReturnType<typeof cuadreMes>>;
+
+/** Saldo del banco con que se cierra y, si no se puede cerrar, por que. */
+function revisarCierre(c: CuadreMes, sinMovimientos: boolean, saldoEscrito: number | null): { saldo: number } | { error: string } {
+  if (!c.terminado) return { error: "El mes todavía no termina" };
+  if (c.cierre) return { error: "Ese mes ya está cerrado" };
+  if (sinMovimientos && c.movimientos) return { error: `El estado de cuenta tiene ${c.movimientos} movimientos en el mes` };
+  if (!sinMovimientos && !c.movimientos) return { error: "No hay movimientos del mes: sube el estado de cuenta o ciérralo sin movimientos" };
+  if (!sinMovimientos && c.diasSinEstado.length) return { error: `Falta el estado de cuenta de ${c.diasSinEstado.length} día(s) del mes` };
+  if (!sinMovimientos && c.estado && !c.estado.cuadra) return { error: "Los saldos del estado de cuenta no cuadran: le falta algún movimiento" };
+  // El saldo escrito a mano solo cuando el panel no lo sabe (archivo sin columna de saldo, o sin movimientos y sin mes anterior).
+  const calculado = sinMovimientos ? (c.anterior?.saldo ?? null) : (c.estado?.final ?? null);
+  const saldo = calculado ?? saldoEscrito;
+  if (saldo === null || !Number.isFinite(saldo)) return { error: "Escribe el saldo final del banco del mes" };
+  if (c.lineasSinConciliar) return { error: `Odoo tiene ${c.lineasSinConciliar} línea(s) del banco del mes sin conciliar` };
+  if (Math.abs(saldo - c.saldoLibros) >= 0.01) {
+    return {
+      error: `El saldo del banco (${saldo.toFixed(2)}) no es el de Odoo (${c.saldoLibros.toFixed(2)}): diferencia ${(saldo - c.saldoLibros).toFixed(2)}`,
+    };
+  }
+  return { saldo };
+}
+
+/** Cierra el mes si quedo bien (ver revisarCierre): desde ahi no se concilia, revierte ni sube nada de ese mes. */
+export async function cerrarMes(
+  cuenta: CuentaBanco,
+  mes: string,
+  opciones: { sinMovimientos: boolean; saldo: number | null },
+  email: string,
+): Promise<{ error: string } | { ok: true }> {
+  const c = await cuadreMes(cuenta, mes);
+  const r = revisarCierre(c, opciones.sinMovimientos, opciones.saldo);
+  if ("error" in r) return r;
+  await query(
+    "INSERT INTO banco_cierres (journal_id, company_id, mes, sin_movimientos, saldo_banco, saldo_libros, cerrado_por) VALUES (?,?,?,?,?,?,?)",
+    [cuenta.id, cuenta.sede, mes, opciones.sinMovimientos ? 1 : 0, r.saldo, c.saldoLibros, email],
+  );
+  return { ok: true };
+}
+
+/** Reabre un mes cerrado (solo el SuperAdmin, con motivo): la fila queda de historial. */
+export async function reabrirMes(cuenta: CuentaBanco, mes: string, motivo: string, email: string) {
+  await ensureTablas();
+  const [res]: any = await db.execute(
+    "UPDATE banco_cierres SET reabierto_por = ?, reabierto_at = NOW(), motivo_reapertura = ? WHERE journal_id = ? AND mes = ? AND reabierto_at IS NULL",
+    [email, motivo.slice(0, 500), cuenta.id, mes],
+  );
+  return res.affectedRows > 0;
+}

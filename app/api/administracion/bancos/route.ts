@@ -8,7 +8,11 @@ import {
   amarrarPago,
   borrarComprobante,
   borrarEstado,
+  cerrarMes,
   conciliacionPeriodo,
+  cuadreMes,
+  MesCerrado,
+  reabrirMes,
   conciliarEnOdoo,
   cuentasBancarias,
   cuentasContables,
@@ -30,6 +34,8 @@ import { respuestaSedeNoPermitida, SEDES_VALIDAS } from "@/lib/auth/sedeRol";
 const MAX_BYTES = 8 * 1024 * 1024;
 const IMAGENES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 const HUELLA = /^[0-9a-f]{64}$/;
+const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
+const esSuperAdmin = (payload: any) => String(payload?.role || "").toLowerCase().trim() === "superadmin";
 // Odoo (o el banco) no lo acepto. No 502: el proxy de EasyPanel cambia el cuerpo de un 502 por su propia pagina
 // y la pantalla se quedaba sin el motivo ("El servidor respondio 502").
 const ERROR_ODOO = 422;
@@ -66,6 +72,7 @@ async function cuentaPedida(payload: any, id: unknown): Promise<CuentaBanco | Ne
 //     (un mes o un rango, hasta MAX_DIAS_PERIODO dias).
 // GET /api/administracion/bancos?cuenta=<diario>&desde=&hasta=&viejas=1 — lineas de extracto de Odoo que no creo el panel.
 // GET /api/administracion/bancos?cuenta=<diario>&contables=1 — cuentas contables de la sede (contrapartida al aprobar).
+// GET /api/administracion/bancos?cuenta=<diario>&cierre=YYYY-MM — saldo del banco vs libros de Odoo y cierre del mes.
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_BANCOS);
   if (auth.error) return auth.error;
@@ -77,7 +84,14 @@ export async function GET(request: NextRequest) {
       if (!sedes) return respuestaSedeNoPermitida();
       return NextResponse.json({ success: true, cuentas: await cuentasBancarias(sedes) });
     }
-    if (cxc && (p.get("contables") || p.get("viejas"))) return soloAdministracion();
+    if (cxc && (p.get("contables") || p.get("viejas") || p.get("cierre"))) return soloAdministracion();
+    if (p.get("cierre")) {
+      const mes = String(p.get("cierre"));
+      if (!MES.test(mes)) return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
+      const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
+      if (cuenta instanceof NextResponse) return cuenta;
+      return NextResponse.json({ success: true, cuadre: await cuadreMes(cuenta, mes) });
+    }
     if (p.get("contables")) {
       const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
       if (cuenta instanceof NextResponse) return cuenta;
@@ -145,6 +159,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, ...r });
   } catch (e: any) {
     if (e instanceof ArchivoIlegible) return NextResponse.json({ error: e.message }, { status: 422 });
+    if (e instanceof MesCerrado) return NextResponse.json({ error: e.message }, { status: 409 });
     // IA saturada: 429 para que la pantalla espere y lo vuelva a mandar.
     if (e?.status === 429 && !/quota|billing|credit/i.test(String(e?.message))) {
       return NextResponse.json({ error: "La IA está saturada, se reintenta en unos segundos" }, { status: 429 });
@@ -166,8 +181,12 @@ export async function POST(request: NextRequest) {
 //   {cuenta, verificar: id[, telefono]} — volver a consultar un comprobante en el banco (API de Mercantil;
 //                                         telefono = celular de quien hizo un Pago Movil)
 //   {cuenta, verificar: "pendientes", desde, hasta} — los del periodo que el banco no confirmo
-//   {cuenta, deshacer: st_line_id, diferencial: "reverso"|"borrar"} — linea vieja de Odoo: deshace su conciliacion
+//   {cuenta, deshacer: st_line_id, diferencial: "reverso"|"borrar", motivo} — linea vieja de Odoo: deshace su conciliacion
 //        y la borra (para rehacerla aqui); sus asientos de diferencial se revierten o se borran del todo
+//   {cuenta, revertir: st_line_id, motivo} — revertir una conciliacion que hizo el panel (el motivo queda guardado)
+//   {cuenta, cerrar: "YYYY-MM"[, sin_movimientos: true][, saldo]} — cerrar el mes si cuadra con Odoo (saldo = el
+//        del banco escrito a mano, solo si el panel no lo sabe)
+//   {cuenta, reabrir: "YYYY-MM", motivo} — reabrir un mes cerrado (solo SuperAdmin)
 //   {cuenta, conciliar: huella, ...}      — aprobado: crea la linea de extracto en Odoo y la concilia contra
 //        pagos: [ids]           uno o varios cobros/pagos de Odoo (varios = suman justo el movimiento)
 //        cuenta_contable: id    una cuenta de la sede (comision, IGTF, intereses...)
@@ -203,11 +222,35 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "No se pudo consultar el banco" }, { status: ERROR_ODOO });
     }
   }
+  if (b?.cerrar !== undefined || b?.reabrir !== undefined) {
+    const mes = String(b?.cerrar ?? b?.reabrir);
+    if (!MES.test(mes)) return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
+    const email = String(auth.payload?.email || "");
+    try {
+      if (b?.reabrir !== undefined) {
+        if (!esSuperAdmin(auth.payload)) return NextResponse.json({ error: "Solo el SuperAdmin reabre un mes cerrado" }, { status: 403 });
+        const motivo = String(b?.motivo || "").trim();
+        if (motivo.length < 5) return NextResponse.json({ error: "Escribe por qué se reabre el mes" }, { status: 400 });
+        if (!(await reabrirMes(cuenta, mes, motivo, email))) return NextResponse.json({ error: "Ese mes no está cerrado" }, { status: 409 });
+        return NextResponse.json({ success: true });
+      }
+      const saldo = b?.saldo === undefined || b?.saldo === null || b?.saldo === "" ? null : Number(b.saldo);
+      if (saldo !== null && !Number.isFinite(saldo)) return NextResponse.json({ error: "Saldo inválido" }, { status: 400 });
+      const r = await cerrarMes(cuenta, mes, { sinMovimientos: b?.sin_movimientos === true, saldo }, email);
+      if ("error" in r) return NextResponse.json({ error: r.error }, { status: 409 });
+      return NextResponse.json({ success: true });
+    } catch (e: any) {
+      console.error("[bancos] cierre:", e?.message);
+      return NextResponse.json({ error: `No se pudo leer el saldo de Odoo: ${String(e?.message || "error").slice(0, 200)}` }, { status: ERROR_ODOO });
+    }
+  }
   // {cuenta, revertir: st_line_id} — revertir una conciliacion que hizo el panel (mismo camino que deshacer).
   if (b?.deshacer !== undefined || b?.revertir !== undefined) {
     const dePanel = b?.revertir !== undefined;
     const id = Number(dePanel ? b.revertir : b.deshacer);
     if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Línea inválida" }, { status: 400 });
+    const motivo = String(b?.motivo || "").trim();
+    if (motivo.length < 5) return NextResponse.json({ error: "Escribe por qué se desconcilia" }, { status: 400 });
     const p = auth.payload as any;
     try {
       const r = await deshacerLineaVieja(
@@ -215,7 +258,7 @@ export async function PATCH(request: NextRequest) {
         id,
         { nombre: String(p?.name || p?.nombre || ""), email: String(p?.email || "") },
         b?.diferencial === "borrar" ? "borrar" : "reverso",
-        { dePanel },
+        { dePanel, motivo },
       );
       if ("error" in r) return NextResponse.json({ error: r.error }, { status: 409 });
       return NextResponse.json({ success: true, ...r });
@@ -276,6 +319,7 @@ export async function PATCH(request: NextRequest) {
     }
     return NextResponse.json({ success: true });
   } catch (e: any) {
+    if (e instanceof MesCerrado) return NextResponse.json({ error: e.message }, { status: 409 });
     console.error("[bancos] amarrar:", e?.message);
     return NextResponse.json({ error: "No se pudo guardar" }, { status: 500 });
   }
@@ -332,8 +376,13 @@ export async function DELETE(request: NextRequest) {
   const comprobante = Number(p.get("comprobante"));
   const estado = Number(p.get("estado"));
   if (esRolCxC(auth.payload) && !(Number.isInteger(comprobante) && comprobante > 0)) return soloAdministracion();
-  if (Number.isInteger(comprobante) && comprobante > 0) await borrarComprobante(cuenta, comprobante);
-  else if (Number.isInteger(estado) && estado > 0) await borrarEstado(cuenta, estado);
-  else return NextResponse.json({ error: "Falta qué borrar" }, { status: 400 });
+  try {
+    if (Number.isInteger(comprobante) && comprobante > 0) await borrarComprobante(cuenta, comprobante);
+    else if (Number.isInteger(estado) && estado > 0) await borrarEstado(cuenta, estado);
+    else return NextResponse.json({ error: "Falta qué borrar" }, { status: 400 });
+  } catch (e: any) {
+    if (e instanceof MesCerrado) return NextResponse.json({ error: e.message }, { status: 409 });
+    throw e;
+  }
   return NextResponse.json({ success: true });
 }

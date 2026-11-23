@@ -296,3 +296,19 @@ assert.strictEqual(porMov("dos").pago, null);
 assert.strictEqual(porMov("com").estado, "comision");
 
 console.log("check-bancos: OK");
+
+// saldosDelMes: archivo en cualquier orden, saldo inicial y final del mes.
+{
+  const { saldosDelMes } = m.exports;
+  const movs = [
+    { fecha: "2026-10-31", monto: -50, saldo: 1150 },
+    { fecha: "2026-10-31", monto: 200, saldo: 1200 },
+    { fecha: "2026-10-02", monto: 100, saldo: 1000 },
+  ];
+  assert.deepStrictEqual(saldosDelMes(movs), { inicial: 900, final: 1150, cuadra: true });
+  assert.deepStrictEqual(saldosDelMes([...movs].reverse()), { inicial: 900, final: 1150, cuadra: true });
+  // Falta una fila: el inicial no calza con ningun movimiento.
+  assert.strictEqual(saldosDelMes(movs.slice(0, 2).concat([{ fecha: "2026-10-02", monto: 100, saldo: 990 }])).cuadra, false);
+  assert.strictEqual(saldosDelMes([{ fecha: "2026-10-02", monto: 5, saldo: null }]), null);
+}
+console.log("saldosDelMes ok");
