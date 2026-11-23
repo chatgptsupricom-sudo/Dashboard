@@ -86,7 +86,7 @@ export const MANUAL_GERENCIA_VENTAS: Semilla = {
         "Asignar tareas al equipo",
         "Gerencia de Ventas",
         "/gestion/actividades",
-        "- En Actividades, \"Asignar\": elige a la persona de tu sede, el título, la fecha límite y la descripción.\n- En \"Asignadas por Mí\" sigues cómo van (pendiente, en curso, culminada).\n- Con el selector de usuario ves las actividades de cada persona del equipo.",
+        "- En Actividades, \"Nueva actividad\" con la persona de tu sede como responsable (o elígela en el selector y escribe la tarea en la caja de arriba).\n- \"Equipo\" muestra quién va atrasado; \"Asignadas por mí\", cómo van las que diste.",
       ),
       PASO(
         "Revisar los indicadores y reportar",
@@ -183,7 +183,7 @@ export const TUTORIAL_GERENCIA_VENTAS: Semilla = {
         "Actividades",
         "Menú › Actividades",
         "/gestion/actividades",
-        "Las tareas del equipo.\n- \"Asignar\": a una persona de tu sede, con título, fecha límite y descripción.\n- \"Mis Actividades\" (con el selector, las de cualquier persona del equipo) y \"Asignadas por Mí\".\n- Tablero de pendientes, en curso y culminadas.",
+        "Las tareas tuyas y del equipo.\n- \"Mi día\": Vencidas, Para hoy, Próximos 7 días y Sin fecha; escribe y Enter para anotar rápido, el círculo culmina con un clic.\n- Con el selector ves las de una persona de tu sede (y le anotas tareas desde la misma caja) o \"Asignadas por mí\".\n- \"Nueva actividad\": responsable, fecha, prioridad y pasos (checklist).\n- \"Equipo\": quién tiene vencidas, para hoy y en curso, y cuánto culminó en 7 días; un clic abre sus actividades.\n- \"Tablero\": Pendientes, En curso y Culminadas, arrastrando.",
       ),
       PASO(
         "Stoplight Report",

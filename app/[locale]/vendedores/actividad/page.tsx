@@ -1,7 +1,12 @@
 "use client";
 
-import ActivityView from "@/components/actividad/standard/ActivityView"; // Mueve tu componente actual a un archivo separado llamado ActivityView.tsx en la misma carpeta
+import { Suspense } from "react";
+import PanelActividades from "@/components/actividad/panel/PanelActividades";
 
 export default function Page() {
-  return <ActivityView />;
+  return (
+    <Suspense fallback={null}>
+      <PanelActividades />
+    </Suspense>
+  );
 }
