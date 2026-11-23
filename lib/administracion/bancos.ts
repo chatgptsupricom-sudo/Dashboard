@@ -1245,27 +1245,35 @@ export async function conciliarEnOdoo(
               ["move_id.ref", "ilike", "comisi"],
               ["move_id.ref", "ilike", "debitos%bancarios"],
             ],
-            ["move_id", "amount_currency"],
+            ["move_id", "amount_currency", "ref", "name"],
           )
         : [];
       // Solo frena el asiento que SUMA las comisiones del mes. Un asiento de una sola comision (Caracas registra cada
       // una a mano: 1274, Bs 4.019,67, abr-2026) tiene el monto de un movimiento del banco: ese se concilia contra el
-      // asiento (sale de candidato) y no frena a las demas.
-      const { rows: comisionesMes } = await query(
-        `SELECT monto, descripcion, referencia FROM banco_movimientos
-          WHERE journal_id = ? AND monto < 0 AND fecha BETWEEN ? AND ?`,
+      // asiento (sale de candidato) y no frena a las demas. Tampoco frena el que trae en su referencia el numero de una
+      // operacion del estado de cuenta: es la comision de esa operacion, no la suma del mes (Caracas, asiento 1263
+      // ref 13324667894, Bs 6.619,08, la comision del cambio a Dora Gutierrez: frenaba todas las de abril, nov-2026).
+      const { rows: movsMes } = await query(
+        `SELECT monto, descripcion, referencia FROM banco_movimientos WHERE journal_id = ? AND fecha BETWEEN ? AND ?`,
         [cuenta.id, `${mes}-01`, finMes],
       );
-      const montosComision = comisionesMes
-        .filter((r: any) => esComision({ monto: Number(r.monto), descripcion: String(r.descripcion || ""), referencia: String(r.referencia || "") }))
+      const montosComision = movsMes
+        .filter((r: any) => Number(r.monto) < 0 && esComision({ monto: Number(r.monto), descripcion: String(r.descripcion || ""), referencia: String(r.referencia || "") }))
         .map((r: any) => Math.abs(Number(r.monto)));
-      const sumas = delMes.filter((a) => !montosComision.some((x: number) => Math.abs(x - Math.abs(Number(a.amount_currency) || 0)) < 0.01));
+      const refsMes = movsMes.map((r: any) => String(r.referencia || "")).filter(Boolean);
+      const deUnaOperacion = (a: any) =>
+        (`${a.ref || ""} ${a.name || ""}`.match(/\d{6,}/g) || []).some((n) => refsMes.some((r: string) => mismaReferencia(r, n)));
+      const sumas = delMes.filter(
+        (a) => !deUnaOperacion(a) && !montosComision.some((x: number) => Math.abs(x - Math.abs(Number(a.amount_currency) || 0)) < 0.01),
+      );
       if (sumas.length) {
         const a = sumas[0];
         return {
           error:
-            `${mes} ya tiene en Odoo el asiento de comisiones del mes (${a.move_id?.[1] || ""}, ${Math.abs(Number(a.amount_currency) || 0)}): ` +
-            "si se aprueban una por una, el gasto queda dos veces. Revérsalo en Odoo primero.",
+            `${mes} ya tiene en Odoo un asiento que suma las comisiones del mes contra Pagos Pendientes (asiento ${a.move_id?.[1] || ""}` +
+            `${a.ref ? `, ref. ${a.ref}` : ""}, ${Math.abs(Number(a.amount_currency) || 0).toLocaleString("es-VE", { minimumFractionDigits: 2 })}): ` +
+            "si se aprueban una por una, el gasto queda dos veces. Revérsalo en Odoo primero (o, si es la comisión de una sola operación, " +
+            "concíliala en Odoo contra su movimiento).",
         };
       }
     }
