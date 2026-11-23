@@ -16,7 +16,7 @@ import {
   Tarjeta,
   useSedeFija,
 } from "@/components/administracion/comunes";
-import type { ConciliacionBanco, CuentaBanco } from "@/lib/administracion/bancos";
+import type { ConciliacionBanco, CuentaBanco, CuentaContable } from "@/lib/administracion/bancos";
 import type {
   Coincide,
   ComprobanteCruzado,
@@ -254,6 +254,10 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   const [paginaMovs, setPaginaMovs] = useState(0);
   const [pestana, setPestana] = useState<Pestana>(cxc ? "comprobantes" : "conciliar");
   const [grupo, setGrupo] = useState<Grupo | null>(null);
+  // Movimientos marcados para conciliarlos todos contra la misma cuenta contable (ej. gastos bancarios).
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  const [contables, setContables] = useState<CuentaContable[] | null>(null);
+  const [cuentaLote, setCuentaLote] = useState<number | null>(null);
   const [buscar, setBuscar] = useState("");
   const [registrar, setRegistrar] = useState<number | null>(null);
   const [verificando, setVerificando] = useState<number | "pendientes" | null>(null);
@@ -304,6 +308,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   useEffect(() => {
     setPaginaComprobantes(0);
     setPaginaMovs(0);
+    setMarcados(new Set());
   }, [cuenta, periodo.desde, periodo.hasta, grupo, buscar]);
 
   // El aviso de la subida se va solo 5 s despues de terminar (no mientras el
@@ -513,6 +518,58 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
     }
     setConciliando(null);
     setAvanceConciliar(null);
+    cargar();
+  };
+
+  // Las cuentas contables se leen la primera vez que se marca algo; la propuesta es la del primer marcado que traiga una.
+  useEffect(() => {
+    if (!marcados.size || !cuenta) return;
+    if (!contables) {
+      fetch(`/api/administracion/bancos?cuenta=${cuenta}&contables=1`)
+        .then((r) => r.json())
+        .then((j) => (j.success ? setContables(j.contables) : setError(j.error || "No se pudieron leer las cuentas contables")))
+        .catch(() => setError("No se pudieron leer las cuentas contables"));
+    }
+    if (cuentaLote === null) {
+      const conSugerida = (datos?.movimientos || []).find((m) => marcados.has(m.id) && m.sugerida);
+      if (conSugerida?.sugerida) setCuentaLote(conSugerida.sugerida.id);
+    }
+  }, [marcados, cuenta, contables, cuentaLote, datos]);
+  useEffect(() => {
+    setContables(null);
+    setCuentaLote(null);
+  }, [cuenta]);
+
+  /** Concilia los marcados contra una misma cuenta contable, de a uno; los que Odoo rechaza no frenan a los demas. */
+  const conciliarMarcados = async () => {
+    const lista = movimientos.filter((m) => marcados.has(m.id) && conciliable(m));
+    const c = contables?.find((x) => x.id === cuentaLote);
+    if (!lista.length || !c) return;
+    if (!confirm(`¿Conciliar en Odoo los ${lista.length} movimientos marcados (${cifra(suma(lista))}) contra ${c.codigo} ${c.nombre}?`)) return;
+    setError(null);
+    setConciliando("lote");
+    setAvanceConciliar({ hecho: 0, total: lista.length });
+    const fallas: string[] = [];
+    for (const [n, m] of lista.entries()) {
+      const res = await fetch("/api/administracion/bancos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cuenta, conciliar: m.id, cuenta_contable: c.id }),
+      });
+      const j = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
+      setAvanceConciliar({ hecho: n + 1, total: lista.length });
+      if (!j.success) fallas.push(`${dia(m.fecha)} ${m.referencia || ""} (${cifra(m.monto)}): ${j.error || "no se pudo conciliar en Odoo"}`);
+    }
+    if (fallas.length) {
+      setError(
+        `Se conciliaron ${lista.length - fallas.length} de ${lista.length}. No se pudieron ${fallas.length}: ` +
+          fallas.slice(0, 5).join(" · ") +
+          (fallas.length > 5 ? ` · y ${fallas.length - 5} más` : ""),
+      );
+    }
+    setConciliando(null);
+    setAvanceConciliar(null);
+    setMarcados(new Set());
     cargar();
   };
 
@@ -979,9 +1036,63 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                       </div>
                     </CardHeader>
                     <CardContent className="overflow-x-auto">
+                      {marcados.size > 0 && (() => {
+                        const lista = movimientos.filter((m) => marcados.has(m.id));
+                        return (
+                          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm">
+                            <span className="font-medium">
+                              {lista.length} marcado{lista.length === 1 ? "" : "s"} · {cifra(suma(lista))} {moneda}
+                            </span>
+                            <select
+                              value={cuentaLote ?? ""}
+                              onChange={(e) => setCuentaLote(Number(e.target.value) || null)}
+                              className="border rounded-md px-2 py-1.5 bg-white max-w-[22rem]"
+                              aria-label="Cuenta contable para los marcados"
+                            >
+                              <option value="">{contables ? "Elige la cuenta contable…" : "Cargando cuentas…"}</option>
+                              {(contables || []).map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.codigo} {c.nombre}
+                                </option>
+                              ))}
+                            </select>
+                            <Button size="sm" className="h-8" disabled={!cuentaLote || conciliando !== null} onClick={conciliarMarcados}>
+                              {conciliando === "lote" ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                              {conciliando === "lote" && avanceConciliar
+                                ? `Conciliando ${avanceConciliar.hecho} de ${avanceConciliar.total}`
+                                : "Conciliar contra esa cuenta"}
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8" disabled={conciliando !== null} onClick={() => setMarcados(new Set())}>
+                              Quitar marcas
+                            </Button>
+                          </div>
+                        );
+                      })()}
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead className="w-8">
+                              {(() => {
+                                const dePagina = deLaPagina(visibles, paginaMovs).filter(conciliable);
+                                const todos = dePagina.length > 0 && dePagina.every((m) => marcados.has(m.id));
+                                return (
+                                  <input
+                                    type="checkbox"
+                                    aria-label="Marcar todos los de esta página"
+                                    title="Marcar todos los de esta página que faltan por conciliar"
+                                    checked={todos}
+                                    disabled={!dePagina.length || conciliando !== null}
+                                    onChange={() =>
+                                      setMarcados((prev) => {
+                                        const n = new Set(prev);
+                                        dePagina.forEach((m) => (todos ? n.delete(m.id) : n.add(m.id)));
+                                        return n;
+                                      })
+                                    }
+                                  />
+                                );
+                              })()}
+                            </TableHead>
                             <TableHead>Fecha</TableHead>
                             <TableHead>Movimiento del banco</TableHead>
                             <TableHead className="text-right">Monto</TableHead>
@@ -991,10 +1102,28 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                         </TableHeader>
                         <TableBody>
                           {visibles.length === 0 && (
-                            <FilaVacia columnas={5} texto={buscar ? "Nada coincide con la búsqueda." : "No hay movimientos aquí."} />
+                            <FilaVacia columnas={6} texto={buscar ? "Nada coincide con la búsqueda." : "No hay movimientos aquí."} />
                           )}
                           {deLaPagina(visibles, paginaMovs).map((m) => (
-                            <TableRow key={m.id}>
+                            <TableRow key={m.id} className={marcados.has(m.id) ? "bg-blue-50/60" : undefined}>
+                              <TableCell className="align-top">
+                                {conciliable(m) && (
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Marcar el movimiento del ${dia(m.fecha)}`}
+                                    checked={marcados.has(m.id)}
+                                    disabled={conciliando !== null}
+                                    onChange={(e) =>
+                                      setMarcados((prev) => {
+                                        const n = new Set(prev);
+                                        if (e.target.checked) n.add(m.id);
+                                        else n.delete(m.id);
+                                        return n;
+                                      })
+                                    }
+                                  />
+                                )}
+                              </TableCell>
                               <TableCell className="whitespace-nowrap align-top">{dia(m.fecha)}</TableCell>
                               <TableCell className="text-xs max-w-[22rem] align-top">
                                 <span className="font-mono">{m.referencia || "sin ref."}</span>
