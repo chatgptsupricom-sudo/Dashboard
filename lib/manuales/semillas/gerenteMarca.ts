@@ -78,7 +78,7 @@ export const MANUAL_GERENTE_MARCA: Semilla = {
         "Organizar tu trabajo",
         "Gerente de Marca",
         "/gestion/actividades",
-        "En Actividades crea tus tareas con fecha límite (\"+ Nueva Actividad\") y muévelas a En curso y Culminadas a medida que avanzas.",
+        "En Actividades anota tus tareas en \"Mi día\" (escribe y Enter), con fecha y prioridad, y culmínalas con un clic en el círculo.",
       ),
     ],
     documentos:
@@ -147,7 +147,7 @@ export const TUTORIAL_GERENTE_MARCA: Semilla = {
         "Actividades",
         "Menú › Actividades",
         "/gestion/actividades",
-        "Tus tareas: \"+ Nueva Actividad\" (título, fecha límite, descripción) y el tablero de pendientes, en curso y culminadas.",
+        "Tu día de trabajo.\n- \"Mi día\" ordena tus tareas en Vencidas, Para hoy, Próximos 7 días y Sin fecha. Escribe arriba y pulsa Enter para anotar una tarea (eliges Hoy, Mañana o Sin fecha y la prioridad).\n- El círculo de cada tarea la culmina con un clic (\"Deshacer\" si fue un error); \"Empezar\" la pasa a En curso.\n- Al abrir una tarea cambias fecha, prioridad, estado, observaciones y sus pasos (checklist); los pasos también se tildan desde la lista.\n- \"Tablero\" muestra las mismas tareas en Pendientes, En curso y Culminadas; arrástralas para cambiar el estado.",
       ),
     ],
     documentos:

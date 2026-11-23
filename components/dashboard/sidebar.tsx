@@ -677,7 +677,7 @@ export function Sidebar({
       if (item.id === "actividad") {
         return {
           ...item,
-          href: `/${locale}/gestion/actividades?userId=${user?.uid || user?.id}`,
+          href: `/${locale}/gestion/actividades`,
         };
       }
       if ((item as any).absoluteHref) {

@@ -150,7 +150,7 @@ export const TUTORIAL_GERENTE_OPERACIONES: Semilla = {
         "Actividades",
         "Menú › Actividades",
         "/gestion/actividades",
-        "Las tareas del equipo.\n- \"Asignar\": a cualquier persona de tu sede, con título, fecha límite y descripción.\n- \"Mis Actividades\" (con el selector, las de otra persona de tu sede) y \"Asignadas por Mí\".",
+        "Las tareas tuyas y del equipo.\n- \"Mi día\": Vencidas, Para hoy, Próximos 7 días y Sin fecha; escribe y Enter para anotar rápido, el círculo culmina con un clic.\n- Con el selector ves las de una persona de tu sede (y le anotas tareas desde la misma caja) o \"Asignadas por mí\".\n- \"Nueva actividad\": responsable, fecha, prioridad y pasos (checklist).\n- \"Equipo\": quién tiene vencidas, para hoy y en curso, y cuánto culminó en 7 días; un clic abre sus actividades.\n- \"Tablero\": Pendientes, En curso y Culminadas, arrastrando.",
       ),
       PASO(
         "Leads › Dashboard Leads",
