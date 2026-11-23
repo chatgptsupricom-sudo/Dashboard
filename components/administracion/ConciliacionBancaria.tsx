@@ -41,6 +41,7 @@ import {
   Search,
   Smartphone,
   Trash2,
+  Undo2,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -107,7 +108,14 @@ const ODOO_URL = (process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.co
 const enlaceConciliado = (m: MovimientoPeriodo) =>
   m.odoo?.asientoId
     ? `${ODOO_URL}/web#id=${m.odoo.asientoId}&model=account.move&view_type=form`
-    : `${ODOO_URL}/web#id=${m.pago?.id}&model=account.payment&view_type=form`;
+    : m.pago
+      ? enlacePago(m.pago)
+      : ODOO_URL;
+/** El cobro/pago en Odoo (id negativo = apunte de un asiento: se abre el asiento). */
+const enlacePago = (p: PagoOdoo) =>
+  p.id > 0
+    ? `${ODOO_URL}/web#id=${p.id}&model=account.payment&view_type=form`
+    : `${ODOO_URL}/web#id=${p.asientoId ?? 0}&model=account.move&view_type=form`;
 const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const suma = (items: { monto: number }[]) => items.reduce((s, i) => s + i.monto, 0);
@@ -199,7 +207,16 @@ function Cobro({ pago, coincide }: { pago: PagoOdoo; coincide?: Coincide | null 
   const mal = (ok: boolean | undefined) => (coincide && !ok ? "text-red-700 font-medium" : "");
   return (
     <span className="text-xs">
-      <span className="font-medium">{pago.nombre}</span> · {pago.cliente}
+      <a
+        href={enlacePago(pago)}
+        target="_blank"
+        rel="noreferrer"
+        className="font-medium text-blue-700 hover:underline"
+        title="Abrir en Odoo"
+      >
+        {pago.nombre}
+      </a>{" "}
+      · {pago.cliente}
       <span className="block text-gray-500">
         <span className={mal(coincide?.monto)}>{cifra(pago.monto)}</span> · Memo{" "}
         <span className={mal(coincide?.referencia)}>{pago.ref || "—"}</span> · <span className={mal(coincide?.fecha)}>{dia(pago.fecha)}</span>
@@ -436,6 +453,34 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
     const j = await pedirConciliar(m);
     setConciliando(null);
     if (!j.success) setError(j.error || "No se pudo conciliar en Odoo");
+    cargar();
+  };
+
+  /** Deshace en Odoo una conciliacion que hizo el panel (por si se aprobo contra lo que no era). */
+  const revertir = async (m: MovimientoPeriodo) => {
+    if (!m.odoo) return;
+    const contra = m.odoo.detalle ? ` contra ${m.odoo.detalle}` : "";
+    if (
+      !confirm(
+        `¿Revertir la conciliación del ${dia(m.fecha)} por ${cifra(m.monto)}${contra}?\n\n` +
+          "En Odoo se borra la línea del banco que creó el panel (" +
+          (m.odoo.asiento || "su asiento") +
+          ") y el cobro/pago vuelve a quedar pendiente, con su monto y aplicado a sus facturas como estaba. Después se puede aprobar de nuevo contra lo correcto.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setConciliando(`r-${m.id}`);
+    const res = await fetch("/api/administracion/bancos", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cuenta, revertir: m.odoo.stLineId }),
+    });
+    const j = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
+    setConciliando(null);
+    if (!j.success) setError(`${dia(m.fecha)} ${m.referencia || ""}: ${j.error || "no se pudo revertir en Odoo"}`);
+    else if (j.aviso) setError(`Revertida, pero: ${j.aviso}`);
     cargar();
   };
 
@@ -1021,7 +1066,21 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                                     {m.odoo && !m.odoo.conciliada ? "En Odoo, falta conciliar allá" : "Conciliado"}
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
-                                ) : (
+                                ) : null}
+                                {m.odoo && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 ml-1 px-2 text-xs text-gray-500 hover:text-red-700"
+                                    disabled={conciliando !== null}
+                                    onClick={() => revertir(m)}
+                                    title="Deshacer esta conciliación en Odoo (se borra la línea del banco que creó el panel y el cobro/pago vuelve a pendiente)"
+                                  >
+                                    {conciliando === `r-${m.id}` ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Undo2 className="h-3.5 w-3.5 mr-1" />}
+                                    Revertir
+                                  </Button>
+                                )}
+                                {yaConciliado(m) ? null : (
                                   <span className="inline-flex items-center gap-1">
                                     <Button
                                       size="sm"
