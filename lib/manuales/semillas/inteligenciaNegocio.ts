@@ -203,7 +203,7 @@ export const TUTORIAL_BI: Semilla = {
         "Actividades",
         "Menú › Actividades",
         "/gestion/actividades",
-        "Las actividades de cualquier persona (elige con el selector). Es de consulta: crear, asignar o mover una actividad no está habilitado para tu rol.",
+        "Las actividades de cualquier persona (elige con el selector) en \"Mi día\" o \"Tablero\", y en \"Equipo\" quién tiene vencidas. Es de consulta: crear, asignar o mover una actividad no está habilitado para tu rol.",
       ),
       PASO(
         "Stoplight Report",

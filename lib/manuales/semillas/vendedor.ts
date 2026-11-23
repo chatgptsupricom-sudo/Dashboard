@@ -200,7 +200,7 @@ export const TUTORIAL_VENDEDOR: Semilla = {
         "Actividades",
         "Menú › Actividades",
         "/gestion/actividades",
-        "Tu lista de tareas en tres columnas: PENDIENTES, EN CURSO y CULMINADAS.\n- \"+ Nueva Actividad\": título, fecha límite (no puede ser pasada) y descripción, los tres obligatorios.\n- Arrastra la tarjeta para cambiar su estado. Hay que pasar por EN CURSO antes de culminarla, y una culminada ya no se mueve.\n- En cada tarjeta puedes escribir una observación.\n- \"Asignadas por Mí\" muestra las tareas que tú le diste a otros.",
+        "Tu día de trabajo.\n- \"Mi día\" ordena tus tareas en Vencidas, Para hoy, Próximos 7 días y Sin fecha. Escribe arriba y pulsa Enter para anotar una tarea (eliges Hoy, Mañana o Sin fecha y la prioridad).\n- El círculo de cada tarea la culmina con un clic (\"Deshacer\" si fue un error); \"Empezar\" la pasa a En curso.\n- Al abrir una tarea cambias fecha, prioridad, estado, observaciones y sus pasos (checklist); los pasos también se tildan desde la lista.\n- \"Tablero\" muestra las mismas tareas en Pendientes, En curso y Culminadas; arrástralas para cambiar el estado.",
       ),
       PASO(
         "Catálogo",
