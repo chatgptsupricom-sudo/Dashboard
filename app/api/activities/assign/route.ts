@@ -174,6 +174,7 @@
 // app/api/activities/assign/route.ts
 import { query } from "@/lib/db"; // Importación centralizada
 import { requireSession } from "@/lib/auth/roles";
+import { alcanceDe, puedeVerPersona } from "@/lib/actividades/datos";
 import { NextRequest, NextResponse } from "next/server";
 
 // Declaración para evitar errores de TypeScript con la propiedad global si usas socket.io
@@ -214,16 +215,24 @@ export async function GET(req: NextRequest) {
     `;
 
     const params: any[] = [];
+    const alcance = alcanceDe(auth.payload);
 
     // CONDICIONAL DE BÚSQUEDA:
     if (assignedBy) {
-      // Filtramos exactamente por el nombre de quien asignó la tarea
+      // Solo lo que asignó uno mismo (o todo, quien ve a todos).
+      if (!alcance.veTodos && assignedBy.trim().toLowerCase() !== alcance.nombre.toLowerCase()) {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+      }
       sql += " AND a.assigned_by = ?";
       params.push(assignedBy.trim());
-    } else if (userId) {
-      // Filtro tradicional: Mis tareas asignadas para mí mismo
+    } else {
+      // Sin userId = las propias; con userId, solo una persona que se puede ver.
+      const pedido = Number(userId) || alcance.yo;
+      if (!(await puedeVerPersona(alcance, pedido))) {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+      }
       sql += " AND a.user_id = ?";
-      params.push(userId);
+      params.push(pedido);
     }
 
     // Ordenamos cronológicamente (las más nuevas primero)
