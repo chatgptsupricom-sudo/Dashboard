@@ -16,7 +16,7 @@ import {
   Tarjeta,
   useSedeFija,
 } from "@/components/administracion/comunes";
-import type { ConciliacionBanco, CuentaBanco } from "@/lib/administracion/bancos";
+import type { ConciliacionBanco, CuentaBanco, CuentaContable } from "@/lib/administracion/bancos";
 import type {
   Coincide,
   ComprobanteCruzado,
@@ -41,6 +41,7 @@ import {
   Search,
   Smartphone,
   Trash2,
+  Undo2,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -107,7 +108,14 @@ const ODOO_URL = (process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.co
 const enlaceConciliado = (m: MovimientoPeriodo) =>
   m.odoo?.asientoId
     ? `${ODOO_URL}/web#id=${m.odoo.asientoId}&model=account.move&view_type=form`
-    : `${ODOO_URL}/web#id=${m.pago?.id}&model=account.payment&view_type=form`;
+    : m.pago
+      ? enlacePago(m.pago)
+      : ODOO_URL;
+/** El cobro/pago en Odoo (id negativo = apunte de un asiento: se abre el asiento). */
+const enlacePago = (p: PagoOdoo) =>
+  p.id > 0
+    ? `${ODOO_URL}/web#id=${p.id}&model=account.payment&view_type=form`
+    : `${ODOO_URL}/web#id=${p.asientoId ?? 0}&model=account.move&view_type=form`;
 const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const suma = (items: { monto: number }[]) => items.reduce((s, i) => s + i.monto, 0);
@@ -199,7 +207,16 @@ function Cobro({ pago, coincide }: { pago: PagoOdoo; coincide?: Coincide | null 
   const mal = (ok: boolean | undefined) => (coincide && !ok ? "text-red-700 font-medium" : "");
   return (
     <span className="text-xs">
-      <span className="font-medium">{pago.nombre}</span> · {pago.cliente}
+      <a
+        href={enlacePago(pago)}
+        target="_blank"
+        rel="noreferrer"
+        className="font-medium text-blue-700 hover:underline"
+        title="Abrir en Odoo"
+      >
+        {pago.nombre}
+      </a>{" "}
+      · {pago.cliente}
       <span className="block text-gray-500">
         <span className={mal(coincide?.monto)}>{cifra(pago.monto)}</span> · Memo{" "}
         <span className={mal(coincide?.referencia)}>{pago.ref || "—"}</span> · <span className={mal(coincide?.fecha)}>{dia(pago.fecha)}</span>
@@ -237,6 +254,10 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   const [paginaMovs, setPaginaMovs] = useState(0);
   const [pestana, setPestana] = useState<Pestana>(cxc ? "comprobantes" : "conciliar");
   const [grupo, setGrupo] = useState<Grupo | null>(null);
+  // Movimientos marcados para conciliarlos todos contra la misma cuenta contable (ej. gastos bancarios).
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  const [contables, setContables] = useState<CuentaContable[] | null>(null);
+  const [cuentaLote, setCuentaLote] = useState<number | null>(null);
   const [buscar, setBuscar] = useState("");
   const [registrar, setRegistrar] = useState<number | null>(null);
   const [verificando, setVerificando] = useState<number | "pendientes" | null>(null);
@@ -287,6 +308,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   useEffect(() => {
     setPaginaComprobantes(0);
     setPaginaMovs(0);
+    setMarcados(new Set());
   }, [cuenta, periodo.desde, periodo.hasta, grupo, buscar]);
 
   // El aviso de la subida se va solo 5 s despues de terminar (no mientras el
@@ -439,6 +461,34 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
     cargar();
   };
 
+  /** Deshace en Odoo una conciliacion que hizo el panel (por si se aprobo contra lo que no era). */
+  const revertir = async (m: MovimientoPeriodo) => {
+    if (!m.odoo) return;
+    const contra = m.odoo.detalle ? ` contra ${m.odoo.detalle}` : "";
+    if (
+      !confirm(
+        `¿Revertir la conciliación del ${dia(m.fecha)} por ${cifra(m.monto)}${contra}?\n\n` +
+          "En Odoo se borra la línea del banco que creó el panel (" +
+          (m.odoo.asiento || "su asiento") +
+          ") y el cobro/pago vuelve a quedar pendiente, con su monto y aplicado a sus facturas como estaba. Después se puede aprobar de nuevo contra lo correcto.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setConciliando(`r-${m.id}`);
+    const res = await fetch("/api/administracion/bancos", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cuenta, revertir: m.odoo.stLineId }),
+    });
+    const j = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
+    setConciliando(null);
+    if (!j.success) setError(`${dia(m.fecha)} ${m.referencia || ""}: ${j.error || "no se pudo revertir en Odoo"}`);
+    else if (j.aviso) setError(`Revertida, pero: ${j.aviso}`);
+    cargar();
+  };
+
   const movimientos = datos?.movimientos || [];
   const comprobantes = datos?.comprobantes || [];
   const sinMovimiento = datos?.pagosSinMovimiento || [];
@@ -468,6 +518,58 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
     }
     setConciliando(null);
     setAvanceConciliar(null);
+    cargar();
+  };
+
+  // Las cuentas contables se leen la primera vez que se marca algo; la propuesta es la del primer marcado que traiga una.
+  useEffect(() => {
+    if (!marcados.size || !cuenta) return;
+    if (!contables) {
+      fetch(`/api/administracion/bancos?cuenta=${cuenta}&contables=1`)
+        .then((r) => r.json())
+        .then((j) => (j.success ? setContables(j.contables) : setError(j.error || "No se pudieron leer las cuentas contables")))
+        .catch(() => setError("No se pudieron leer las cuentas contables"));
+    }
+    if (cuentaLote === null) {
+      const conSugerida = (datos?.movimientos || []).find((m) => marcados.has(m.id) && m.sugerida);
+      if (conSugerida?.sugerida) setCuentaLote(conSugerida.sugerida.id);
+    }
+  }, [marcados, cuenta, contables, cuentaLote, datos]);
+  useEffect(() => {
+    setContables(null);
+    setCuentaLote(null);
+  }, [cuenta]);
+
+  /** Concilia los marcados contra una misma cuenta contable, de a uno; los que Odoo rechaza no frenan a los demas. */
+  const conciliarMarcados = async () => {
+    const lista = movimientos.filter((m) => marcados.has(m.id) && conciliable(m));
+    const c = contables?.find((x) => x.id === cuentaLote);
+    if (!lista.length || !c) return;
+    if (!confirm(`¿Conciliar en Odoo los ${lista.length} movimientos marcados (${cifra(suma(lista))}) contra ${c.codigo} ${c.nombre}?`)) return;
+    setError(null);
+    setConciliando("lote");
+    setAvanceConciliar({ hecho: 0, total: lista.length });
+    const fallas: string[] = [];
+    for (const [n, m] of lista.entries()) {
+      const res = await fetch("/api/administracion/bancos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cuenta, conciliar: m.id, cuenta_contable: c.id }),
+      });
+      const j = await res.json().catch(() => ({ error: `El servidor respondió ${res.status}` }));
+      setAvanceConciliar({ hecho: n + 1, total: lista.length });
+      if (!j.success) fallas.push(`${dia(m.fecha)} ${m.referencia || ""} (${cifra(m.monto)}): ${j.error || "no se pudo conciliar en Odoo"}`);
+    }
+    if (fallas.length) {
+      setError(
+        `Se conciliaron ${lista.length - fallas.length} de ${lista.length}. No se pudieron ${fallas.length}: ` +
+          fallas.slice(0, 5).join(" · ") +
+          (fallas.length > 5 ? ` · y ${fallas.length - 5} más` : ""),
+      );
+    }
+    setConciliando(null);
+    setAvanceConciliar(null);
+    setMarcados(new Set());
     cargar();
   };
 
@@ -934,9 +1036,63 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                       </div>
                     </CardHeader>
                     <CardContent className="overflow-x-auto">
+                      {marcados.size > 0 && (() => {
+                        const lista = movimientos.filter((m) => marcados.has(m.id));
+                        return (
+                          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm">
+                            <span className="font-medium">
+                              {lista.length} marcado{lista.length === 1 ? "" : "s"} · {cifra(suma(lista))} {moneda}
+                            </span>
+                            <select
+                              value={cuentaLote ?? ""}
+                              onChange={(e) => setCuentaLote(Number(e.target.value) || null)}
+                              className="border rounded-md px-2 py-1.5 bg-white max-w-[22rem]"
+                              aria-label="Cuenta contable para los marcados"
+                            >
+                              <option value="">{contables ? "Elige la cuenta contable…" : "Cargando cuentas…"}</option>
+                              {(contables || []).map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.codigo} {c.nombre}
+                                </option>
+                              ))}
+                            </select>
+                            <Button size="sm" className="h-8" disabled={!cuentaLote || conciliando !== null} onClick={conciliarMarcados}>
+                              {conciliando === "lote" ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                              {conciliando === "lote" && avanceConciliar
+                                ? `Conciliando ${avanceConciliar.hecho} de ${avanceConciliar.total}`
+                                : "Conciliar contra esa cuenta"}
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8" disabled={conciliando !== null} onClick={() => setMarcados(new Set())}>
+                              Quitar marcas
+                            </Button>
+                          </div>
+                        );
+                      })()}
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead className="w-8">
+                              {(() => {
+                                const dePagina = deLaPagina(visibles, paginaMovs).filter(conciliable);
+                                const todos = dePagina.length > 0 && dePagina.every((m) => marcados.has(m.id));
+                                return (
+                                  <input
+                                    type="checkbox"
+                                    aria-label="Marcar todos los de esta página"
+                                    title="Marcar todos los de esta página que faltan por conciliar"
+                                    checked={todos}
+                                    disabled={!dePagina.length || conciliando !== null}
+                                    onChange={() =>
+                                      setMarcados((prev) => {
+                                        const n = new Set(prev);
+                                        dePagina.forEach((m) => (todos ? n.delete(m.id) : n.add(m.id)));
+                                        return n;
+                                      })
+                                    }
+                                  />
+                                );
+                              })()}
+                            </TableHead>
                             <TableHead>Fecha</TableHead>
                             <TableHead>Movimiento del banco</TableHead>
                             <TableHead className="text-right">Monto</TableHead>
@@ -946,10 +1102,28 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                         </TableHeader>
                         <TableBody>
                           {visibles.length === 0 && (
-                            <FilaVacia columnas={5} texto={buscar ? "Nada coincide con la búsqueda." : "No hay movimientos aquí."} />
+                            <FilaVacia columnas={6} texto={buscar ? "Nada coincide con la búsqueda." : "No hay movimientos aquí."} />
                           )}
                           {deLaPagina(visibles, paginaMovs).map((m) => (
-                            <TableRow key={m.id}>
+                            <TableRow key={m.id} className={marcados.has(m.id) ? "bg-blue-50/60" : undefined}>
+                              <TableCell className="align-top">
+                                {conciliable(m) && (
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Marcar el movimiento del ${dia(m.fecha)}`}
+                                    checked={marcados.has(m.id)}
+                                    disabled={conciliando !== null}
+                                    onChange={(e) =>
+                                      setMarcados((prev) => {
+                                        const n = new Set(prev);
+                                        if (e.target.checked) n.add(m.id);
+                                        else n.delete(m.id);
+                                        return n;
+                                      })
+                                    }
+                                  />
+                                )}
+                              </TableCell>
                               <TableCell className="whitespace-nowrap align-top">{dia(m.fecha)}</TableCell>
                               <TableCell className="text-xs max-w-[22rem] align-top">
                                 <span className="font-mono">{m.referencia || "sin ref."}</span>
@@ -1021,7 +1195,21 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                                     {m.odoo && !m.odoo.conciliada ? "En Odoo, falta conciliar allá" : "Conciliado"}
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
-                                ) : (
+                                ) : null}
+                                {m.odoo && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 ml-1 px-2 text-xs text-gray-500 hover:text-red-700"
+                                    disabled={conciliando !== null}
+                                    onClick={() => revertir(m)}
+                                    title="Deshacer esta conciliación en Odoo (se borra la línea del banco que creó el panel y el cobro/pago vuelve a pendiente)"
+                                  >
+                                    {conciliando === `r-${m.id}` ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Undo2 className="h-3.5 w-3.5 mr-1" />}
+                                    Revertir
+                                  </Button>
+                                )}
+                                {yaConciliado(m) ? null : (
                                   <span className="inline-flex items-center gap-1">
                                     <Button
                                       size="sm"

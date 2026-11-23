@@ -203,8 +203,10 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "No se pudo consultar el banco" }, { status: ERROR_ODOO });
     }
   }
-  if (b?.deshacer !== undefined) {
-    const id = Number(b.deshacer);
+  // {cuenta, revertir: st_line_id} — revertir una conciliacion que hizo el panel (mismo camino que deshacer).
+  if (b?.deshacer !== undefined || b?.revertir !== undefined) {
+    const dePanel = b?.revertir !== undefined;
+    const id = Number(dePanel ? b.revertir : b.deshacer);
     if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Línea inválida" }, { status: 400 });
     const p = auth.payload as any;
     try {
@@ -213,6 +215,7 @@ export async function PATCH(request: NextRequest) {
         id,
         { nombre: String(p?.name || p?.nombre || ""), email: String(p?.email || "") },
         b?.diferencial === "borrar" ? "borrar" : "reverso",
+        { dePanel },
       );
       if ("error" in r) return NextResponse.json({ error: r.error }, { status: 409 });
       return NextResponse.json({ success: true, ...r });

@@ -16,6 +16,7 @@ import {
   cruzarBanco,
   cuentaSugerida,
   emparejarViejas,
+  esComision,
   errorPagos,
   errorPeriodo,
   leerFilasExcel,
@@ -295,6 +296,7 @@ async function pagosOdoo(cuenta: CuentaBanco, desde: string, hasta: string): Pro
       cliente: Array.isArray(a.partner_id) ? String(a.partner_id[1]) : String(a.name || ""),
       ref: String(a.ref || a.name || ""),
       conciliado: false,
+      asientoId: Array.isArray(a.move_id) ? Number(a.move_id[0]) : undefined,
     })),
   ];
 }
@@ -1141,6 +1143,14 @@ export async function conciliarEnOdoo(
       [...pagos, ...apuntes].map((p) => (Array.isArray(p.partner_id) ? p.partner_id[0] : 0)),
     );
     partnerId = partners.size === 1 ? [...partners][0] || null : null;
+    // La localizacion de Venezuela no deja crear la linea del banco con un contacto sin RIF («El Proveedor/Cliente
+    // no posee Documento Fiscal»): pasa con las transferencias internas, cuyo contacto es la propia empresa
+    // («OFFICE SOLUTIONS CENTER 2004, C.A. - B», sin RIF, nov-2026). El contacto en la linea es solo informativo
+    // (la conciliacion va por los apuntes), asi que sin RIF va sin contacto.
+    if (partnerId) {
+      const p = (await leer("res.partner", [["id", "=", partnerId]], ["vat"]))[0];
+      if (!String(p?.vat || "").trim()) partnerId = null;
+    }
     const lineasPagos = pagos.length
       ? await leer("account.move.line", [["move_id", "in", pagos.map((p) => p.move_id[0])], ["account_id", "=", cuentaId]], campos)
       : [];
@@ -1185,8 +1195,20 @@ export async function conciliarEnOdoo(
             ["move_id", "amount_currency"],
           )
         : [];
-      if (delMes.length) {
-        const a = delMes[0];
+      // Solo frena el asiento que SUMA las comisiones del mes. Un asiento de una sola comision (Caracas registra cada
+      // una a mano: 1274, Bs 4.019,67, abr-2026) tiene el monto de un movimiento del banco: ese se concilia contra el
+      // asiento (sale de candidato) y no frena a las demas.
+      const { rows: comisionesMes } = await query(
+        `SELECT monto, descripcion, referencia FROM banco_movimientos
+          WHERE journal_id = ? AND monto < 0 AND fecha BETWEEN ? AND ?`,
+        [cuenta.id, `${mes}-01`, finMes],
+      );
+      const montosComision = comisionesMes
+        .filter((r: any) => esComision({ monto: Number(r.monto), descripcion: String(r.descripcion || ""), referencia: String(r.referencia || "") }))
+        .map((r: any) => Math.abs(Number(r.monto)));
+      const sumas = delMes.filter((a) => !montosComision.some((x: number) => Math.abs(x - Math.abs(Number(a.amount_currency) || 0)) < 0.01));
+      if (sumas.length) {
+        const a = sumas[0];
         return {
           error:
             `${mes} ya tiene en Odoo el asiento de comisiones del mes (${a.move_id?.[1] || ""}, ${Math.abs(Number(a.amount_currency) || 0)}): ` +
@@ -1442,8 +1464,11 @@ export async function deshacerLineaVieja(
   stLineId: number,
   autor: { nombre: string; email: string },
   diferencialModo: "reverso" | "borrar" = "reverso",
+  /** dePanel: revertir una conciliacion que hizo el panel (boton «Revertir» de la pestaña Conciliar). */
+  opciones: { dePanel?: boolean } = {},
 ) {
   await ensureTablas();
+  const dePanel = !!opciones.dePanel;
   const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
   const linea = (
     await rpc<any[]>(cuenta.sede, "account.bank.statement.line", "search_read", [[["id", "=", stLineId], ["journal_id", "=", cuenta.id]]], {
@@ -1452,11 +1477,16 @@ export async function deshacerLineaVieja(
     })
   )?.[0];
   if (!linea) return { error: "Esa línea no existe en Odoo o es de otro diario" };
-  if (String(linea.unique_import_id || "").startsWith("panel-")) return { error: "Esa línea la creó el panel: deshazla en Odoo" };
+  const delPanel = String(linea.unique_import_id || "").startsWith("panel-");
+  if (dePanel !== delPanel) {
+    return { error: dePanel ? "Esa línea no la creó el panel: deshazla en «Líneas viejas de Odoo»" : "Esa línea la creó el panel: revértela desde Conciliar" };
+  }
   const monto = Number(linea.amount) || 0;
-  const viejas = await lineasViejasOdoo(cuenta, String(linea.date), String(linea.date));
-  const info = viejas.find((v) => v.id === stLineId);
-  if (!info?.enPanel) return { error: `Primero sube el estado de cuenta del ${linea.date}: si se borra sin él, no se puede rehacer desde el panel` };
+  // Una linea del panel ya es del estado de cuenta: no hace falta buscarla entre las viejas.
+  const info = dePanel ? undefined : (await lineasViejasOdoo(cuenta, String(linea.date), String(linea.date))).find((v) => v.id === stLineId);
+  if (!dePanel && !info?.enPanel) {
+    return { error: `Primero sube el estado de cuenta del ${linea.date}: si se borra sin él, no se puede rehacer desde el panel` };
+  }
   const difs = info?.asientosDiferencial || [];
   /** Asientos de diferencial que Odoo no revirtio solo (se les quito la marca): se revierten o se borran aqui. */
   const separados: number[] = [];
@@ -1479,7 +1509,9 @@ export async function deshacerLineaVieja(
     const leer = async (modelo: string, dominio: any[], campos: string[]) =>
       (await rpc<any[]>(cuenta.sede, modelo, "search_read", [dominio], { fields: campos, context: ctx })) || [];
     const parcialesDe = (lineas: any[]) => [...new Set(lineas.flatMap((a) => [...(a.matched_debit_ids || []), ...(a.matched_credit_ids || [])]))] as number[];
-    if (difs.length) {
+    // El camino completo (soltar el cobro de sus facturas, deshacer, volverlo a su tasa y reaplicarlo) tambien para
+    // las del panel: sin diferencial igual la moneda dual reescribe el cobro al romper su conciliacion con el banco.
+    if (difs.length || dePanel) {
       const apuntes = await leer("account.move.line", [["move_id", "in", [linea.move_id[0], ...difs]]], ["move_id", "matched_debit_ids", "matched_credit_ids"]);
       const propios = new Set(apuntes.map((a) => a.id));
       const parciales = await leer("account.partial.reconcile", [["id", "in", parcialesDe(apuntes)]], ["exchange_move_id", "debit_move_id", "credit_move_id"]);
@@ -1702,6 +1734,8 @@ export async function deshacerLineaVieja(
       autor.email,
     ],
   );
+  // La del panel deja de figurar como conciliada: el movimiento vuelve a Listos / Por revisar.
+  if (dePanel) await query("DELETE FROM banco_conciliaciones WHERE journal_id = ? AND st_line_id = ?", [cuenta.id, stLineId]);
   return {
     ok: true as const,
     contra: info?.contra || [],

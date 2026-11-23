@@ -195,6 +195,8 @@ export type PagoOdoo = {
   ref: string;
   /** Ya conciliado en Odoo con una linea de extracto (`is_matched`). */
   conciliado?: boolean;
+  /** Solo los apuntes de asientos (id negativo): el asiento, para el enlace a Odoo. */
+  asientoId?: number;
 };
 
 export type ComprobanteBanco = {
