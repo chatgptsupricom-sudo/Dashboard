@@ -5,7 +5,7 @@
     "use strict";
     const P = window.SUPRICOM_PAGINA;
     if (!P) return;
-    const { S, D, FICHAS, QUIETO, nombreCategoria, foto, ficha, crear, icono, botonAgregar } = P;
+    const { S, D, QUIETO, nombreCategoria, foto, ficha, crear, icono, botonAgregar } = P;
     const $ = (s, el = document) => el.querySelector(s);
     const $$ = (s, el = document) => [...el.querySelectorAll(s)];
     const miles = (n) => n.toLocaleString("es-VE");
@@ -204,11 +204,8 @@
     const grilla = $(".tienda-grilla");
     const tarjeta = (p, i) => {
         const imagen = crear("img", { src: foto(p.id), alt: "", loading: i < 8 ? "eager" : "lazy", decoding: "async" });
-        const marco = FICHAS
-            ? crear("a", { class: "prod-foto", href: ficha(p.id), tabIndex: -1, "aria-hidden": "true" }, [imagen])
-            : crear("div", { class: "prod-foto" }, [imagen]);
-        const pie = [botonAgregar(p)];
-        if (FICHAS) pie.unshift(crear("a", { class: "prod-ver", href: ficha(p.id), text: "Ver ficha", "aria-label": `Ver la ficha de ${p.marca} ${p.nombre}` }));
+        const marco = crear("a", { class: "prod-foto", href: ficha(p.id), tabIndex: -1, "aria-hidden": "true" }, [imagen]);
+        const pie = [crear("a", { class: "prod-ver", href: ficha(p.id), text: "Ver ficha", "aria-label": `Ver la ficha de ${p.marca} ${p.nombre}` }), botonAgregar(p)];
         const entrar = crear("a", { class: "prod-precio-entrar", href: `${D.odoo}/web/login`, text: "Entra para verlo" });
         const lista = chipDe(p);
         const hijos = [

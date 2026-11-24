@@ -46,7 +46,8 @@
     // El mismo script sirve el inicio y la tienda: lo propio de cada una solo corre en la suya.
     const ES_INICIO = (document.body.dataset.pagina || "inicio") === "inicio";
     const foto = (id, tam = 512) => `${D.odoo}/web/image/product.template/${id}/image_${tam}`;
-    const ficha = (id) => `${D.odoo}/shop/p-${id}`;
+    // La ficha es la página propia (producto.html), para las tres sedes; la de Odoo diría «Agotado» fuera de Valencia.
+    const ficha = (id) => conSede(`producto.html?id=${id}`);
     const buscar = (q) => `${D.odoo}/shop${q ? `?search=${encodeURIComponent(q)}` : ""}`;
     const miles = (n) => n.toLocaleString("es-VE");
     const crear = (tag, props = {}, hijos = []) => {
@@ -82,9 +83,9 @@
         i.removeAttribute("src");
         i.classList.add("sin-foto");
     }, true);
-    // Odoo tiene una sola tienda, con la existencia de Valencia: en las sedes sin tienda propia una ficha
-    // diría «Agotado» aunque la sede lo tenga. Ahí los productos van a la lista de cotización y las
-    // categorías, marcas y banners se buscan entre los productos de la sede (los arma la sección de la lista).
+    // Odoo tiene una sola tienda, con la existencia de Valencia: fuera de Valencia diría «Agotado» aunque la
+    // sede lo tenga. Por eso solo Valencia ofrece buscar en el catálogo completo de Odoo (desde la cotización);
+    // las fichas son las de esta página (producto.html) en las tres sedes.
     const FICHAS = Boolean(S.tiendaPropia);
     // Lo arma la sección de la cotización; lo usan el anillo, las categorías, las marcas y el selector de sede.
     const enLaSede = { agregar: () => {}, buscar: () => {}, lista: () => null, usada: () => false, marcar: () => {} };
@@ -359,14 +360,14 @@
         ficha_.nombre.textContent = p.nombre;
         ficha_.marca.textContent = p.marca;
         ficha_.codigo.textContent = p.codigo;
-        ficha_.ver.href = FICHAS ? ficha(p.id) : "#carrito";
+        ficha_.ver.href = ficha(p.id);
         ficha_.cotizar.dataset.agregar = p.codigo.toUpperCase();
         enLaSede.marcar();
         minis.forEach((b, k) => b.setAttribute("aria-current", String(k === i)));
     };
     const paso = 360 / enAnillo.length;
     const items = enAnillo.map((p, i) => {
-        const a = crear("a", { class: "orbita-item", href: FICHAS ? ficha(p.id) : "#carrito", draggable: false, "aria-label": FICHAS ? `${p.marca} ${p.nombre}` : `Agregar ${p.marca} ${p.nombre} a tu cotización` }, [
+        const a = crear("a", { class: "orbita-item", href: ficha(p.id), draggable: false, "aria-label": `${p.marca} ${p.nombre}` }, [
             crear("img", { src: foto(p.id), alt: "", draggable: false }),
             crear("span", { text: p.marca }),
         ]);
@@ -500,10 +501,7 @@
         if (!item) return;
         const i = Number(item.dataset.i);
         if (i !== frenteActual) { ev.preventDefault(); destino = anguloMasCercano(i); arrancar(); }
-        else if (!FICHAS) { ev.preventDefault(); enLaSede.agregar(enAnillo[i], item.querySelector("img")); }
     }, true);
-    // Sin tienda propia no hay ficha que ver: queda solo «Cotizar».
-    if (!FICHAS) ficha_.ver.hidden = true;
     // El anillo gira siempre y solo se detiene mientras el mouse está sobre una tarjeta (las del anillo o la
     // ficha), mientras se recorre con el teclado o si se pausó con el botón. Al salir, sigue girando.
     const filaVitrina = $(".vitrina-fila");
@@ -1032,6 +1030,8 @@
     };
 
     let primeraVez = true;
+    // Otras páginas (la ficha) se enteran de cada cambio de la cotización, también los hechos en el panel.
+    const oyentesCotizacion = [];
     const pintar = () => {
         for (const [c, fila] of filasTicket) if (!cotizacion.has(c)) { fila.remove(); filasTicket.delete(c); }
         const texto = [`Hola, quiero cotizar en la sede ${S.nombre}:`, ""];
@@ -1095,6 +1095,7 @@
         marcarBotones();
         marcarCombos();
         pintarBotonCarrito();
+        for (const f of oyentesCotizacion) f();
         primeraVez = false;
     };
 
@@ -1138,14 +1139,14 @@
             botonCarrito.classList.remove("salta"); void botonCarrito.offsetWidth; botonCarrito.classList.add("salta");
         };
     };
-    const agregarProducto = (p, img) => {
+    const agregarProducto = (p, img, n = 1) => {
         const codigo = p.codigo.toUpperCase();
         const vuelo = prepararVuelo(img);
-        poner(codigo, (cotizacion.get(codigo) || 0) + 1);
+        poner(codigo, (cotizacion.get(codigo) || 0) + n);
         cambio();
         volar(vuelo);
-        mostrarAvisoCarrito(p.id, `${p.marca} ${p.nombre}`);
-        anunciar(`Sumado a tu cotización: ${p.marca} ${p.nombre}. Llevas ${unidadesTxt(cotizacion.get(codigo))}.`);
+        mostrarAvisoCarrito(p.id, n > 1 ? `${miles(n)} × ${p.marca} ${p.nombre}` : `${p.marca} ${p.nombre}`);
+        anunciar(`Sumado a tu cotización: ${n > 1 ? `${unidadesTxt(n)} de ` : ""}${p.marca} ${p.nombre}. Llevas ${unidadesTxt(cotizacion.get(codigo))}.`);
     };
     enLaSede.agregar = (p, img) => agregarProducto(p, img);
 
@@ -1481,11 +1482,8 @@
     const pestanasEstante = $$(".estantes-pestanas [role='tab']");
     const tarjetaProducto = (p, lista, i) => {
         const imagen = crear("img", { src: foto(p.id), alt: "", loading: "lazy" });
-        const marco = FICHAS
-            ? crear("a", { class: "prod-foto", href: ficha(p.id), tabIndex: -1, "aria-hidden": "true" }, [imagen])
-            : crear("div", { class: "prod-foto" }, [imagen]);
-        const pie = [botonAgregar(p)];
-        if (FICHAS) pie.unshift(crear("a", { class: "prod-ver", href: ficha(p.id), text: "Ver ficha", "aria-label": `Ver la ficha de ${p.marca} ${p.nombre}` }));
+        const marco = crear("a", { class: "prod-foto", href: ficha(p.id), tabIndex: -1, "aria-hidden": "true" }, [imagen]);
+        const pie = [crear("a", { class: "prod-ver", href: ficha(p.id), text: "Ver ficha", "aria-label": `Ver la ficha de ${p.marca} ${p.nombre}` }), botonAgregar(p)];
         const t = crear("article", { class: "prod" }, [
             crear("span", { class: `prod-chip ${LISTAS[lista].clase}`, text: LISTAS[lista].chip(i) }),
             marco,
@@ -1595,6 +1593,11 @@
         marcar: () => enLaSede.marcar(),
         buscarEnCotizacion: (q) => enLaSede.buscar(q),
         enCotizacion: (codigo) => cotizacion.get(codigo.toUpperCase()) || 0,
+        // Suma n unidades de un producto (la ficha, con su selector de cantidad), con la foto que vuela.
+        agregar: (p, n, img) => agregarProducto(p, img, Math.max(1, Math.min(MAX_CANT, n | 0))),
+        alCambiarCotizacion: (f) => oyentesCotizacion.push(f),
+        abrirCotizacion: () => abrirCarrito(),
+        porId, MAX_CANT, LISTAS_SEDE: { masVendidos: S.masVendidos || [], novedades: S.novedades || [], menosRotan: S.menosRotan || [] },
     };
 
     cargarCotizacion();

@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light dark">
+<title>Producto · SUPRICOM</title>
+<meta name="description" content="Ficha de producto de SUPRICOM: cotiza sin cuenta; con tu cuenta de distribuidor ves tus precios.">
+<script>
+    // Tema antes de pintar, para que no parpadee: lo elegido antes, si no el del sistema.
+    (function () {
+        var t = new URLSearchParams(location.search).get("tema");
+        if (t !== "claro" && t !== "oscuro") { try { t = localStorage.getItem("supricom-tema"); } catch (e) {} }
+        if (t !== "claro" && t !== "oscuro") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro";
+        document.documentElement.setAttribute("data-tema", t);
+        document.documentElement.classList.add("js");
+    })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="estilos.css?v=20261124e">
+<link rel="stylesheet" href="tienda.css?v=20261124e">
+<link rel="stylesheet" href="producto.css?v=20261124e">
+</head>
+<body data-pagina="producto">
+<a class="saltar" href="#contenido">Saltar al contenido</a>
+
+<header class="cabecera">
+    <div class="contenedor cabecera-fila">
+        <a class="marca" href="./" data-ir="./" aria-label="SUPRICOM, inicio">
+            <img class="logo logo-claro" src="img/logo-claro.png" alt="SUPRICOM" width="190" height="45">
+            <img class="logo logo-oscuro" src="img/logo-oscuro.png" alt="SUPRICOM" width="190" height="45">
+        </a>
+        <div class="cabecera-acciones">
+            <nav id="menu" class="menu" aria-label="Secciones">
+                <div class="menu-sede"><span class="menu-sede-titulo" aria-hidden="true">Tu sede</span></div>
+                <a href="tienda.html" data-ir="tienda.html" class="activo">Tienda</a>
+                <a href="./#destacados" data-ir="./#destacados">Destacados</a>
+                <a href="./#comprar" data-ir="./#comprar">Cómo comprar</a>
+                <a href="./#marcas" data-ir="./#marcas">Marcas</a>
+                <button type="button" class="menu-tema">Cambiar a modo oscuro</button>
+                <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
+            </nav>
+            <a class="boton boton-tinta cabecera-cta" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+            <div class="sede-selector">
+                <svg class="sede-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+                <label class="solo-lectores" for="sede">Sede</label>
+                <select id="sede" aria-describedby="sede-ayuda"></select>
+                <p id="sede-ayuda" class="solo-lectores">Cambia los productos del catálogo y el contacto de la página.</p>
+                <button class="sede-ubicar" type="button" aria-label="Usar mi ubicación para elegir la sede más cercana" title="Usar mi ubicación">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>
+                </button>
+                <div class="sede-aviso" role="region" aria-label="Elegir sede" hidden>
+                    <p class="sede-aviso-texto" role="status"></p>
+                    <div class="sede-aviso-acciones">
+                        <button type="button" class="boton boton-tinta sede-aviso-cambiar" hidden></button>
+                        <button type="button" class="boton boton-tinta sede-aviso-ubicar">Usar mi ubicación</button>
+                        <button type="button" class="boton boton-claro sede-aviso-listo">Así está bien</button>
+                    </div>
+                </div>
+            </div>
+            <button class="carrito-boton" type="button" aria-haspopup="dialog" aria-controls="carrito" aria-label="Abrir tu cotización">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="17" rx="2.5"/><path d="M9.5 2.75h5a.75.75 0 0 1 .75.75v1.75a.75.75 0 0 1-.75.75h-5a.75.75 0 0 1-.75-.75V3.5a.75.75 0 0 1 .75-.75ZM8.75 11h6.5M8.75 14.5h6.5M8.75 18h3.5"/></svg>
+                <span class="carrito-n" hidden>0</span>
+            </button>
+            <button class="tema" type="button" aria-pressed="false" aria-label="Activar modo oscuro">
+                <svg class="tema-sol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/></svg>
+                <svg class="tema-luna" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+            </button>
+            <button class="menu-boton" type="button" aria-expanded="false" aria-controls="menu" aria-label="Abrir menú">
+                <span></span><span></span>
+            </button>
+        </div>
+    </div>
+</header>
+
+<main id="contenido">
+
+    <!-- Ficha: foto a la izquierda y, a la derecha, nombre, código, precio con cuenta y la cantidad para cotizar -->
+    <section class="producto-portada">
+        <div class="contenedor">
+            <nav class="migas" aria-label="Estás en">
+                <a href="./" data-ir="./">Inicio</a>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                <a href="tienda.html" data-ir="tienda.html">Tienda</a>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                <a class="migas-cat"></a>
+                <svg viewBox="0 0 24 24" aria-hidden="true" class="migas-cat-flecha"><path d="m9 18 6-6-6-6"/></svg>
+                <span class="migas-nombre" aria-current="page"></span>
+            </nav>
+
+            <div class="producto">
+                <div class="producto-galeria">
+                    <div class="producto-foto">
+                        <span class="prod-chip producto-chip" hidden></span>
+                        <img class="producto-img" alt="" decoding="async" fetchpriority="high">
+                        <button type="button" class="producto-lupa" aria-pressed="false" aria-label="Acercar la foto">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M11 8v6M8 11h6"/></svg>
+                        </button>
+                    </div>
+                    <p class="producto-foto-nota">Foto de referencia. Pasa el mouse para acercarla.</p>
+                </div>
+
+                <div class="producto-info">
+                    <a class="producto-marca"></a>
+                    <h1 class="producto-nombre"></h1>
+                    <div class="producto-codigo-fila">
+                        <span class="producto-codigo-titulo">Código</span>
+                        <code class="producto-codigo"></code>
+                        <button type="button" class="enlace-chico producto-copiar">Copiar</button>
+                        <span class="solo-lectores producto-copiado" role="status"></span>
+                    </div>
+                    <p class="producto-resumen" hidden></p>
+                    <p class="producto-disponible"><span class="punto" aria-hidden="true"></span><span class="producto-disponible-texto"></span></p>
+
+                    <div class="producto-precio">
+                        <div>
+                            <p class="producto-precio-titulo">Precio de distribuidor</p>
+                            <p class="producto-precio-texto">Entra con tu cuenta para verlo. Sin cuenta, tu vendedor te lo manda con la cotización.</p>
+                        </div>
+                        <a class="boton boton-claro producto-entrar" data-odoo="/web/login">Entrar</a>
+                    </div>
+
+                    <div class="producto-comprar">
+                        <div class="contador producto-cantidad" role="group" aria-label="Unidades a cotizar">
+                            <button type="button" class="producto-menos" aria-label="Una unidad menos"><svg viewBox="0 0 24 24" aria-hidden="true" class="icono-ico"><path d="M5 12h14"/></svg></button>
+                            <input type="number" inputmode="numeric" min="1" value="1" aria-label="Unidades a cotizar" class="producto-n">
+                            <button type="button" class="producto-mas" aria-label="Una unidad más"><svg viewBox="0 0 24 24" aria-hidden="true" class="icono-ico"><path d="M12 5v14M5 12h14"/></svg></button>
+                        </div>
+                        <button type="button" class="boton boton-tinta boton-grande producto-agregar">
+                            <svg class="icono-mas" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                            <span>Agregar a la cotización</span>
+                        </button>
+                    </div>
+                    <p class="producto-llevas" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span class="producto-llevas-texto"></span><button type="button" class="enlace-chico enlace-acento producto-ver-cotizacion">Ver cotización</button></p>
+
+                    <ul class="producto-ventajas">
+                        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg><span><strong>Retiro o despacho</strong>En la sucursal, por nuestra ruta, encomienda o tu transporte.</span></li>
+                        <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span><strong>Tu vendedor confirma</strong>Precio, existencia y entrega por <span data-sede="medio">WhatsApp</span>.</span></li>
+                        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/></svg><span><strong>Servicio técnico</strong>Reportas la falla con tu factura y sigues el caso en línea.</span></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Lo que dice Odoo del producto: características y especificaciones -->
+    <section class="producto-detalle" aria-labelledby="detalle-titulo">
+        <div class="contenedor">
+            <h2 id="detalle-titulo" class="titulo-apoyo">Detalles del producto</h2>
+            <div class="detalle-fila">
+                <div class="detalle-caracteristicas" hidden>
+                    <h3>Características</h3>
+                    <ul class="caracteristicas"></ul>
+                </div>
+                <div class="detalle-especificaciones">
+                    <h3>Especificaciones</h3>
+                    <dl class="especificaciones"></dl>
+                    <p class="detalle-falta" hidden>La ficha técnica completa de este producto todavía no está cargada. Pídesela a tu vendedor junto con la cotización.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Lo que sale en las mismas facturas -->
+    <section class="producto-estante producto-juntos" hidden>
+        <div class="contenedor estantes-cabeza">
+            <div class="cabeza-seccion">
+                <h2 class="titulo">Se pide junto con este</h2>
+                <p class="titulo-nota">Sale en las mismas facturas de nuestros clientes.</p>
+            </div>
+            <button type="button" class="agregar producto-juntos-todo"><svg class="icono-mas" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><svg class="icono-listo" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Agregar todos</span></button>
+        </div>
+        <div class="estante"><div class="estante-pista producto-juntos-pista"></div></div>
+    </section>
+
+    <!-- Más de la misma categoría -->
+    <section class="producto-estante producto-relacionados" hidden>
+        <div class="contenedor estantes-cabeza">
+            <div class="cabeza-seccion">
+                <h2 class="titulo producto-relacionados-titulo">Más de esta categoría</h2>
+                <p class="titulo-nota producto-relacionados-nota"></p>
+            </div>
+            <a class="estante-tienda producto-relacionados-ir">Ver todo<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        </div>
+        <div class="estante"><div class="estante-pista producto-relacionados-pista"></div></div>
+    </section>
+
+    <!-- Producto que no está en la sede -->
+    <section class="producto-nada" hidden>
+        <div class="contenedor">
+            <div class="tienda-vacio">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8.5 11h5"/></svg>
+                <h1 class="tienda-vacio-titulo producto-nada-titulo"></h1>
+                <p class="producto-nada-texto"></p>
+                <div class="acciones">
+                    <a class="boton boton-tinta producto-nada-otra" hidden></a>
+                    <a class="boton boton-claro" href="tienda.html" data-ir="tienda.html">Ir a la tienda</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Cierre -->
+    <section class="cierre">
+        <div class="contenedor">
+            <div class="cierre-caja">
+                <div>
+                    <h2>Pide tu cuenta de distribuidor</h2>
+                    <p>Se pide con el <span data-sede="documento">RIF</span> de tu empresa y con ella ves tus precios en la tienda. Mientras la aprobamos, ya puedes cotizar aquí.</p>
+                </div>
+                <div class="acciones">
+                    <a class="boton boton-blanco boton-grande" data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+                    <button type="button" class="boton boton-borde-blanco boton-grande cierre-carrito" hidden>Ver mi cotización (<span class="cierre-carrito-n">0</span>)</button>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<!-- En el teléfono: la acción queda abajo cuando el botón principal sale de la pantalla -->
+<div class="producto-barra" aria-hidden="true" inert>
+    <img class="producto-barra-foto" alt="">
+    <p class="producto-barra-nombre"></p>
+    <button type="button" class="boton boton-tinta producto-barra-agregar"><svg class="icono-mas" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Cotizar</span></button>
+</div>
+
+<footer class="pie">
+    <div class="contenedor pie-grilla">
+        <div class="pie-marca">
+            <img class="logo logo-claro" src="img/logo-claro.png" alt="SUPRICOM" width="170" height="40">
+            <img class="logo logo-oscuro" src="img/logo-oscuro.png" alt="SUPRICOM" width="170" height="40">
+            <p>¡Tu mayorista de confianza!</p>
+        </div>
+        <nav aria-label="Tienda">
+            <h3>Tienda</h3>
+            <a href="tienda.html" data-ir="tienda.html">Catálogo</a>
+            <a data-odoo="/web/login">Mi cuenta</a>
+            <a data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
+        </nav>
+        <nav aria-label="Ayuda">
+            <h3>Ayuda</h3>
+            <a href="https://servicio.supricom.com.ve/es/servicio-tecnico">Servicio técnico</a>
+            <a href="./#preguntas" data-ir="./#preguntas">Preguntas frecuentes</a>
+            <a data-odoo="/contactenos">Contacto</a>
+        </nav>
+        <nav aria-label="SUPRICOM">
+            <h3>SUPRICOM</h3>
+            <a data-odoo="/quienes-somos">Quiénes somos</a>
+            <a href="https://www.facebook.com/supricomvenezuela/" target="_blank" rel="noopener">Facebook</a>
+        </nav>
+    </div>
+    <div class="contenedor pie-legal">
+        <p>© 2026 SUPRICOM. Precios solo para clientes registrados.</p>
+    </div>
+</footer>
+
+<!-- Carrito: el mismo panel del inicio. Es una cotización: se manda a ventas de la sede, no se cobra. -->
+<div class="carrito-fondo" aria-hidden="true"></div>
+<aside id="carrito" class="carrito" role="dialog" aria-modal="true" aria-labelledby="carrito-titulo" inert>
+    <div class="carrito-cabeza">
+        <div>
+            <h2 id="carrito-titulo" class="carrito-titulo">Tu cotización</h2>
+        </div>
+        <button type="button" class="carrito-cerrar" aria-label="Cerrar tu cotización">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+    </div>
+
+    <div class="carrito-cuerpo">
+        <div class="buscador">
+            <label class="solo-lectores" for="buscar-codigo">Agregar un producto por nombre, marca o código</label>
+            <div class="buscador-caja">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input id="buscar-codigo" type="search" role="combobox" aria-expanded="false" aria-controls="buscar-opciones" aria-autocomplete="list" aria-describedby="buscar-ayuda buscar-estado" autocomplete="off" spellcheck="false" placeholder="Agrega por nombre, marca o código">
+            </div>
+            <p id="buscar-ayuda" class="buscador-ayuda">¿Tienes una lista de códigos? Pégala aquí y la sumamos completa.</p>
+            <p id="buscar-estado" class="solo-lectores" role="status"></p>
+            <div class="buscador-panel" hidden>
+                <ul id="buscar-opciones" class="buscador-opciones" role="listbox" aria-label="Productos"></ul>
+                <p class="opcion-nada" hidden></p>
+                <a class="buscador-catalogo" target="_blank" rel="noopener"></a>
+            </div>
+        </div>
+
+        <div class="ticket-lineas" role="list" aria-label="Productos de tu cotización"></div>
+        <div class="ticket-vacio">
+            <p><strong>Tu cotización está vacía.</strong> Toca + en cualquier producto o búscalo arriba.</p>
+        </div>
+
+        <div class="sugeridos" hidden>
+            <p class="sugeridos-titulo">Suele pedirse con lo que llevas</p>
+            <div class="sugeridos-lista"></div>
+        </div>
+    </div>
+
+    <div class="carrito-pie">
+        <div class="ticket-totales">
+            <span aria-hidden="true"><strong data-total="lineas">0</strong> productos</span>
+            <span aria-hidden="true"><strong data-total="unidades">0</strong> unidades</span>
+            <button type="button" class="enlace-chico" data-accion="vaciar">Vaciar</button>
+            <button type="button" class="enlace-chico enlace-acento" data-accion="deshacer" hidden>Deshacer</button>
+        </div>
+        <p id="pedido-resumen" class="pedido-resumen"></p>
+        <a class="boton boton-grande pedido-enviar" target="_blank" rel="noopener">
+            <span data-solo-whatsapp><svg class="icono-lleno" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.8-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z"/></svg></span>
+            <span data-solo-correo hidden><svg class="icono-linea" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg></span>
+            <span class="enviar-texto">Pedir cotización por <span data-sede="medio">WhatsApp</span><span class="solo-lectores" data-solo-whatsapp> (abre WhatsApp en otra pestaña)</span><span class="solo-lectores" data-solo-correo hidden> (abre tu programa de correo)</span></span>
+        </a>
+        <p id="enviar-ayuda" class="solo-lectores">Agrega al menos un producto para enviar.</p>
+        <p class="ticket-largo" hidden>Tu lista es larga para un correo: al enviar la copiamos y solo tienes que pegarla.</p>
+        <p class="ticket-nota">Sin precios ni pago aquí: tu vendedor te responde con la cotización.</p>
+    </div>
+</aside>
+
+<p id="pedido-anuncio" class="solo-lectores" role="status"></p>
+
+<div class="carrito-aviso" hidden>
+    <img class="carrito-aviso-foto" alt="">
+    <p><strong>Sumado a tu cotización</strong><span class="carrito-aviso-nombre"></span></p>
+    <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
+</div>
+
+<script src="datos.js?v=20261124e"></script>
+<script src="app.js?v=20261124e"></script>
+<script src="fichas.js?v=20261124e"></script>
+<script src="producto.js?v=20261124e"></script>
+</body>
+</html>
