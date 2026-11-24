@@ -5,6 +5,7 @@
 // con inversión), acá entran todos los canales: Meta, Whatsapp, referidos y los
 // leads sin campaña registrada, para que ninguna venta quede fuera del total.
 
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 import {
   calcularVentasCampanas,
   resolverRango,
@@ -19,6 +20,7 @@ export const maxDuration = 60;
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const { searchParams } = new URL(request.url);

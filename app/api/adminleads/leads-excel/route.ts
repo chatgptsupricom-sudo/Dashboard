@@ -8,6 +8,7 @@
 import { actualizarLeadExcel, ErrorLeadExcel, listarLeadsExcel } from "@/lib/adminleads/leadsExcel";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,7 @@ const cidsDe = (payload: any) => Number(payload?.cids) || null;
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
   try {
     const cerrados = request.nextUrl.searchParams.get("cerrados") === "1";
     return NextResponse.json(await listarLeadsExcel(cidsDe(auth.payload), cerrados), {
@@ -30,6 +32,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
   try {
     await actualizarLeadExcel(await request.json(), cidsDe(auth.payload), auth.payload);
     return NextResponse.json({ success: true });

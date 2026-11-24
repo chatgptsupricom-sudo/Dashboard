@@ -12,6 +12,7 @@
 import { getCampaignMetrics, type CampaignAggregate } from "@/lib/campanas-meta";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -141,6 +142,7 @@ function economiaDeCampana(c: CampaignAggregate, margenPct: number) {
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const userCids = (auth.payload!.cids as number) ?? null;

@@ -9,12 +9,14 @@ import { asegurarTablas } from "@/lib/adminleads/recompra";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   const userCids = Number(auth.payload?.cids) || null;
   let sede: number | null = [7, 9, 10].includes(Number(request.nextUrl.searchParams.get("sede")))
