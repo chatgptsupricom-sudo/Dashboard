@@ -21,12 +21,11 @@ import {
 } from "@/lib/administracion/alertas";
 import { companyIdsDeEmpresa, empresaDeCompanyId } from "@/lib/administracion/empresas";
 import { esIntercompania } from "@/lib/administracion/intercompania";
-import { obtenerCobros } from "@/lib/cxc/cobros";
-import { calcularEfectividad } from "@/lib/cxc/efectividad";
+import { hoyCaracas, sumarDias } from "@/lib/administracion/lectura";
+import { calcularEfectividad, detalleEfectividad } from "@/lib/cxc/efectividad";
+import { efectividadDelMes } from "@/lib/cxc/cierreEfectividad";
 
 const SIN_DATOS = {
-  promesas_pago:
-    "No existe registro de promesas de pago en el sistema; requiere capturarlas.",
   exactitud_proyeccion:
     "Requiere guardar las proyecciones de caja para compararlas contra lo real.",
   descuentos_aprovechados:
@@ -53,19 +52,19 @@ export async function GET(request: NextRequest) {
     const metas = await cargarMetas(companyIds[0]);
 
     const hoyDate = new Date();
-    const hoy = fmtFecha(hoyDate);
-    const mes =
-      searchParams.get("mes") ||
-      `${hoyDate.getFullYear()}-${String(hoyDate.getMonth() + 1).padStart(2, "0")}`;
+    // Hoy y el mes en hora de Caracas: el servidor corre en UTC y de 20:00 a
+    // medianoche ya era "mañana" (y el 1.º, el mes siguiente).
+    const hoy = hoyCaracas();
+    const mes = searchParams.get("mes") || hoy.slice(0, 7);
     const [anio, mesNum] = mes.split("-").map(Number);
     const desde = `${anio}-${String(mesNum).padStart(2, "0")}-01`;
     const hasta = fmtFecha(new Date(anio, mesNum, 0));
-    const hasta30 = fmtFecha(new Date(hoyDate.getTime() + 30 * 86400000));
+    const hasta30 = sumarDias(hoy, 30);
 
     const [cxc, cxp, tes, sinProcesar, clientesConLimiteRaw] = await Promise.all([
       fetchCxC(companyIds),
       fetchCxP(companyIds, desde, hasta, hoy, hasta30),
-      fetchTesoreria(companyIds),
+      fetchTesoreria(companyIds, hoy, desde, hasta),
       // El plazo interno (24h = 1 dia) ya lo definio Administracion para
       // "documentos procesados a tiempo"; se reusa el mismo parametro en vez
       // de inventar uno nuevo para lo mismo.
@@ -76,19 +75,31 @@ export async function GET(request: NextRequest) {
       // no en 0) — solo faltaba conectarlo a este KPI. "credit" es el saldo
       // por cobrar que Odoo ya calcula solo (mismo campo que se ve como
       // "Total por cobrar" en la ficha del contacto).
-      callOdooRPC<any[]>(
-        "res.partner",
-        "search_read",
-        [
-          [
-            ["company_id", "in", companyIds],
-            ["customer_rank", ">", 0],
-            ["credit_limit", ">", 0],
-            ["active", "=", true],
-          ],
-        ],
-        { fields: ["credit_limit", "credit", "display_name"], limit: 0 },
-      ),
+      // Los dos dependen de la empresa activa (credit_limit es ir_property por
+      // sede y credit suma lo de env.company): sin allowed_company_ids se leian
+      // con la de Valencia, Caracas y Panama daban "sin datos" y "todas" solo
+      // medía Valencia. Se lee sede por sede.
+      Promise.all(
+        companyIds.map((cid) =>
+          callOdooRPC<any[]>(
+            "res.partner",
+            "search_read",
+            [
+              [
+                ["company_id", "=", cid],
+                ["customer_rank", ">", 0],
+                ["credit_limit", ">", 0],
+                ["active", "=", true],
+              ],
+            ],
+            {
+              fields: ["credit_limit", "credit", "display_name"],
+              limit: 0,
+              context: { allowed_company_ids: [cid] },
+            },
+          ),
+        ),
+      ).then((porSede) => porSede.flatMap((filas) => filas || [])),
     ]);
     // Las empresas del grupo tienen limite cargado (SUPRICOM, LLC 2 M en
     // Panama, SUPRICOM CCS 21 400 mil en Valencia) y lo pasan de largo: no son
@@ -130,7 +141,14 @@ export async function GET(request: NextRequest) {
     const ventasDelPeriodo = ventasRaw.filter(
       (f: any) => !esIntercompania(f.partner_id?.[1]),
     );
-    const [efectividad, cobrosDelPeriodo] = await Promise.all([
+    // Cumplimiento de cobranza = la tarjeta "Efectividad de Cobranza" de CxC
+    // (lib/cxc/efectividad.ts), con su foto de cierre en un mes cerrado: antes
+    // era todo lo cobrado en el mes contra lo que vencia en el mes, mezclaba
+    // cobros de facturas viejas y pasaba de 100% (Valencia nov-2026: 157,5%).
+    const finDelMes = new Date(anio, mesNum, 0);
+    const corteHoy = new Date();
+    corteHoy.setHours(23, 59, 59, 999);
+    const [efectividad, { detalle: efectividadCxC }] = await Promise.all([
       calcularEfectividad(
         companyIds,
         new Date(desde + "T00:00:00"),
@@ -147,22 +165,14 @@ export async function GET(request: NextRequest) {
         [],
         hoyDate,
       ),
-      // Cobranza real del periodo = "Cobrado" de Contado/Credito (lib/cxc/cobros.ts):
-      // dinero que entro a banco/caja, por fecha de confirmacion del pago.
-      obtenerCobros(companyIds, { desde, hasta }),
+      efectividadDelMes(companyIds, mes, finDelMes, corteHoy, () =>
+        detalleEfectividad(companyIds, new Date(anio, mesNum - 1, 1), finDelMes, [], corteHoy),
+      ),
     ]);
+    const efCxC = efectividadCxC.resumen;
     const esperado = efectividad.exigibleMes;
     const cobrado = efectividad.cobradoAlCierre;
     const pctCobros = efectividad.value;
-    // Sin los cobros a empresas del grupo: el exigible ya las deja fuera, y en
-    // Panama las empresas del grupo pagaron ~$1,1 M entre el 1-sep y el
-    // 15-oct-2026 (casi lo mismo que todos los clientes de afuera), lo que
-    // inflaba el cumplimiento.
-    const cobranzaReal = Math.round(
-      cobrosDelPeriodo
-        .filter((c) => !esIntercompania(c.partnerName))
-        .reduce((s, c) => s + c.monto, 0) * 100,
-    ) / 100;
 
     const pct = (parte: number, total: number) =>
       total > 0 ? Math.round((parte / total) * 1000) / 10 : null;
@@ -217,19 +227,15 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "cumplimiento_cobranza", numero: 3, nombre: "Cumplimiento meta de cobranza",
-          formula: "Cobranza real del período / exigible del período × 100", peso: 4,
+          formula: "Cobrado de lo vencido / lo que había que cobrar en el mes × 100 (Efectividad de Cobranza de CxC)", peso: 4,
           metaTexto: `≥${metaCobranzaPct}%`,
-          valor: pct(cobranzaReal, esperado),
-          unidad: "%", frecuencia: "Diaria/Mensual", responsable: "Cuentas por Cobrar", fuente: "Bancos / ERP",
-          // OJO, no confundir con "Cobros esperados vs realizados" (KPI 9):
-          // aquel mide, de las facturas que vencian en el periodo, que parte
-          // se cobro (tope 100%). Este mide TODO el dinero que entro a
-          // banco/caja en el periodo contra ese mismo exigible, asi que
-          // incluye cobranza de facturas viejas y puede pasar de 100% — es la
-          // lectura de flujo de caja, no la de disciplina de cobro.
-          detalle: esperado > 0
-            ? `Cobrado ${money(cobranzaReal)} contra ${money(esperado)} que vencían en el período (incluye cobros de facturas de meses anteriores, por eso puede superar el 100%)`
-            : "Sin facturas con vencimiento en el período",
+          valor: efCxC.value,
+          unidad: "%", frecuencia: "Diaria/Mensual", responsable: "Cuentas por Cobrar", fuente: "ERP / CxC",
+          // No confundir con "Cobros esperados vs realizados" (KPI 8): aquel
+          // mide solo las facturas que vencian en el mes.
+          detalle: efCxC.porCobrar > 0
+            ? `Cobrado ${money(efCxC.cobrado)} de ${money(efCxC.porCobrar)} que había que cobrar: ${money(efCxC.venciaAntes)} ya vencido al empezar el mes + ${money(efCxC.vencioEnElMes)} que se venció en el mes${efCxC.notasCredito > 0 ? ` − ${money(efCxC.notasCredito)} de notas de crédito` : ""}. Es el mismo número de la tarjeta Efectividad de Cobranza de CxC (solo crédito).`
+            : "No había nada vencido por cobrar en el período",
         },
         { modo: "higher_better", verde: metaCobranzaPct, amarillo: metaCobranzaPct - 10 },
       ),
@@ -245,17 +251,7 @@ export async function GET(request: NextRequest) {
       ),
       construirKpi(
         {
-          id: "promesas_pago", numero: 5, nombre: "Promesas de pago cumplidas",
-          formula: "Promesas cumplidas / vencidas × 100", peso: 3,
-          metaTexto: "≥95%", valor: null, unidad: "%", frecuencia: "Semanal",
-          responsable: "Cuentas por Cobrar", fuente: "CRM / Gestión cobro",
-          detalle: SIN_DATOS.promesas_pago,
-        },
-        { modo: "higher_better", verde: 95, amarillo: 85 },
-      ),
-      construirKpi(
-        {
-          id: "clientes_excedidos", numero: 6, nombre: "Clientes excedidos de límite",
+          id: "clientes_excedidos", numero: 5, nombre: "Clientes excedidos de límite",
           formula: "Clientes excedidos / clientes con crédito × 100", peso: 3,
           metaTexto: `≤${metas.clientes_excedidos}%`, valor: pctClientesExcedidos,
           unidad: "%", frecuencia: "Diaria",
@@ -282,7 +278,7 @@ export async function GET(request: NextRequest) {
     const kpisTes: KpiAdmin[] = [
       construirKpi(
         {
-          id: "cobertura_caja_30d", numero: 7, nombre: "Cobertura de caja 30 días",
+          id: "cobertura_caja_30d", numero: 6, nombre: "Cobertura de caja 30 días",
           formula: "Fondos disponibles / obligaciones netas 30 días", peso: 6,
           metaTexto: `≥${metas.cobertura_caja_30d}x`, valor: coberturaCaja,
           unidad: "x", frecuencia: "Diaria", responsable: "Tesorería", fuente: "Bancos / Flujo",
@@ -292,7 +288,7 @@ export async function GET(request: NextRequest) {
       ),
       construirKpi(
         {
-          id: "flujo_proyectado_30d", numero: 8, nombre: "Flujo proyectado 30 días",
+          id: "flujo_proyectado_30d", numero: 7, nombre: "Flujo proyectado 30 días",
           formula: "Caja + cobros esperados − pagos comprometidos", peso: 5,
           metaTexto: "Positivo", valor: flujoProyectado, unidad: "$",
           frecuencia: "Diaria", responsable: "Tesorería", fuente: "Flujo de caja",
@@ -302,7 +298,7 @@ export async function GET(request: NextRequest) {
       ),
       construirKpi(
         {
-          id: "cobros_esperados", numero: 9, nombre: "Cobros esperados vs realizados",
+          id: "cobros_esperados", numero: 8, nombre: "Cobros esperados vs realizados",
           formula: "Cobros reales / cobros proyectados × 100", peso: 4,
           metaTexto: `≥${metas.cobros_esperados}%`, valor: pctCobros,
           unidad: "%", frecuencia: "Semanal", responsable: "Tesorería / CxC", fuente: "Bancos / ERP",
@@ -314,7 +310,7 @@ export async function GET(request: NextRequest) {
       ),
       construirKpi(
         {
-          id: "exactitud_proyeccion", numero: 10, nombre: "Exactitud proyección de caja",
+          id: "exactitud_proyeccion", numero: 9, nombre: "Exactitud proyección de caja",
           formula: "1 − |real − proyectado| / proyectado", peso: 4,
           metaTexto: "≥95%", valor: null, unidad: "%", frecuencia: "Semanal",
           responsable: "Tesorería", fuente: "Flujo / Bancos",
@@ -324,7 +320,7 @@ export async function GET(request: NextRequest) {
       ),
       construirKpi(
         {
-          id: "disponibilidad_bancaria", numero: 11, nombre: "Disponibilidad bancaria",
+          id: "disponibilidad_bancaria", numero: 10, nombre: "Disponibilidad bancaria",
           formula: "Saldo disponible vs saldo mínimo operativo", peso: 3,
           metaTexto: minimoOperativo ? `≥${money(minimoOperativo)}` : "Sin mínimo definido",
           valor: minimoOperativo ? Math.round((tes.disponible / minimoOperativo) * 1000) / 10 : null,
@@ -337,7 +333,7 @@ export async function GET(request: NextRequest) {
       ),
       construirKpi(
         {
-          id: "conciliaciones_dia", numero: 12, nombre: "Conciliaciones bancarias al día",
+          id: "conciliaciones_dia", numero: 11, nombre: "Conciliaciones bancarias al día",
           formula: "Líneas conciliadas / líneas de extracto × 100", peso: 3,
           metaTexto: "100%", valor: pctConciliadas, unidad: "%",
           frecuencia: "Semanal/Mensual", responsable: "Contabilidad", fuente: "Bancos / Contabilidad",
@@ -349,11 +345,27 @@ export async function GET(request: NextRequest) {
     ];
 
     // ───────────────────────────────── Cuentas por pagar (15 pts)
-    const conFechaPago = cxp.facturas.filter((f) => f.fechaPago);
-    const puntuales = conFechaPago.filter(
+    // De las facturas que vencian en el periodo: pagadas (paid/in_payment) con
+    // su fecha de pago, mas las que no se pagaron y ya vencieron, que cuentan
+    // como tarde. Antes solo entraban las que tenian alguna conciliacion
+    // (tambien parciales, donde la ultima puede ser una retencion), y una
+    // factura sin pagar no bajaba el indicador (Valencia sep-2026: 96,4% → 88,8%).
+    const pagadas = cxp.facturas.filter(
+      (f) => (f.estadoPago === "paid" || f.estadoPago === "in_payment") && f.fechaPago,
+    );
+    const impagasVencidas = cxp.facturas.filter(
+      (f) =>
+        f.estadoPago !== "paid" &&
+        f.estadoPago !== "in_payment" &&
+        f.estadoPago !== "reversed" &&
+        f.residual > 0.01 &&
+        f.fechaVencimiento < hoy,
+    );
+    const evaluadas = pagadas.length + impagasVencidas.length;
+    const puntuales = pagadas.filter(
       (f) => f.fechaVencimiento && f.fechaPago! <= f.fechaVencimiento,
     );
-    const pctPuntualidad = pct(puntuales.length, conFechaPago.length);
+    const pctPuntualidad = pct(puntuales.length, evaluadas);
     const coberturaPagos30 = cxp.montoProximas30 > 0
       ? Math.round(((tes.disponible + cobrosProbables) / cxp.montoProximas30) * 100) / 100
       : null;
@@ -361,29 +373,34 @@ export async function GET(request: NextRequest) {
     const kpisCxP: KpiAdmin[] = [
       construirKpi(
         {
-          id: "pagos_a_tiempo", numero: 13, nombre: "Pagos realizados a tiempo",
+          id: "pagos_a_tiempo", numero: 12, nombre: "Pagos realizados a tiempo",
           formula: "Pagos puntuales / pagos del período × 100", peso: 4,
           metaTexto: `≥${metas.pagos_a_tiempo}%`, valor: pctPuntualidad,
           unidad: "%", frecuencia: "Semanal", responsable: "Cuentas por Pagar", fuente: "ERP / CxP",
-          detalle: conFechaPago.length > 0
-            ? `${puntuales.length} de ${conFechaPago.length} facturas pagadas en o antes de su vencimiento`
+          detalle: evaluadas > 0
+            ? `${puntuales.length} de ${evaluadas} facturas pagadas en o antes de su vencimiento` +
+              (impagasVencidas.length > 0 ? ` (${impagasVencidas.length} vencidas sin pagar cuentan como tarde)` : "")
             : "Sin facturas con vencimiento y pago en el período",
         },
         { modo: "higher_better", verde: metas.pagos_a_tiempo ?? 98, amarillo: 90 },
       ),
       construirKpi(
         {
-          id: "obligaciones_vencidas", numero: 14, nombre: "Obligaciones vencidas",
+          id: "obligaciones_vencidas", numero: 13, nombre: "Obligaciones vencidas",
           formula: "Saldo vencido / total CxP × 100", peso: 4,
           metaTexto: `≤${metas.obligaciones_vencidas}%`, valor: pct(cxp.saldoVencido, cxp.totalCxP),
           unidad: "%", frecuencia: "Diaria", responsable: "Cuentas por Pagar", fuente: "Aging CxP",
-          detalle: `${money(cxp.saldoVencido)} vencidos en ${cxp.vencidas.length} facturas.${avisoCondiciones}`,
+          detalle: `${money(cxp.saldoVencido)} vencidos en ${cxp.vencidas.length} facturas.` +
+            (cxp.pagosSinAplicar > 0.01
+              ? ` Hay ${money(cxp.pagosSinAplicar)} pagados a proveedores sin aplicar a una factura: la deuda neta es ${money(cxp.deudaNeta)}.`
+              : "") +
+            avisoCondiciones,
         },
         { modo: "lower_better", verde: metas.obligaciones_vencidas ?? 3, amarillo: 7 },
       ),
       construirKpi(
         {
-          id: "cobertura_pagos_30d", numero: 15, nombre: "Cobertura pagos próximos 30 días",
+          id: "cobertura_pagos_30d", numero: 14, nombre: "Cobertura pagos próximos 30 días",
           formula: "(Caja + cobros probables) / pagos 30 días", peso: 3,
           metaTexto: `≥${metas.cobertura_pagos_30d}x`, valor: coberturaPagos30,
           unidad: "x", frecuencia: "Diaria", responsable: "Tesorería / CxP", fuente: "Flujo / CxP",
@@ -393,7 +410,7 @@ export async function GET(request: NextRequest) {
       ),
       construirKpi(
         {
-          id: "facturas_pendientes", numero: 16, nombre: "Facturas pendientes de procesar",
+          id: "facturas_pendientes", numero: 15, nombre: "Facturas pendientes de procesar",
           formula: "Facturas en borrador > plazo interno / recibidas en el período × 100", peso: 2,
           metaTexto: `≤${metaFacturasPendientes}%`,
           valor: pct(sinProcesar.sinProcesar, sinProcesar.recibidasEnPeriodo),
@@ -415,7 +432,7 @@ export async function GET(request: NextRequest) {
       ),
       construirKpi(
         {
-          id: "descuentos_aprovechados", numero: 17, nombre: "Descuentos financieros aprovechados",
+          id: "descuentos_aprovechados", numero: 16, nombre: "Descuentos financieros aprovechados",
           formula: "Descuentos tomados / disponibles × 100", peso: 2,
           metaTexto: "≥90%", valor: null, unidad: "%", frecuencia: "Mensual",
           responsable: "CxP / Tesorería", fuente: "ERP / Proveedores",
@@ -426,7 +443,10 @@ export async function GET(request: NextRequest) {
     ];
 
     const categorias = [
-      resumirCategoria("Cuentas por Cobrar", kpisCxC, 25),
+      // 22 = la suma de los pesos de sus indicadores. Eran 25 con "Promesas de
+      // pago cumplidas" (3), que se quito en nov-2026: no tenia fuente (la
+      // "Fecha esperada" de pago de Odoo casi no se usa) y nunca contaba.
+      resumirCategoria("Cuentas por Cobrar", kpisCxC, 22),
       resumirCategoria("Tesorería y Liquidez", kpisTes, 25),
       resumirCategoria("Cuentas por Pagar", kpisCxP, 15),
     ];
@@ -464,10 +484,10 @@ export async function GET(request: NextRequest) {
             // llegar a la meta del periodo (meta% de lo exigible).
             : k.id === "facturas_pendientes" ? (sinProcesar.montoSinProcesar || null)
             : k.id === "cumplimiento_cobranza"
-              ? (esperado > 0
+              ? (efCxC.porCobrar > 0
                   ? Math.max(
                       0,
-                      Math.round((esperado * (metaCobranzaPct / 100) - cobranzaReal) * 100) / 100,
+                      Math.round((efCxC.porCobrar * (metaCobranzaPct / 100) - efCxC.cobrado) * 100) / 100,
                     )
                   : null)
             : null,
@@ -509,7 +529,10 @@ export async function GET(request: NextRequest) {
           porCuenta: tes.porCuenta,
         },
         cxp: {
-          totalCxP: cxp.totalCxP,
+          // Deuda neta: facturas − NC − pagos/anticipos sin aplicar.
+          totalCxP: cxp.deudaNeta,
+          totalFacturas: cxp.totalCxP,
+          pagosSinAplicar: cxp.pagosSinAplicar,
           saldoVencido: cxp.saldoVencido,
           montoProximas30: cxp.montoProximas30,
           vencidas: cxp.vencidas

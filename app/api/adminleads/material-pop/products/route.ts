@@ -273,7 +273,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    if (conn) await conn.rollback();
+    if (conn) await conn.rollback().catch(() => {});
     console.error("Error creando producto POP:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   } finally {
@@ -383,7 +383,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ success: true, productId });
   } catch (error: any) {
-    if (conn) await conn.rollback();
+    if (conn) await conn.rollback().catch(() => {});
     console.error("Error actualizando producto POP:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   } finally {

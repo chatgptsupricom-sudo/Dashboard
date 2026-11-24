@@ -8,6 +8,7 @@ import { efectividadDelMes } from "@/lib/cxc/cierreEfectividad";
 import { calcularSeriesCxC } from "@/lib/cxc/seriesSemanales";
 import { calcularRecuperacion } from "@/lib/cxc/recuperacion";
 import { calcularDSO } from "@/lib/cxc/dso";
+import { versionEspeciales } from "@/lib/cxc/negociacionesEspeciales";
 import { RELACIONADA, obtenerCobros } from "@/lib/cxc/cobros";
 import { esResponsableExcluido } from "@/lib/cxc/vendedoresExcluidos";
 import { obtenerSemanasDelMes, obtenerSemanasDelRango } from "@/lib/feriados";
@@ -73,7 +74,8 @@ async function leerGET(request: NextRequest) {
     const startDateParam = searchParams.get("startDate");
     const endDateParam = searchParams.get("endDate");
 
-    const cacheKey = JSON.stringify([empresa, userCidsParam, monthParam, yearParam, startDateParam, endDateParam]);
+    // versionEspeciales: marcar o quitar una negociación especial cambia el DSO (lib/cxc/negociacionesEspeciales.ts).
+    const cacheKey = JSON.stringify([empresa, userCidsParam, monthParam, yearParam, startDateParam, endDateParam, versionEspeciales()]);
     const cached = cxcCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CXC_CACHE_TTL) {
       return NextResponse.json(cached.data);
@@ -436,6 +438,9 @@ async function leerGET(request: NextRequest) {
             dias: dsoCalc.dias,
             ventanaMovil: dsoCalc.ventanaMovil,
             clientes: dsoCalc.clientesIncluidos,
+            // Sin negociaciones especiales (lib/cxc/negociacionesEspeciales.ts); con ellas, el de antes.
+            valueConEspeciales: dsoCalc.valueConEspeciales,
+            especiales: dsoCalc.especiales,
           },
           incobrables,
         },

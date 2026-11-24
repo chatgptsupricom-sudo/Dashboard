@@ -73,6 +73,12 @@ export default function NuevoIngresoPage() {
   const [fechaEntrega] = useState(todayISO());
   const [accesorios, setAccesorios] = useState<boolean | null>(null);
   const [sinManipulacion, setSinManipulacion] = useState<boolean | null>(null);
+  // «Otro» control, si aplica: qué se revisó y si está bien. Vacío = no aplica;
+  // escrito, hay que responder Sí o No como los otros dos.
+  const [otroDetalle, setOtroDetalle] = useState("");
+  const [otroOk, setOtroOk] = useState<boolean | null>(null);
+  // Nota u observación de Seguridad, opcional.
+  const [observacion, setObservacion] = useState("");
   // Quién recibió, por cada lado del mostrador (#50), y su firma.
   const [recibidoSeguridad, setRecibidoSeguridad] = useState("");
   const [recibidoRma, setRecibidoRma] = useState("");
@@ -185,6 +191,10 @@ export default function NuevoIngresoPage() {
       setSubmitError(tf("error_checks_requeridos"));
       return;
     }
+    if (otroDetalle.trim() && otroOk === null) {
+      setSubmitError(tf("error_otro_sin_respuesta"));
+      return;
+    }
     if (productos.length) {
       if (productos.some((x) => x.recibido === null)) {
         setSubmitError(t("productos_envio.error_sin_responder"));
@@ -212,6 +222,9 @@ export default function NuevoIngresoPage() {
       fecha_entrega: fechaEntrega,
       accesorios_integros: accesorios,
       sin_manipulacion: sinManipulacion,
+      otro_verificacion: otroDetalle.trim() ? otroDetalle.trim().slice(0, 200) : null,
+      otro_verificacion_ok: otroDetalle.trim() ? otroOk : null,
+      observacion_seguridad: observacion.trim() ? observacion.trim().slice(0, 1000) : null,
       recibido_seguridad_nombre: recibidoSeguridad,
       recibido_rma_nombre: recibidoRma,
       // `recibido_por` se conserva por la calificación y los KPIs: es el de Seguridad.
@@ -432,7 +445,80 @@ export default function NuevoIngresoPage() {
                   yes={tf("yes")}
                   no={tf("no")}
                 />
+                {/* «Otro», si aplica: se escribe qué se revisó y se marca Sí/No. */}
+                <div
+                  className={`sm:col-span-2 rounded-[10px] border px-3 py-2.5 ${
+                    otroDetalle.trim() && otroOk === null ? "border-amber-300 bg-amber-50" : "border-slate-200"
+                  }`}
+                >
+                  <label htmlFor="otro-verificacion" className="block text-sm font-medium text-slate-700 mb-2">
+                    {tf("check_otro")}{" "}
+                    <span className="text-xs font-normal text-slate-400">({tf("check_otro_si_aplica")})</span>
+                  </label>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <input
+                      id="otro-verificacion"
+                      type="text"
+                      value={otroDetalle}
+                      maxLength={200}
+                      placeholder={tf("check_otro_placeholder")}
+                      onChange={(e) => {
+                        setOtroDetalle(e.target.value);
+                        if (!e.target.value.trim()) setOtroOk(null);
+                      }}
+                      className="flex-1 min-w-0 h-12 px-3 border border-slate-200 rounded-[10px] text-sm bg-white focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+                    />
+                    <div
+                      role="group"
+                      aria-label={tf("check_otro")}
+                      className={`inline-flex shrink-0 self-end sm:self-auto rounded-[10px] border border-slate-200 overflow-hidden text-sm font-semibold ${
+                        otroDetalle.trim() ? "" : "opacity-40 pointer-events-none"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        disabled={!otroDetalle.trim()}
+                        onClick={() => setOtroOk(true)}
+                        aria-pressed={otroOk === true}
+                        className={`min-w-[56px] px-4 h-12 transition-colors ${
+                          otroOk === true ? "bg-emerald-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        {tf("yes")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!otroDetalle.trim()}
+                        onClick={() => setOtroOk(false)}
+                        aria-pressed={otroOk === false}
+                        className={`min-w-[56px] px-4 h-12 border-l border-slate-200 transition-colors ${
+                          otroOk === false ? "bg-red-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        {tf("no")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
+            </section>
+
+            {/* 4b. Nota u observación de Seguridad (opcional). */}
+            <section className="bg-white border border-slate-200 rounded-[10px] p-5">
+              <label htmlFor="observacion-seguridad" className="block text-sm font-bold text-slate-900 mb-3">
+                {tf("section_observacion")}{" "}
+                <span className="text-xs font-normal text-slate-400">({tf("opcional")})</span>
+              </label>
+              <textarea
+                id="observacion-seguridad"
+                value={observacion}
+                maxLength={1000}
+                rows={3}
+                placeholder={tf("observacion_placeholder")}
+                onChange={(e) => setObservacion(e.target.value)}
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-[10px] text-sm resize-y focus:outline-none focus:border-[color:var(--portal-primary,#741DFE)] focus:ring-2 focus:ring-violet-100"
+              />
+              <p className="mt-1 text-right text-[11px] text-slate-400">{observacion.length}/1000</p>
             </section>
 
             {/* 5. Recibido por y firmas: Seguridad y RMA firman aquí. */}

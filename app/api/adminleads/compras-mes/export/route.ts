@@ -8,6 +8,7 @@ import { comprasDelPeriodo, periodoPedido, SEDES_COMPRAS, sedesDelUsuario } from
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { NextRequest, NextResponse } from "next/server";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -20,6 +21,7 @@ const nombreMes = (mes: string) => `${MESES[Number(mes.slice(5, 7)) - 1]} ${mes.
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   const sp = request.nextUrl.searchParams;
   const sedes = sedesDelUsuario(auth.payload, sp);

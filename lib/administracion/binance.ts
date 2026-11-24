@@ -46,8 +46,33 @@ const MARGEN_POR_HORA_MS = 15 * 60_000;
 const MARGEN_ESTADO_MS = 2 * 60_000;
 // La captura con el reloj del telefono se saca hasta esto despues de pagar.
 const MARGEN_TELEFONO_MS = 20 * 60_000;
+// Con la hora en otra zona (UTC, Panamá, UTC+8) el mismo pago puede estar hasta esto corrido.
+const MARGEN_OTRA_ZONA_MS = 13 * 3600_000;
 // Mediodia del lunes: donde queda un comprobante sin fecha que Binance no encontro.
 const MEDIODIA_MS = 12 * 3600_000;
+
+/**
+ * Binance Pay arma el ID de orden con el momento del pago: ID ÷ 2³¹ = segundos
+ * desde el 1-ene-2020 UTC (nov-2026: 50 de 50 comprobantes con su fecha, al
+ * segundo). No esta documentado; null si no da una fecha creible (otro formato).
+ */
+const INICIO_IDS_MS = Date.UTC(2020, 0, 1);
+export function fechaDeOrden(orderId: string, ahora = Date.now()): number | null {
+  if (!/^\d{15,19}$/.test(orderId)) return null;
+  const ms = INICIO_IDS_MS + Number((BigInt(orderId) * BigInt(1000)) / BigInt(2147483648));
+  return ms >= Date.UTC(2023, 0, 1) && ms <= ahora + DIA_MS ? ms : null;
+}
+
+/**
+ * Fecha del pago: la del ID de orden y, si no sale, la de la imagen. Si las dos
+ * se separan mas de un dia, la IA leyo mal un digito alto del ID: va la imagen.
+ */
+export function fechaDelPago(orderId: string, fechaImagen: number | null, ahora = Date.now()): number | null {
+  const deOrden = fechaDeOrden(orderId, ahora);
+  if (deOrden === null) return fechaImagen;
+  if (fechaImagen !== null && Math.abs(deOrden - fechaImagen) > DIA_MS) return fechaImagen;
+  return deOrden;
+}
 
 export class BinanceNoConfigurado extends Error {
   constructor() {
@@ -58,11 +83,21 @@ export class BinanceNoConfigurado extends Error {
 export type PagoBinance = {
   id: string;
   fecha: string; // ISO UTC
-  monto: number; // positivo = recibido
+  monto: number; // siempre positivo: el lado (entrada o salida) lo dice la pestaña
   moneda: string;
   tipo: string;
   pagador: string;
+  /** Cuando se subio el estado de cuenta con este pago (no viene con la API). */
+  subidoEl?: string;
 };
+
+/**
+ * Entradas = pagos que nos hacen los clientes (los comprobantes los sube CxC);
+ * salidas = pagos que hacemos nosotros (solo Administracion). El estado de
+ * cuenta es el mismo: en `binance_movimientos` una salida va con monto negativo.
+ */
+export type Lado = "entrada" | "salida";
+export const esLado = (v: unknown): v is Lado => v === "entrada" || v === "salida";
 
 export type EstadoComprobante =
   | "conciliado"
@@ -104,10 +139,26 @@ export type Comprobante = {
   archivoNombre: string;
   subidoPor: string;
   subidoEl: string;
+  /** Cuando Administracion lo amarro a mano o le dio Aprobar (null = no, o antes de guardarlo). */
+  amarradoEl: string | null;
+  /** Cuando se imprimio su hoja de conciliado y quien (null = sin imprimir). */
+  impresoEl: string | null;
+  impresoPor: string;
   estado: EstadoComprobante;
   binance: PagoBinance | null;
+  /**
+   * Cuentas por Cobrar ya registro el pago en Odoo (el ID de orden esta en el
+   * Memo de un pago no anulado, `ordenesRegistradasEnOdoo`). null = no se
+   * consulto (salidas) o Odoo no respondio. Lo agrega el GET.
+   */
+  registradoOdoo?: boolean | null;
   /** Su monto sale mas de una vez en los pagos de la semana: se puede amarrar a mano. */
   montoRepetido?: boolean;
+  /**
+   * Cuando quedo conciliado: a mano, al amarrarlo; si no, cuando ya estaban los
+   * dos, el comprobante y el pago del estado de cuenta (el que se subio de ultimo).
+   */
+  conciliadoEl?: string | null;
 };
 
 // ---------- Binance ----------
@@ -216,22 +267,23 @@ async function pagosEnRango(desde: number, hasta: number): Promise<any[]> {
 // semana de comprobantes la pantalla recarga varias veces seguidas.
 const cache = new Map<string, { hasta: number; pagos: PagoBinance[] }>();
 
-/** Pagos recibidos (monto positivo) en el rango, de mas viejo a mas nuevo. */
-export async function pagosRecibidos(desde: number, hasta: number): Promise<PagoBinance[]> {
-  const llave = `${desde}-${hasta}`;
+/** Pagos recibidos (o, con `lado` salida, enviados) en el rango, de mas viejo a mas nuevo. Monto en positivo. */
+export async function pagosRecibidos(desde: number, hasta: number, lado: Lado = "entrada"): Promise<PagoBinance[]> {
+  const llave = `${desde}-${hasta}-${lado}`;
   const guardado = cache.get(llave);
   if (guardado && guardado.hasta > Date.now()) return guardado.pagos;
   const vistos = new Map<string, PagoBinance>();
   for (const t of await pagosEnRango(desde, hasta)) {
-    const monto = Number(t?.amount);
+    const monto = (lado === "salida" ? -1 : 1) * Number(t?.amount);
     if (!(monto > 0) || !t?.transactionId) continue;
+    const otro = lado === "salida" ? t.receiverInfo : t.payerInfo;
     vistos.set(String(t.transactionId), {
       id: String(t.transactionId),
       fecha: new Date(Number(t.transactionTime)).toISOString(),
       monto,
       moneda: String(t.currency || "").toUpperCase(),
       tipo: String(t.orderType || ""),
-      pagador: String(t.payerInfo?.name || t.payerInfo?.binanceId || ""),
+      pagador: String(otro?.name || otro?.binanceId || ""),
     });
   }
   const pagos = [...vistos.values()].sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -291,8 +343,65 @@ async function ensureTabla() {
   await agregarColumna("binance_comprobantes", "archivo_sha CHAR(64) NULL");
   await agregarIndice("binance_comprobantes", "idx_sha", "archivo_sha");
   await agregarColumna("binance_comprobantes", "cliente VARCHAR(200) NOT NULL DEFAULT ''");
+  // Cuando se amarro a mano (o se aprobo) y cuando se imprimio su hoja de conciliado, en UTC.
+  await agregarColumna("binance_comprobantes", "amarrado_el DATETIME NULL");
+  await agregarColumna("binance_comprobantes", "impreso_el DATETIME NULL");
+  await agregarColumna("binance_comprobantes", "impreso_por VARCHAR(190) NOT NULL DEFAULT ''");
+  // Entrada (pago de un cliente) o salida (pago nuestro); lo de antes son entradas.
+  await agregarColumna("binance_comprobantes", "tipo VARCHAR(8) NOT NULL DEFAULT 'entrada'");
   tablaLista = true;
 }
+
+/** Valor de la semana para ver todas juntas (en vez de un lunes). */
+export const TODAS_LAS_SEMANAS = "todas";
+export const semanaValida = (s: string) => s === TODAS_LAS_SEMANAS || rangoSemana(s) !== null;
+
+/** Lunes (YYYY-MM-DD) de la semana, hora de Caracas, de un instante en ms UTC. */
+function lunesDe(ms: number) {
+  const local = new Date(ms - OFFSET_CARACAS_MS);
+  const dia = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate());
+  return new Date(dia - ((local.getUTCDay() + 6) % 7) * DIA_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * Todas las semanas juntas: semana por semana (cada una cruza contra su
+ * estado de cuenta, igual que al verla sola; cruzar todo junto cambiaria que
+ * monto "se repite") desde el primer comprobante o pago hasta la semana actual.
+ * Sin consultar la API de Binance en las semanas sin estado de cuenta.
+ */
+export async function conciliacionTodas(sede: number | null, lado: Lado = "entrada") {
+  await Promise.all([ensureTabla(), ensureTablaMovimientos()]);
+  const [{ rows: c }, { rows: m }] = await Promise.all([
+    query(`SELECT DATE_FORMAT(MIN(fecha_pago), '%Y-%m-%dT%H:%i:%sZ') AS f FROM binance_comprobantes WHERE tipo = ?`, [lado]),
+    query(`SELECT DATE_FORMAT(MIN(fecha), '%Y-%m-%dT%H:%i:%sZ') AS f FROM binance_movimientos`),
+  ]);
+  const primeras = [c[0]?.f, m[0]?.f].filter(Boolean).map((f: string) => Date.parse(f));
+  const semanas: string[] = [];
+  if (primeras.length) {
+    const fin = lunesDe(Date.now());
+    for (let lunes = lunesDe(Math.min(...primeras)); lunes <= fin; ) {
+      semanas.push(lunes);
+      lunes = new Date(Date.parse(`${lunes}T00:00:00Z`) + 7 * DIA_MS).toISOString().slice(0, 10);
+    }
+  }
+  const partes: Awaited<ReturnType<typeof conciliacionSemana>>[] = [];
+  // De a 4 semanas a la vez: cada una son dos consultas a la base.
+  for (let i = 0; i < semanas.length; i += 4) {
+    partes.push(...(await Promise.all(semanas.slice(i, i + 4).map((l) => conciliacionSemana(l, sede, lado, false)))));
+  }
+  return {
+    comprobantes: partes.flatMap((p) => p.comprobantes),
+    sinComprobante: partes.flatMap((p) => p.sinComprobante),
+    pagos: partes.flatMap((p) => p.pagos),
+    errorBinance: null as string | null,
+    origen: (partes.some((p) => p.origen === "estado") ? "estado" : "api") as OrigenPagos,
+    movimientos: partes.reduce((t, p) => t + p.movimientos, 0),
+  };
+}
+
+/** La conciliacion de una semana (lunes YYYY-MM-DD) o de todas (`TODAS_LAS_SEMANAS`). */
+export const conciliacion = (semana: string, sede: number | null, lado: Lado = "entrada") =>
+  semana === TODAS_LAS_SEMANAS ? conciliacionTodas(sede, lado) : conciliacionSemana(semana, sede, lado);
 
 /** Lunes 00:00 (Caracas) de la semana `lunes` (YYYY-MM-DD), en ms UTC. */
 export function rangoSemana(lunes: string): { desde: number; hasta: number } | null {
@@ -363,6 +472,7 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     }
     const libres = pagos.filter((p) => !usados.has(p.id) && mismoMonto(p, base));
     let pago: PagoBinance | null = null;
+    let otraZona = false;
     if (base.horaTelefono) {
       // La captura se saca despues de pagar: el pago mas cercano antes de la
       // hora del reloj. Sin a. m./p. m. ("5:57") tambien vale 12 h despues.
@@ -383,6 +493,18 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
       const t = Date.parse(base.fecha);
       const dt = (p: PagoBinance) => Math.abs(Date.parse(p.fecha) - t);
       pago = libres.filter((p) => dt(p) <= margen).sort((a, b) => dt(a) - dt(b))[0] || null;
+      // La hora del comprobante y la del estado de cuenta pueden venir en zonas
+      // distintas (captura sacada en Panamá, UTC-5, o un comprobante que dice UTC
+      // y la IA lo tomó como Caracas: nov-2026, 40.000 USDT a las 10:56 y en el
+      // estado 9:56). Si el monto sale una sola vez en la semana y está a menos
+      // de 13 h, es ese pago, pero lo confirma una persona.
+      if (!pago && origen === "estado") {
+        const iguales = pagos.filter((p) => mismoMonto(p, base));
+        if (iguales.length === 1 && !usados.has(iguales[0].id) && dt(iguales[0]) <= MARGEN_OTRA_ZONA_MS) {
+          pago = iguales[0];
+          otraZona = true;
+        }
+      }
     }
     if (!pago) {
       salida[i] = { ...base, estado: "no_encontrado", binance: null };
@@ -398,7 +520,7 @@ export function cruzar(bases: BaseComprobante[], pagos: PagoBinance[], origen: O
     const horaYMontoUnico =
       (!base.fechaEstimada || base.horaTelefono) && pagos.filter((p) => mismoMonto(p, base)).length === 1;
     const estado =
-      origen !== "estado"
+      origen !== "estado" || otraZona
         ? "por_monto_hora"
         : horaYMontoUnico || nombreParecido(base.cliente, pago.pagador)
           ? "conciliado"
@@ -421,9 +543,17 @@ function ajustarZona(bases: BaseComprobante[], pagos: PagoBinance[]) {
   return conciliados(comoUtc) > conciliados(pagos) ? comoUtc : pagos;
 }
 
+/** Ver `Comprobante.conciliadoEl`. Los amarrados a mano antes de guardar `amarrado_el` van como los automaticos. */
+export function conciliadoEl(c: Comprobante): string | null {
+  if (!c.binance || (c.estado !== "conciliado" && c.estado !== "manual")) return null;
+  if (c.estado === "manual" && c.amarradoEl) return c.amarradoEl;
+  const pago = c.binance.subidoEl;
+  return pago && pago > c.subidoEl ? pago : c.subidoEl;
+}
+
 /**
  * Comprobantes de la semana cruzados con Binance, y los pagos que entraron en
- * la semana sin comprobante. Los pagos salen del estado de cuenta si la semana
+ * la semana sin comprobante (con `lado` salida: los pagos nuestros, que salieron). Los pagos salen del estado de cuenta si la semana
  * tiene uno; si no, de la API. Si la API falla, los comprobantes salen
  * `sin_verificar` con el error.
  *
@@ -432,16 +562,24 @@ function ajustarZona(bases: BaseComprobante[], pagos: PagoBinance[]) {
  * El cruce se hace con los de todas: un pago que ya tomo el comprobante de otra
  * sede no sale como "sin comprobante" ni se le ofrece a esta.
  */
-export async function conciliacionSemana(lunes: string, sede: number | null) {
+export async function conciliacionSemana(
+  lunes: string,
+  sede: number | null,
+  lado: Lado = "entrada",
+  /** false: una semana sin estado de cuenta no consulta la API (en "todas" serian decenas de llamadas que fallan). */
+  usarApi = true,
+) {
   const rango = rangoSemana(lunes);
   if (!rango) throw new Error("Semana inválida");
   await ensureTabla();
   const { rows } = await query(
     // DATE_FORMAT: la columna guarda UTC y asi no depende de la zona del proceso.
     `SELECT id, order_id, monto, moneda, DATE_FORMAT(fecha_pago, '%Y-%m-%dT%H:%i:%sZ') AS fecha,
-            fecha_estimada, movimiento_id, archivo_nombre, cliente, subido_por, created_at, company_id
-       FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? ORDER BY fecha_pago`,
-    [aMysql(rango.desde), aMysql(rango.hasta)],
+            fecha_estimada, movimiento_id, archivo_nombre, cliente, subido_por, created_at, company_id,
+            DATE_FORMAT(amarrado_el, '%Y-%m-%dT%H:%i:%sZ') AS amarrado_el,
+            DATE_FORMAT(impreso_el, '%Y-%m-%dT%H:%i:%sZ') AS impreso_el, impreso_por
+       FROM binance_comprobantes WHERE fecha_pago BETWEEN ? AND ? AND tipo = ? ORDER BY fecha_pago`,
+    [aMysql(rango.desde), aMysql(rango.hasta), lado],
   );
   const bases: BaseComprobante[] = rows.map((r: any) => ({
     id: r.id,
@@ -459,6 +597,9 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
     archivoNombre: r.archivo_nombre,
     subidoPor: r.subido_por,
     subidoEl: new Date(r.created_at).toISOString(),
+    amarradoEl: r.amarrado_el ?? null,
+    impresoEl: r.impreso_el ?? null,
+    impresoPor: r.impreso_por || "",
   }));
   const propios = new Set<number>(
     rows.filter((r: any) => sede === null || Number(r.company_id) === sede).map((r: any) => r.id),
@@ -468,20 +609,29 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
   // Un dia de margen: la hora del comprobante puede no ser exacta.
   const desde = rango.desde - DIA_MS;
   const hasta = Math.min(rango.hasta + DIA_MS, Date.now());
-  let pagos = await movimientosEnRango(desde, hasta);
+  // El estado de cuenta trae las entradas (monto positivo) y las salidas (negativo).
+  const todos = await movimientosEnRango(desde, hasta);
+  const signo = lado === "salida" ? -1 : 1;
+  let pagos = todos.filter((p) => p.monto * signo > 0).map((p) => ({ ...p, monto: Math.abs(p.monto) }));
+  // Pagos del estado de cuenta en la semana, de los dos lados: lo que se puede borrar es de los dos.
+  const movimientos = todos.filter((p) => {
+    const t = Date.parse(p.fecha);
+    return t >= rango.desde && t <= rango.hasta;
+  }).length;
   let origen: OrigenPagos = "estado";
-  if (pagos.length) {
+  if (todos.length) {
     pagos = ajustarZona(bases, pagos);
   } else {
     origen = "api";
     try {
-      pagos = await pagosRecibidos(desde, hasta);
+      if (!usarApi) throw new Error("");
+      pagos = await pagosRecibidos(desde, hasta, lado);
     } catch (e: any) {
       return {
         comprobantes: bases.map((b): Comprobante => ({ ...b, estado: "sin_verificar", binance: null })).filter(deLaSede),
         sinComprobante: [] as PagoBinance[],
         pagos: [] as PagoConComprobante[],
-        errorBinance: (e?.message as string) || "No se pudo consultar Binance",
+        errorBinance: usarApi ? (e?.message as string) || "No se pudo consultar Binance" : null,
         origen,
         movimientos: 0,
       };
@@ -498,6 +648,7 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
   const visibles = comprobantes.filter(deLaSede).map((c) => ({
     ...c,
     montoRepetido: deLaSemana.filter((p) => mismoMonto(p, c)).length > 1,
+    conciliadoEl: conciliadoEl(c),
   }));
   // Todos los pagos de la semana con el comprobante que los tomo. De otra sede
   // solo se dice que lo tiene, sin el cliente.
@@ -507,7 +658,7 @@ export async function conciliacionSemana(lunes: string, sede: number | null) {
     const comprobante = !c ? null : deLaSede(c) ? { estado: c.estado, cliente: c.cliente, orderId: c.orderId } : { otraSede: true as const };
     return { ...p, comprobante };
   });
-  return { comprobantes: visibles, sinComprobante, pagos: pagosSemana, errorBinance: null, origen, movimientos: deLaSemana.length };
+  return { comprobantes: visibles, sinComprobante, pagos: pagosSemana, errorBinance: null, origen, movimientos };
 }
 
 // ---------- Estado de cuenta ----------
@@ -553,13 +704,16 @@ async function ensureTablaMovimientos() {
   // Huella del archivo subido: la misma captura no se vuelve a leer con la IA.
   await agregarColumna("binance_estados", "archivo_sha CHAR(64) NULL");
   await agregarIndice("binance_estados", "idx_sha", "archivo_sha");
+  // 1 = se leyo guardando tambien los pagos enviados (las salidas). Uno de antes
+  // (0) se vuelve a leer si se sube otra vez, para sacarle las salidas.
+  await agregarColumna("binance_estados", "con_salidas TINYINT(1) NOT NULL DEFAULT 0");
   tablaMovimientosLista = true;
 }
 
 async function movimientosEnRango(desde: number, hasta: number): Promise<PagoBinance[]> {
   await ensureTablaMovimientos();
   const { rows } = await query(
-    `SELECT id, DATE_FORMAT(fecha, '%Y-%m-%dT%H:%i:%sZ') AS fecha, contraparte, monto, moneda
+    `SELECT id, DATE_FORMAT(fecha, '%Y-%m-%dT%H:%i:%sZ') AS fecha, contraparte, monto, moneda, created_at
        FROM binance_movimientos WHERE fecha BETWEEN ? AND ? ORDER BY fecha`,
     [aMysql(desde), aMysql(hasta)],
   );
@@ -570,6 +724,7 @@ async function movimientosEnRango(desde: number, hasta: number): Promise<PagoBin
     moneda: String(r.moneda),
     tipo: "Estado de cuenta",
     pagador: r.contraparte,
+    subidoEl: new Date(r.created_at).toISOString(),
   }));
 }
 
@@ -593,19 +748,27 @@ export async function guardarMovimientos(
   movs: Movimiento[],
   usuario: { email: string; sede: number | null },
   archivo: { datos: Buffer; nombre: string; sha: string; captura: Buffer | null },
+  /** El archivo ya estaba (leido antes de guardar las salidas): se reusa su fila. */
+  estadoExistente: number | null = null,
 ) {
   await ensureTablaMovimientos();
   // Siempre queda la fila de la captura (tambien de un PDF): su huella evita
   // leer otra vez el mismo archivo. El recorte sale de `captura`; un PDF guarda
   // el PDF y no tiene recorte.
-  // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
-  const [res]: any = await db.execute(
-    "INSERT INTO binance_estados (archivo_nombre, archivo, subido_por, archivo_sha) VALUES (?,?,?,?)",
-    [archivo.nombre.slice(0, 200), archivo.captura ?? archivo.datos, usuario.email, archivo.sha],
-  );
-  // estado_id va siempre (tambien en un PDF): es de que archivo salio cada pago,
-  // para borrar por archivo. El recorte solo existe con y0/y1.
-  const estadoId: number = res.insertId;
+  let estadoId: number;
+  if (estadoExistente !== null) {
+    await query("UPDATE binance_estados SET con_salidas = 1 WHERE id = ?", [estadoExistente]);
+    estadoId = estadoExistente;
+  } else {
+    // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
+    const [res]: any = await db.execute(
+      "INSERT INTO binance_estados (archivo_nombre, archivo, subido_por, archivo_sha, con_salidas) VALUES (?,?,?,?,1)",
+      [archivo.nombre.slice(0, 200), archivo.captura ?? archivo.datos, usuario.email, archivo.sha],
+    );
+    // estado_id va siempre (tambien en un PDF): es de que archivo salio cada pago,
+    // para borrar por archivo. El recorte solo existe con y0/y1.
+    estadoId = res.insertId;
+  }
   let nuevos = 0;
   for (const m of movs) {
     const conLinea = archivo.captura !== null && m.linea;
@@ -639,7 +802,8 @@ export async function guardarMovimientos(
     // 1 = fila nueva; 2 = ya estaba y tomo el recorte; 0 = ya estaba igual.
     if (Number((rows as any)?.affectedRows) === 1) nuevos++;
   }
-  return { nuevos, repetidos: movs.length - nuevos };
+  const enviados = movs.filter((m) => m.monto < 0).length;
+  return { nuevos, repetidos: movs.length - nuevos, recibidos: movs.length - enviados, enviados };
 }
 
 /** Recorte de la linea de cada movimiento en su captura, en JPEG, por id de movimiento. */
@@ -751,11 +915,18 @@ async function borrarArchivosSinPagos() {
   );
 }
 
-/** La captura del estado de cuenta ya se subio (misma huella): no se vuelve a leer. */
-export async function capturaYaSubida(sha: string) {
+/**
+ * La captura del estado de cuenta ya se subio (misma huella). `conSalidas` false:
+ * se leyo antes de guardar los pagos enviados y hay que leerla otra vez.
+ */
+export async function capturaPorHuella(sha: string) {
   await ensureTablaMovimientos();
-  const { rows } = await query("SELECT id FROM binance_estados WHERE archivo_sha = ? LIMIT 1", [sha]);
-  return rows.length > 0;
+  const { rows } = await query(
+    "SELECT id, con_salidas FROM binance_estados WHERE archivo_sha = ? ORDER BY con_salidas DESC, id LIMIT 1",
+    [sha],
+  );
+  const r: any = rows[0];
+  return r ? { id: Number(r.id), conSalidas: Number(r.con_salidas) === 1 } : null;
 }
 
 /** El comprobante con este mismo archivo (misma huella), si ya se subio. */
@@ -789,8 +960,9 @@ const soloDigitos = (s: string) => s.replace(/\D/g, "");
 
 /**
  * Cuando Cuentas por Cobrar registra el pago en Odoo pone el ID de orden en el
- * Memo (`account.payment.ref`). Devuelve cuales de estos IDs ya estan en un pago
- * no anulado de cualquier sede. Se busca por los ultimos 15 digitos y se acepta
+ * Memo (`account.payment.ref`), o en la Referencia de un asiento contable
+ * (`account.move.ref`). Devuelve cuales de estos IDs ya estan en un pago o
+ * asiento no anulado de cualquier sede. Se busca por los ultimos 15 digitos y se acepta
  * si el memo contiene el ID o si el ID termina en el memo: a veces se pierde el
  * primer digito al copiarlo ("62126455275798528"). Un error de Odoo se lanza:
  * mejor no mostrar nada que mostrar como pendiente lo ya registrado.
@@ -801,18 +973,39 @@ export async function ordenesRegistradasEnOdoo(orderIds: string[]): Promise<Set<
   for (let i = 0; i < ids.length; i += 80) {
     const tanda = ids.slice(i, i + 80);
     const terminos = tanda.map((id) => ["ref", "ilike", id.slice(-15)]);
-    const pagos = await callOdooRPCEstricto<{ ref: string | false }[]>(
-      "account.payment",
-      "search_read",
-      [[["state", "!=", "cancel"], ...Array(terminos.length - 1).fill("|"), ...terminos]],
-      { fields: ["ref"], context: { allowed_company_ids: SEDES_ODOO } },
-    );
-    const memos = (pagos || []).map((p) => soloDigitos(String(p.ref || ""))).filter((m) => m.length >= 15);
+    const dominio = [["state", "!=", "cancel"], ...Array(terminos.length - 1).fill("|"), ...terminos];
+    const leer = (modelo: string) =>
+      callOdooRPCEstricto<{ ref: string | false }[]>(modelo, "search_read", [dominio], {
+        fields: ["ref"],
+        context: { allowed_company_ids: SEDES_ODOO },
+      });
+    // Algunos se registran con un asiento contable (Operaciones varias) en vez
+    // de un pago, con el ID en su Referencia (`account.move.ref`; nov-2026, 1726 de Caracas).
+    const [pagos, asientos] = await Promise.all([leer("account.payment"), leer("account.move")]);
+    const memos = [...(pagos || []), ...(asientos || [])]
+      .map((p) => soloDigitos(String(p.ref || "")))
+      .filter((m) => m.length >= 15);
     for (const id of tanda) {
       if (memos.some((m) => m.includes(id) || id.endsWith(m))) registradas.add(id);
     }
   }
   return registradas;
+}
+
+/**
+ * Marca en cada comprobante si ya esta registrado en Odoo. Si Odoo falla, la
+ * conciliacion se ve igual con el estado en null (la columna dice "sin dato").
+ */
+export async function conRegistroOdoo<T extends { orderId: string }>(
+  comprobantes: T[],
+): Promise<(T & { registradoOdoo: boolean | null })[]> {
+  try {
+    const registradas = await ordenesRegistradasEnOdoo(comprobantes.map((c) => c.orderId));
+    return comprobantes.map((c) => ({ ...c, registradoOdoo: registradas.has(c.orderId) }));
+  } catch (e: any) {
+    console.error("[binance] pagos en Odoo:", e?.message);
+    return comprobantes.map((c) => ({ ...c, registradoOdoo: null }));
+  }
 }
 
 /** Rol que solo lee la conciliacion (GET), de su sede. */
@@ -854,7 +1047,7 @@ export async function asignarMovimiento(id: number, movimientoId: number | null,
     const { rows: iguales } = await query(
       `SELECT COUNT(*) AS n
          FROM binance_comprobantes c
-         JOIN binance_movimientos m ON m.id = ? AND m.monto = c.monto AND m.moneda = c.moneda
+         JOIN binance_movimientos m ON m.id = ? AND m.monto = IF(c.tipo = 'salida', -c.monto, c.monto) AND m.moneda = c.moneda
          JOIN binance_movimientos o ON o.monto = m.monto AND o.moneda = m.moneda
           AND YEARWEEK(o.fecha - INTERVAL 4 HOUR, 3) = YEARWEEK(m.fecha - INTERVAL 4 HOUR, 3)
         WHERE c.id = ?`,
@@ -864,12 +1057,31 @@ export async function asignarMovimiento(id: number, movimientoId: number | null,
       throw new ArchivoIlegible("Solo se puede amarrar a otro pago del mismo monto cuando ese monto se repite en el estado de cuenta");
     }
   }
-  await query("UPDATE binance_comprobantes SET movimiento_id = ? WHERE id = ?", [movimientoId, id]);
+  await query("UPDATE binance_comprobantes SET movimiento_id = ?, amarrado_el = ? WHERE id = ?", [
+    movimientoId,
+    movimientoId === null ? null : aMysql(Date.now()),
+    id,
+  ]);
 }
 
-export async function eliminarComprobante(id: number, sede: number | null) {
+/** Marca como impresas las hojas de conciliado de esos comprobantes (de la sede). */
+export async function marcarImpresos(ids: number[], sede: number | null, quien: string) {
+  if (!ids.length) return;
   await ensureTabla();
-  await query(`DELETE FROM binance_comprobantes WHERE id = ? AND ${DE_LA_SEDE}`, [id, sede, sede]);
+  await query(
+    `UPDATE binance_comprobantes SET impreso_el = ?, impreso_por = ?
+      WHERE id IN (${ids.map(() => "?").join(",")}) AND ${DE_LA_SEDE}`,
+    [aMysql(Date.now()), quien.slice(0, 190), ...ids, sede, sede],
+  );
+}
+
+/** `soloEntradas`: Cuentas por Cobrar no toca los comprobantes de las salidas. */
+export async function eliminarComprobante(id: number, sede: number | null, soloEntradas = false) {
+  await ensureTabla();
+  await query(
+    `DELETE FROM binance_comprobantes WHERE id = ? AND ${DE_LA_SEDE}${soloEntradas ? " AND tipo = 'entrada'" : ""}`,
+    [id, sede, sede],
+  );
 }
 
 // ---------- Lectura del comprobante ----------
@@ -931,7 +1143,7 @@ const MUY_LARGO = "El archivo tiene demasiadas filas para leerlo de una vez: sú
  * Pide a la IA que lea los archivos y devuelva JSON con `esquema`. Usa OpenAI
  * si hay OPENAI_API_KEY y si no Claude. null = la respuesta no era JSON.
  */
-async function leerConIA(
+export async function leerConIA(
   sistema: string,
   esquema: object,
   archivos: Archivo[],
@@ -991,7 +1203,7 @@ async function leerConIA(
   }
 }
 
-/** fechaMs null = la captura no trae la fecha. horaTelefono = minutos del dia del reloj de la barra de estado. */
+/** fechaMs = la del ID de orden o la de la captura (fechaDelPago); null = ninguna. horaTelefono = minutos del dia del reloj de la barra de estado. */
 export type Leido = { orderId: string; monto: number; moneda: string; fechaMs: number | null; horaTelefono: number | null };
 
 /**
@@ -1012,10 +1224,10 @@ export async function leerComprobante(datos: Buffer, mime: string): Promise<Leid
   }
   const h = /^(\d{1,2}):(\d{2})/.exec(String(l?.hora_telefono || ""));
   const horaTelefono = h && +h[1] < 24 && +h[2] < 60 ? +h[1] * 60 + +h[2] : null;
-  if (!m) return { orderId, monto, moneda, fechaMs: null, horaTelefono };
-  const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  const local = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null;
   // Sin "UTC" en el comprobante se toma la hora de Caracas.
-  return { orderId, monto, moneda, fechaMs: l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS, horaTelefono };
+  const fechaImagen = local === null ? null : l.fecha_en_utc ? local : local + OFFSET_CARACAS_MS;
+  return { orderId, monto, moneda, fechaMs: fechaDelPago(orderId, fechaImagen), horaTelefono };
 }
 
 const INSTRUCCIONES_ESTADO =
@@ -1051,7 +1263,7 @@ type EstadoPreparado = {
   franjas: Region[];
 };
 
-async function bloquesEstado(datos: Buffer, mime: string): Promise<EstadoPreparado> {
+export async function bloquesEstado(datos: Buffer, mime: string): Promise<EstadoPreparado> {
   if (mime === "application/pdf") return { bloques: [bloqueArchivo(datos, mime)], img: null, franjas: [] };
   const sharp = (await import("sharp")).default;
   const meta = await sharp(datos).metadata();
@@ -1140,7 +1352,7 @@ export function ubicarFilas(
 // chico que la IA se come digitos repetidos (oct-2026: 777 leido como 77).
 const ANCHO_MIN_COMPROBANTE = 1200;
 
-async function ampliar(datos: Buffer, mime: string): Promise<Archivo> {
+export async function ampliar(datos: Buffer, mime: string): Promise<Archivo> {
   if (mime === "application/pdf") return bloqueArchivo(datos, mime);
   const sharp = (await import("sharp")).default;
   const { width = 0 } = await sharp(datos).metadata();
@@ -1180,8 +1392,9 @@ const ESQUEMA_ESTADO = {
 } as const;
 
 /**
- * Lee el estado de cuenta: solo los pagos recibidos y completados. La hora se
- * toma como de Caracas (`ajustarZona` corrige si venia en UTC).
+ * Lee el estado de cuenta: los pagos completados, los recibidos con monto
+ * positivo y los enviados con monto negativo. La hora se toma como de Caracas
+ * (`ajustarZona` corrige si venia en UTC).
  */
 export async function leerEstadoDeCuenta(
   datos: Buffer,
@@ -1191,10 +1404,12 @@ export async function leerEstadoDeCuenta(
   // 16000: el tope de salida de gpt-4o (unas 250 filas).
   const l = await leerConIA(INSTRUCCIONES_ESTADO, ESQUEMA_ESTADO, prep.bloques, "Lee estos movimientos.", 16000);
   const leidas: any[] = Array.isArray(l?.movimientos) ? l.movimientos : [];
-  // Una fila que cae en el solape de dos franjas sale dos veces: va una.
+  // Una fila que cae en el solape de dos franjas sale dos veces: va una. La IA
+  // puede leer distinto el nombre en cada franja (nov-2026: "Seelcomp-Abel" y
+  // "Seelcomp–Abel", guion y raya): se compara sin signos ni espacios.
   const vistas = new Set<string>();
   const filas = leidas.filter((f) => {
-    const llave = [f?.fecha, f?.tipo, f?.contraparte, f?.monto, f?.moneda].join("|");
+    const llave = [f?.fecha, !!f?.recibido, normalNombre(String(f?.contraparte || "")), Number(f?.monto), f?.moneda].join("|");
     if (vistas.has(llave)) return false;
     vistas.add(llave);
     return true;
@@ -1206,12 +1421,16 @@ export async function leerEstadoDeCuenta(
     const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(f?.fecha || ""));
     const monto = Math.abs(Number(f?.monto));
     const moneda = String(f?.moneda || "").trim().toUpperCase().slice(0, 12);
-    if (!m || !f?.recibido || !f?.completado || !(monto > 0) || !moneda) return;
+    if (!m || !f?.completado || !(monto > 0) || !moneda) return;
     const local = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
     movs.push({
       fechaMs: local + OFFSET_CARACAS_MS,
-      contraparte: String(f?.contraparte || "").trim(),
-      monto,
+      // Rayas y espacios unificados: el UNIQUE de la tabla compara el nombre tal cual.
+      contraparte: String(f?.contraparte || "")
+        .replace(/[‐-―−]/g, "-")
+        .replace(/\s+/g, " ")
+        .trim(),
+      monto: f?.recibido ? monto : -monto,
       moneda,
       linea: ubicadas[i] || null,
     });
@@ -1225,11 +1444,11 @@ export async function leerEstadoDeCuenta(
  * Fecha de un comprobante que no la trae: la del pago en Binance si esta en la
  * semana elegida; si no, el lunes de esa semana, marcada como estimada.
  */
-export async function fechaSinComprobante(orderId: string, lunes: string) {
+export async function fechaSinComprobante(orderId: string, lunes: string, lado: Lado = "entrada") {
   const rango = rangoSemana(lunes);
   if (!rango) return null;
   try {
-    const pagos = await pagosRecibidos(rango.desde - DIA_MS, Math.min(rango.hasta + DIA_MS, Date.now()));
+    const pagos = await pagosRecibidos(rango.desde - DIA_MS, Math.min(rango.hasta + DIA_MS, Date.now()), lado);
     const pago = pagos.find((p) => p.id === orderId);
     if (pago) return { fechaMs: Date.parse(pago.fecha), estimada: false };
   } catch {
@@ -1295,14 +1514,15 @@ export async function guardarComprobante(
   leido: Omit<Leido, "horaTelefono"> & { fechaMs: number; estimada: boolean; soloDia?: boolean; horaTelefono?: boolean },
   archivo: { nombre: string; mime: string; datos: Buffer },
   usuario: { email: string; cids: number | null },
+  lado: Lado = "entrada",
 ): Promise<{ id: number } | { repetido: { fecha: string; subidoPor: string; companyId: number | null } }> {
   await ensureTabla();
   try {
     // db.execute y no query(): la auditoria guardaria la imagen entera en sql_params.
     const [res]: any = await db.execute(
       `INSERT INTO binance_comprobantes
-         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, cliente, archivo_mime, archivo, archivo_sha, subido_por, company_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+         (order_id, monto, moneda, fecha_pago, fecha_estimada, archivo_nombre, cliente, archivo_mime, archivo, archivo_sha, subido_por, company_id, tipo)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         leido.orderId,
         leido.monto,
@@ -1316,6 +1536,7 @@ export async function guardarComprobante(
         huella(archivo.datos),
         usuario.email,
         usuario.cids,
+        lado,
       ],
     );
     return { id: res.insertId };

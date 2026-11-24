@@ -156,7 +156,7 @@ export async function fetchDocumentosATiempo(
  * (confirmado con movimientos reales: anticipo se debita, cada cuota pagada
  * se acredita, el saldo baja a cero solo).
  */
-const CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA: Record<number, string> = {
+export const CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA: Record<number, string> = {
   9: "1.01.05.008", // Valencia - Prestamos Empleados
   10: "1.01.05.103", // Caracas - Prestamos a Empleados
   7: "1.01.04.001", // Panama - CxC Empleados
@@ -182,17 +182,16 @@ export async function fetchLegalizacionPendiente(
   companyIds: number[],
   umbralDias: number,
 ): Promise<ResultadoLegalizacion | null> {
-  const codigosBuscados = companyIds
-    .map((id) => CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA[id])
-    .filter((c): c is string => c !== undefined);
-  if (codigosBuscados.length === 0) return null;
+  // Par (sede, codigo): con varias sedes, `code in [...]` traia tambien el
+  // 1.01.04.001 de Valencia y Caracas, que ahi es "Clientes", no empleados.
+  const pares = companyIds
+    .filter((id) => CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA[id] !== undefined)
+    .map((id) => ["&", ["company_id", "=", id], ["code", "=", CUENTA_ANTICIPOS_EMPLEADOS_POR_EMPRESA[id]]]);
+  if (pares.length === 0) return null;
 
   const cuentas = await searchReadTodo(
     "account.account",
-    [
-      ["company_id", "in", companyIds],
-      ["code", "in", codigosBuscados],
-    ],
+    [...Array(pares.length - 1).fill("|"), ...pares.flat()],
     ["id"],
   );
   if (cuentas.length === 0) return null;

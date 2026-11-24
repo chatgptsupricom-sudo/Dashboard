@@ -3,6 +3,7 @@ import { esSuperadmin as rolSuperadmin, requireAgente } from "@/lib/agenteia/acc
 import { alcanceDe, sesionDeCorreo } from "@/lib/agenteia/alcance";
 import { ejecutarCambio, MODELO_DEFECTO, responder, titular, type MensajeChat } from "@/lib/agenteia/agente";
 import { costoUsd, registrarConsumo, usoVacio } from "@/lib/agenteia/consumo";
+import { anotar, detenerCorrida, estadoCorrida, guardarEnChat, iniciarCorrida, mensajeDe, terminarCorrida } from "@/lib/agenteia/enCurso";
 import { MODELOS_AGENTE, modelosPara } from "@/lib/agenteia/modelos";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -16,6 +17,9 @@ import { NextRequest, NextResponse } from "next/server";
 //   POST { confirmar }  -> ejecuta un cambio en Odoo ya preparado por el agente
 //   POST { titular }    -> título corto para la conversación (Haiku)
 //   POST { cancelar }   -> descarta un cambio preparado (solo responde el texto)
+//   POST { detener: chatId }   -> detiene la respuesta en curso de ese chat
+//   POST { pendiente: chatId } -> la respuesta de ese chat que siguió sin
+//        conexión: { estado: corriendo | terminado | no_hay, mensaje? } (lib/agenteia/enCurso.ts)
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -77,6 +81,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ texto: "Cambio cancelado. No se modificó nada en Odoo." });
   }
 
+  if (typeof body?.detener === "string") {
+    return NextResponse.json({ ok: detenerCorrida(uid, body.detener) });
+  }
+  if (typeof body?.pendiente === "string") {
+    return NextResponse.json(estadoCorrida(uid, body.pendiente));
+  }
+
   if (typeof body?.titular === "string") {
     try {
       return NextResponse.json({ titulo: await titular(body.titular) });
@@ -115,19 +126,36 @@ export async function POST(request: NextRequest) {
   }
   const alcance = await alcanceDe(sesion);
 
-  // Si el usuario detiene la respuesta o cierra la pestaña, se corta también
-  // la llamada a Claude: si no, el agente sigue consultando y gastando tokens.
+  // Con chatId, si se corta la conexión (teléfono bloqueado, red, proxy) el
+  // agente termina igual: la pantalla recupera la respuesta o queda guardada
+  // en el chat (lib/agenteia/enCurso.ts). Detener es POST { detener }. Sin
+  // chatId, un corte detiene la llamada a Claude, como antes.
+  const chatId = typeof body?.chatId === "string" && /^[a-z0-9]{6,40}$/i.test(body.chatId) ? body.chatId : null;
   const corte = new AbortController();
-  request.signal.addEventListener("abort", () => corte.abort());
+  const corrida = chatId ? iniciarCorrida(uid, chatId, corte) : null;
+  let desconectado = false;
+  const alCortarse = () => {
+    if (desconectado) return;
+    desconectado = true;
+    if (corrida) console.log(`[agenteia] se cortó la conexión de ${uid}; la respuesta sigue y se guarda en el chat`);
+    else corte.abort();
+  };
+  request.signal.addEventListener("abort", alCortarse);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     cancel() {
-      corte.abort();
+      alCortarse();
     },
     async start(controller) {
       const emitir = (t: string) => {
-        if (!corte.signal.aborted) controller.enqueue(encoder.encode(t));
+        if (corrida && t !== LATIDO) anotar(corrida, t);
+        if (desconectado || corte.signal.aborted) return;
+        try {
+          controller.enqueue(encoder.encode(t));
+        } catch {
+          desconectado = true;
+        }
       };
       // Latido: mientras el modelo piensa o corre una consulta larga no sale
       // texto, y el proxy (EasyPanel) corta la conexión por inactividad. Un
@@ -156,6 +184,14 @@ export async function POST(request: NextRequest) {
         emitir(`\n\n⚠️ ${explicarError(e)}`);
       } finally {
         clearInterval(latido);
+        if (corrida && chatId) {
+          terminarCorrida(corrida);
+          const pregunta = messages[messages.length - 1];
+          if (desconectado && !corte.signal.aborted && pregunta?.role === "user")
+            guardarEnChat(uid, chatId, { role: "user", content: String(pregunta.content ?? "") }, mensajeDe(corrida)).catch((e) =>
+              console.error("❌ agenteia guardar respuesta sin conexión:", e.message),
+            );
+        }
         try {
           controller.close();
         } catch {}

@@ -82,6 +82,8 @@ export interface GastoDetalle {
   /** Monto en la moneda del documento cuando no es USD (Bs.). */
   montoMoneda: number | null;
   moneda: string;
+  /** Asiento de Odoo, para enlazar al documento. */
+  moveId: number | null;
 }
 
 function grupoDeCodigo(codigo: string): string {
@@ -210,6 +212,7 @@ export async function fetchGastoReal(
       diario: l.journal_id?.[1] || "",
       montoMoneda: moneda !== "USD" ? Number(l.amount_currency) || 0 : null,
       moneda,
+      moveId: l.move_id?.[0] ?? null,
     });
   });
 

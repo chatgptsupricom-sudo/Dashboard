@@ -1,3 +1,4 @@
+import { dominioSinImpuestos } from "@/lib/cxc/impuestos";
 import { callOdooRPC } from "@/lib/odoo";
 import { fechasDePagos } from "@/lib/cxc/fechaConfirmacion";
 import { esICExcluido } from "@/lib/intercompania";
@@ -10,8 +11,8 @@ import { esICExcluido } from "@/lib/intercompania";
  * banco/caja real, fechada por la CONFIRMACIÓN del pago. Es la lógica de
  * "Cobrado" de Contado/Crédito, que se validó centavo a centavo contra el
  * export real de cobranza, llevada a un solo lugar para que Contado/Crédito,
- * Integración de Pagos, Clasificación de clientes, Efectividad y Recuperación
- * sumen exactamente lo mismo:
+ * Clasificación de clientes, Efectividad y Recuperación sumen exactamente lo
+ * mismo (Integración de Pagos no: copia el reporte de Odoo, lib/cxc/integracionPagos.ts):
  *
  *   Cobrado del período = vencidas al inicio   (numerador de Recuperación)
  *                       + vencen en el período (Efectividad, parte del mes)
@@ -87,6 +88,11 @@ export interface OpcionesCobros {
    */
   excluirRetenciones?: boolean;
   excluirIva25?: boolean;
+  /**
+   * Además fuera los pagos cuya descripción dice IGTF, ISLR, IVA o retención
+   * (lib/cxc/impuestos.ts). Default false: solo el botón «Excluir impuestos».
+   */
+  excluirImpuestos?: boolean;
   /** Dominio extra sobre la FACTURA (`account.move`), p.ej. vencimiento o partner. */
   dominioFactura?: any[];
 }
@@ -179,6 +185,7 @@ export async function obtenerCobros(companyIds: number[], opts: OpcionesCobros):
       ["credit_move_id.payment_id.payment_description", "not ilike", "25\\%"],
     );
   }
+  if (opts.excluirImpuestos) dominio.push(...dominioSinImpuestos("credit_move_id."));
   if (opts.dominioFactura?.length) dominio.push(...prefijar(opts.dominioFactura, "debit_move_id.move_id."));
 
   const conciliaciones = await paginar("account.partial.reconcile", dominio, [

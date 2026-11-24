@@ -60,6 +60,8 @@ import EscenaRecepcion from "./EscenaRecepcion";
 import CruceOdoo from "./CruceOdoo";
 import SerialesOdoo from "./SerialesOdoo";
 import SubirSeriales from "./SubirSeriales";
+import RepartoSedes from "./RepartoSedes";
+import { FOTO_PX, encabezadoObservaciones, filasObservaciones, pdfObservaciones, type FotoPdf } from "@/lib/recepcion/observaciones";
 
 /**
  * Detalle de una recepcion por packing list.
@@ -97,6 +99,10 @@ type Recepcion = {
   /** Carga en Odoo al cerrar (lib/recepcion/odoo.ts). */
   odoo_purchase_order_id?: number | null;
   odoo_oc_nombre?: string | null;
+  /** OC de la orden del panel (de ahí también sale la OC de Odoo). */
+  purchase_order_id?: number | null;
+  odoo_oc_por?: string | null;
+  odoo_oc_at?: string | null;
   odoo_estado?: "cargando" | "cargado" | "acumulado" | "error" | "sin_oc" | null;
   odoo_error?: string | null;
   odoo_resultado?: string | null;
@@ -182,6 +188,23 @@ function conFila<T extends Item>(item: T, contenedorId: number, enContenedor: nu
 
 const fmt = (n: number) => n.toLocaleString("es-VE");
 
+/** La foto achicada para el PDF. null si no se pudo leer. */
+async function miniatura(url: string): Promise<FotoPdf | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const bitmap = await createImageBitmap(await r.blob());
+    const escala = Math.min(1, FOTO_PX / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * escala);
+    canvas.height = Math.round(bitmap.height * escala);
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return { base64: canvas.toDataURL("image/jpeg", 0.82).split(",")[1], ancho: canvas.width, alto: canvas.height };
+  } catch {
+    return null;
+  }
+}
+
 /** Cada dano marcado con la cantidad tal como se escribe en el campo. */
 type DanoForm = { tipo: TipoDano; cantidad: string };
 type Conteo = { recibida: string; motivo: string; danos: DanoForm[]; nota: string };
@@ -252,6 +275,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   const [nuevo, setNuevo] = useState<{ codigo: string; cantidad: string; seriales: string } | null>(null);
   // Carga en Odoo: OC elegida para una recepcion que no tenia, y la lista.
   const [ocElegida, setOcElegida] = useState<number | "">("");
+  const [cambiandoOc, setCambiandoOc] = useState(false);
   // El SuperAdmin confirma que reviso en Odoo que no es la misma mercancia.
   const [revisadoEnOdoo, setRevisadoEnOdoo] = useState(false);
   const [ocsOdoo, setOcsOdoo] = useState<Array<{ id: number; nombre: string; proveedor: string }> | null>(null);
@@ -553,6 +577,29 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
     XLSX.writeFile(wb, `Seriales_${rec.referencia}.xlsx`);
   };
 
+  // Todo lo anotado como novedad (lo guardado en el servidor): notas, precintos, diferencias y cajas en mal estado.
+  const observaciones = () => (rec ? filasObservaciones({ recepcion: rec, contenedores, items, archivos }) : []);
+  const [bajandoObservaciones, setBajandoObservaciones] = useState(false);
+  // PDF con una tarjeta por observacion y sus fotos (lib/recepcion/observaciones.ts), el mismo que va por correo.
+  const descargarObservaciones = async () => {
+    if (!rec) return;
+    setBajandoObservaciones(true);
+    try {
+      const { saveAs } = await import("file-saver");
+      const buffer = await pdfObservaciones(
+        encabezadoObservaciones({ recepcion: rec, contenedores, items, archivos }),
+        observaciones(),
+        (foto) => miniatura(`/api/recepcion/${rec.id}/archivos/${foto.id}`),
+      );
+      saveAs(new Blob([buffer], { type: "application/pdf" }), `Observaciones_${rec.referencia}.pdf`);
+    } catch (e: any) {
+      setError(e?.message || "No se pudo armar el PDF de observaciones.");
+    } finally {
+      setBajandoObservaciones(false);
+    }
+  };
+  const nObservaciones = observaciones().length;
+
   const corregirPrecintos = async (contenedorId: number) => {
     setError(null);
     setAviso(null);
@@ -771,10 +818,29 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
   // Con la carga frenada, solo el SuperAdmin: cambiar de OC no puede servir
   // para cargar dos veces lo mismo.
   const puedeElegirOc =
+    esCompras &&
     rec.etapa === "cerrado" &&
     (!resultadoOdoo.bloqueo || rol === "superadmin") &&
     (rec.odoo_estado === "sin_oc" ||
       (rec.odoo_estado === "error" && !(resultadoOdoo.recepciones || []).length && !resultadoOdoo.intento));
+  // Sin OC de Odoo no se carga nada en Odoo (por ella se cruzan los productos
+  // y se hace la recepción). Compras la pone cuando la tenga, también con la
+  // mercancía ya llegando; ya cerrada, se elige abajo, en la tarjeta de Odoo.
+  const sinOc = !porFactura && !rec.odoo_purchase_order_id && !rec.purchase_order_id;
+  const puedePonerOc =
+    esCompras &&
+    !porFactura &&
+    rec.etapa !== "cerrado" &&
+    !["cargando", "cargado", "acumulado"].includes(rec.odoo_estado || "");
+  const asignarOc = async () => {
+    if (!ocElegida) return;
+    const ok = await accionar("asignar_oc", { purchase_order_id: ocElegida }, false);
+    if (ok) {
+      setOcElegida("");
+      setCambiandoOc(false);
+      setAviso(t("odoo.oc_guardada"));
+    }
+  };
   const cargarOcs = async () => {
     if (ocsOdoo) return;
     try {
@@ -844,6 +910,56 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 )}
                 <Dato etiqueta={t("oc_odoo")} valor={rec.odoo_oc_nombre} />
               </dl>
+              {rec.odoo_oc_nombre && rec.odoo_oc_por && (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {t("odoo.oc_puesta_por", { quien: rec.odoo_oc_por, fecha: (rec.odoo_oc_at && hora(rec.odoo_oc_at)) || "" })}
+                </p>
+              )}
+              {!porFactura && rec.etapa !== "cerrado" && (sinOc || puedePonerOc) && (
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                  {sinOc && (
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{t("odoo.sin_oc_aviso")}</p>
+                  )}
+                  {puedePonerOc ? (
+                    sinOc || cambiandoOc ? (
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <select
+                          value={ocElegida}
+                          onFocus={() => void cargarOcs()}
+                          onChange={(e) => setOcElegida(e.target.value ? Number(e.target.value) : "")}
+                          className={inputClases}
+                          aria-label={t("oc_odoo")}
+                        >
+                          <option value="">{t("odoo.elegir_oc")}</option>
+                          {(ocsOdoo || []).map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.nombre} — {o.proveedor}
+                            </option>
+                          ))}
+                        </select>
+                        <BotonSecundario
+                          onClick={() => void asignarOc()}
+                          disabled={enviando || !ocElegida}
+                          icon={enviando ? Loader2 : CheckCircle2}
+                          className="shrink-0"
+                        >
+                          {t("odoo.guardar_oc")}
+                        </BotonSecundario>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setCambiandoOc(true)}
+                        className="text-xs font-medium text-violet-700 hover:underline"
+                      >
+                        {t("odoo.cambiar_oc")}
+                      </button>
+                    )
+                  ) : (
+                    sinOc && <p className="text-xs text-slate-600">{t("odoo.oc_la_pone_compras")}</p>
+                  )}
+                </div>
+              )}
               {rec.observaciones && (
                 <p className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600 whitespace-pre-line">
                   {rec.observaciones}
@@ -869,6 +985,10 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                 </div>
               )}
             </Card>
+
+            {/* Reparto entre Valencia y Caracas (no es el reparto por contenedor
+                ni la Factura Especial de Caracas). Se oculta solo si no aplica. */}
+            {!porFactura && <RepartoSedes id={id} cids={Number(rec.cids)} etapa={rec.etapa} />}
 
             {/* Contenedores: cada uno con su llegada y su cierre. Una recepcion
                 con factura no tiene: nace descargando. */}
@@ -1281,16 +1401,29 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                   onTerminar={() => setSeleccionado(null)}
                 />
               )}
-              {items.some((i) => (i.seriales || []).length > 0) && (
-                <div className="mb-3 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={descargarSeriales}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    {t("descargar_seriales", { count: items.reduce((n, i) => n + (i.seriales || []).length, 0) })}
-                  </button>
+              {(items.some((i) => (i.seriales || []).length > 0) || nObservaciones > 0) && (
+                <div className="mb-3 flex flex-wrap justify-end gap-4">
+                  {nObservaciones > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => void descargarObservaciones()}
+                      disabled={bajandoObservaciones}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline disabled:opacity-60"
+                    >
+                      {bajandoObservaciones ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                      {t("descargar_observaciones", { count: nObservaciones })}
+                    </button>
+                  )}
+                  {items.some((i) => (i.seriales || []).length > 0) && (
+                    <button
+                      type="button"
+                      onClick={descargarSeriales}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:underline"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {t("descargar_seriales", { count: items.reduce((n, i) => n + (i.seriales || []).length, 0) })}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -2043,6 +2176,9 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
 
                 {(rec.odoo_estado === "error" || rec.odoo_estado === "sin_oc") && (
                   <div className="space-y-2">
+                    {rec.odoo_estado === "sin_oc" && !esCompras && !rec.odoo_purchase_order_id && (
+                      <p className="text-xs text-slate-600">{t("odoo.oc_la_pone_compras")}</p>
+                    )}
                     {puedeElegirOc && (
                       <select
                         value={ocElegida}
@@ -2092,7 +2228,7 @@ export default function RecepcionDetalle({ base, id }: { base: string; id: strin
                       }
                       disabled={
                         enviando ||
-                        (rec.odoo_estado === "sin_oc" && !ocElegida) ||
+                        (rec.odoo_estado === "sin_oc" && !ocElegida && !rec.odoo_purchase_order_id) ||
                         (!!resultadoOdoo.bloqueo && !ocElegida && !(rol === "superadmin" && revisadoEnOdoo))
                       }
                       icon={enviando ? Loader2 : RefreshCw}

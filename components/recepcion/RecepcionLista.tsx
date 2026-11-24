@@ -39,6 +39,8 @@ type Fila = {
   referencia: string;
   contenedor: string | null;
   oc_referencia: string | null;
+  odoo_purchase_order_id?: number | null;
+  purchase_order_id?: number | null;
   fecha_estimada: string | null;
   etapa: Etapa;
   resultado: "conforme" | "con_novedades" | null;
@@ -60,7 +62,19 @@ type Fila = {
   descartado_at?: string | null;
   descartado_por?: string | null;
   descartado_motivo?: string | null;
+  /** Reparto entre sedes (Valencia/Caracas), solo si está activo. Fracciones 0..1. */
+  reparto_sedes?: {
+    pctUnidadesCaracas: number | null;
+    pctValorCaracas: number | null;
+    unidadesCaracas: number;
+    unidades: number;
+  } | null;
 };
+
+/** 0.45 → "45 %". */
+const pct = (f: number) => `${Math.round(f * 100).toLocaleString("es-VE")} %`;
+/** El de Valencia como complemento del redondeado, para que sumen 100 %. */
+const pctResto = (f: number) => `${(100 - Math.round(f * 100)).toLocaleString("es-VE")} %`;
 
 type Filtro = Etapa | "todos" | "descartados";
 
@@ -410,7 +424,32 @@ export default function RecepcionLista({ base }: { base: string }) {
                         {t("factura.etiqueta")}
                       </span>
                     )}
-                    {f.etapa === "cerrado" && f.odoo_estado && (
+                    {f.reparto_sedes && f.reparto_sedes.pctUnidadesCaracas != null && (
+                      <span
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 tabular-nums"
+                        title={t("reparto_sedes.lista_insignia_titulo", {
+                          pctV: pctResto(f.reparto_sedes.pctUnidadesCaracas),
+                          pctC: pct(f.reparto_sedes.pctUnidadesCaracas),
+                        })}
+                      >
+                        {t("reparto_sedes.lista_insignia", { pct: pct(f.reparto_sedes.pctUnidadesCaracas) })}
+                      </span>
+                    )}
+                    {/* Sin OC de Odoo no se carga nada en Odoo: Compras la pone
+                        cuando la tenga, aunque ya haya llegado o se haya cerrado. */}
+                    {f.origen !== "factura" &&
+                      !f.descartado_at &&
+                      !f.odoo_purchase_order_id &&
+                      !f.purchase_order_id &&
+                      !["cargando", "cargado", "acumulado"].includes(f.odoo_estado || "") && (
+                        <span
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700"
+                          title={t("odoo.sin_oc_titulo")}
+                        >
+                          {t("odoo.sin_oc_insignia")}
+                        </span>
+                      )}
+                    {f.etapa === "cerrado" && f.odoo_estado && f.odoo_estado !== "sin_oc" && (
                       <span
                         className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
                           f.odoo_estado === "cargado"

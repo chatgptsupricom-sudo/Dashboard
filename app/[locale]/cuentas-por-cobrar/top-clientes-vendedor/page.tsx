@@ -14,12 +14,14 @@ import {
   ChevronRight,
   Clock,
   DollarSign,
+  Download,
   FileText,
   RefreshCw,
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { descargarExcel } from "@/lib/excel";
 
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("en-US", {
@@ -442,8 +444,8 @@ function ClientDetail({ partnerId, partnerName, userId }: { partnerId: number; p
   );
 }
 
-function SalespersonCard({ sp }: { sp: any }) {
-  const [open, setOpen] = useState(false);
+function SalespersonCard({ sp, abierto = false }: { sp: any; abierto?: boolean }) {
+  const [open, setOpen] = useState(abierto);
   const overduePct =
     sp.totalReceivable > 0
       ? Math.round((sp.totalOverdue / sp.totalReceivable) * 100)
@@ -601,6 +603,7 @@ export default function TopClientesVendedorPage() {
   const { user } = useAuthStore();
   const userCids = user?.cids;
   const [empresa, setEmpresa] = useState("");
+  const [vendedor, setVendedor] = useState(""); // userId; "" = todos
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -624,6 +627,35 @@ export default function TopClientesVendedorPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const todos: any[] = data?.salespeople || [];
+  const lista = vendedor ? todos.filter((sp) => String(sp.userId) === vendedor) : todos;
+  const resumen = vendedor
+    ? {
+        totalSalespeople: lista.length,
+        totalReceivable: lista.reduce((s, sp) => s + sp.totalReceivable, 0),
+        totalOverdue: lista.reduce((s, sp) => s + sp.totalOverdue, 0),
+        totalClients: lista.reduce((s, sp) => s + sp.clients.length, 0),
+      }
+    : data?.summary;
+
+  const exportar = () => {
+    const filas = lista.flatMap((sp) =>
+      sp.clients.map((c: any) => ({
+        Vendedor: sp.userName,
+        Cliente: c.partnerName,
+        Sede: c.companies.join(", "),
+        "Saldo total": c.total,
+        "Saldo vencido": c.overdue,
+        Facturas: c.count,
+        "Días de antigüedad": c.oldest > 0 ? c.oldest : 0,
+        "% de la cartera del vendedor":
+          sp.totalReceivable > 0 ? Math.round((c.total / sp.totalReceivable) * 100) : 0,
+      })),
+    );
+    const nombre = vendedor ? lista[0]?.userName || "Vendedor" : "Todos";
+    descargarExcel(`Top clientes - ${nombre}`, [{ nombre: "Clientes", filas }]);
+  };
 
   const empresas = [
     { id: "", label: "Todas" },
@@ -660,7 +692,10 @@ export default function TopClientesVendedorPage() {
           {empresas.map((emp) => (
             <button
               key={emp.id}
-              onClick={() => setEmpresa(emp.id)}
+              onClick={() => {
+                setEmpresa(emp.id);
+                setVendedor("");
+              }}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${
                 empresa === emp.id
                   ? "bg-white text-slate-900 shadow-sm"
@@ -671,6 +706,31 @@ export default function TopClientesVendedorPage() {
               {emp.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {data && !loading && (
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={vendedor}
+            onChange={(e) => setVendedor(e.target.value)}
+            aria-label="Filtrar por vendedor"
+            className="h-9 px-3 bg-white border border-slate-200 rounded-lg shadow-sm text-sm font-medium text-slate-700"
+          >
+            <option value="">Todos los vendedores</option>
+            {todos.map((sp) => (
+              <option key={sp.userId} value={String(sp.userId)}>
+                {sp.userName}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={exportar}
+            disabled={lista.length === 0}
+            className="flex items-center gap-2 h-9 px-4 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 transition-all font-medium text-sm disabled:opacity-50"
+          >
+            <Download size={16} /> Exportar a Excel
+          </button>
         </div>
       )}
 
@@ -687,7 +747,7 @@ export default function TopClientesVendedorPage() {
                 Vendedores
               </p>
               <p className="text-2xl font-bold text-slate-900 mt-1">
-                {data.summary.totalSalespeople}
+                {resumen.totalSalespeople}
               </p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
@@ -696,7 +756,7 @@ export default function TopClientesVendedorPage() {
                 Cartera Total
               </p>
               <p className="text-2xl font-bold text-slate-900 mt-1">
-                {formatCurrency(data.summary.totalReceivable)}
+                {formatCurrency(resumen.totalReceivable)}
               </p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
@@ -705,7 +765,7 @@ export default function TopClientesVendedorPage() {
                 Vencida
               </p>
               <p className="text-2xl font-bold text-red-600 mt-1">
-                {formatCurrency(data.summary.totalOverdue)}
+                {formatCurrency(resumen.totalOverdue)}
               </p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
@@ -714,18 +774,18 @@ export default function TopClientesVendedorPage() {
                 Clientes
               </p>
               <p className="text-2xl font-bold text-slate-900 mt-1">
-                {data.summary.totalClients}
+                {resumen.totalClients}
               </p>
             </div>
           </div>
 
           <div className="space-y-3">
-            {data.salespeople.map((sp: any) => (
-              <SalespersonCard key={sp.userId} sp={sp} />
+            {lista.map((sp: any) => (
+              <SalespersonCard key={`${sp.userId}-${vendedor}`} sp={sp} abierto={!!vendedor} />
             ))}
           </div>
 
-          {data.salespeople.length === 0 && (
+          {lista.length === 0 && (
             <div className="p-16 text-center text-slate-400">
               <Users size={48} className="mx-auto mb-4 opacity-30" />
               <p className="text-sm font-semibold">Sin datos de vendedores</p>

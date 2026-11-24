@@ -2,7 +2,7 @@ import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import React from "react";
 
 export const metadata = {
-  title: "Diseñador | Dashboard Supricom",
+  title: "Diseño | Dashboard Supricom",
   description: "Catálogo de productos y actividades.",
 };
 

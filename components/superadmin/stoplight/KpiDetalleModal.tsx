@@ -5,6 +5,7 @@
 // peso del mes, las semanas contra la meta y cómo se calcula.
 
 import { X } from "lucide-react";
+import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import ResumenKpi, { type ResumenKpiProps } from "./ResumenKpi";
 import { KpiInfoContenido } from "./KpiInfoModal";
@@ -13,10 +14,13 @@ export default function KpiDetalleModal({
   resumen,
   subtitulo,
   onClose,
+  extra,
 }: {
   resumen: ResumenKpiProps | null;
   subtitulo: string;
   onClose: () => void;
+  /** Contenido propio del KPI debajo de la lectura (ej. la carga a mano). */
+  extra?: ReactNode;
 }) {
   const t = useTranslations("stoplight");
   if (!resumen) return null;
@@ -44,6 +48,7 @@ export default function KpiDetalleModal({
         </div>
         <div className="flex-1 overflow-auto p-4 sm:p-5">
           <ResumenKpi {...resumen} />
+          {extra}
           <section className="rounded-xl border border-slate-200 p-4">
             <p className="mb-2 text-[13px] font-medium text-slate-700">{t("resumen_como_se_calcula")}</p>
             <KpiInfoContenido kpiId={resumen.kpi.id} />

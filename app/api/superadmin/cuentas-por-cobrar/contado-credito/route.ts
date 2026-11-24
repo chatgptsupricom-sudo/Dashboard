@@ -3,7 +3,7 @@ import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { cuadrarCobros, obtenerCobros } from "@/lib/cxc/cobros";
 import { requireRoles } from "@/lib/auth/roles";
-import { esVendedorExcluido } from "@/lib/cxc/vendedoresExcluidos";
+import { esNoVendedor } from "@/lib/cxc/vendedoresExcluidos";
 import { porCobrarAlCierre } from "@/lib/cxc/porCobrar";
 import { RELACIONADA } from "@/lib/cxc/cobros";
 import { nombresPlazos } from "@/lib/cxc/credito";
@@ -78,7 +78,7 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 
   return invoicesRaw
     .filter((inv) => !isSupricom(inv.partner_id) && inv.partner_id && !esICExcluido(inv.commercial_partner_id?.[0]))
-    .filter((inv) => !excluirAsistente || !esVendedorExcluido(inv.invoice_user_id?.[1], inv.company_id?.[0]))
+    .filter((inv) => !excluirAsistente || !esNoVendedor(inv.invoice_user_id?.[1], inv.company_id?.[0]))
     .map((inv) => ({
       // amount_untaxed (sin IVA), igual que "Ventas del Mes" -- antes esta
       // pantalla usaba amount_total (con IVA) y por eso el total no coincidia
@@ -108,14 +108,14 @@ async function renglonesFacturado(companyIds: number[], monthStart: Date, monthE
 // excluirAsistente es el toggle opcional del usuario.
 async function renglonesCobradoDinero(
   companyIds: number[], monthStart: Date, monthEnd: Date, excluirAsistente: boolean,
-  excluirRetenciones: boolean, excluirIva25: boolean,
+  excluirRetenciones: boolean, excluirIva25: boolean, excluirImpuestos: boolean,
 ): Promise<Renglon[]> {
   const startStr = monthStart.toISOString().split("T")[0];
   const endStr = monthEnd.toISOString().split("T")[0];
-  const cobros = await obtenerCobros(companyIds, { desde: startStr, hasta: endStr, excluirRetenciones, excluirIva25 });
+  const cobros = await obtenerCobros(companyIds, { desde: startStr, hasta: endStr, excluirRetenciones, excluirIva25, excluirImpuestos });
 
   return cobros
-    .filter((c) => !excluirAsistente || !esVendedorExcluido(c.vendedorName, c.companyId))
+    .filter((c) => !excluirAsistente || !esNoVendedor(c.vendedorName, c.companyId))
     .map((c) => ({
       monto: c.monto,
       partnerId: c.partnerId ?? 0,
@@ -147,7 +147,7 @@ async function renglonesPorCobrar(
   return {
     corte, proyeccion, incobrables, relacionadas,
     renglones: renglones
-      .filter((r) => !excluirAsistente || !esVendedorExcluido(r.sellerName, r.companyId))
+      .filter((r) => !excluirAsistente || !esNoVendedor(r.sellerName, r.companyId))
       .map((r) => ({
         monto: r.saldo,
         partnerId: r.partnerId,
@@ -197,6 +197,8 @@ async function leerGET(request: NextRequest) {
     // (retenciones y pagos del 25% de IVA no son cobro).
     const excluirRetenciones = searchParams.get("excluirRetenciones") !== "false";
     const excluirIva25 = searchParams.get("excluirIva25") !== "false";
+    // Botón «Excluir impuestos»: además IGTF, ISLR e IVA por la descripción del pago.
+    const excluirImpuestos = searchParams.get("excluirImpuestos") === "true";
     // Filtros adicionales, iguales a los que ya tiene "Integracion de
     // Pagos" en Odoo: vendedor puntual, busqueda libre (cliente o numero
     // de factura), y banco/diario puntual (solo aplica en Cobrado).
@@ -233,7 +235,7 @@ async function leerGET(request: NextRequest) {
     const renglonesSinFiltrar = porCobrar
       ? porCobrar.renglones
       : modo === "cobrado"
-        ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd, excluirAsistente, excluirRetenciones, excluirIva25)
+        ? await renglonesCobradoDinero(companyIds, monthStart, monthEnd, excluirAsistente, excluirRetenciones, excluirIva25, excluirImpuestos)
         : await renglonesFacturado(companyIds, monthStart, monthEnd, excluirAsistente);
 
     // Solo en "Por cobrar" y si el corte es hoy: pagos que entraron pero no
@@ -482,6 +484,7 @@ async function leerGET(request: NextRequest) {
           excluirAsistente,
           excluirRetenciones,
           excluirIva25,
+          excluirImpuestos,
           vendedorId,
           search: search || undefined,
           bancoId,

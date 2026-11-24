@@ -152,13 +152,66 @@ async function recepcionesHechas(poId: number): Promise<Array<{ id: number; nomb
  * Guarda la OC elegida (o la quita) y la foto de lo que esa OC ya tenia
  * recibido en Odoo: lo que se reciba a mano despues no se vuelve a cargar.
  */
-export async function guardarOcElegida(id: number, oc: OcPendiente | null): Promise<void> {
+export async function guardarOcElegida(id: number, oc: OcPendiente | null, quien?: string): Promise<void> {
   await asegurarColumnasOdoo();
   const previas = oc ? (await recepcionesHechas(oc.id)).map((p) => p.id) : null;
   await query(
-    "UPDATE recepcion_packing SET odoo_purchase_order_id = ?, odoo_oc_nombre = ?, odoo_recepciones_previas = ? WHERE id = ?",
-    [oc?.id ?? null, oc?.nombre ?? null, previas ? JSON.stringify(previas) : null, id],
+    `UPDATE recepcion_packing SET odoo_purchase_order_id = ?, odoo_oc_nombre = ?, odoo_recepciones_previas = ?,
+            odoo_oc_por = ?, odoo_oc_at = ${oc ? "NOW()" : "NULL"}
+      WHERE id = ?`,
+    [oc?.id ?? null, oc?.nombre ?? null, previas ? JSON.stringify(previas) : null, oc ? (quien || null) : null, id],
   );
+}
+
+/**
+ * Compras pone (o cambia) la OC de Odoo de un packing list ya cargado, en
+ * cualquier etapa (también mientras se descarga o ya cerrado), siempre que no
+ * se haya cargado nada en Odoo. Sin OC no se carga nada en Odoo
+ * (`cargarEnOdoo` lo deja `sin_oc`): por la OC se cruzan los productos y se
+ * hace la recepción. No carga: la carga va al cerrar, o con `cargar_odoo` si
+ * ya se cerró.
+ *
+ * Si la mercancía ya empezó a llegar, no se guarda la foto de lo que la OC
+ * tenía recibido (`odoo_recepciones_previas = NULL`): pudo recibirse a mano en
+ * el medio, así que cualquier recepción hecha en Odoo que no sea del panel
+ * frena la carga hasta que el SuperAdmin la revise (`frenos`).
+ */
+export async function ponerOcDespues(
+  rec: any,
+  valor: unknown,
+  quien: { nombre: string; esSuperadmin: boolean },
+): Promise<OcPendiente> {
+  await asegurarColumnasOdoo();
+  const poId = Number(valor);
+  if (!Number.isInteger(poId) || poId <= 0) throw new ErrorRecepcion("Elige la OC de Odoo");
+  if (rec.descartado_at) throw new ErrorRecepcion("El packing list esta descartado", 409);
+  if (["cargando", "cargado", "acumulado"].includes(String(rec.odoo_estado || ""))) {
+    throw new ErrorRecepcion("Ya se cargo en Odoo: la OC no se puede cambiar", 409);
+  }
+  const anterior = leerResultado(rec.odoo_resultado);
+  if (anterior.recepciones.length > 0 || anterior.intento || (anterior.acumulado?.lineas?.length || 0) > 0) {
+    throw new ErrorRecepcion("Ya se cargo una parte en la OC anterior: no se puede cambiar", 409);
+  }
+  // Con la carga frenada (puede que ya se haya recibido a mano), solo el
+  // SuperAdmin: cambiar de OC no puede servir para cargarla dos veces.
+  if (anterior.bloqueo && !quien.esSuperadmin) {
+    throw new ErrorRecepcion("La carga esta frenada: solo el SuperAdmin puede cambiar la OC", 403);
+  }
+  const oc = await ocPendiente(Number(rec.cids), poId);
+  if (!oc) throw new ErrorRecepcion("Esa OC no es de la sucursal o ya no espera mercancia");
+  if (Number(rec.odoo_purchase_order_id) === oc.id) return oc;
+  if (rec.etapa === "por_llegar") {
+    await guardarOcElegida(Number(rec.id), oc, quien.nombre);
+  } else {
+    await query(
+      `UPDATE recepcion_packing SET odoo_purchase_order_id = ?, odoo_oc_nombre = ?, odoo_recepciones_previas = NULL,
+              odoo_oc_por = ?, odoo_oc_at = NOW()
+        WHERE id = ?`,
+      [oc.id, oc.nombre, quien.nombre.slice(0, 200), Number(rec.id)],
+    );
+  }
+  console.log(`[recepcion/odoo] recepcion ${rec.id}: ${quien.nombre} puso la OC ${oc.nombre} (etapa ${rec.etapa})`);
+  return oc;
 }
 
 const normalizarReferencia = (v: unknown) => String(v ?? "").trim().toUpperCase().replace(/\s+/g, " ");

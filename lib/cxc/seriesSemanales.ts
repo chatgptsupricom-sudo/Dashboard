@@ -87,8 +87,12 @@ export interface SeriesCxC {
   };
 }
 
-/** `companyId` limita el corte a una sede (para la tabla Por Sede). */
-export type CarteraCEI = (corte: Date, companyId?: number) => Promise<{ total: number; noVencida: number }>;
+/**
+ * `companyId` limita el corte a una sede (para la tabla Por Sede).
+ * `partnerIds` lo limita a esos clientes (partner comercial): la parte de las
+ * negociaciones especiales del DSO (lib/cxc/dso.ts), en la misma base del libro.
+ */
+export type CarteraCEI = (corte: Date, companyId?: number, partnerIds?: number[]) => Promise<{ total: number; noVencida: number }>;
 
 export interface CarteraHoy {
   pct: number | null;
@@ -144,6 +148,8 @@ const fechaLocal = (d: Date) =>
 
 interface Factura {
   companyId: number;
+  /** Cliente (partner comercial). */
+  partnerId: number;
   /** Fecha de emisión: una factura no existía en un corte anterior a ella. */
   emision: Date | null;
   due: Date | null;
@@ -227,6 +233,7 @@ export async function calcularSeriesCxC(
     const signo = inv.move_type === "out_refund" ? -1 : 1;
     facturas.set(inv.id, {
       companyId: Array.isArray(inv.company_id) ? inv.company_id[0] : inv.company_id,
+      partnerId: Array.isArray(inv.commercial_partner_id) ? inv.commercial_partner_id[0] : 0,
       emision: inv.invoice_date ? soloFecha(inv.invoice_date) : null,
       due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
       residual: signo * Math.abs(inv.amount_residual || 0),
@@ -271,6 +278,7 @@ export async function calcularSeriesCxC(
       const signo = inv.move_type === "out_refund" ? -1 : 1;
       facturas.set(inv.id, {
         companyId: Array.isArray(inv.company_id) ? inv.company_id[0] : inv.company_id,
+        partnerId: Array.isArray(inv.commercial_partner_id) ? inv.commercial_partner_id[0] : 0,
         emision: inv.invoice_date ? soloFecha(inv.invoice_date) : null,
         due: inv.invoice_date_due ? soloFecha(inv.invoice_date_due) : null,
         residual: signo * Math.abs(inv.amount_residual || 0),
@@ -375,12 +383,15 @@ export async function calcularSeriesCxC(
     ["partner_id.commercial_partner_id.name", "not ilike", RELACIONADA],
     ...terminosSinIC("move_id.commercial_partner_id"),
   ];
-  const carteraCEI: CarteraCEI = async (corte, companyId) => {
+  const carteraCEI: CarteraCEI = async (corte, companyId, partnerIds) => {
     const sede: any[] = companyId !== undefined ? [["company_id", "=", companyId]] : [];
+    const clientes = partnerIds ? new Set(partnerIds) : null;
+    if (clientes && clientes.size === 0) return { total: 0, noVencida: 0 };
+    const deClientes: any[] = clientes ? [["partner_id.commercial_partner_id", "in", [...clientes]]] : [];
     const g = await callOdooRPC<any[]>(
       "account.move.line",
       "read_group",
-      [[...baseLibro, ...sede, ["date", "<=", fechaLocal(corte)]], ["balance:sum"], []],
+      [[...baseLibro, ...sede, ...deClientes, ["date", "<=", fechaLocal(corte)]], ["balance:sum"], []],
       { lazy: false },
     );
     let total = Number(g?.[0]?.balance || 0);
@@ -388,6 +399,7 @@ export async function calcularSeriesCxC(
     for (const f of todas) {
       if (f.relacionada) continue;
       if (companyId !== undefined && f.companyId !== companyId) continue;
+      if (clientes && !clientes.has(f.partnerId)) continue;
       if (f.emision && f.emision > corte) continue;
       const saldo = saldoEn(f, corte);
       if (Math.abs(saldo) < 0.005) continue;

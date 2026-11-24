@@ -6,6 +6,7 @@
 import { calcularRecompra, filtrosRecompra, SEDES } from "@/lib/adminleads/recompra";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -16,6 +17,7 @@ const USD = '"$"#,##0.00';
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const filtros = filtrosRecompra(request.nextUrl.searchParams);

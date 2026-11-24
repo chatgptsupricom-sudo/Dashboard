@@ -261,7 +261,7 @@ export default function CxCDetailModal({ resumen, isOpen, onClose, kpiId, compan
                         <td className="p-3 text-right text-slate-600">${Math.abs(inv.amountUntaxed).toLocaleString("es-VE", { minimumFractionDigits: 2 })}</td>
                         <td className="p-3 text-right font-bold">
                           <span className={inv.amountResidual > 0 ? "text-red-600" : "text-emerald-600"}>
-                            ${Math.abs(inv.amountResidual).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
+                            {inv.amountResidual < 0 ? "-" : ""}${Math.abs(inv.amountResidual).toLocaleString("es-VE", { minimumFractionDigits: 2 })}
                           </span>
                         </td>
                       </tr>

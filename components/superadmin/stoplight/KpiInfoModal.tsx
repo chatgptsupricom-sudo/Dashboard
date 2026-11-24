@@ -2,6 +2,7 @@
 
 import { X } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { defKpi, sufijoUnidad } from "@/lib/stoplight/departamentos/definiciones";
 
 interface KpiInfoModalProps {
   open: boolean;
@@ -36,6 +37,20 @@ export default function KpiInfoModal({ open, kpiId, title, onClose }: KpiInfoMod
 /** Texto de "¿qué mide y cómo se calcula?" de cada KPI. Lo usan este modal y el detalle genérico. */
 export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
   const t = useTranslations("stoplight");
+  // KPIs por departamento: el texto vive en sus definiciones.
+  const def = defKpi(kpiId);
+  if (def) {
+    const meta = def.sentido === "cero" ? "0 casos" : `${def.sentido === "menos" ? "≤" : "≥"} ${def.unidad === "$" ? "$" : ""}${def.meta}${sufijoUnidad(def.unidad)}`;
+    const periodo = def.acumula === "anio" ? " al año" : def.acumula === "semestre" ? " por semestre" : def.acumula === "trimestre" ? " por trimestre" : def.acumula === "mes" ? " al mes" : "";
+    const fuente = def.fuente === "auto" ? "Se calcula solo." : def.fuente === "manual" ? "Lo carga el SuperAdmin cada mes, en el detalle del KPI." : "Se calcula solo; el SuperAdmin puede reemplazarlo con una carga a mano en el detalle del KPI.";
+    return (
+      <div className="text-sm text-slate-600 leading-relaxed space-y-3">
+        <p><strong>{t("info_que_mide")}</strong> {def.descripcion}</p>
+        <p><strong>Meta:</strong> {`${meta}${periodo}`.replace(/\.$/, "")}.</p>
+        <p><strong>Fuente:</strong> {fuente}</p>
+      </div>
+    );
+  }
   return (
     <div className="text-sm text-slate-600 leading-relaxed space-y-3">
       {kpiId === "efectividad_cobranza" && (
@@ -71,6 +86,7 @@ export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
           <p><strong>{t("info_formula")}</strong> DSO = CxC a crédito al cierre del mes ÷ Ventas a crédito del mes × Días del mes</p>
           <p><strong>Mismo período:</strong> los tres términos son del mes elegido; en el mes en curso, al día de hoy.</p>
           <p><strong>CxC y ventas:</strong> saldo contable a crédito sin Incobrables, Supricom ni SUPER TECHNO, y facturas a crédito menos notas de crédito, con IVA.</p>
+          <p><strong>Negociaciones especiales:</strong> los clientes que CxC marca con un acuerdo de pago especial (plazo extendido, refinanciamiento, cuotas) quedan fuera del número general y se miden aparte, junto con el DSO de cada plazo de pago, en el detalle del DSO del Dashboard de CxC.</p>
           <p><strong>{t("info_semaforo")}</strong> Verde ≤45 días | Amarillo 46–60 días | Rojo &gt;60 días</p>
         </>
       )}
@@ -110,6 +126,7 @@ export function KpiInfoContenido({ kpiId }: { kpiId: string }) {
           <p><strong>{t("info_que_mide")}</strong> Si se está comprando más barato o más caro que antes.</p>
           <p><strong>{t("info_formula")}</strong> (Precio base − precio pagado) ÷ precio base × 100, ponderado por las unidades compradas en la semana. Positivo = se compró más barato.</p>
           <p><strong>Precio base:</strong> promedio ponderado de lo que se pagó por cada producto en los 90 días anteriores al mes. Solo cuentan los productos que se compraron en los dos períodos.</p>
+          <p><strong>Meta (desde nov-2026):</strong> el costo no sube más de 2 %. Comprar igual o más barato cumple al 100 %; si subió más que la meta, la semana vale meta ÷ aumento.</p>
           <p><strong>Compras:</strong> órdenes confirmadas de la sede, por fecha de confirmación, sin servicios. La cantidad es lo recibido más lo que falta por recibir: una orden recibida y devuelta al proveedor no cuenta.</p>
         </>
       )}

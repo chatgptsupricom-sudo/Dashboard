@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 type Mode = "entry" | "transfer" | "adjustment";
 
@@ -35,8 +36,11 @@ export function EntriesTab({
   products,
   onDone,
   onGoToCatalog,
+  preseleccion,
 }: {
   products: PopProduct[];
+  /** Producto elegido desde la tarjeta del catálogo (botón Entrada/Salida). */
+  preseleccion?: { id: number } | null;
   onDone: () => Promise<void> | void;
   onGoToCatalog: () => void;
 }) {
@@ -44,6 +48,12 @@ export function EntriesTab({
   const [mode, setMode] = useState<Mode>("entry");
 
   const [lines, setLines] = useState<MovementLine[]>([lineaVacia()]);
+
+  useEffect(() => {
+    if (!preseleccion) return;
+    setMode("entry");
+    setLines([{ productId: preseleccion.id, quantity: "" }]);
+  }, [preseleccion]);
   const [location, setLocation] = useState<"office" | "warehouse">("office");
   const [source, setSource] = useState<"office" | "warehouse">("office");
   const [target, setTarget] = useState<"office" | "warehouse">("warehouse");
@@ -108,7 +118,7 @@ export function EntriesTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) {
         setError(json?.error || "No se pudo registrar");
         return;

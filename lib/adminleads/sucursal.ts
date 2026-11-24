@@ -34,3 +34,30 @@ export function mismaOperacion(userCids: unknown, targetCids: unknown): boolean 
   if (usuario === PANAMA || destino === PANAMA) return usuario === destino;
   return true;
 }
+
+/**
+ * AdminLeads de Venezuela que ademas ven Panama (por correo de login,
+ * nov-2026). Eligen el pais con el selector del modulo, que guarda la cookie
+ * COOKIE_PAIS_LEADS; con "PA" el modulo los trata como AdminLeads de Panama.
+ */
+export const ADMINLEADS_CON_PANAMA = ["marketing@supricom.com"];
+export const COOKIE_PAIS_LEADS = "leads_pais";
+
+export function veAmbosPaises(payload: { role?: unknown; email?: unknown } | null | undefined): boolean {
+  return (
+    String(payload?.role ?? "").toLowerCase().trim() === "adminleads" &&
+    ADMINLEADS_CON_PANAMA.includes(String(payload?.email ?? "").toLowerCase().trim())
+  );
+}
+
+/**
+ * Payload con el `cids` que usa el modulo de Leads. Solo cambia para quien
+ * veAmbosPaises() y eligio Panama; la cookie de cualquier otro se ignora.
+ */
+export function payloadLeads<T extends { role?: unknown; email?: unknown; cids?: unknown } | null | undefined>(
+  request: { cookies: { get(nombre: string): { value: string } | undefined } },
+  payload: T,
+): T {
+  if (!veAmbosPaises(payload) || request.cookies.get(COOKIE_PAIS_LEADS)?.value !== "PA") return payload;
+  return { ...payload, cids: PANAMA } as T;
+}

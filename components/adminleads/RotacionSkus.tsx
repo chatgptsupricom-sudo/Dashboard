@@ -17,17 +17,25 @@ type Fila = {
   nombre: string;
   marca: string;
   categoria: string;
+  precio: number;
+  /** Solo viene para SuperAdmin e Inteligencia de Negocio; null = sin costo. */
+  costo?: number | null;
   stock: number;
   vendidas30: number;
   vendidas60: number;
   coberturaDias: number | null;
   diasSinVenta: number | null;
+  ultimaVenta: string | null;
+  antiguedadDias: number | null;
+  antiguedadAntesDeOdoo: boolean;
+  ultimoIngreso: string | null;
   estado: Estado;
   rankingCategoria: number;
 };
 
 type Respuesta = {
   success: boolean;
+  verCosto?: boolean;
   filas: Fila[];
   categorias: string[];
   marcas: string[];
@@ -56,18 +64,25 @@ const ESTADO_META: Record<
 };
 
 type SortCol =
+  | "sku"
   | "nombre"
   | "marca"
   | "categoria"
+  | "precio"
+  | "costo"
   | "stock"
   | "vendidas30"
   | "vendidas60"
   | "coberturaDias"
+  | "antiguedadDias"
+  | "ultimoIngreso"
+  | "diasSinVenta"
   | "rankingCategoria";
 
 const MAX_FILAS = 200;
 
-export function RotacionSkus() {
+/** `sede`: solo para SuperAdmin / BI (9, 10 o "venezuela"); los demás roles usan su cids. */
+export function RotacionSkus({ sede }: { sede?: string } = {}) {
   const [data, setData] = useState<Respuesta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +102,7 @@ export function RotacionSkus() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/adminleads/rotacion");
+        const res = await fetch(`/api/adminleads/rotacion${sede ? `?sede=${sede}` : ""}`);
         const json = await res.json();
         if (cancel) return;
         if (!res.ok || !json.success) {
@@ -104,46 +119,49 @@ export function RotacionSkus() {
     return () => {
       cancel = true;
     };
-  }, []);
+  }, [sede]);
 
-  const filtradas = useMemo(() => {
+  // Categoría, marca y búsqueda: lo que cuentan las tarjetas. El estado no,
+  // porque las tarjetas son el filtro de estado.
+  const delFiltro = useMemo(() => {
     if (!data) return [];
     const term = q.trim().toLowerCase();
-    const rows = data.filas.filter((f) => {
+    return data.filas.filter((f) => {
       if (categoria && f.categoria !== categoria) return false;
       if (marca && f.marca !== marca) return false;
-      if (estado && f.estado !== estado) return false;
       if (term && !`${f.sku} ${f.nombre} ${f.marca}`.toLowerCase().includes(term))
         return false;
       return true;
     });
+  }, [data, q, categoria, marca]);
+
+  const filtradas = useMemo(() => {
+    const rows = delFiltro.filter((f) => !estado || f.estado === estado);
     const dir = sort.dir === "asc" ? 1 : -1;
     rows.sort((a, b) => {
-      const av = a[sort.col];
-      const bv = b[sort.col];
+      const av = a[sort.col] ?? null;
+      const bv = b[sort.col] ?? null;
+      // null (sin ventas, sin stock, sin ingreso) al fondo siempre
+      if (av === null) return bv === null ? 0 : 1;
+      if (bv === null) return -1;
       if (typeof av === "string" || typeof bv === "string") {
         return String(av).localeCompare(String(bv)) * dir;
       }
-      // null (cobertura infinita) al fondo siempre
-      if (av === null) return 1;
-      if (bv === null) return -1;
       return ((av as number) - (bv as number)) * dir;
     });
     return rows;
-  }, [data, q, categoria, marca, estado, sort]);
+  }, [delFiltro, estado, sort]);
 
-  const conteos = useMemo(() => {
-    const base = data?.filas ?? [];
-    return {
-      total: base.length,
-      alta: base.filter((f) => f.estado === "alta").length,
-      media: base.filter((f) => f.estado === "media").length,
-      baja: base.filter((f) => f.estado === "baja").length,
-    };
-  }, [data]);
+  const conteos = useMemo(() => ({
+    total: delFiltro.length,
+    alta: delFiltro.filter((f) => f.estado === "alta").length,
+    media: delFiltro.filter((f) => f.estado === "media").length,
+    baja: delFiltro.filter((f) => f.estado === "baja").length,
+  }), [delFiltro]);
 
   const exportUrl = (formato: "xlsx" | "csv") => {
     const p = new URLSearchParams({ formato });
+    if (sede) p.set("sede", sede);
     if (categoria) p.set("categoria", categoria);
     if (marca) p.set("marca", marca);
     if (estado) p.set("estado", estado);
@@ -194,7 +212,7 @@ export function RotacionSkus() {
             </h2>
             <p className="text-sm text-slate-500">
               Qué se mueve rápido, qué está estancado y cómo se ordena cada
-              categoría. Solo unidades — sin precios ni costos.
+              categoría. Unidades y precio de venta{data?.verCosto ? " y costo" : ", sin costos"}.
             </p>
           </div>
         </div>
@@ -302,13 +320,19 @@ export function RotacionSkus() {
           <table className="w-full text-sm">
             <thead className="border-b border-slate-200 bg-slate-50/60">
               <tr>
+                {th("sku", "SKU")}
                 {th("nombre", "Producto")}
                 {th("marca", "Marca")}
                 {th("categoria", "Categoría")}
+                {th("precio", "Precio", true)}
+                {data?.verCosto && th("costo", "Costo", true)}
                 {th("stock", "Stock", true)}
                 {th("vendidas30", "30 d", true)}
                 {th("vendidas60", "60 d", true)}
-                {th("coberturaDias", "Días inv.", true)}
+                {th("coberturaDias", "Cobertura", true)}
+                {th("antiguedadDias", "Antigüedad", true)}
+                {th("ultimoIngreso", "Último ingreso", true)}
+                {th("diasSinVenta", "Última venta", true)}
                 {th("rankingCategoria", "Rank cat.", true)}
                 <th className="px-3 py-2 text-left font-semibold text-slate-500">
                   Estado
@@ -321,16 +345,28 @@ export function RotacionSkus() {
                   key={f.sku || f.nombre}
                   className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50"
                 >
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-slate-900">{f.nombre}</div>
-                    {f.sku && (
-                      <div className="font-mono text-[11px] text-slate-400">
-                        {f.sku}
-                      </div>
-                    )}
+                  <td className="px-3 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">
+                    {f.sku || <span className="text-slate-300">sin código</span>}
                   </td>
+                  <td className="px-3 py-2 font-medium text-slate-900">{f.nombre}</td>
                   <td className="px-3 py-2 text-slate-600">{f.marca}</td>
                   <td className="px-3 py-2 text-slate-600">{f.categoria}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                    {f.precio > 0 ? (
+                      `$${f.precio.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    ) : (
+                      <span className="text-slate-400">sin precio</span>
+                    )}
+                  </td>
+                  {data?.verCosto && (
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                      {f.costo ? (
+                        `$${f.costo.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      ) : (
+                        <span className="text-slate-400">sin costo</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                     {f.stock.toLocaleString("es-VE")}
                   </td>
@@ -345,6 +381,39 @@ export function RotacionSkus() {
                       <span className="text-slate-400">sin ventas</span>
                     ) : (
                       `${f.coberturaDias.toLocaleString("es-VE")} d`
+                    )}
+                  </td>
+                  <td
+                    className="px-3 py-2 text-right tabular-nums text-slate-700"
+                    title={
+                      f.antiguedadAntesDeOdoo
+                        ? "Entró con la carga inicial de Odoo: lleva al menos estos días, la fecha real es anterior"
+                        : undefined
+                    }
+                  >
+                    {f.antiguedadDias === null ? (
+                      <span className="text-slate-400">sin stock</span>
+                    ) : (
+                      `${f.antiguedadAntesDeOdoo ? "+" : ""}${f.antiguedadDias.toLocaleString("es-VE")} d`
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+                    {f.ultimoIngreso === null ? (
+                      <span className="text-slate-400">sin ingreso</span>
+                    ) : (
+                      f.ultimoIngreso.split("-").reverse().join("/")
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+                    {f.ultimaVenta === null ? (
+                      <span className="text-slate-400">nunca</span>
+                    ) : (
+                      <>
+                        <div>{f.ultimaVenta.split("-").reverse().join("/")}</div>
+                        <div className="text-[11px] text-slate-400">
+                          hace {(f.diasSinVenta ?? 0).toLocaleString("es-VE")} d
+                        </div>
+                      </>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-slate-500">
@@ -363,7 +432,7 @@ export function RotacionSkus() {
               {filtradas.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={data?.verCosto ? 15 : 14}
                     className="py-12 text-center text-sm text-slate-400"
                   >
                     Ningún SKU coincide con los filtros.
@@ -381,7 +450,7 @@ export function RotacionSkus() {
             ? `Mostrando los primeros ${MAX_FILAS} de ${filtradas.length}. Afiná los filtros o exportá para verlos todos.`
             : `${filtradas.length} SKU${filtradas.length === 1 ? "" : "s"}.`}
           {data?.periodo &&
-            ` · Ventas desde ${data.periodo.desde} · "Días inv." = a este ritmo, el stock dura N días.`}
+            ` · Ventas desde ${data.periodo.desde} · "Cobertura" = días que dura el stock al ritmo de venta de los últimos 60 días (no es cuánto lleva en el almacén) · "Antigüedad" = días desde que entró la unidad más vieja del stock; "+" = entró con la carga inicial de Odoo, la fecha real es anterior · "Último ingreso" = última recepción de compra al almacén principal.`}
         </p>
       )}
     </section>

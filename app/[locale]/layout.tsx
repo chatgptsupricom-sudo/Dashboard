@@ -1,5 +1,6 @@
 // app/[locale]/layout.tsx
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { Toaster } from "@/components/ui/toaster";
 import { esHostNC } from "@/lib/notas-credito/hostCliente";
 import { routing } from "@/i18n.config";
 import { NextIntlClientProvider } from "next-intl";
@@ -29,6 +30,8 @@ export default async function LocaleLayout({
   return (
     <NextIntlClientProvider locale={locale} messages={messages}>
       <AuthProvider publico={dominioPublico}>{children}</AuthProvider>
+      {/* Sin esto los toast() de las pantallas (errores incluidos) no se veían. */}
+      <Toaster />
     </NextIntlClientProvider>
   );
 }

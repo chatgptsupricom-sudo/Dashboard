@@ -19,6 +19,7 @@ import {
   companyIdsDeEmpresa,
   empresaDeCompanyId,
 } from "@/lib/administracion/empresas";
+import { hoyCaracas } from "@/lib/administracion/lectura";
 
 const CATEGORIA = "Gastos y Presupuesto";
 const PUNTOS_CATEGORIA = 15;
@@ -31,10 +32,10 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(request.url);
-    const now = new Date();
-    const mes =
-      url.searchParams.get("mes") ||
-      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    // Hora de Caracas: el servidor corre en UTC y el 1.º a las 20:00 ya
+    // tomaba el mes siguiente.
+    const hoy = hoyCaracas();
+    const mes = url.searchParams.get("mes") || hoy.slice(0, 7);
     // Dos formas de filtrar la sede, porque hay dos consumidores: la pagina de
     // Gastos trabaja siempre sobre una sede (`company_id`, porque el
     // presupuesto se carga por empresa) y el indice general usa el mismo
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
       cuentas,
     );
 
-    // Mes anterior (KPI 22) y los 3 meses previos (proxy de "extraordinario").
+    // Mes anterior (KPI 21) y los 3 meses previos (proxy de "extraordinario").
     const mesPrev = mesAnterior(mes, 1);
     const rangoPrev = rangoDelMes(mesPrev);
     const { porCuenta: realMesPrev } = await fetchGastoReal(
@@ -116,19 +117,19 @@ export async function GET(request: NextRequest) {
     const hayPresupuesto = totalPresupuesto > 0;
     const hayGasto = totalReal > 0;
 
-    // --- KPI 18: Ejecucion presupuestaria ---
+    // --- KPI 17: Ejecucion presupuestaria ---
     const ejecucion = hayPresupuesto
       ? Math.round((totalReal / totalPresupuesto) * 1000) / 10
       : null;
 
-    // --- KPI 19: Desviacion de gastos (sobregiro; la subejecucion la cubre el 18) ---
+    // --- KPI 18: Desviacion de gastos (sobregiro; la subejecucion la cubre el 17) ---
     const desviacion = hayPresupuesto
       ? Math.round(
           ((totalReal - totalPresupuesto) / totalPresupuesto) * 1000,
         ) / 10
       : null;
 
-    // --- KPI 20: Gastos sin presupuesto ---
+    // --- KPI 19: Gastos sin presupuesto ---
     const gastoSinPresupuesto = Object.entries(realMes)
       .filter(([codigo]) => !presupuestoPorCuenta[codigo])
       .reduce((s, [, monto]) => s + monto, 0);
@@ -137,7 +138,7 @@ export async function GET(request: NextRequest) {
         ? Math.round((gastoSinPresupuesto / totalReal) * 1000) / 10
         : null;
 
-    // --- KPI 21: Gastos extraordinarios ---
+    // --- KPI 20: Gastos extraordinarios ---
     // No existe una marca de "extraordinario" en el sistema. Se usa como proxy
     // el gasto en cuentas sin movimiento en los 3 meses previos (gasto no
     // recurrente). Administracion debe validar este criterio.
@@ -148,7 +149,7 @@ export async function GET(request: NextRequest) {
       ? Math.round((gastoExtraordinario / totalReal) * 1000) / 10
       : null;
 
-    // --- KPI 22: Variacion mensual del gasto ---
+    // --- KPI 21: Variacion mensual del gasto ---
     const variacionMensual =
       totalRealPrev > 0
         ? Math.round(((totalReal - totalRealPrev) / totalRealPrev) * 1000) / 10
@@ -158,7 +159,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "ejecucion_presupuestaria",
-          numero: 18,
+          numero: 17,
           nombre: "Ejecución presupuestaria",
           formula: "Gasto real / presupuesto acumulado × 100",
           peso: 5,
@@ -183,7 +184,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "desviacion_gastos",
-          numero: 19,
+          numero: 18,
           nombre: "Desviación de gastos",
           formula: "(Real − presupuesto) / presupuesto × 100",
           peso: 4,
@@ -202,7 +203,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "gastos_sin_presupuesto",
-          numero: 20,
+          numero: 19,
           nombre: "Gastos sin presupuesto",
           formula: "Gastos no presupuestados / gasto total × 100",
           peso: 2,
@@ -221,7 +222,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "gastos_extraordinarios",
-          numero: 21,
+          numero: 20,
           nombre: "Gastos extraordinarios",
           formula: "Extraordinarios / gasto total × 100",
           peso: 2,
@@ -239,7 +240,7 @@ export async function GET(request: NextRequest) {
       construirKpi(
         {
           id: "variacion_mensual_gasto",
-          numero: 22,
+          numero: 21,
           nombre: "Variación mensual del gasto",
           formula: "(Gasto mes − mes anterior) / mes anterior × 100",
           peso: 2,
@@ -311,7 +312,7 @@ export async function GET(request: NextRequest) {
             : k.id === "variacion_mensual_gasto" && totalRealPrev > 0
               ? Math.round((totalReal - totalRealPrev) * 100) / 100
               : null,
-        fechaDeteccion: new Date().toISOString().split("T")[0],
+        fechaDeteccion: hoy,
         accion: "Revisar ejecución del gasto contra presupuesto",
         fechaCompromiso: null,
         estatus: "abierta",
@@ -330,7 +331,7 @@ export async function GET(request: NextRequest) {
           titulo: `${d.cuentaNombre} ${d.variacionPct}% sobre presupuesto`,
           responsable: "Administración",
           montoAfectado: d.variacionMonto,
-          fechaDeteccion: new Date().toISOString().split("T")[0],
+          fechaDeteccion: hoy,
           accion: `Revisar gasto de la cuenta ${d.cuentaCodigo}`,
           fechaCompromiso: null,
           estatus: "abierta",

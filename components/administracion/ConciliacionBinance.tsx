@@ -14,7 +14,7 @@ import type {
 } from "@/lib/administracion/binance";
 import { ETIQUETA_ESTADO } from "@/lib/administracion/binanceEstados";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Link2, Loader2, Printer, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Bitcoin, Download, FileSpreadsheet, FolderUp, Loader2, Printer, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Respuesta = {
@@ -103,6 +103,51 @@ const fechaHora = (iso: string) =>
 const soloFecha = (iso: string) =>
   new Date(iso).toLocaleDateString("es-VE", { timeZone: "America/Caracas", dateStyle: "short" });
 
+/** Dia (YYYY-MM-DD) en hora de Caracas. */
+const diaCaracas = (iso: string) => new Date(Date.parse(iso) - 4 * 3600_000).toISOString().slice(0, 10);
+
+/** Valor del selector para ver todas las semanas juntas (TODAS_LAS_SEMANAS de lib/administracion/binance.ts). */
+const TODAS = "todas";
+
+/**
+ * Comprobantes que coinciden con lo buscado: cliente (nombre del archivo),
+ * pagador, ID de orden (o un pedazo de 5 dígitos o más) o monto ("1500", "1,500.50").
+ */
+function filtrarComprobantes(lista: Comprobante[], buscar: string) {
+  const texto = buscar.trim().toLowerCase();
+  if (!texto) return lista;
+  const numero = Number(texto.replace(/[\s,$]/g, ""));
+  // Un ID de orden tiene 18 dígitos: con menos de 5 es un monto, no un pedazo del ID.
+  const digitos = texto.replace(/\D/g, "");
+  return lista.filter(
+    (c) =>
+      c.cliente.toLowerCase().includes(texto) ||
+      (c.binance?.pagador || "").toLowerCase().includes(texto) ||
+      (digitos.length >= 5 && c.orderId.includes(digitos)) ||
+      (Number.isFinite(numero) && numero > 0 && Math.abs(c.monto - numero) < 0.005),
+  );
+}
+
+/**
+ * Pagos del estado de cuenta que coinciden con lo buscado: pagador, monto
+ * exacto, o el cliente / ID de orden del comprobante que tomó el pago.
+ */
+function filtrarPagos(lista: PagoConComprobante[], buscar: string) {
+  const texto = buscar.trim().toLowerCase();
+  if (!texto) return lista;
+  const numero = Number(texto.replace(/[\s,$]/g, ""));
+  const digitos = texto.replace(/\D/g, "");
+  return lista.filter((p) => {
+    const c = p.comprobante && !("otraSede" in p.comprobante) ? p.comprobante : null;
+    return (
+      (p.pagador || "").toLowerCase().includes(texto) ||
+      (Number.isFinite(numero) && numero > 0 && Math.abs(p.monto - numero) < 0.005) ||
+      (!!c && c.cliente.toLowerCase().includes(texto)) ||
+      (!!c && digitos.length >= 5 && c.orderId.includes(digitos))
+    );
+  });
+}
+
 const cifra = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 
 /** Un comprobante por subir: un archivo elegido o uno de la carpeta de Google Drive. */
@@ -155,12 +200,13 @@ const fechaComprobante = (c: Comprobante) =>
 
 // Lo que muestra cada tarjeta al hacerle clic.
 type Lista = "comprobantes" | "conciliados" | "problema" | "sinComprobante";
-const TITULO_LISTA: Record<Lista, string> = {
-  comprobantes: "Comprobantes",
-  conciliados: "Conciliados",
-  problema: "Con diferencia o no encontrados",
-  sinComprobante: "Recibido sin comprobante",
-};
+const tituloLista = (lista: Lista, salida: boolean) =>
+  ({
+    comprobantes: "Comprobantes",
+    conciliados: "Conciliados",
+    problema: "Con diferencia o no encontrados",
+    sinComprobante: salida ? "Pagado sin comprobante" : "Recibido sin comprobante",
+  })[lista];
 
 /** Suma por moneda: Binance recibe USDT, USDC, BTC... y no se mezclan. */
 function porMoneda(items: { monto: number; moneda: string }[]) {
@@ -182,6 +228,13 @@ export default function ConciliacionBinance({
   semana?: string;
 }) {
   const cxc = modo === "cxc";
+  // Entradas = pagos de los clientes; salidas = pagos que hacemos nosotros (solo Administración).
+  const [lado, setLado] = useState<"entrada" | "salida">("entrada");
+  const salida = lado === "salida";
+  // Comprobantes y estado de cuenta van en pestañas, no uno debajo del otro (CxC solo ve comprobantes).
+  const [tabla, setTabla] = useState<"comprobantes" | "estado">("comprobantes");
+  const QUIEN = salida ? "Beneficiario" : "Cliente";
+  const CONTRAPARTE = salida ? "Destinatario" : "Pagador";
   const opciones = semanas();
   const [semanaPropia, setSemana] = useState(opciones[0].value);
   const semana = semanaFija ?? semanaPropia;
@@ -194,34 +247,37 @@ export default function ConciliacionBinance({
   const [verImagen, setVerImagen] = useState<Comprobante | null>(null);
   const [ignorados, setIgnorados] = useState(0);
   const [paginaComprobantes, setPaginaComprobantes] = useState(0);
+  // Buscador de comprobantes: cliente, ID de orden, pagador o monto.
+  const [buscar, setBuscar] = useState("");
   const [paginaPagos, setPaginaPagos] = useState(0);
+  // Buscador del estado de cuenta: pagador, monto o el comprobante que tomó el pago.
+  const [buscarPagos, setBuscarPagos] = useState("");
+  // Impresion de conciliados: los sin imprimir van todos salvo los desmarcados;
+  // los ya impresos, solo los que se marquen para volver a imprimirlos.
+  const [pestanaImpresion, setPestanaImpresion] = useState<"pendientes" | "impresos">("pendientes");
+  const [noImprimir, setNoImprimir] = useState<Set<number>>(new Set());
+  const [reimprimir, setReimprimir] = useState<Set<number>>(new Set());
+  // Dia de conciliacion (YYYY-MM-DD, Caracas) para filtrar los conciliados; "" = todos.
+  const [diaConciliado, setDiaConciliado] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const inputEstado = useRef<HTMLInputElement>(null);
   const carpeta = useRef<HTMLInputElement>(null);
   const carpetaEstado = useRef<HTMLInputElement>(null);
-  const [drive, setDrive] = useState<{ configurado: boolean; conectado: boolean; correo: string } | null>(null);
-  const [enlace, setEnlace] = useState("");
-  const [leyendoDrive, setLeyendoDrive] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/administracion/binance/drive?estado=1")
-      .then((r) => r.json())
-      .then((j) => setDrive(j?.configurado !== undefined ? j : null))
-      .catch(() => setDrive(null));
-  }, []);
 
   const cargar = useCallback(async () => {
     setCargando(true);
     setError(null);
     try {
-      const json = await (await fetch(`/api/administracion/binance?semana=${semana}${cxc ? "&vista=comprobantes" : ""}`)).json();
+      const json = await (
+        await fetch(`/api/administracion/binance?semana=${semana}${cxc ? "&vista=comprobantes" : ""}${salida ? "&lado=salida" : ""}`)
+      ).json();
       if (json.success) setDatos(json);
       else setError(json.error || "No se pudo cargar");
     } catch {
       setError("No se pudo cargar");
     }
     setCargando(false);
-  }, [semana]);
+  }, [semana, salida]);
 
   useEffect(() => {
     cargar();
@@ -248,7 +304,12 @@ export default function ConciliacionBinance({
   useEffect(() => {
     setPaginaComprobantes(0);
     setPaginaPagos(0);
-  }, [semana]);
+    setNoImprimir(new Set());
+    setReimprimir(new Set());
+    setDiaConciliado("");
+    setPestanaImpresion("pendientes");
+    setLista(null);
+  }, [semana, lado]);
 
   const subirUno = async (elegido: Elegido, tipo: TipoArchivo): Promise<Subida> => {
     const { archivo, driveId, carpeta } = elegido;
@@ -257,10 +318,12 @@ export default function ConciliacionBinance({
     const form = new FormData();
     if (archivo) form.append("archivo", archivo);
     if (driveId) form.append("drive_id", driveId);
-    form.append("semana", semana);
+    // Con "todas" un comprobante sin fecha ni carpeta va a la semana actual.
+    form.append("semana", semana === TODAS ? opciones[0].value : semana);
     // La carpeta de los comprobantes se llama como el dia de los pagos ("02-10-2026").
     if (carpeta) form.append("carpeta", carpeta);
     if (tipo === "estado") form.append("tipo", "estado");
+    else if (salida) form.append("lado", "salida");
     try {
       let res = await fetch("/api/administracion/binance", { method: "POST", body: form });
       // IA saturada (429): se espera y se reintenta, cada vez un poco mas.
@@ -273,7 +336,11 @@ export default function ConciliacionBinance({
       if (json.success && json.estado) {
         return json.yaEstaba
           ? { nombre, ok: true, texto: "Esta captura ya estaba cargada (no se volvió a leer)" }
-          : { nombre, ok: true, texto: `${json.recibidos} pagos recibidos (${json.nuevos} nuevos, ${json.repetidos} ya estaban)` };
+          : {
+              nombre,
+              ok: true,
+              texto: `${json.recibidos} recibidos y ${json.enviados} enviados (${json.nuevos} nuevos, ${json.repetidos} ya estaban)`,
+            };
       }
       if (json.success) {
         const fecha = json.horaTelefono
@@ -286,7 +353,7 @@ export default function ConciliacionBinance({
         return {
           nombre,
           ok: true,
-          texto: `${json.cliente || "sin cliente"} · ${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fecha}`,
+          texto: `${json.cliente || (salida ? "sin beneficiario" : "sin cliente")} · ${json.orderId} · ${cifra(json.monto)} ${json.moneda} · ${fecha}`,
         };
       }
       return { nombre, ok: false, texto: json.error || "Error" };
@@ -343,39 +410,6 @@ export default function ConciliacionBinance({
     cargar();
   };
 
-  /** Lee la carpeta de Google Drive pegada y sube sus comprobantes (el servidor los baja de Drive). */
-  const leerDrive = async () => {
-    setError(null);
-    setLeyendoDrive(true);
-    try {
-      const json = await (
-        await fetch("/api/administracion/binance/drive", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: enlace }),
-        })
-      ).json();
-      if (!json.success) setError(json.error || "No se pudo leer la carpeta de Drive");
-      else if (!json.archivos.length) setError(`La carpeta «${json.carpeta}» no tiene fotos ni PDF`);
-      else {
-        setIgnorados(0);
-        setLeyendoDrive(false);
-        await subirLista(
-          json.archivos.map((a: { id: string; nombre: string; carpeta: string }) => ({
-            driveId: a.id,
-            nombre: a.nombre,
-            carpeta: a.carpeta,
-          })),
-          "comprobante",
-        );
-        setEnlace("");
-      }
-    } catch {
-      setError("No se pudo leer la carpeta de Drive");
-    }
-    setLeyendoDrive(false);
-  };
-
   const asignar = async (c: Comprobante, valor: string, aprobar = false) => {
     const json = await (
       await fetch("/api/administracion/binance", {
@@ -409,30 +443,82 @@ export default function ConciliacionBinance({
   };
 
   const comprobantes = datos?.comprobantes || [];
+  const encontrados = filtrarComprobantes(comprobantes, buscar);
   const sinComprobante = datos?.sinComprobante || [];
   const pagosSemana = datos?.pagos || [];
+  const pagosEncontrados = filtrarPagos(pagosSemana, buscarPagos);
   const esConciliado = (c: Comprobante) => c.estado === "conciliado" || c.estado === "manual";
   const conciliados = comprobantes.filter(esConciliado);
   const conProblema = comprobantes.filter((c) => !esConciliado(c));
   const COMPROBANTES_LISTA = { comprobantes, conciliados, problema: conProblema };
+  // Dias en que se concilio algo esta semana, el mas nuevo primero.
+  const hoy = diaCaracas(new Date().toISOString());
+  const ayer = diaCaracas(new Date(Date.now() - 86400_000).toISOString());
+  const diaDeConciliado = (c: Comprobante) => (c.conciliadoEl ? diaCaracas(c.conciliadoEl) : "");
+  const diasConciliado = [...new Set(conciliados.map(diaDeConciliado).filter(Boolean))].sort().reverse();
+  const etiquetaDia = (dia: string) =>
+    dia === hoy ? "Hoy" : dia === ayer ? "Ayer" : dia.split("-").reverse().join("/");
+  const conciliadosVista = diaConciliado ? conciliados.filter((c) => diaDeConciliado(c) === diaConciliado) : conciliados;
+  // Solo Administracion imprime, y solo desde la lista de conciliados.
+  const imprime = !cxc && lista === "conciliados" && conciliados.length > 0;
+  const sinImprimir = conciliadosVista.filter((c) => !c.impresoEl);
+  const yaImpresos = conciliadosVista.filter((c) => c.impresoEl);
+  const enPestana = pestanaImpresion === "impresos" ? yaImpresos : sinImprimir;
+  const marcadoImprimir = (c: Comprobante) =>
+    pestanaImpresion === "impresos" ? reimprimir.has(c.id) : !noImprimir.has(c.id);
+  const aImprimir = imprime ? enPestana.filter(marcadoImprimir) : [];
+  const marcarImprimir = (ids: number[], marcar: boolean) => {
+    const cambiar = (agregar: boolean) => (previo: Set<number>) => {
+      const nuevo = new Set(previo);
+      ids.forEach((id) => (agregar ? nuevo.add(id) : nuevo.delete(id)));
+      return nuevo;
+    };
+    if (pestanaImpresion === "impresos") setReimprimir(cambiar(marcar));
+    else setNoImprimir(cambiar(!marcar));
+  };
+  const filasLista: Comprobante[] =
+    lista === "conciliados"
+      ? imprime
+        ? enPestana
+        : conciliadosVista
+      : lista && lista !== "sinComprobante"
+        ? COMPROBANTES_LISTA[lista]
+        : [];
+  const columnasLista =
+    5 + (imprime ? 1 : 0) + (lista === "conciliados" ? 1 : 0) + (imprime && pestanaImpresion === "impresos" ? 1 : 0);
+
+  // Al cerrar el dialogo de impresion se pregunta si salieron bien: el navegador
+  // no avisa si se cancelo. Con "Si" quedan como impresos.
+  const anotarImpresos = async (ids: number[]) => {
+    const cuantos = ids.length === 1 ? "el comprobante" : `los ${ids.length} comprobantes`;
+    if (!confirm(`¿Se imprimieron bien ${cuantos}? Quedarán como impresos.`)) return;
+    const r = await fetch("/api/administracion/binance", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ impresos: ids }),
+    }).catch(() => null);
+    if (!r?.ok) alert("No se pudo guardar que se imprimieron. Inténtalo de nuevo.");
+    setReimprimir(new Set());
+    cargar();
+  };
 
   /**
-   * Hoja para imprimir los conciliados: cada comprobante con el cliente arriba,
-   * sus datos y la firma, uno por hoja. Se imprime desde un iframe oculto: su
-   * `load` espera a que bajen todas las imagenes.
+   * Hoja para imprimir los conciliados marcados: cada comprobante con el cliente
+   * arriba, sus datos y la firma, uno por hoja. Se imprime desde un iframe oculto:
+   * su `load` espera a que bajen todas las imagenes.
    */
   const imprimirConciliados = () => {
     const esc = (s: string) =>
       s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
-    const semanaTexto = opciones.find((o) => o.value === semana)?.label || semana;
-    const tarjetas = conciliados
+    const semanaTexto = semana === TODAS ? "todas" : opciones.find((o) => o.value === semana)?.label || semana;
+    const tarjetas = aImprimir
       .map((c) => {
         const imagen = /\.pdf$/i.test(c.archivoNombre || "")
           ? `<div class="pdf">Comprobante en PDF<br>(ver en el panel)</div>`
           : `<img class="comprobante" src="/api/administracion/binance/imagen?id=${c.id}" alt="">`;
         return `<div class="tarjeta">
-          <div class="semana">Conciliación Binance · Semana ${esc(semanaTexto)}</div>
-          <div class="cliente">${esc(c.cliente || "Sin cliente")}</div>
+          <div class="semana">Conciliación Binance${salida ? " · Salidas" : ""} · Semana ${esc(semanaTexto)}</div>
+          <div class="cliente">${esc(c.cliente || (salida ? "Sin beneficiario" : "Sin cliente"))}</div>
           ${imagen}
           <div class="datos">${esc(fechaComprobante(c))}<br>${esc(cifra(c.monto))} ${esc(c.moneda)} · ${esc(c.orderId)}</div>
           <img class="firma" src="/api/administracion/binance/firma" alt="">
@@ -454,9 +540,11 @@ export default function ConciliacionBinance({
       .firma { height: 32mm; margin-top: auto; }
       .pie-firma { border-top: 1px solid #333; padding-top: 1.5mm; width: 70mm; font-size: 12px; }
     </style></head><body>${tarjetas}</body></html>`;
+    const ids = aImprimir.map((c) => c.id);
     const marco = document.createElement("iframe");
     marco.style.cssText = "position:fixed;width:0;height:0;border:0;visibility:hidden";
     marco.onload = () => {
+      marco.contentWindow?.addEventListener("afterprint", () => setTimeout(() => anotarImpresos(ids), 0), { once: true });
       marco.contentWindow?.focus();
       marco.contentWindow?.print();
       setTimeout(() => marco.remove(), 60_000);
@@ -501,6 +589,7 @@ export default function ConciliacionBinance({
             className="border rounded-lg px-3 py-2 text-sm bg-white"
             aria-label="Semana"
           >
+            <option value={TODAS}>Todas las semanas</option>
             {opciones.map((o) => (
               <option key={o.value} value={o.value}>
                 Semana {o.label}
@@ -510,7 +599,7 @@ export default function ConciliacionBinance({
           {/* Lo arma el servidor: el Excel lleva la imagen de cada comprobante y su línea del estado de cuenta. */}
           {datos && (
             <Button asChild variant="outline" size="sm" className="h-9">
-              <a href={`/api/administracion/binance/excel?semana=${semana}`}>
+              <a href={`/api/administracion/binance/excel?semana=${semana}${salida ? "&lado=salida" : ""}`}>
                 <Download className="h-4 w-4 mr-2" />
                 Excel
               </a>
@@ -518,6 +607,30 @@ export default function ConciliacionBinance({
           )}
         </div>
       </div>
+      )}
+
+      {!cxc && (
+        <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Entradas o salidas">
+          {(
+            [
+              ["entrada", "Entradas", "Pagos de los clientes"],
+              ["salida", "Salidas", "Pagos que hacemos nosotros"],
+            ] as const
+          ).map(([clave, texto, ayuda]) => (
+            <button
+              key={clave}
+              type="button"
+              role="tab"
+              aria-selected={lado === clave}
+              disabled={!!subiendo}
+              title={ayuda}
+              onClick={() => setLado(clave)}
+              className={`px-4 py-2 text-sm rounded-md ${lado === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"}`}
+            >
+              {texto}
+            </button>
+          ))}
+        </div>
       )}
 
       {(subidas.length > 0 || ignorados > 0) && (
@@ -635,7 +748,7 @@ export default function ConciliacionBinance({
                   onClick={() => setLista(clave)}
                   className="text-left rounded-xl transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 >
-                  <Tarjeta tono={tono} titulo={TITULO_LISTA[clave]} valor={items.length} detalle={porMoneda(items)} />
+                  <Tarjeta tono={tono} titulo={tituloLista(clave, salida)} valor={items.length} detalle={porMoneda(items)} />
                 </button>
               ))}
             </div>
@@ -651,7 +764,7 @@ export default function ConciliacionBinance({
             >
               <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>{verImagen ? `Comprobante ${verImagen.orderId}` : lista && TITULO_LISTA[lista]}</DialogTitle>
+                  <DialogTitle>{verImagen ? `Comprobante ${verImagen.orderId}` : lista && tituloLista(lista, salida)}</DialogTitle>
                 </DialogHeader>
                 {verImagen ? (
                   <div className="space-y-3">
@@ -684,11 +797,11 @@ export default function ConciliacionBinance({
                       <TableRow>
                         <TableHead>Fecha</TableHead>
                         <TableHead className="text-right">Monto</TableHead>
-                        <TableHead>Pagador</TableHead>
+                        <TableHead>{CONTRAPARTE}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sinComprobante.length === 0 && <FilaVacia columnas={3} texto="Todo lo recibido tiene comprobante." />}
+                      {sinComprobante.length === 0 && <FilaVacia columnas={3} texto={salida ? "Todo lo pagado tiene comprobante." : "Todo lo recibido tiene comprobante."} />}
                       {sinComprobante.map((p) => (
                         <TableRow key={p.id}>
                           <TableCell className="whitespace-nowrap">{fechaHora(p.fecha)}</TableCell>
@@ -703,29 +816,99 @@ export default function ConciliacionBinance({
                 ) : (
                   lista && (
                     <>
-                      {!cxc && lista === "conciliados" && conciliados.length > 0 && (
-                        <Button size="sm" className="h-9 w-fit" onClick={imprimirConciliados}>
-                          <Printer className="h-4 w-4 mr-2" />
-                          Imprimir conciliados
-                        </Button>
+                      {lista === "conciliados" && diasConciliado.length > 0 && (
+                        <label className="flex items-center gap-2 text-sm text-gray-600">
+                          Conciliados el
+                          <select
+                            value={diaConciliado}
+                            onChange={(e) => setDiaConciliado(e.target.value)}
+                            className="border rounded-lg px-2 py-1 text-sm bg-white"
+                          >
+                            <option value="">Todos los días</option>
+                            {diasConciliado.map((d) => (
+                              <option key={d} value={d}>
+                                {etiquetaDia(d)} ({conciliados.filter((c) => diaDeConciliado(c) === d).length})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {imprime && (
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist">
+                            {(
+                              [
+                                ["pendientes", "Sin imprimir", sinImprimir.length],
+                                ["impresos", "Ya impresos", yaImpresos.length],
+                              ] as const
+                            ).map(([clave, texto, n]) => (
+                              <button
+                                key={clave}
+                                type="button"
+                                role="tab"
+                                aria-selected={pestanaImpresion === clave}
+                                onClick={() => setPestanaImpresion(clave)}
+                                className={`px-3 py-1.5 text-sm rounded-md ${
+                                  pestanaImpresion === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"
+                                }`}
+                              >
+                                {texto} ({n})
+                              </button>
+                            ))}
+                          </div>
+                          <Button size="sm" className="h-9 w-fit" disabled={!aImprimir.length} onClick={imprimirConciliados}>
+                            <Printer className="h-4 w-4 mr-2" />
+                            {pestanaImpresion === "impresos" ? "Volver a imprimir" : "Imprimir"} ({aImprimir.length})
+                          </Button>
+                          <span className="text-xs text-gray-500">
+                            {pestanaImpresion === "impresos"
+                              ? "Marca los que quieras imprimir otra vez."
+                              : "Desmarca los que no quieras imprimir."}
+                          </span>
+                        </div>
                       )}
                       <p className="text-xs text-gray-500">Haz clic en un comprobante para ver su imagen.</p>
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            {imprime && (
+                              <TableHead className="w-8">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 cursor-pointer align-middle"
+                                  aria-label="Marcar todos para imprimir"
+                                  checked={enPestana.length > 0 && aImprimir.length === enPestana.length}
+                                  ref={(el) => {
+                                    if (el) el.indeterminate = aImprimir.length > 0 && aImprimir.length < enPestana.length;
+                                  }}
+                                  onChange={(e) => marcarImprimir(enPestana.map((c) => c.id), e.target.checked)}
+                                />
+                              </TableHead>
+                            )}
                             <TableHead>Fecha</TableHead>
                             <TableHead>ID de orden</TableHead>
                             <TableHead className="text-right">Monto</TableHead>
-                            <TableHead>Pagador</TableHead>
+                            <TableHead>{CONTRAPARTE}</TableHead>
                             <TableHead>Estado</TableHead>
+                            {lista === "conciliados" && <TableHead>Conciliado el</TableHead>}
+                            {imprime && pestanaImpresion === "impresos" && <TableHead>Impreso</TableHead>}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {COMPROBANTES_LISTA[lista].length === 0 && (
-                            <FilaVacia columnas={5} texto="No hay comprobantes aquí." />
-                          )}
-                          {COMPROBANTES_LISTA[lista].map((c) => (
+                          {filasLista.length === 0 && <FilaVacia columnas={columnasLista} texto="No hay comprobantes aquí." />}
+                          {filasLista.map((c) => (
                             <TableRow key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setVerImagen(c)}>
+                              {imprime && (
+                                <TableCell onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    className="h-4 w-4 cursor-pointer align-middle"
+                                    aria-label={`Imprimir ${c.orderId}`}
+                                    checked={marcadoImprimir(c)}
+                                    onChange={(e) => marcarImprimir([c.id], e.target.checked)}
+                                  />
+                                </TableCell>
+                              )}
                               <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
                               <TableCell className="font-mono text-xs text-blue-600">{c.orderId}</TableCell>
                               <TableCell className="text-right whitespace-nowrap">
@@ -737,6 +920,15 @@ export default function ConciliacionBinance({
                                   {ETIQUETA_ESTADO[c.estado]}
                                 </Badge>
                               </TableCell>
+                              {lista === "conciliados" && (
+                                <TableCell className="whitespace-nowrap">{c.conciliadoEl ? fechaHora(c.conciliadoEl) : "—"}</TableCell>
+                              )}
+                              {imprime && pestanaImpresion === "impresos" && (
+                                <TableCell className="whitespace-nowrap text-xs text-gray-600">
+                                  {c.impresoEl && fechaHora(c.impresoEl)}
+                                  {c.impresoPor && <div>{c.impresoPor}</div>}
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))}
                         </TableBody>
@@ -747,9 +939,61 @@ export default function ConciliacionBinance({
               </DialogContent>
             </Dialog>
 
+            <div className="flex flex-wrap items-center justify-between gap-3">
+            {!cxc && (
+              <div className="inline-flex rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Tabla">
+                {(
+                  [
+                    ["comprobantes", `Comprobantes (${comprobantes.length})`],
+                    ["estado", `Estado de cuenta (${pagosSemana.length})`],
+                  ] as const
+                ).map(([clave, texto]) => (
+                  <button
+                    key={clave}
+                    type="button"
+                    role="tab"
+                    aria-selected={tabla === clave}
+                    onClick={() => setTabla(clave)}
+                    className={`px-4 py-2 text-sm rounded-md ${tabla === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"}`}
+                  >
+                    {texto}
+                  </button>
+                ))}
+              </div>
+            )}
+              {/* Un buscador para la tabla que se ve: comprobantes o estado de cuenta. */}
+              <div className="relative w-full sm:w-96">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                {cxc || tabla === "comprobantes" ? (
+                  <input
+                    value={buscar}
+                    onChange={(e) => {
+                      setBuscar(e.target.value);
+                      setPaginaComprobantes(0);
+                    }}
+                    placeholder={`Buscar comprobante por ${salida ? "beneficiario" : "cliente"}, ID de orden o monto`}
+                    aria-label="Buscar comprobantes"
+                    className="border rounded-lg pl-9 pr-3 py-2 text-sm bg-white w-full"
+                  />
+                ) : (
+                  <input
+                    value={buscarPagos}
+                    onChange={(e) => {
+                      setBuscarPagos(e.target.value);
+                      setPaginaPagos(0);
+                    }}
+                    placeholder={`Buscar pago por ${salida ? "destinatario" : "pagador"}, monto, ${salida ? "beneficiario" : "cliente"} o ID de orden`}
+                    aria-label="Buscar en el estado de cuenta"
+                    className="border rounded-lg pl-9 pr-3 py-2 text-sm bg-white w-full"
+                  />
+                )}
+              </div>
+            </div>
+
+            {(cxc || tabla === "comprobantes") && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-                <CardTitle className="text-base">Comprobantes de la semana</CardTitle>
+                <CardTitle className="text-base">{semana === TODAS ? "Comprobantes" : "Comprobantes de la semana"}</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
@@ -781,58 +1025,27 @@ export default function ConciliacionBinance({
                 </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                {drive?.configurado && (
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
-                    {drive.conectado ? (
-                      <>
-                        <input
-                          value={enlace}
-                          onChange={(e) => setEnlace(e.target.value)}
-                          placeholder="Pega el enlace de la carpeta de Google Drive"
-                          aria-label="Enlace de la carpeta de Google Drive"
-                          className="border rounded-lg px-3 py-2 text-sm bg-white flex-1 min-w-0"
-                        />
-                        <Button
-                          size="sm"
-                          className="h-9"
-                          disabled={!enlace.trim() || leyendoDrive || !!subiendo}
-                          onClick={leerDrive}
-                          title={drive.correo ? `Se lee con la cuenta ${drive.correo}` : undefined}
-                        >
-                          {leyendoDrive ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
-                          Leer carpeta de Drive
-                        </Button>
-                      </>
-                    ) : cxc ? (
-                      <p className="text-xs text-gray-500">
-                        Para subir desde una carpeta de Google Drive, Administración tiene que conectar Google Drive.
-                      </p>
-                    ) : (
-                      <Button asChild size="sm" variant="outline" className="h-9">
-                        <a href="/api/administracion/binance/drive">
-                          <Link2 className="h-4 w-4 mr-2" />
-                          Conectar Google Drive
-                        </a>
-                      </Button>
-                    )}
-                  </div>
-                )}
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Fecha</TableHead>
-                      <TableHead>Cliente</TableHead>
+                      <TableHead>{QUIEN}</TableHead>
                       <TableHead>ID de orden</TableHead>
-                      <TableHead className="text-right">Comprobante</TableHead>
-                      <TableHead className="text-right">Binance</TableHead>
-                      <TableHead>Pagador</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead>{CONTRAPARTE}</TableHead>
                       <TableHead>Estado</TableHead>
+                      {!salida && <TableHead>En Odoo</TableHead>}
                       <TableHead />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {comprobantes.length === 0 && <FilaVacia columnas={8} texto="No hay comprobantes en esta semana." />}
-                    {deLaPagina(comprobantes, paginaComprobantes).map((c) => (
+                    {encontrados.length === 0 && (
+                      <FilaVacia
+                        columnas={salida ? 7 : 8}
+                        texto={buscar.trim() ? "Ningún comprobante coincide con la búsqueda." : semana === TODAS ? "No hay comprobantes." : "No hay comprobantes en esta semana."}
+                      />
+                    )}
+                    {deLaPagina(encontrados, paginaComprobantes).map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">{fechaComprobante(c)}</TableCell>
                         <TableCell>{c.cliente || "—"}</TableCell>
@@ -847,28 +1060,33 @@ export default function ConciliacionBinance({
                           </a>
                           {c.estado === "por_monto_hora" && c.binance && (
                             <span className="block text-amber-700">
-                              {idBinance(c.binance.id) ? `Binance: ${c.binance.id}` : "Sin hora en el comprobante"}
+                              {idBinance(c.binance.id)
+                                ? `Binance: ${c.binance.id}`
+                                : `En el estado de cuenta: ${fechaHora(c.binance.fecha)}`}
                             </span>
                           )}
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap">
                           {cifra(c.monto)} {c.moneda}
                         </TableCell>
-                        <TableCell className="text-right whitespace-nowrap">
-                          {c.binance ? `${cifra(c.binance.monto)} ${c.binance.moneda}` : "—"}
-                        </TableCell>
                         <TableCell>{c.binance?.pagador || "—"}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={`border-0 ${CLASE_ESTADO[c.estado]}`}>
                             {ETIQUETA_ESTADO[c.estado]}
                           </Badge>
-                          {!cxc && c.estado === "nombre_distinto" && c.binance && /^e\d+$/.test(c.binance.id) && (
+                          {!cxc && (c.estado === "nombre_distinto" || c.estado === "por_monto_hora") && c.binance && /^e\d+$/.test(c.binance.id) && (
                             <Button
                               size="sm"
                               variant="outline"
                               className="mt-1 h-7 text-xs block"
                               onClick={() => {
-                                if (confirm(`¿El pago de ${c.binance!.pagador} es de ${c.cliente}? Queda conciliado.`))
+                                const pregunta =
+                                  c.estado === "por_monto_hora"
+                                    ? `¿El pago de ${cifra(c.binance!.monto)} ${c.binance!.moneda} del ${fechaHora(c.binance!.fecha)} (${c.binance!.pagador}) es este comprobante? Queda conciliado.`
+                                    : salida
+                                      ? `¿El pago a ${c.binance!.pagador} es el de ${c.cliente}? Queda conciliado.`
+                                      : `¿El pago de ${c.binance!.pagador} es de ${c.cliente}? Queda conciliado.`;
+                                if (confirm(pregunta))
                                   asignar(c, c.binance!.id.slice(1), true);
                               }}
                             >
@@ -893,6 +1111,27 @@ export default function ConciliacionBinance({
                             </select>
                           )}
                         </TableCell>
+                        {!salida && (
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={`border-0 whitespace-nowrap ${
+                                c.registradoOdoo === true
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : c.registradoOdoo === false
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-slate-100 text-slate-600"
+                              }`}
+                              title={
+                                c.registradoOdoo === null
+                                  ? "No se pudo consultar Odoo"
+                                  : "Se busca el ID de orden en el Memo de los pagos de Odoo de las tres sedes"
+                              }
+                            >
+                              {c.registradoOdoo === true ? "Registrado" : c.registradoOdoo === false ? "Sin registrar" : "Sin dato"}
+                            </Badge>
+                          </TableCell>
+                        )}
                         <TableCell>
                           <Button variant="ghost" size="icon" onClick={() => eliminar(c)} aria-label="Quitar comprobante">
                             <Trash2 className="h-4 w-4 text-gray-400" />
@@ -902,18 +1141,19 @@ export default function ConciliacionBinance({
                     ))}
                   </TableBody>
                 </Table>
-                <Paginacion pagina={paginaComprobantes} total={comprobantes.length} cambiar={setPaginaComprobantes} />
+                <Paginacion pagina={paginaComprobantes} total={encontrados.length} cambiar={setPaginaComprobantes} />
               </CardContent>
             </Card>
+            )}
 
-            {!cxc && (
+            {!cxc && tabla === "estado" && (
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                 <div>
                   <CardTitle className="text-base">Estado de cuenta</CardTitle>
                   <p className="text-xs text-gray-500 mt-1">
                     {datos.origen === "estado"
-                      ? `Estado de cuenta cargado: ${datos.movimientos} pagos recibidos en la semana.`
+                      ? `Estado de cuenta cargado: ${pagosSemana.length} pagos ${salida ? "enviados" : "recibidos"} en la semana.`
                       : "Esta semana todavía no tiene estado de cuenta."}
                   </p>
                 </div>
@@ -937,6 +1177,14 @@ export default function ConciliacionBinance({
                         ? `Borrar lo que subió esta sede (${datos.borrables})`
                         : "Borrar y volver a subir"}
                     </Button>
+                  )}
+                  {/* Sin esto el botón simplemente no salía y no se sabía por qué. */}
+                  {datos.borrables === 0 && datos.movimientos > 0 && (
+                    <span className="text-xs text-gray-500">
+                      {semana === TODAS
+                        ? "Para borrar el estado de cuenta elige una semana."
+                        : "Estos pagos los subió otra sede o el SuperAdmin: solo el SuperAdmin los borra."}
+                    </span>
                   )}
                   <Button
                     size="sm"
@@ -974,13 +1222,18 @@ export default function ConciliacionBinance({
                       <TableHead>Fecha</TableHead>
                       <TableHead>ID de orden</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
-                      <TableHead>Pagador</TableHead>
+                      <TableHead>{CONTRAPARTE}</TableHead>
                       <TableHead>Comprobante</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pagosSemana.length === 0 && <FilaVacia columnas={5} texto="No hay pagos recibidos en esta semana." />}
-                    {deLaPagina(pagosSemana, paginaPagos).map((p) => {
+                    {pagosEncontrados.length === 0 && (
+                      <FilaVacia
+                        columnas={5}
+                        texto={buscarPagos.trim() ? "Ningún pago coincide con la búsqueda." : `No hay pagos ${salida ? "enviados" : "recibidos"} en esta semana.`}
+                      />
+                    )}
+                    {deLaPagina(pagosEncontrados, paginaPagos).map((p) => {
                       const c = p.comprobante;
                       return (
                         <TableRow key={p.id}>
@@ -1005,7 +1258,7 @@ export default function ConciliacionBinance({
                                   {ETIQUETA_ESTADO[c.estado]}
                                 </Badge>
                                 <span className="block text-xs text-gray-500 mt-0.5">
-                                  {c.cliente || "sin cliente"} · {c.orderId}
+                                  {c.cliente || (salida ? "sin beneficiario" : "sin cliente")} · {c.orderId}
                                 </span>
                               </>
                             )}
@@ -1015,7 +1268,7 @@ export default function ConciliacionBinance({
                     })}
                   </TableBody>
                 </Table>
-                <Paginacion pagina={paginaPagos} total={pagosSemana.length} cambiar={setPaginaPagos} />
+                <Paginacion pagina={paginaPagos} total={pagosEncontrados.length} cambiar={setPaginaPagos} />
               </CardContent>
             </Card>
             )}

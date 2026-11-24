@@ -10,6 +10,8 @@ import { guardarReparto } from "@/lib/recepcion/conteo";
 import { ErrorRecepcion, guardarOcElegida, packingListRepetido, validarOcElegida } from "@/lib/recepcion/odoo";
 import { avisarMaterialFaltante } from "@/lib/recepcion/avisoMaterial";
 import { getPublicOrigin } from "@/lib/publicOrigin";
+import { puedeRepartirse } from "@/lib/recepcion/repartoSedes";
+import { cambiarActivo, resumenesReparto } from "@/lib/recepcion/repartoSedesDatos";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +49,7 @@ export async function GET(request: NextRequest) {
     if (conOdoo && sesion!.rol !== "superadmin") where.push("r.descartado_at IS NULL");
     const res = await query(
       `SELECT r.id, r.cids, r.proveedor, r.referencia, r.contenedor, r.oc_referencia,
-              ${conOdoo ? "r.origen, r.odoo_estado, r.odoo_oc_nombre, r.descartado_at, r.descartado_por, r.descartado_motivo," : ""}
+              ${conOdoo ? "r.origen, r.odoo_estado, r.odoo_oc_nombre, r.odoo_purchase_order_id, r.purchase_order_id, r.descartado_at, r.descartado_por, r.descartado_motivo," : ""}
               r.fecha_estimada, r.etapa, r.resultado, r.precinto_coincide,
               r.creado_por, r.created_at, r.llegada_at, r.cerrado_at,
               (SELECT COUNT(*) FROM recepcion_packing_items i WHERE i.recepcion_id = r.id) AS total_items,
@@ -73,7 +75,17 @@ export async function GET(request: NextRequest) {
         LIMIT 200`,
       params,
     );
-    return NextResponse.json({ success: true, recepciones: res.rows });
+    // Reparto entre sedes (Valencia / Caracas) de cada packing list que se
+    // reparte. Si falla, la lista sale igual, sin el reparto.
+    const filas = res.rows as any[];
+    let repartos = new Map<number, unknown>();
+    try {
+      repartos = await resumenesReparto(filas.map((f) => Number(f.id)));
+    } catch (e: any) {
+      console.warn("[recepcion] no se leyo el reparto entre sedes de la lista:", e?.message || e);
+    }
+    const recepciones = filas.map((f) => ({ ...f, reparto_sedes: repartos.get(Number(f.id)) ?? null }));
+    return NextResponse.json({ success: true, recepciones });
   } catch (e: any) {
     console.error("Error listando recepciones:", e);
     return NextResponse.json({ error: e.message }, { status: 500 });
@@ -143,7 +155,7 @@ export async function POST(request: NextRequest) {
     await insertarContenedores(id, contenedores);
     // Lo que trae cada contenedor, si el packing list lo dice.
     await guardarReparto(id, items.map((i) => i.reparto));
-    if (oc) await guardarOcElegida(id, oc);
+    if (oc) await guardarOcElegida(id, oc, sesion!.nombre);
 
     emitirRecepcion({
       accion: "creado",
@@ -155,7 +167,27 @@ export async function POST(request: NextRequest) {
     // Productos sin imagen en Odoo o sin flyer: correo a los adminLeads.
     avisarMaterialFaltante(id, getPublicOrigin(request));
 
-    return NextResponse.json({ success: true, id }, { status: 201 });
+    // Reparto entre sedes: se calcula al final; si falla, el packing list
+    // queda creado igual y se reintenta desde el detalle.
+    let repartoSedesError: string | undefined;
+    if (body?.repartir_sedes === true && puedeRepartirse(cab.cids, "packing_list")) {
+      try {
+        await cambiarActivo(
+          id,
+          true,
+          { nombre: sesion!.nombre, email: sesion!.payload?.email ? String(sesion!.payload.email) : null },
+          { motivo: "Al cargar el packing list" },
+        );
+      } catch (e: any) {
+        repartoSedesError = String(e?.message || e);
+        console.error(`[recepcion] no se calculo el reparto entre sedes de #${id}:`, repartoSedesError);
+      }
+    }
+
+    return NextResponse.json(
+      { success: true, id, ...(repartoSedesError ? { reparto_sedes_error: repartoSedesError } : {}) },
+      { status: 201 },
+    );
   } catch (e: any) {
     console.error("Error creando recepcion:", e);
     return NextResponse.json({ error: e.message }, { status: 500 });

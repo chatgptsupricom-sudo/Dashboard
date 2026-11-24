@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { AlertTriangle, Download, Loader2, WifiOff } from "lucide-react";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import * as XLSX from "xlsx";
 
@@ -85,10 +85,11 @@ export function mesActual(): string {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function mesesRecientes(cantidad = 12) {
+/** Los ultimos `cantidad` meses, mas `adelante` meses futuros al principio. */
+export function mesesRecientes(cantidad = 12, adelante = 0) {
   const now = new Date();
-  return Array.from({ length: cantidad }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+  return Array.from({ length: cantidad + adelante }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + adelante - i, 1);
     return {
       value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
       label: d.toLocaleDateString("es-VE", { month: "long", year: "numeric" }),
@@ -117,7 +118,9 @@ export function useDatosAdmin<T>(ruta: string, empresa: string, mes: string, ext
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<{ mensaje: string; odooCaido: boolean } | null>(null);
 
+  const urlVigente = useRef("");
   const cargar = useCallback(async () => {
+    urlVigente.current = `${ruta}?empresa=${empresa}&mes=${mes}${extra}`;
     setCargando(true);
     setError(null);
     try {
@@ -140,7 +143,20 @@ export function useDatosAdmin<T>(ruta: string, empresa: string, mes: string, ext
     cargar();
   }, [cargar]);
 
-  return { datos, cargando, error, recargar: cargar };
+  /** Vuelve a pedir los datos sin vaciar la pantalla; si falla, quedan los de antes. */
+  const actualizar = useCallback(async () => {
+    try {
+      const url = `${ruta}?empresa=${empresa}&mes=${mes}${extra}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const json = await res.json();
+      // Si mientras tanto cambiaron sede o mes, esta respuesta ya no sirve.
+      if (json.success && urlVigente.current === url) setDatos(json as T);
+    } catch {
+      // Se reintenta en la proxima actualizacion.
+    }
+  }, [ruta, empresa, mes, extra]);
+
+  return { datos, cargando, error, recargar: cargar, actualizar };
 }
 
 export function EncabezadoAdmin({
@@ -152,6 +168,7 @@ export function EncabezadoAdmin({
   mes,
   setMes,
   conMes = true,
+  mesesAdelante = 0,
   acciones,
 }: {
   icono: ReactNode;
@@ -162,6 +179,8 @@ export function EncabezadoAdmin({
   mes?: string;
   setMes?: (v: string) => void;
   conMes?: boolean;
+  /** Meses futuros que ofrece el selector (ej. un calendario de pagos). */
+  mesesAdelante?: number;
   acciones?: ReactNode;
 }) {
   return (
@@ -182,7 +201,7 @@ export function EncabezadoAdmin({
             className="border rounded-lg px-3 py-2 text-sm capitalize flex-1 lg:flex-none bg-white"
             aria-label="Mes"
           >
-            {mesesRecientes().map((m) => (
+            {mesesRecientes(12, mesesAdelante).map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
               </option>
@@ -310,7 +329,7 @@ export function Pestanas<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex gap-1 overflow-x-auto border-b">
+    <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b">
       {opciones.map((o) => (
         <button
           key={o.value}
@@ -341,4 +360,52 @@ export function FilaVacia({ columnas, texto = "Sin resultados." }: { columnas: n
       </TableCell>
     </TableRow>
   );
+}
+
+// Semanas y paginacion de las conciliaciones (Binance y bancos).
+
+const DIA = 86400_000;
+export const POR_PAGINA = 25;
+
+/** Anterior / Pagina x de y / Siguiente; no se muestra con una sola pagina. */
+export function Paginacion({ pagina, total, cambiar }: { pagina: number; total: number; cambiar: (p: number) => void }) {
+  const paginas = Math.ceil(total / POR_PAGINA);
+  if (paginas <= 1) return null;
+  return (
+    <div className="flex items-center justify-end gap-2 pt-3 text-sm text-gray-600">
+      <span>
+        {pagina * POR_PAGINA + 1}–{Math.min(total, (pagina + 1) * POR_PAGINA)} de {total}
+      </span>
+      <Button size="sm" variant="outline" className="h-8" disabled={pagina === 0} onClick={() => cambiar(pagina - 1)}>
+        Anterior
+      </Button>
+      <span>
+        Página {pagina + 1} de {paginas}
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8"
+        disabled={pagina >= paginas - 1}
+        onClick={() => cambiar(pagina + 1)}
+      >
+        Siguiente
+      </Button>
+    </div>
+  );
+}
+
+export const deLaPagina = <T,>(items: T[], pagina: number) => items.slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA);
+
+/** Lunes (YYYY-MM-DD) de las ultimas `n` semanas, la actual primero. */
+export function semanas(n = 12) {
+  const hoy = new Date();
+  const lunes = new Date(Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()));
+  lunes.setUTCDate(lunes.getUTCDate() - ((lunes.getUTCDay() + 6) % 7));
+  const f = (d: Date) => d.toISOString().slice(0, 10);
+  const corto = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(lunes.getTime() - i * 7 * DIA);
+    return { value: f(d), label: `${corto(d)} al ${corto(new Date(d.getTime() + 6 * DIA))}/${d.getUTCFullYear()}` };
+  });
 }

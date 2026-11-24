@@ -32,6 +32,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  GraduationCap,
   Boxes,
   BrainCircuit,
   Network,
@@ -54,6 +55,8 @@ import {
   Receipt,
   Monitor,
   Landmark,
+  Banknote,
+  ArrowLeftRight,
   Bitcoin,
   BookOpenCheck,
   FileCheck2,
@@ -71,6 +74,8 @@ import {
   Store,
   Search,
   Settings2,
+  Tag,
+  PackagePlus,
   Shield,
   Send,
   Inbox,
@@ -132,9 +137,15 @@ function SortableItem({ id, isActive, accentColor, bgColor, children }: {
 export function Sidebar({
   open,
   onToggle,
+  soloSecciones,
 }: {
   open: boolean;
   onToggle: () => void;
+  /**
+   * Reemplaza las secciones del rol por estas (ej. el Gerente de Marca sin
+   * marcas asignadas ve solo `gm_sin_marcas`). Sin esto, las del rol.
+   */
+  soloSecciones?: string[];
 }) {
   const { user, logout } = useAuthStore();
   const pathname = usePathname();
@@ -184,6 +195,9 @@ export function Sidebar({
   // Notas de crédito (lib/notas-credito): quien es responsable de un paso, por
   // correo, y el SuperAdmin. `pendientes` = las que esperan a la sesión.
   const [notasCredito, setNotasCredito] = useState({ puede: false, pendientes: 0 });
+  // Manual y Tutorial del rol (lib/manuales): salen en el menú cuando Procesos
+  // publicó al menos uno para el rol de la sesión.
+  const [manualesRol, setManualesRol] = useState({ manual: 0, tutorial: 0 });
 
   // Solicitudes de nota de crédito de RMA enviadas al Super Admin (contador
   // del menú RMA).
@@ -215,6 +229,10 @@ export function Sidebar({
         const c = await fetch("/api/notas-credito?conteo=1").then((r) => r.json()).catch(() => ({}));
         setNotasCredito({ puede: true, pendientes: Number(c?.pendientes) || 0 });
       })
+      .catch(() => {});
+    fetch("/api/manuales?resumen=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j && setManualesRol({ manual: Number(j.manual) || 0, tutorial: Number(j.tutorial) || 0 }))
       .catch(() => {});
   }, [user]);
 
@@ -276,20 +294,22 @@ export function Sidebar({
   if (!permissions) return null;
 
   // Extraemos las secciones permitidas de forma segura
-  const allowedSections = [...(permissions.sections || [])];
+  const allowedSections = soloSecciones ? [...soloSecciones] : [...(permissions.sections || [])];
 
   // "Reportes Comerciales" no se resuelve solo por rol: la encargada es una
   // vendedora concreta (lista blanca por correo). El servidor decide; aquí solo
   // se agrega la sección si respondió que sí (ver /api/reportes-comerciales/acceso).
-  if (puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
+  if (!soloSecciones && puedeReportesComerciales && !allowedSections.includes("reportes_comerciales")) {
     allowedSections.push("reportes_comerciales");
   }
-  if (puedeAgenteIA && !allowedSections.includes("agenteia")) {
+  if (!soloSecciones && puedeAgenteIA && !allowedSections.includes("agenteia")) {
     allowedSections.push("agenteia");
   }
-  if (notasCredito.puede && !allowedSections.includes("notas_credito")) {
+  if (!soloSecciones && notasCredito.puede && !allowedSections.includes("notas_credito")) {
     allowedSections.push("notas_credito");
   }
+  if (!soloSecciones && manualesRol.manual > 0) allowedSections.push("manual_rol");
+  if (!soloSecciones && manualesRol.tutorial > 0) allowedSections.push("tutorial_rol");
 
   // Definición del menú base
   const menuItems = [
@@ -308,8 +328,15 @@ export function Sidebar({
     { id: "bi_dias_promedio", label: "Días promedio", icon: Timer, slug: "/dias-promedio" },
     // Productos en camino y si ya se vendieron en la sede (lib/inteligencia-negocio/porLlegar.ts).
     { id: "bi_por_llegar", label: "Por llegar", icon: Truck, slug: "/por-llegar" },
+    // Precios de la competencia ordenados y comparados con Supricom (lib/inteligencia-negocio/precios).
+    { id: "bi_precios", label: "Inteligencia de precios", icon: DollarSign, slug: "/precios" },
+    // El Dashboard de Productos de AdminLeads (rotación de SKUs), para BI fuera del desplegable Leads.
+    { id: "bi_rotacion_productos", label: "Rotación productos", icon: Boxes, slug: "/adminleads/dashboard", absoluteHref: true },
     { id: "agenteia", label: t("agente_ia"), icon: BrainCircuit, slug: "/agenteia" },
     { id: "manuales", label: "Manuales", icon: BookOpen, slug: "/manuales", absoluteHref: true },
+    // Manual y Tutorial de cada rol: lo que Procesos publicó para él (lib/manuales).
+    { id: "manual_rol", label: "Manual", icon: BookOpen, slug: "/manuales", absoluteHref: true },
+    { id: "tutorial_rol", label: "Tutorial", icon: GraduationCap, slug: "/manuales/tutorial", absoluteHref: true },
     // Organigrama con las actividades de cada cargo (SuperAdmin, Procesos y RRHH).
     { id: "organigrama", label: "Organigrama", icon: Network, slug: "/organigrama", absoluteHref: true },
     // Flujogramas de procesos (SuperAdmin, Procesos y RRHH).
@@ -348,8 +375,12 @@ export function Sidebar({
     { id: "cxc_tiempo_cobro", label: "Tiempo de Cobro", icon: Hourglass, slug: "/cuentas-por-cobrar/tiempo-cobro", absoluteHref: true },
     { id: "cxc_incobrables", label: "Incobrables", icon: Ban, slug: "/cuentas-por-cobrar/incobrables", absoluteHref: true },
     { id: "cxc_sobregiro", label: "Sobregiro", icon: Gauge, slug: "/cuentas-por-cobrar/sobregiro", absoluteHref: true },
+    // El "Facturación de Productos" de Odoo de cualquier mes (lib/cxc/facturadoDetallado.ts).
+    { id: "cxc_facturado_detallado", label: "Facturado detallado", icon: FileText, slug: "/cuentas-por-cobrar/facturado-detallado", absoluteHref: true },
     // Conciliación Binance de solo lectura para el rol CxC (la de Administración es admin_binance).
     { id: "cxc_binance", label: "Conciliación Binance", icon: Bitcoin, slug: "/cuentas-por-cobrar/binance", absoluteHref: true },
+    // Comprobantes de la conciliacion bancaria: CxC los sube y ve en que quedaron (Administracion concilia).
+    { id: "cxc_bancos", label: "Comprobantes bancarios", icon: Banknote, slug: "/cuentas-por-cobrar/bancos", absoluteHref: true },
     { id: "estado_cuenta", label: t("estado_cuenta"), icon: FileText, slug: "/estado-cuenta" },
     { id: "referencia_comercial", label: "Referencia Comercial", icon: FileText, slug: "/referencia-comercial" },
     { id: "cxc_search", label: "Buscar Facturas", icon: Search, slug: "/buscar" },
@@ -360,6 +391,10 @@ export function Sidebar({
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     // Semáforo de clientes: cartera en verde/amarillo/rojo contra su historial (lib/semaforo-clientes).
     { id: "semaforo_clientes", label: "Semáforo de clientes", icon: TrafficCone, slug: "/semaforo-clientes", absoluteHref: true },
+    // Cupo de crédito: consumo del límite por cliente, vendedor (equipo) y zona, con histórico (lib/cupo-credito).
+    { id: "cupo_credito", label: "Cupo de crédito", icon: CreditCard, slug: "/cupo-credito", absoluteHref: true },
+    // Rotación de inventario: productos en verde/amarillo/rojo por días sin venta y apoyo de las marcas (lib/rotacion-inventario).
+    { id: "rotacion_inventario", label: "Rotación de inventario", icon: Hourglass, slug: "/rotacion-inventario", absoluteHref: true },
     { id: "metas_marca", label: t("metas_marca"), icon: Target, slug: "/metas-marca" },
     { id: "stock_marca", label: t("stock_marca"), icon: Boxes, slug: "/stock-marca" },
     { id: "sorteo_caracas", label: t("sorteo_caracas"), icon: Trophy, slug: "/sorteo" },
@@ -376,12 +411,18 @@ export function Sidebar({
     // La misma clasificación de clientes de Inteligencia de Negocio, con el prompt de Compras.
     { id: "clasificacion_clientes_compras", label: "Clasificación de clientes", icon: Store, slug: "/clasificacion-clientes" },
     { id: "moq", label: t("moq"), icon: Settings2, slug: "/moq" },
+    // Excel de asignación por sede → precio definitivo en las listas de Valencia y Caracas (lib/compras/actualizacionPrecios).
+    { id: "actualizacion_precios", label: "Actualización de precios", icon: Tag, slug: "/actualizacion-precios" },
+    // Factura de compra → qué SKU no están en Odoo y crearlos (lib/compras/validarFactura).
+    { id: "validar_factura", label: "Validar factura", icon: PackagePlus, slug: "/validar-factura" },
     { id: "cobertura", label: t("cobertura_stock"), icon: Shield, slug: "/cobertura" },
     { id: "rotacion_categoria", label: t("rotacion_categoria"), icon: PieChart, slug: "/rotacion-categoria" },
     { id: "tendencia", label: t("tendencia_ventas"), icon: BarChart3, slug: "/tendencia" },
     // Cómo recibe el cliente cada pedido: lo carga el vendedor (o el asistente
     // de ventas por él) y Almacén lo usa en el egreso (lib/ventas/metodoRetiro).
     { id: "metodo_retiro", label: t("metodo_retiro"), icon: Truck, slug: "/metodo-retiro" },
+    // Alta de clientes en Odoo con RIF/teléfono/correo validados (lib/clientes-odoo).
+    { id: "crear_cliente", label: t("crear_cliente"), icon: UserPlus, slug: "/crear-cliente" },
     // Casos de RMA de los clientes del vendedor, solo lectura (lib/rma/vendedor).
     { id: "rma_seller", label: t("rma_clientes"), icon: Wrench, slug: "/casos-rma" },
     { id: "rma", label: t("rma"), icon: Wrench, slug: "/rma", absoluteHref: true },
@@ -438,7 +479,7 @@ export function Sidebar({
     // "Packing List": calendario de lo que llego y va a llegar al almacen, solo
     // fecha y productos.
     // Diseñador y AdminLeads de Valencia; misma pagina para los dos roles.
-    { id: "llegadas_disenador", label: t("llegadas"), icon: PackageCheck, slug: "/disenador/llegadas", absoluteHref: true, cidsOnly: 9 },
+    { id: "llegadas_disenador", label: t("llegadas"), icon: PackageCheck, slug: "/disenador/llegadas", absoluteHref: true, cidsOnly: [9, 10] },
     { id: "catalogo_disenos", label: "KPI de Diseños", icon: Palette, slug: "/disenos" },
     { id: "editor_ia_disenador", label: "Editor con IA", icon: Sparkles, slug: "/editor-ia" },
     // Cantidad de clientes por estado, en 3D; el país sale del cids (API).
@@ -454,6 +495,8 @@ export function Sidebar({
     { id: "admin_cxp", label: "Cuentas por Pagar", icon: Receipt, slug: "/administracion/cuentas-por-pagar", absoluteHref: true },
     { id: "admin_tesoreria", label: "Tesorería y Bancos", icon: Landmark, slug: "/administracion/tesoreria", absoluteHref: true },
     { id: "admin_binance", label: "Conciliación Binance", icon: Bitcoin, slug: "/administracion/binance", absoluteHref: true },
+    { id: "admin_bancos", label: "Conciliación bancaria", icon: Banknote, slug: "/administracion/bancos", absoluteHref: true },
+    { id: "admin_intercompania", label: "Pagos entre sedes", icon: ArrowLeftRight, slug: "/administracion/intercompania", absoluteHref: true },
     { id: "admin_fiscal", label: "Fiscal", icon: FileText, slug: "/administracion/fiscal", absoluteHref: true },
     { id: "admin_contabilidad", label: "Contabilidad y cierre", icon: BookOpenCheck, slug: "/administracion/contabilidad", absoluteHref: true },
     // Gerente de Marca (lib/gerente-marca/): sus marcas, en Valencia y Caracas.
@@ -462,6 +505,8 @@ export function Sidebar({
     { id: "gm_antiguedad", label: "Antigüedad de inventario", icon: Timer, slug: "/antiguedad" },
     { id: "gm_ventas", label: "Ventas por marca", icon: TrendingUp, slug: "/ventas" },
     { id: "gm_banco_imagenes", label: "Banco de Flyers", icon: Camera, slug: "/banco-imagenes" },
+    // Única sección del Gerente de Marca mientras no tiene marcas asignadas.
+    { id: "gm_sin_marcas", label: "Mis marcas", icon: Award, slug: "" },
     // SuperAdmin: lo que ve cada Gerente de Marca y a quién se le asigna cada marca.
     { id: "gerencia_marca", label: "Gerencia de Marca", icon: Award, slug: "/gerente_marca", absoluteHref: true },
   ];
@@ -535,9 +580,11 @@ export function Sidebar({
     allowedSections.includes("cobertura") ||
     allowedSections.includes("rotacion_categoria") ||
     allowedSections.includes("tendencia") ||
-    allowedSections.includes("pareto_80_20");
+    allowedSections.includes("pareto_80_20") ||
+    allowedSections.includes("actualizacion_precios") ||
+    allowedSections.includes("validar_factura");
   const isComprasRole = userRole === "compras";
-  const comprasDropdownIds = ["ordenes_compra", "recepcion_packing", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20"];
+  const comprasDropdownIds = ["ordenes_compra", "recepcion_packing", "sugeridos", "menor_rotacion", "mayor_rotacion", "cobertura", "rotacion_categoria", "tendencia", "pareto_80_20", "actualizacion_precios", "validar_factura"];
   const isSuperAdminRole = userRole === "superAdmin";
   // Inteligencia de Negocio tiene los desplegables del SuperAdmin (Ventas,
   // Marketing, parte de CxC) sobre sus propias páginas.
@@ -547,7 +594,7 @@ export function Sidebar({
   const ventasDropdownIds = ["cuota", "MapaClientes", "seller_map", "spiff", "reporte_diario", "reporte_ventas", "metas_marca", "stock_marca"];
   const hasVentasPermission = ventasDropdownIds.some((id) => allowedSections.includes(id));
   const hasCxCPermission = allowedSections.includes("cuentas_por_cobrar");
-  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables", "cxc_sobregiro"];
+  const cxcDropdownIds = ["cuentas_por_cobrar", "cxc_alerts", "cxc_search", "cxc_top_clients", "referencia_comercial", "integraciondepago", "cxc_contado_credito", "cxc_pago_clientes", "cxc_clasificacion_clientes", "cxc_tiempo_cobro", "cxc_incobrables", "cxc_sobregiro", "cxc_facturado_detallado"];
   const showVentasDropdown = isSuperAdminRole || isBIRole || (isGerenteOperaciones && hasVentasPermission);
   const isAdministracionRole = ["administración", "administracion"].includes(normalizedUserRole || "");
   // Administracion tambien: sus items de CxC tienen slugs relativos al basePath
@@ -571,13 +618,15 @@ export function Sidebar({
     "admin_cxp",
     "admin_tesoreria",
     "admin_binance",
+    "admin_bancos",
+    "admin_intercompania",
     "admin_fiscal",
     "admin_contabilidad",
   ];
   // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
   // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
   const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
-  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes"];
+  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes", "cupo_credito", "crear_cliente"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -592,7 +641,10 @@ export function Sidebar({
         ((item as any).adminLeadsOnly ? (userRole === "adminLeads" || userRole === "superAdmin") : true) &&
         // cidsOnly: el item se oculta si el rol tiene un cids asignado que no
         // coincide. superAdmin (sin cids) siempre lo ve.
-        ((item as any).cidsOnly == null || userRole === "superAdmin" || Number(userCids) === (item as any).cidsOnly) &&
+        // Acepta un número o una lista de sedes (ej. [9, 10]).
+        ((item as any).cidsOnly == null ||
+          userRole === "superAdmin" ||
+          ([] as unknown[]).concat((item as any).cidsOnly).some((c) => Number(c) === Number(userCids))) &&
         !(userRole === "superAdmin" && ["adminleads", "monitoreo_leads", "cierres_adminleads", "recompra_adminleads", "compras_mes_adminleads"].includes(item.id)) &&
         !((userRole === "superAdmin" || isBIRole) && ["banco_imagenes", "banco_imagenes_seller", "vista_custom", "frecuencia_cpm"].includes(item.id)) &&
         // El item del vendedor duplicaria a "material_pop" para superAdmin, y
@@ -614,16 +666,18 @@ export function Sidebar({
         !(isSuperAdminRole &&
           [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...gerenteMarcaSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
+        // Gerente de Operaciones: el Semáforo va dentro de su desplegable Ventas.
+        !(showVentasDropdown && isGerenteOperaciones && ["semaforo_clientes", "cupo_credito"].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") &&
         // El SuperAdmin ya la tiene completa en el desplegable "Administración".
-        !(isSuperAdminRole && item.id === "cxc_binance")
+        !(isSuperAdminRole && (item.id === "cxc_binance" || item.id === "cxc_bancos"))
     )
     .map((item) => {
       if (item.id === "actividad") {
         return {
           ...item,
-          href: `/${locale}/gestion/actividades?userId=${user?.uid || user?.id}`,
+          href: `/${locale}/gestion/actividades`,
         };
       }
       if ((item as any).absoluteHref) {
@@ -828,6 +882,11 @@ export function Sidebar({
                           label: t("dashboard_leads"),
                           href: `/${locale}/adminleads`,
                           permission: "adminleads",
+                        },
+                        {
+                          label: "Dashboard de Productos",
+                          href: `/${locale}/adminleads/dashboard`,
+                          permission: "productos_adminleads",
                         },
                         {
                           label: t("monitoreo_leads"),
@@ -1347,6 +1406,16 @@ export function Sidebar({
                           href: `/${locale}/compras/tendencia`,
                           permission: "tendencia",
                         },
+                        {
+                          label: "Actualización de precios",
+                          href: `/${locale}/compras/actualizacion-precios`,
+                          permission: "actualizacion_precios",
+                        },
+                        {
+                          label: "Validar factura",
+                          href: `/${locale}/compras/validar-factura`,
+                          permission: "validar_factura",
+                        },
                       ].map((subItem, index) => {
                         if (
                           !allowedSections.includes(subItem.permission) &&
@@ -1443,11 +1512,25 @@ export function Sidebar({
                               permission: "reportes_comerciales",
                             }]
                           : []),
-                        ...((isSuperAdminRole || isBIRole) && allowedSections.includes("semaforo_clientes")
+                        ...((isSuperAdminRole || isBIRole || isGerenteOperaciones) && allowedSections.includes("semaforo_clientes")
                           ? [{
                               label: "Semáforo de clientes",
                               href: `/${locale}/semaforo-clientes`,
                               permission: "semaforo_clientes",
+                            }]
+                          : []),
+                        ...((isSuperAdminRole || isBIRole || isGerenteOperaciones) && allowedSections.includes("cupo_credito")
+                          ? [{
+                              label: "Cupo de crédito",
+                              href: `/${locale}/cupo-credito`,
+                              permission: "cupo_credito",
+                            }]
+                          : []),
+                        ...((isSuperAdminRole || isBIRole) && allowedSections.includes("crear_cliente")
+                          ? [{
+                              label: t("crear_cliente"),
+                              href: `${basePath}/crear-cliente`,
+                              permission: "crear_cliente",
                             }]
                           : []),
                         {
@@ -1555,6 +1638,11 @@ export function Sidebar({
                           label: "Sobregiro",
                           href: `/${locale}/cuentas-por-cobrar/sobregiro`,
                           permission: "cxc_sobregiro",
+                        },
+                        {
+                          label: "Facturado detallado",
+                          href: `/${locale}/cuentas-por-cobrar/facturado-detallado`,
+                          permission: "cxc_facturado_detallado",
                         },
                         {
                           label: "Stoplight Report",
@@ -1887,6 +1975,8 @@ export function Sidebar({
                         { label: "Cuentas por Pagar", href: `/${locale}/administracion/cuentas-por-pagar` },
                         { label: "Tesorería y Bancos", href: `/${locale}/administracion/tesoreria` },
                         { label: "Conciliación Binance", href: `/${locale}/administracion/binance` },
+                        { label: "Conciliación bancaria", href: `/${locale}/administracion/bancos` },
+                        { label: "Pagos entre sedes", href: `/${locale}/administracion/intercompania` },
                         { label: "Fiscal", href: `/${locale}/administracion/fiscal` },
                         { label: "Contabilidad y cierre", href: `/${locale}/administracion/contabilidad` },
                       ].map((subItem, index) => {
@@ -2059,6 +2149,7 @@ export function Sidebar({
                           items: [
                             { label: "Días promedio", slug: "dias-promedio" },
                             { label: "Por llegar", slug: "por-llegar" },
+                            { label: "Inteligencia de precios", slug: "precios" },
                           ],
                         },
                         {

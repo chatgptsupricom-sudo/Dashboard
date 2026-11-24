@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
       { header: "Fecha de despacho", key: "fecha_despacho", width: 18, valor: (f) => fechaExcel(f.fecha_despacho) },
       { header: "Almacenista", key: "almacenista_nombre", width: 26 },
       { header: "Retira", key: "cliente_retira", width: 30 },
+      { header: "Cédula de quien retira", key: "cedula_retira", width: 20 },
       { header: "Cliente del ingreso", key: "ingreso_cliente", width: 32 },
       { header: "Serial", key: "ingreso_serial", width: 22 },
       { header: "Facturas", key: "facturas_json", width: 30, valor: (f) => facturas(f.facturas_json) },

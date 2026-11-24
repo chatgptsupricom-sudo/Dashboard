@@ -2,6 +2,7 @@ import { requireRoles } from "@/lib/auth/roles";
 import { ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { empresaForzadaPorRol, respuestaSedeNoPermitida, ROLES_ADMINISTRACION } from "@/lib/auth/sedeRol";
 import { calcularTiempoCobro, esTipoCobro, explicarAusencia } from "@/lib/cxc/tiempoCobro";
+import { calcularSobregiro } from "@/lib/cxc/sobregiro";
 import { NextRequest, NextResponse } from "next/server";
 import { conSinIntercompaniaParaBI } from "@/lib/intercompania";
 
@@ -55,10 +56,31 @@ async function leerGET(request: NextRequest) {
       return NextResponse.json({ success: true, data: { ausencias: await explicarAusencia(companyIds, desde, hasta, explicar, tipo) } });
     }
 
-    const data = await calcularTiempoCobro(companyIds, desde, hasta, tipo);
+    // Límite de crédito y consumido (saldo por cobrar) de HOY, los de Sobregiro.
+    // Si fallan, la tabla sale sin esas columnas en vez de tumbar la pantalla.
+    const [data, sobregiro] = await Promise.all([
+      calcularTiempoCobro(companyIds, desde, hasta, tipo),
+      calcularSobregiro(companyIds).catch((e) => {
+        console.error("Tiempo de cobro: sin límite de crédito:", e?.message);
+        return null;
+      }),
+    ]);
+    // Con varias sedes, el cupo y lo consumido se suman (cada sede tiene el suyo).
+    const credito = new Map<number, { limite: number; consumido: number }>();
+    for (const c of sobregiro?.clientes || []) {
+      const t = credito.get(c.partnerId) || { limite: 0, consumido: 0 };
+      t.limite += c.limite;
+      t.consumido += c.usado;
+      credito.set(c.partnerId, t);
+    }
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const clientes = data.clientes.map((c) => {
+      const t = credito.get(c.comercialId);
+      return { ...c, limite: sobregiro ? r2(t?.limite || 0) : null, consumido: sobregiro ? r2(t?.consumido || 0) : null };
+    });
     return NextResponse.json({
       success: true,
-      data: { ...data, filters: { empresa, companyIds, desde, hasta, tipo }, updatedAt: new Date().toISOString() },
+      data: { ...data, clientes, filters: { empresa, companyIds, desde, hasta, tipo }, updatedAt: new Date().toISOString() },
     });
   } catch (error: any) {
     console.error("Error CxC tiempo-cobro:", error.message);

@@ -7,14 +7,14 @@ import { PortalHeader } from "@/components/servicio-tecnico/portal-header";
 import { baseNC } from "@/lib/notas-credito/hostCliente";
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
-import { Manrope } from "next/font/google";
 import localFont from "next/font/local";
 import { headers } from "next/headers";
 
-// Syne va local: bajarla de Google en el build rompio el deploy (Turbopack,
-// "next/font/google queries have exactly one entry", oct-2026). Es variable: 600-800.
+// Las fuentes van locales: bajarlas de Google en el build rompio el deploy
+// (Turbopack, "next/font/google queries have exactly one entry": Syne en
+// oct-2026, Manrope en nov-2026). Son variables: Syne 600-800, Manrope 200-800.
 const syne = localFont({ src: "../../fonts/syne-latin.woff2", weight: "600 800", variable: "--font-syne", display: "swap" });
-const manrope = Manrope({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-manrope", display: "swap" });
+const manrope = localFont({ src: "../../fonts/manrope-latin.woff2", weight: "200 800", variable: "--font-manrope", display: "swap" });
 
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
   const { locale } = await params;

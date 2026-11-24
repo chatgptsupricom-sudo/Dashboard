@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Building, Check, Loader2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 interface OdooClient {
   id: number;
@@ -53,7 +54,7 @@ export function OdooClientSelect({
       // Un error del servidor se mostraba como "Sin resultados", porque solo se
       // leía json.clients. Así un 500 parecía una búsqueda sin coincidencias.
       .then(async (r) => {
-        const json = await r.json();
+        const json = await leerJson(r);
         if (!r.ok) throw new Error(json?.error || "No se pudo buscar en Odoo");
         return json;
       })

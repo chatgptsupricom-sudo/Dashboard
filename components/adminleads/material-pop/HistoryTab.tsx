@@ -16,6 +16,7 @@ import { POP_LOCATION_LABELS } from "@/lib/adminleads/material-pop/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 const TYPE_META: Record<PopMovementType, { label: string; icon: React.ElementType; cls: string }> = {
   entry: {
@@ -68,7 +69,7 @@ export function HistoryTab({ onGoToCatalog }: { onGoToCatalog: () => void }) {
       const res = await fetch(
         `/api/adminleads/material-pop/movements?${params.toString()}`,
       );
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) throw new Error(json?.error || "Error cargando historial");
       setMovements(json.movements || []);
       setTotal(Number(json.pagination?.total || 0));
@@ -96,7 +97,7 @@ export function HistoryTab({ onGoToCatalog }: { onGoToCatalog: () => void }) {
         const res = await fetch(
           `/api/adminleads/material-pop/movements?${params.toString()}`,
         );
-        const json = await res.json();
+        const json = await leerJson(res);
         if (!res.ok) throw new Error(json?.error || "Error");
         if (!cancelled) {
           setMovements(json.movements || []);

@@ -1,4 +1,10 @@
 import { callOdooRPC } from "@/lib/odoo";
+import { costos, ultimaVenta } from "@/lib/compras/datosOdoo";
+import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
+import { IDS_SEDES, listasPrincipales } from "@/lib/calidad-odoo/odoo";
+import { ultimosIngresos } from "@/lib/inteligencia-negocio/reportes";
+import { veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
+import { terminosSinIC } from "@/lib/intercompania";
 
 /**
  * Reporte de rotación de SKUs para el equipo de contenido (adminleads).
@@ -6,12 +12,12 @@ import { callOdooRPC } from "@/lib/odoo";
  * Responde a las 3 preguntas del brief: qué se mueve rápido, qué está
  * estancado, y cómo se ordena cada categoría — SOLO con cantidades físicas.
  *
- * RESTRICCIÓN DURA: nada de dinero. No se consultan ni se devuelven precios,
- * márgenes, costos, facturación por SKU ni proveedores. Solo:
- *   - unidades vendidas (cantidades físicas)
- *   - stock actual (unidades)
- *   - días de cobertura (stock ÷ ritmo de venta)
- *   - ranking de rotación (posición 1, 2, 3…)
+ * Devuelve unidades vendidas, stock, días de cobertura (stock ÷ ritmo de
+ * venta), ranking de rotación y el precio de venta (el de la lista de precios
+ * principal de la sede, `listasPrincipales`).
+ * Nada de márgenes, facturación por SKU ni proveedores: a pedido, el precio
+ * de venta sí. El costo solo lo ven SuperAdmin e Inteligencia de Negocio
+ * (`verCostoRotacion`); el equipo de contenido no (nov-2026).
  */
 
 export type EstadoRotacion = "alta" | "media" | "baja";
@@ -21,13 +27,45 @@ export type FilaRotacion = {
   nombre: string;
   marca: string;
   categoria: string;
+  /**
+   * Precio de venta sin IVA: la regla de precio fijo de la lista principal de
+   * la sede (en Odoo el precio del producto es 1 en casi todos); sin regla, el
+   * `lst_price` si es mayor que 1. 0 = sin precio.
+   */
+  precio: number;
+  /**
+   * Costo unitario de la sede (`costos()` de Compras: costo de Odoo o, sin él,
+   * el precio del proveedor). Con dos sedes, el de la primera que lo tiene.
+   * Solo viene si se pidió con costo; null = sin costo.
+   */
+  costo?: number | null;
   stock: number;
   vendidas30: number;
   vendidas60: number;
-  /** stock ÷ (vendidas30 / 30). null = sin ventas recientes (cobertura infinita). */
+  /**
+   * Cobertura: días que dura el stock al ritmo de venta de 60 días,
+   * stock ÷ (vendidas60 / 60). No es la antigüedad en el almacén. Con 60 y no
+   * 30 días, un mes flojo no la dispara. null = sin ventas en 60 días.
+   */
   coberturaDias: number | null;
-  /** Días desde la última venta. null = sin ventas en la ventana consultada. */
+  /** Días desde la última venta. null = nunca se vendió. */
   diasSinVenta: number | null;
+  /** Día de la última venta (YYYY-MM-DD), en Odoo o en Smartbit. null = nunca. */
+  ultimaVenta: string | null;
+  /** Días desde que entró la unidad más vieja del stock actual. null = sin stock. */
+  antiguedadDias: number | null;
+  /**
+   * La unidad más vieja vino en la carga inicial de Odoo (antes de
+   * FIN_CARGA_INICIAL): su fecha real es anterior, la antigüedad es "al menos".
+   */
+  antiguedadAntesDeOdoo: boolean;
+  /**
+   * Día del último ingreso al almacén principal: la última recepción de compra
+   * (proveedor o tránsito entre sedes); sin compras en Odoo, el ajuste de
+   * inventario (la carga inicial). Es `ultimosIngresos` del reporte de
+   * Productos de Inteligencia de Negocio. null = nunca entró.
+   */
+  ultimoIngreso: string | null;
   estado: EstadoRotacion;
   /** Posición dentro de su categoría por unidades vendidas (30d). 1 = el que más vende. */
   rankingCategoria: number;
@@ -46,8 +84,12 @@ const VENTANA_DIAS = 90; // se piden 90d y se parte en 30/60 + última venta
 
 type CompanyFilter = ["company_id", "in", number[]] | ["company_id", "=", number];
 
+/** SuperAdmin, Inteligencia de Negocio y Marketing y Electrodomésticos ven el costo. */
+export const verCostoRotacion = (rol: unknown) => veTodasLasSedes(rol);
+
 export async function calcularRotacion(
   companyIds: number[],
+  conCosto = false,
 ): Promise<{ filas: FilaRotacion[]; categorias: string[]; marcas: string[]; periodo: { desde: string; hasta: string } }> {
   const companyFilter: CompanyFilter =
     companyIds.length === 1
@@ -76,6 +118,7 @@ export async function calcularRotacion(
       // el resto de los reportes de ventas del panel).
       ["partner_id.name", "not ilike", "supricom"],
       ["partner_id.name", "not ilike", "office solution"],
+      ...terminosSinIC("move_id.commercial_partner_id"),
       companyFilter,
     ],
   ], { fields: ["product_id", "quantity", "date"], limit: 100000 });
@@ -103,42 +146,57 @@ export async function calcularRotacion(
       ["type", "=", "product"],
     ],
   ], {
-    fields: ["id", "default_code", "name", "x_studio_marca", "categ_id"],
+    fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "lst_price", "product_tmpl_id"],
     limit: 20000,
     context: { lang: "es_VE", allowed_company_ids: companyIds },
   });
 
-  const infoProd = new Map<number, { sku: string; nombre: string; marca: string; categoria: string }>();
-  for (const p of productos || []) {
+  // Precio de la lista principal de cada sede del usuario (el SuperAdmin:
+  // Valencia, si no Caracas, si no Panamá).
+  const listas = (
+    await listasPrincipales().catch((e) => {
+      console.error("Rotación: listas de precios", e?.message);
+      return [];
+    })
+  )
+    .filter((l) => companyIds.includes(l.companyId))
+    .sort((a, b) => IDS_SEDES.indexOf(a.companyId) - IDS_SEDES.indexOf(b.companyId));
+  const precioDe = (p: any) => {
+    const tmpl = Array.isArray(p.product_tmpl_id) ? p.product_tmpl_id[0] : 0;
+    for (const l of listas) {
+      const precio = l.precios.get(tmpl)?.find((x) => x > 0);
+      if (precio) return precio;
+    }
+    const lista = Number(p.lst_price) || 0;
+    return lista > 1 ? lista : 0;
+  };
+
+  const infoProd = new Map<number, { sku: string; nombre: string; marca: string; categoria: string; precio: number }>();
+  const agregar = (p: any) =>
     infoProd.set(p.id, {
       sku: typeof p.default_code === "string" ? p.default_code : "",
       nombre: p.name || "",
       marca: Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : p.x_studio_marca || "Sin marca",
       categoria: Array.isArray(p.categ_id) ? p.categ_id[1] : "Sin categoría",
+      precio: precioDe(p),
     });
-  }
+  for (const p of productos || []) agregar(p);
 
   // Productos con ventas que no aparecieron arriba (no vendibles / archivados):
   const faltantes = [...ventas.keys()].filter((id) => !infoProd.has(id));
   for (let i = 0; i < faltantes.length; i += 100) {
     const batch = faltantes.slice(i, i + 100);
     const extra = await callOdooRPC<any[]>("product.product", "read", [batch], {
-      fields: ["id", "default_code", "name", "x_studio_marca", "categ_id"],
-      context: { lang: "es_VE" },
+      fields: ["id", "default_code", "name", "x_studio_marca", "categ_id", "lst_price", "product_tmpl_id"],
+      context: { lang: "es_VE", allowed_company_ids: companyIds },
     });
-    for (const p of extra || []) {
-      infoProd.set(p.id, {
-        sku: typeof p.default_code === "string" ? p.default_code : "",
-        nombre: p.name || "",
-        marca: Array.isArray(p.x_studio_marca) ? p.x_studio_marca[1] : p.x_studio_marca || "Sin marca",
-        categoria: Array.isArray(p.categ_id) ? p.categ_id[1] : "Sin categoría",
-      });
-    }
+    for (const p of extra || []) agregar(p);
   }
 
   // --- 3. Stock actual (quants de ubicaciones internas de las compañías) ---
   const ids = [...infoProd.keys()];
   const stock = new Map<number, number>();
+  const entrada = new Map<number, string>(); // in_date más viejo con unidades
   for (let i = 0; i < ids.length; i += 2000) {
     const batch = ids.slice(i, i + 2000);
     const quants = await callOdooRPC<any[]>("stock.quant", "search_read", [
@@ -147,16 +205,52 @@ export async function calcularRotacion(
         ["location_id.usage", "=", "internal"],
         companyFilter,
       ],
-    ], { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 });
+    ], { fields: ["product_id", "quantity", "reserved_quantity", "in_date"], limit: 0 });
     for (const q of quants || []) {
       const pid = q.product_id?.[0];
       if (!pid) continue;
+      const dia = q.in_date ? String(q.in_date).slice(0, 10) : "";
+      if (dia && Number(q.quantity) > 0 && (!entrada.has(pid) || dia < entrada.get(pid)!)) entrada.set(pid, dia);
       const disp = Math.max(0, (Number(q.quantity) || 0) - (Number(q.reserved_quantity) || 0));
       stock.set(pid, (stock.get(pid) || 0) + disp);
     }
   }
 
-  // --- 4. Armar filas + estado ---
+  // --- 4. Última venta de toda la historia (Odoo + Smartbit), la más
+  // reciente entre las sedes; si falla, queda la de la ventana de 90 días.
+  const porSede = <T,>(leer: (c: number) => Promise<Map<number, T>>, que: string) =>
+    Promise.all(
+      companyIds.map((c) =>
+        leer(c).catch((e) => {
+          console.error(`Rotación: ${que} de la sede`, c, e?.message);
+          return new Map<number, T>();
+        }),
+      ),
+    );
+  const sedesOrdenadas = [...companyIds].sort((a, b) => IDS_SEDES.indexOf(a) - IDS_SEDES.indexOf(b));
+  const [ultimas, ingresos, costosSede] = await Promise.all([
+    porSede(ultimaVenta, "última venta"),
+    porSede((c) => ultimosIngresos(c, hasta), "último ingreso"),
+    conCosto
+      ? Promise.all(sedesOrdenadas.map((c) => costos(c).catch((e) => {
+          console.error("Rotación: costos de la sede", c, e?.message);
+          return new Map<number, number>();
+        })))
+      : Promise.resolve([] as Map<number, number>[]),
+  ]);
+  const costoDe = (pid: number): number | null => {
+    for (const m of costosSede) {
+      const c = m.get(pid);
+      if (c && c > 0) return Math.round(c * 100) / 100;
+    }
+    return null;
+  };
+  const masReciente = (fechas: (string | null | undefined)[]) =>
+    fechas.reduce<string | null>((max, d) => (d && (!max || d > max) ? d : max), null);
+  const ultimaDe = (pid: number, ventana: string | null) =>
+    masReciente([ventana, ...ultimas.map((m) => m.get(pid))]);
+
+  // --- 5. Armar filas + estado ---
   const hoyStr = hasta;
   const diasDesde = (f: string | null): number | null => {
     if (!f) return null;
@@ -171,9 +265,11 @@ export async function calcularRotacion(
     // Ignora productos sin stock y sin ventas: no aportan nada al contenido.
     if (st === 0 && v.v60 === 0) continue;
 
-    const ritmoDiario = v.v30 / 30;
+    const ritmoDiario = v.v60 / 60;
     const coberturaDias = ritmoDiario > 0 ? Math.round(st / ritmoDiario) : null;
-    const diasSinVenta = diasDesde(v.ultima);
+    const ultima = ultimaDe(pid, v.ultima);
+    const diasSinVenta = diasDesde(ultima);
+    const entro = st > 0 ? entrada.get(pid) ?? null : null;
 
     let estado: EstadoRotacion;
     const estancado =
@@ -194,17 +290,23 @@ export async function calcularRotacion(
       nombre: info.nombre,
       marca: info.marca,
       categoria: info.categoria,
+      precio: info.precio,
+      ...(conCosto && { costo: costoDe(pid) }),
       stock: Math.round(st),
       vendidas30: Math.round(v.v30),
       vendidas60: Math.round(v.v60),
       coberturaDias,
       diasSinVenta,
+      ultimaVenta: ultima,
+      antiguedadDias: diasDesde(entro),
+      antiguedadAntesDeOdoo: !!entro && entro < FIN_CARGA_INICIAL,
+      ultimoIngreso: masReciente(ingresos.map((m) => m.get(pid))),
       estado,
       rankingCategoria: 0,
     });
   }
 
-  // --- 5. Ranking por categoría (unidades 30d, desempate por 60d) ---
+  // --- 6. Ranking por categoría (unidades 30d, desempate por 60d) ---
   const porCat = new Map<string, FilaRotacion[]>();
   for (const f of filas) {
     if (!porCat.has(f.categoria)) porCat.set(f.categoria, []);
@@ -227,9 +329,18 @@ export async function calcularRotacion(
   return { filas, categorias, marcas, periodo: { desde, hasta } };
 }
 
-export function resolverCompanies(payload: any): number[] | null {
+/**
+ * Sedes del reporte. SuperAdmin e Inteligencia de Negocio eligen con `sede`
+ * (9 Valencia, 10 Caracas, "venezuela" las dos); sin elegir, el SuperAdmin ve
+ * las tres y BI las dos de Venezuela. Los demás roles, la de su `cids`.
+ */
+export function resolverCompanies(payload: any, sede?: string | null): number[] | null {
   const rol = String(payload?.role || "").toLowerCase().trim();
-  if (rol === "superadmin") return [7, 9, 10];
+  if (veTodasLasSedes(rol)) {
+    if (sede === "9" || sede === "10") return [Number(sede)];
+    if (sede === "venezuela") return [9, 10];
+    return rol === "superadmin" ? [7, 9, 10] : [9, 10];
+  }
   const cid = parseInt(payload?.cids, 10);
   if (!Number.isFinite(cid) || cid <= 0) return null;
   return [cid];

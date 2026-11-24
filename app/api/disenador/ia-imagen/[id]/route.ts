@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { duenoDelToken, esDisenador } from "@/lib/disenos/alcance";
 import { kieGetTask } from "@/lib/kie";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -16,8 +17,8 @@ export async function GET(
   try {
     const { id } = await params;
     const r = await query(
-      `SELECT id, prompt, status, kie_task_id, result_urls, fail_msg FROM designer_ai_jobs WHERE id = ?`,
-      [id]
+      `SELECT id, prompt, status, kie_task_id, result_urls, fail_msg FROM designer_ai_jobs WHERE id = ?${esDisenador(auth.payload) ? " AND created_by = ?" : ""}`,
+      esDisenador(auth.payload) ? [id, duenoDelToken(auth.payload).nombre] : [id]
     );
     const job = r.rows?.[0];
     if (!job) {

@@ -43,11 +43,13 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import PanelSupervision from "@/components/agenteia/PanelSupervision";
+import PanelEquipo from "@/components/agenteia/PanelEquipo";
 import { RecorridoGuiado, useRecorrido, type PasoRecorrido } from "@/components/ui/recorrido-guiado";
 import remarkGfm from "remark-gfm";
+import { aplicarEquipo, aplicarPasos, equipoVacio, partirRespuesta, type EstadoEquipo, type Paso } from "@/lib/agenteia/respuesta";
 
 interface AttachedFile {
   name: string;
@@ -63,6 +65,8 @@ interface Message {
   proceso?: string;
   // Herramientas que usó para responder (panel "Usó N herramientas").
   pasos?: Paso[];
+  // Lo que hizo cada uno del equipo de Supri (panel lateral del equipo).
+  equipo?: EstadoEquipo;
   files?: AttachedFile[];
 }
 
@@ -409,6 +413,204 @@ function PanelConsumo() {
   );
 }
 
+// «Tus preferencias»: las instrucciones personales del usuario (cómo quiere que
+// le hable el agente, como las de Claude) y las notas que el agente guardó de él
+// (lib/agenteia/memoria.ts). Solo se usan en sus conversaciones.
+interface NotaMemoria {
+  id: number;
+  texto: string;
+  origen: "agente" | "usuario";
+  creado: string;
+}
+
+function DialogoMemoria({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+  const [notas, setNotas] = useState<NotaMemoria[] | null>(null);
+  const [max, setMax] = useState(40);
+  const [nueva, setNueva] = useState("");
+  const [error, setError] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [instrucciones, setInstrucciones] = useState("");
+  const [guardadas, setGuardadas] = useState("");
+  const [maxInstrucciones, setMaxInstrucciones] = useState(1500);
+  const [aviso, setAviso] = useState("");
+
+  useEffect(() => {
+    if (!abierto) return;
+    setError("");
+    setAviso("");
+    fetch("/api/superadmin/agenteia/memoria")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => {
+        setNotas(d.notas);
+        setMax(d.max);
+        setInstrucciones(d.instrucciones || "");
+        setGuardadas(d.instrucciones || "");
+        setMaxInstrucciones(d.maxInstrucciones || 1500);
+      })
+      .catch(() => setError("No se pudieron leer las notas. Reintenta en un momento."));
+  }, [abierto]);
+
+  const cambiar = async (req: Promise<Response>) => {
+    setOcupado(true);
+    setError("");
+    try {
+      const r = await req;
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || "No se pudo guardar.");
+      setNotas(d.notas);
+      return true;
+    } catch (e: any) {
+      setError(e?.message || "No se pudo guardar.");
+      return false;
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const guardarInstrucciones = async () => {
+    setOcupado(true);
+    setError("");
+    setAviso("");
+    try {
+      const r = await fetch("/api/superadmin/agenteia/memoria", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instrucciones }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || "No se pudieron guardar las instrucciones.");
+      setGuardadas(instrucciones.trim());
+      setInstrucciones(instrucciones.trim());
+      setAviso("Instrucciones guardadas. Valen desde tu próximo mensaje.");
+    } catch (e: any) {
+      setError(e?.message || "No se pudieron guardar las instrucciones.");
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const agregar = async () => {
+    if (!nueva.trim()) return;
+    const ok = await cambiar(
+      fetch("/api/superadmin/agenteia/memoria", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto: nueva }),
+      }),
+    );
+    if (ok) setNueva("");
+  };
+
+  return (
+    <Dialog open={abierto} onOpenChange={(v) => !v && onCerrar()}>
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto agente-scroll">
+        <DialogHeader>
+          <DialogTitle>Tus preferencias</DialogTitle>
+          <DialogDescription>
+            Solo se usan en tus conversaciones: nadie más las ve ni le afectan. No cambian lo que puedes ver en el panel.
+          </DialogDescription>
+        </DialogHeader>
+        <section className="space-y-2">
+          <label htmlFor="agente-instrucciones" className="block text-sm font-semibold text-slate-800">
+            Cómo quieres que te responda
+          </label>
+          <p className="text-xs text-slate-500">
+            Tono, largo, formato, cómo llamarte o qué haces en la empresa. Ej.: «Háblame de tú y sé breve. Soy gerente de
+            Caracas: si no digo sede, usa Caracas. Termina siempre con las 3 acciones más importantes.»
+          </p>
+          <textarea
+            id="agente-instrucciones"
+            value={instrucciones}
+            onChange={(e) => {
+              setInstrucciones(e.target.value);
+              setAviso("");
+            }}
+            maxLength={maxInstrucciones}
+            rows={5}
+            className="w-full rounded-lg border border-slate-200 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 resize-y"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={guardarInstrucciones}
+              disabled={ocupado || instrucciones.trim() === guardadas.trim()}
+              className="h-9 px-3 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+            >
+              Guardar
+            </button>
+            <span className="text-xs text-slate-400">
+              {instrucciones.length} de {maxInstrucciones} caracteres
+            </span>
+          </div>
+          {aviso && <p className="text-sm text-emerald-700">{aviso}</p>}
+        </section>
+        <h3 className="text-sm font-semibold text-slate-800 pt-2">Lo que aprendí de ti</h3>
+        <p className="text-xs text-slate-500 -mt-1">
+          Lo que anoté cuando me corregiste o me dijiste cómo prefieres las cosas.
+        </p>
+        {notas === null && !error ? (
+          <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
+            <Loader2 size={15} className="animate-spin" /> Cargando…
+          </div>
+        ) : (
+          <ul className="max-h-[50vh] overflow-y-auto agente-scroll divide-y divide-slate-100 border border-slate-200 rounded-lg">
+            {(notas ?? []).length === 0 && (
+              <li className="p-3 text-sm text-slate-500">
+                Todavía no anoté nada. Cuando me corrijas o me digas cómo prefieres las respuestas, lo anoto aquí.
+              </li>
+            )}
+            {(notas ?? []).map((n) => (
+              <li key={n.id} className="flex items-start gap-3 p-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-800 break-words">{n.texto}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {n.origen === "usuario" ? "Lo escribiste tú" : "Lo anotó el agente"} ·{" "}
+                    {new Date(n.creado).toLocaleDateString("es-VE")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={ocupado}
+                  onClick={() => cambiar(fetch(`/api/superadmin/agenteia/memoria?id=${n.id}`, { method: "DELETE" }))}
+                  title="Olvidar esta nota"
+                  aria-label="Olvidar esta nota"
+                  className="shrink-0 size-8 grid place-items-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex gap-2">
+          <input
+            id="memoria-nueva"
+            value={nueva}
+            onChange={(e) => setNueva(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && agregar()}
+            maxLength={400}
+            placeholder="Ej.: las ventas de Panamá dámelas sin intercompañía"
+            disabled={ocupado || (notas?.length ?? 0) >= max}
+            className="flex-1 min-w-0 h-9 rounded-lg border border-slate-200 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+          />
+          <button
+            type="button"
+            onClick={agregar}
+            disabled={ocupado || !nueva.trim()}
+            className="h-9 px-3 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+          >
+            Anotar
+          </button>
+        </div>
+        <p className="text-xs text-slate-400">
+          {notas?.length ?? 0} de {max} notas.
+        </p>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // SuperAdmin: Configuración del agente (la tuerca). Quién lo usa, por correo,
 // y la bitácora de cambios hechos en Odoo (/api/superadmin/agenteia/acceso y /cambios).
 function DialogoConfiguracion({
@@ -710,6 +912,10 @@ function PasosHerramientas({
 // de la conexión y los códigos HTTP del panel.
 const ERROR_RED =
   "Se perdió la conexión con el agente antes de que terminara de responder. Suele pasar cuando el servidor del panel se reinicia o la red se cae. Puedes reintentar.";
+// Se cortó la conexión pero el agente sigue en el servidor (lib/agenteia/enCurso.ts):
+// la pantalla trae la respuesta sola. Sin ⚠️: no es un error todavía.
+const AVISO_CORTE =
+  "⏳ Se cortó la conexión, pero el agente sigue trabajando. La respuesta aparecerá aquí cuando termine, aunque cierres la página.";
 
 function errorHttp(status: number, detalle?: string): string {
   if (status === 401) return "Tu sesión venció. Vuelve a iniciar sesión y reintenta.";
@@ -724,6 +930,18 @@ function errorHttp(status: number, detalle?: string): string {
 // Los mensajes de error se guardan con ⚠️ al final de la respuesta. Los que
 // quedaron guardados en inglés (de antes) se muestran traducidos.
 const traducirError = (c: string) => c.replace(/⚠️ (network error|failed to fetch|load failed|networkerror[^\n]*)$/i, `⚠️ ${ERROR_RED}`);
+// Cada respuesta en su propio componente memorizado: así escribir en la caja no
+// vuelve a procesar el markdown de toda la conversación (se sentía un retraso
+// entre la tecla y la letra en pantalla en las conversaciones largas).
+const COMPONENTES_MD = { table: TablaConExcel };
+const RespuestaMarkdown = memo(function RespuestaMarkdown({ contenido }: { contenido: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTES_MD}>
+      {traducirError(sinMarcas(contenido))}
+    </ReactMarkdown>
+  );
+});
+
 const terminaEnError = (c: string) => /⚠️[^\n]*$/.test(c.trim());
 
 const SUGERENCIAS: { clave: "sugerencia_1" | "sugerencia_2" | "sugerencia_3" | "sugerencia_4"; icono: LucideIcon }[] = [
@@ -1000,28 +1218,7 @@ function VistaArchivo({ id, nombre, onCerrar }: ArchivoRef & { onCerrar: () => v
   );
 }
 
-// Herramientas que va usando el agente: el backend intercala
-// [[paso:<json base64url>]] con { id, fase: inicio|detalle|fin, nombre, detalle, ok }.
-interface Paso {
-  id: string;
-  nombre: string;
-  detalle?: string;
-  estado: "corriendo" | "ok" | "error";
-  inicio: number;
-  fin?: number;
-}
-const MARCA_PASO = /\[\[paso:([A-Za-z0-9_-]+)\]\]/g;
-function leerPaso(b64: string): any {
-  try {
-    return JSON.parse(decodeURIComponent(escape(atob(b64.replace(/-/g, "+").replace(/_/g, "/")))));
-  } catch {
-    return null;
-  }
-}
-
-// Mientras trabaja, el backend intercala [[avance:texto]] en la respuesta: no
-// es parte del mensaje, es el estado que se muestra debajo ("Consultando…").
-const MARCA_AVANCE = /\[\[avance:([^\]\n]*)\]\]/g;
+// Paso y cómo se leen las marcas de la respuesta: lib/agenteia/respuesta.ts
 
 const duracion = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}min ${s % 60}s`);
 
@@ -1067,6 +1264,9 @@ export default function AgenteIAPage() {
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [archivoAbierto, setArchivoAbierto] = useState<ArchivoRef | null>(null);
+  const [memoriaAbierta, setMemoriaAbierta] = useState(false);
+  // Panel lateral con el equipo de Supri trabajando (se abre solo cuando reparte tareas).
+  const [equipoAbierto, setEquipoAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   // ¿Puede usar el agente y es SuperAdmin? (null = cargando)
   const [acceso, setAcceso] = useState<{ puede: boolean; superadmin: boolean; editor: boolean } | null>(null);
@@ -1100,6 +1300,10 @@ export default function AgenteIAPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Chat cuya respuesta se está escribiendo, y chats que esperan una respuesta
+  // que siguió en el servidor tras un corte de conexión.
+  const generandoEn = useRef<string | null>(null);
+  const recuperando = useRef(new Set<string>());
   const recognitionRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1287,7 +1491,17 @@ export default function AgenteIAPage() {
   // Al abrir un archivo se pliega la lista de chats para dejarle espacio.
   const abrirArchivo = (a: ArchivoRef | null) => {
     setArchivoAbierto(a);
-    if (a) setSidebarOpen(false);
+    if (a) {
+      setSidebarOpen(false);
+      setEquipoAbierto(false);
+    }
+  };
+  const abrirEquipo = (abrir: boolean) => {
+    setEquipoAbierto(abrir);
+    if (abrir) {
+      setArchivoAbierto(null);
+      if (window.innerWidth < 1280) setSidebarOpen(false);
+    }
   };
 
   const createChat = () => {
@@ -1567,7 +1781,10 @@ export default function AgenteIAPage() {
 
     const control = new AbortController();
     abortRef.current = control;
+    generandoEn.current = chatId;
     let accumulated = "";
+    // El servidor ya aceptó la pregunta (respondió 200): un corte después no la pierde.
+    let huboRespuesta = false;
 
     try {
       const response = await fetch("/api/superadmin/agenteia", {
@@ -1582,6 +1799,7 @@ export default function AgenteIAPage() {
         throw new Error(errorHttp(response.status, errBody?.error));
       }
       if (!response.body) return;
+      huboRespuesta = true;
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1590,6 +1808,10 @@ export default function AgenteIAPage() {
       // Pasos por id, con la hora (en este navegador) en que empezó y terminó cada uno.
       const pasos = new Map<string, Paso>();
       let leidos = 0;
+      // El equipo de Supri: cuando reparte la primera tarea se abre su panel.
+      const equipo = equipoVacio();
+      let leidosEquipo = 0;
+      let equipoMostrado = false;
 
       while (!done) {
         const { value, done: d } = await reader.read();
@@ -1597,31 +1819,17 @@ export default function AgenteIAPage() {
         // El servidor manda espacios de ancho cero como latido: no son texto.
         crudo += decoder.decode(value, { stream: !d }).replace(/\u200B/g, "");
         // Los pasos de herramientas se leen y se sacan del texto.
-        for (const m of [...crudo.matchAll(MARCA_PASO)].slice(leidos)) {
-          const e = leerPaso(m[1]);
-          if (!e?.id) continue;
-          const actual: Paso = pasos.get(e.id) || { id: e.id, nombre: e.nombre || "Herramienta", estado: "corriendo", inicio: Date.now() };
-          if (e.nombre) actual.nombre = e.nombre;
-          if (e.detalle) actual.detalle = e.detalle;
-          if (e.fase === "fin") {
-            actual.estado = e.ok === false ? "error" : "ok";
-            actual.fin = Date.now();
-          }
-          pasos.set(e.id, actual);
+        leidos = aplicarPasos(crudo, pasos, leidos);
+        leidosEquipo = aplicarEquipo(crudo, equipo, leidosEquipo);
+        if (equipo.usado && !equipoMostrado) {
+          equipoMostrado = true;
+          abrirEquipo(true);
         }
-        leidos = [...crudo.matchAll(MARCA_PASO)].length;
-        const sinPasos = crudo.replace(MARCA_PASO, "");
-        // La respuesta es lo que viene después de la última consulta. Lo que
-        // el agente escribió antes (entre consulta y consulta) es su proceso:
-        // se guarda aparte y se muestra plegado, no como respuesta.
-        const marcas = [...sinPasos.matchAll(MARCA_AVANCE)];
-        const ultima = marcas[marcas.length - 1];
-        const corte = ultima ? ultima.index! + ultima[0].length : 0;
-        const proceso = sinPasos.slice(0, corte).replace(MARCA_AVANCE, "\n\n").replace(/\n{3,}/g, "\n\n").trim();
-        accumulated = sinPasos.slice(corte).trimStart();
-        // Una marca que llegó cortada entre dos trozos no se muestra a medias.
-        if (!d) accumulated = accumulated.replace(/\[\[[^\]]*$/, "");
-        setAvance(ultima && accumulated.trim() === "" ? ultima[1] : "");
+        const conEquipo = Object.keys(equipo.agentes).length > 0;
+        const partes = partirRespuesta(crudo, d);
+        const proceso = partes.proceso;
+        accumulated = partes.contenido;
+        setAvance(partes.avance);
         setMessages((prev) => {
           const next = [...prev];
           const last = next.length - 1;
@@ -1631,6 +1839,7 @@ export default function AgenteIAPage() {
               content: accumulated,
               proceso: proceso || undefined,
               pasos: pasos.size ? [...pasos.values()].map((p) => ({ ...p })) : undefined,
+              equipo: conEquipo ? (JSON.parse(JSON.stringify(equipo)) as EstadoEquipo) : undefined,
             };
           return next;
         }, chatId);
@@ -1660,6 +1869,18 @@ export default function AgenteIAPage() {
       }
       // fetch y la lectura del streaming lanzan TypeError cuando se corta la
       // conexión (red, reinicio del servidor, proxy). Lo ya escrito se conserva.
+      // Corte con la respuesta ya en marcha: el agente sigue en el servidor.
+      if (err instanceof TypeError && huboRespuesta) {
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next.length - 1;
+          if (next[last]?.role === "assistant")
+            next[last] = { ...next[last], content: `${accumulated.trim() ? `${accumulated.trim()}\n\n` : ""}${AVISO_CORTE}` };
+          return next;
+        }, chatId);
+        recuperar(chatId);
+        return;
+      }
       const motivo = err instanceof TypeError ? ERROR_RED : err?.message || "Ocurrió un error inesperado. Puedes reintentar.";
       const errorMsg = `${accumulated.trim() ? `${accumulated.trim()}\n\n` : ""}⚠️ ${motivo}`;
       setMessages((prev) => {
@@ -1672,6 +1893,7 @@ export default function AgenteIAPage() {
       if (isConversationModeRef.current) speakText("Ocurrió un error.");
     } finally {
       abortRef.current = null;
+      generandoEn.current = null;
       setIsGenerating(false);
       setAvance("");
       setMessages((prev) => {
@@ -1683,6 +1905,67 @@ export default function AgenteIAPage() {
       }, chatId);
     }
   };
+
+  // Detener: la orden va al servidor, porque un corte de conexión ya no detiene
+  // al agente (lib/agenteia/enCurso.ts).
+  const detener = () => {
+    const id = generandoEn.current;
+    if (id)
+      fetch("/api/superadmin/agenteia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ detener: id }),
+      }).catch(() => {});
+    abortRef.current?.abort();
+  };
+
+  // Tras un corte, pregunta cada 4 s por la respuesta que siguió en el
+  // servidor y la pone en el chat. Se rinde si en ese chat se hizo otra
+  // pregunta o pasan 20 minutos.
+  const recuperar = async (chatId: string) => {
+    if (recuperando.current.has(chatId)) return;
+    recuperando.current.add(chatId);
+    try {
+      for (let i = 0; i < 300; i++) {
+        await new Promise((r) => setTimeout(r, 4000));
+        if (generandoEn.current === chatId) return;
+        let r: { estado: string; mensaje?: Partial<Message> } | null = null;
+        try {
+          const res = await fetch("/api/superadmin/agenteia", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pendiente: chatId }),
+          });
+          r = res.ok ? await res.json() : null;
+        } catch {}
+        if (!r || r.estado === "corriendo") continue;
+        const final = r;
+        // Terminó: la respuesta reemplaza el aviso. Si no está (el servidor se
+        // reinició), el aviso pasa a error para poder reintentar.
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next.length - 1;
+          const m = next[last];
+          if (m?.role !== "assistant" || !m.content.includes(AVISO_CORTE)) return prev;
+          next[last] =
+            final.estado === "terminado" && final.mensaje
+              ? { ...m, ...final.mensaje }
+              : { ...m, content: m.content.replace(AVISO_CORTE, `⚠️ ${ERROR_RED}`) };
+          return next;
+        }, chatId);
+        return;
+      }
+    } finally {
+      recuperando.current.delete(chatId);
+    }
+  };
+
+  // Al abrir un chat que quedó esperando (se recargó la página), se sigue esperando.
+  useEffect(() => {
+    const m = messages[messages.length - 1];
+    if (activeChatId && !isGenerating && m?.role === "assistant" && m.content.includes(AVISO_CORTE)) recuperar(activeChatId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId, messages.length]);
 
   // Reintenta la pregunta que terminó en error: quita la pregunta y la
   // respuesta fallida y la vuelve a enviar sobre el historial anterior.
@@ -1773,7 +2056,7 @@ export default function AgenteIAPage() {
   useEffect(() => {
     if (messages.length > 0)
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isGenerating, isSpeaking, input]);
+  }, [messages, isGenerating, isSpeaking]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
@@ -2009,6 +2292,29 @@ export default function AgenteIAPage() {
             {acceso?.superadmin && (
               <button
                 type="button"
+                onClick={() => abrirEquipo(!equipoAbierto)}
+                title="Equipo de Supri: verlos trabajar"
+                aria-label="Equipo de Supri"
+                aria-pressed={equipoAbierto}
+                className={`flex items-center justify-center size-8 rounded-lg transition-colors ${
+                  equipoAbierto ? "bg-blue-100 text-blue-700" : "text-slate-600 hover:bg-slate-200/60"
+                }`}
+              >
+                <Users size={16} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setMemoriaAbierta(true)}
+              title="Tus preferencias: cómo quieres que te responda y lo que aprendí de ti"
+              aria-label="Tus preferencias"
+              className="flex items-center justify-center size-8 rounded-lg text-slate-600 hover:bg-slate-200/60 transition-colors"
+            >
+              <BrainCircuit size={16} />
+            </button>
+            {acceso?.superadmin && (
+              <button
+                type="button"
                 onClick={() => setConfiguracion(true)}
                 data-tour="agente-config"
                 title={
@@ -2182,9 +2488,7 @@ export default function AgenteIAPage() {
                         )}
                         {msg.content !== "" && (
                           <div data-msg={index} className="agente-md text-[14.5px] leading-7 text-slate-800 break-words">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: TablaConExcel }}>
-                              {traducirError(sinMarcas(msg.content))}
-                            </ReactMarkdown>
+                            <RespuestaMarkdown contenido={msg.content} />
                           </div>
                         )}
                         {archivosDe(msg.content).map((a) => (
@@ -2346,7 +2650,7 @@ export default function AgenteIAPage() {
                 {isGenerating && abortRef.current && !isConversationMode ? (
                   <button
                     type="button"
-                    onClick={() => abortRef.current?.abort()}
+                    onClick={detener}
                     title={t("detener")}
                     aria-label={t("detener")}
                     className="h-8 w-8 grid place-items-center rounded-full bg-slate-900 hover:bg-slate-700 text-white transition-colors"
@@ -2372,12 +2676,25 @@ export default function AgenteIAPage() {
 
       <RecorridoGuiado pasos={pasosRecorrido} abierto={recorrido.abierto} onCerrar={recorrido.cerrar} />
 
+      <DialogoMemoria abierto={memoriaAbierta} onCerrar={() => setMemoriaAbierta(false)} />
+
       {acceso?.superadmin && <DialogoConfiguracion
           abierto={configuracion}
           onCerrar={() => setConfiguracion(false)}
           alertas={alertasUso}
           onAlertas={setAlertasUso}
         />}
+
+      {/* ── PANEL LATERAL: el equipo de Supri trabajando ────────────────────── */}
+      {equipoAbierto && !archivoAbierto && (
+        <aside className="fixed inset-0 z-40 md:static md:z-auto md:w-[38%] md:min-w-[22rem] md:max-w-xl md:shrink-0 bg-white md:border-l border-slate-200 flex flex-col">
+          <PanelEquipo
+            equipo={[...messages].reverse().find((m) => m.role === "assistant" && m.equipo)?.equipo ?? null}
+            generando={isGenerating}
+            onCerrar={() => setEquipoAbierto(false)}
+          />
+        </aside>
+      )}
 
       {/* ── PANEL LATERAL: vista previa del archivo abierto ─────────────────── */}
       {archivoAbierto && (

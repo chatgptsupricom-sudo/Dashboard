@@ -100,6 +100,9 @@ export async function GET(
     const totalWithTax = Math.abs(inv.amount_total || 0);
     const residual = Math.abs(inv.amount_residual || 0);
     const paid = totalWithTax - residual;
+    // En Odoo amount_residual no lleva signo: el de una nota de credito es
+    // saldo a favor del cliente y se muestra en negativo.
+    const saldo = inv.move_type === "out_refund" ? -residual : residual;
 
     const companyId = inv.company_id?.[0] || 0;
     // Administracion solo ve facturas de la sede de su `cids`.
@@ -137,7 +140,7 @@ export async function GET(
         amountUntaxed: totalUntaxed,
         amountTax: totalTax,
         amountTotal: totalWithTax,
-        amountResidual: residual,
+        amountResidual: saldo,
         amountPaid: paid,
         invoiceUserId: vendedor?.[0] || 0,
         invoiceUserName: vendedor?.[1] || "Sin asignar",
@@ -166,7 +169,7 @@ export async function GET(
           tax: totalTax,
           total: totalWithTax,
           paid,
-          residual,
+          residual: saldo,
         },
       },
     });

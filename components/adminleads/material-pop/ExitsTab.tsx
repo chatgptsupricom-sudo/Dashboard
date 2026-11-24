@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 type ExitKind = "cliente" | "interno" | "evento" | "campana";
 
@@ -29,8 +30,11 @@ export function ExitsTab({
   products,
   onDone,
   onGoToCatalog,
+  preseleccion,
 }: {
   products: PopProduct[];
+  /** Producto elegido desde la tarjeta del catálogo (botón Entrada/Salida). */
+  preseleccion?: { id: number } | null;
   onDone: () => Promise<void> | void;
   onGoToCatalog: () => void;
 }) {
@@ -38,9 +42,17 @@ export function ExitsTab({
   const [kind, setKind] = useState<ExitKind>("cliente");
 
   const [lines, setLines] = useState<MovementLine[]>([lineaVacia()]);
+
+  useEffect(() => {
+    if (!preseleccion) return;
+    setLines([{ productId: preseleccion.id, quantity: "" }]);
+  }, [preseleccion]);
   const [location, setLocation] = useState<"office" | "warehouse">("office");
   const [useOtherLocation, setUseOtherLocation] = useState(false);
   const [client, setClient] = useState<any>(null);
+  // Cliente potencial: todavía no está en Odoo, se escribe su nombre.
+  const [potencial, setPotencial] = useState(false);
+  const [nombrePotencial, setNombrePotencial] = useState("");
   const [ordenVenta, setOrdenVenta] = useState("");
   const [vendedor, setVendedor] = useState("");
   const [vendedores, setVendedores] = useState<{ id: number; name: string }[]>([]);
@@ -89,8 +101,12 @@ export function ExitsTab({
       return;
     }
 
-    if (kind === "cliente" && !client) {
+    if (kind === "cliente" && !potencial && !client) {
       setError("Selecciona un cliente de Odoo");
+      return;
+    }
+    if (kind === "cliente" && potencial && !nombrePotencial.trim()) {
+      setError("Indica el nombre del cliente potencial");
       return;
     }
     if (kind !== "cliente" && !destination.trim()) {
@@ -119,8 +135,13 @@ export function ExitsTab({
     };
 
     if (kind === "cliente") {
-      body.clientId = client.id;
-      body.clientName = client.name;
+      if (potencial) {
+        body.potentialClient = true;
+        body.clientName = nombrePotencial.trim();
+      } else {
+        body.clientId = client.id;
+        body.clientName = client.name;
+      }
       body.clientCids = null;
       body.odooOrderName = ordenVenta.trim() || null;
       body.sellerName = vendedor.trim() || null;
@@ -135,7 +156,7 @@ export function ExitsTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = await res.json();
+      const json = await leerJson(res);
       if (!res.ok) {
         setError(json?.error || "No se pudo registrar la salida");
         return;
@@ -153,6 +174,7 @@ export function ExitsTab({
       setDestination("");
       setRecipient("");
       setClient(null);
+      setNombrePotencial("");
       setUseOtherLocation(false);
       setNotes("");
       setMovementDate(today());
@@ -237,9 +259,28 @@ export function ExitsTab({
             {kind === "cliente" && (
               <>
                 <div>
-                  <Label>Cliente (Odoo)</Label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label>{potencial ? "Cliente potencial" : "Cliente (Odoo)"}</Label>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={potencial}
+                        onChange={(e) => setPotencial(e.target.checked)}
+                      />
+                      Cliente potencial (no está en Odoo)
+                    </label>
+                  </div>
                   <div className="mt-1.5">
-                    <OdooClientSelect value={client} onChange={setClient} />
+                    {potencial ? (
+                      <Input
+                        value={nombrePotencial}
+                        onChange={(e) => setNombrePotencial(e.target.value)}
+                        placeholder="Nombre o razón social del cliente"
+                        maxLength={255}
+                      />
+                    ) : (
+                      <OdooClientSelect value={client} onChange={setClient} />
+                    )}
                   </div>
                 </div>
                 <div>

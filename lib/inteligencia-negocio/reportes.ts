@@ -12,6 +12,7 @@ import {
   signoDocumento,
   sumarDias,
 } from "@/lib/compras/datosOdoo";
+import { LISTAS_PRECIOS } from "@/lib/compras/actualizacionPrecios";
 import { historialStock } from "@/lib/compras/historial";
 import { nombresPlazos } from "@/lib/cxc/credito";
 import { sinIntercompania } from "@/lib/intercompania";
@@ -91,6 +92,7 @@ interface InfoProducto {
   nombre: string;
   marca: string;
   categoria: string;
+  tmplId: number | null;
 }
 
 /** Datos de los productos: el catálogo activo y, para los archivados, una lectura aparte. */
@@ -100,12 +102,12 @@ async function infoProductos(ids: number[]): Promise<Map<number, InfoProducto>> 
   const faltan: number[] = [];
   for (const id of ids) {
     const p = cat.get(id);
-    if (p) mapa.set(id, { codigo: p.codigo, nombre: p.nombre, marca: p.marca, categoria: p.categoria });
+    if (p) mapa.set(id, { codigo: p.codigo, nombre: p.nombre, marca: p.marca, categoria: p.categoria, tmplId: p.tmplId });
     else faltan.push(id);
   }
   for (let i = 0; i < faltan.length; i += 1000) {
     const r = await callOdooRPCEstricto<any[]>("product.product", "search_read", [[["id", "in", faltan.slice(i, i + 1000)]]], {
-      fields: ["id", "default_code", "name", "categ_id", "spiff_brand_id"],
+      fields: ["id", "default_code", "name", "categ_id", "spiff_brand_id", "product_tmpl_id"],
       context: { active_test: false },
     });
     for (const p of r || []) {
@@ -114,6 +116,7 @@ async function infoProductos(ids: number[]): Promise<Map<number, InfoProducto>> 
         nombre: String(p.name || "").trim(),
         marca: p.spiff_brand_id ? claveMarca(p.spiff_brand_id[1]) : SIN_MARCA,
         categoria: (p.categ_id && String(p.categ_id[1]).trim()) || "Sin categoría",
+        tmplId: idDe(p.product_tmpl_id),
       });
     }
   }
@@ -213,6 +216,8 @@ export interface FilaProducto {
   categoria: string;
   /** Costo unitario: el de lo vendido en el mes si se vendió; si no, el costo de Odoo. null = sin costo. */
   costo: number | null;
+  /** Precio de hoy en la lista principal de la sede (con las dos, Valencia y si no Caracas). null = sin precio. */
+  precioVenta: number | null;
   /** (venta − costo de lo vendido) ÷ venta. null = sin venta o sin costo. */
   margen: number | null;
   venta: number;
@@ -236,7 +241,7 @@ interface DatosSede {
  * recibió por compra en Odoo y entró con la carga inicial de inventario
  * (oct-2026: 555 productos con stock en Venezuela) toma la fecha de ese ajuste.
  */
-async function ultimosIngresos(companyId: number, hasta: string): Promise<Map<number, string>> {
+export async function ultimosIngresos(companyId: number, hasta: string): Promise<Map<number, string>> {
   const { ubicaciones } = await almacenSede(companyId);
   const porOrigen = (usos: string[]) =>
     agrupar(
@@ -255,6 +260,37 @@ async function ultimosIngresos(companyId: number, hasta: string): Promise<Map<nu
   for (const g of ajustes) if (g.product_id && g.date) mapa.set(g.product_id[0], diaCaracas(g.date));
   for (const g of compras) if (g.product_id && g.date) mapa.set(g.product_id[0], diaCaracas(g.date));
   return mapa;
+}
+
+/**
+ * Precio fijo (cantidad mínima ≤ 1) de la lista principal de la sede, por
+ * variante o plantilla: en Odoo el precio del producto es 1 en casi todos
+ * (lib/compras/actualizacionPrecios.ts). Es el precio de hoy, no el del mes.
+ */
+function preciosLista(companyId: number) {
+  const lista = LISTAS_PRECIOS.find((l) => l.sede === companyId)?.lista;
+  return cachear(`bi-precios|${companyId}`, async () => {
+    const porVariante = new Map<number, number>();
+    const porPlantilla = new Map<number, number>();
+    if (lista) {
+      const items = await leerTodo(
+        "product.pricelist.item",
+        [["pricelist_id", "=", lista], ["compute_price", "=", "fixed"], ["min_quantity", "<=", 1]],
+        ["product_id", "product_tmpl_id", "fixed_price"],
+        { context: { allowed_company_ids: [companyId] } },
+      );
+      // Orden por id: la regla más nueva pisa a la anterior.
+      for (const i of items) {
+        const precio = Number(i.fixed_price) || 0;
+        if (precio <= 0) continue;
+        const v = idDe(i.product_id);
+        const t = idDe(i.product_tmpl_id);
+        if (v) porVariante.set(v, precio);
+        else if (t) porPlantilla.set(t, precio);
+      }
+    }
+    return (id: number, tmplId: number | null) => porVariante.get(id) ?? (tmplId ? porPlantilla.get(tmplId) : undefined) ?? null;
+  });
 }
 
 function datosProductosSede(companyId: number, mes: string): Promise<DatosSede> {
@@ -293,7 +329,11 @@ function datosProductosSede(companyId: number, mes: string): Promise<DatosSede> 
 }
 
 export async function reporteProductos(companyIds: number[], mes: string): Promise<FilaProducto[]> {
-  const [sedes, cat] = await Promise.all([Promise.all(companyIds.map((cid) => datosProductosSede(cid, mes))), catalogo()]);
+  const [sedes, cat, precios] = await Promise.all([
+    Promise.all(companyIds.map((cid) => datosProductosSede(cid, mes))),
+    catalogo(),
+    Promise.all(companyIds.map(preciosLista)),
+  ]);
 
   // Todo el catálogo (con o sin inventario) más los archivados que se vendieron en el mes.
   const ids = new Set<number>(cat.keys());
@@ -327,6 +367,8 @@ export async function reporteProductos(companyIds: number[], mes: string): Promi
     const p = info.get(id);
     const costoOdoo = inventario > 0 && costoPesado > 0 ? costoPesado / inventario : costoPrimero;
     const costo = unidades > 0 && costoVendido > 0 ? costoVendido / unidades : costoOdoo;
+    const tmplId = p?.tmplId ?? null;
+    const precioVenta = precios.reduce<number | null>((v, precio) => v ?? precio(id, tmplId), null);
     filas.push({
       id,
       codigo: p?.codigo ?? `PROD-${id}`,
@@ -335,6 +377,7 @@ export async function reporteProductos(companyIds: number[], mes: string): Promi
       marca: p?.marca ?? SIN_MARCA,
       categoria: p?.categoria ?? "Sin categoría",
       costo: costo > 0 ? r2(costo) : null,
+      precioVenta,
       margen: venta > 0 && costoVendido > 0 ? r2(((venta - costoVendido) / venta) * 100) : null,
       venta: r2(venta),
       unidades: r2(unidades),

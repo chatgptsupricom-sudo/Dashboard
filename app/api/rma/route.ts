@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { requireRoles } from "@/lib/auth/roles";
+import { sedeRma } from "@/lib/rma/sedeSesion";
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { crearProductos, hayTablaProductos } from "@/lib/rma/items";
@@ -14,7 +15,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
-    const companyId = searchParams.get("company_id") || "";
+    const sede = sedeRma(auth.payload, searchParams.get("company_id"));
+    if (sede.error) return sede.error;
+    const companyId = sede.companyId;
     const origen = searchParams.get("origen") || "";
     // supricom = vendido por Supricom, externo = no comprado en Supricom.
     const procedencia = leerProcedencia(searchParams.get("procedencia"));
@@ -47,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     if (companyId) {
       where += " AND c.company_id = ?";
-      params.push(parseInt(companyId, 10));
+      params.push(companyId);
     }
 
     if (origen) {
@@ -114,7 +117,6 @@ export async function POST(request: NextRequest) {
       serial_quantity,
       reported_fault,
       company_id,
-      created_by,
       notes,
       // Opcional: crear el caso con origen='portal' (con su propio
       // tracking_token) en vez del default interno. Sirve para armar
@@ -126,6 +128,10 @@ export async function POST(request: NextRequest) {
     } = body;
     const origenFinal = origen === "portal" ? "portal" : undefined;
     const trackingToken = origenFinal === "portal" ? randomBytes(32).toString("hex") : null;
+
+    // Quién crea el caso sale de la sesión, no de lo que mande la pantalla
+    // (el historial es la constancia de quién hizo cada cosa).
+    const created_by = String(auth.payload?.name || auth.payload?.email || body.created_by || "").trim();
 
     if (!client_name || !reported_fault || !created_by) {
       return NextResponse.json(
@@ -145,7 +151,12 @@ export async function POST(request: NextRequest) {
         : Number(company_id) || null;
     if (!sedeCaso) {
       return NextResponse.json(
-        { error: "No se pudo determinar la sede del caso: el usuario no tiene sede asignada" },
+        {
+          error:
+            rol === "superadmin"
+              ? "Elige la sede del caso arriba (Valencia, Caracas o Panamá) antes de crearlo"
+              : "No se pudo determinar la sede del caso: el usuario no tiene sede asignada",
+        },
         { status: 400 }
       );
     }

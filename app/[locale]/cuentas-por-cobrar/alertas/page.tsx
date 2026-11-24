@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Clock,
   DollarSign,
+  Download,
   FileText,
   Package,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
 import { useCallback, useState } from "react";
 import useSWR from "swr";
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { descargarExcel } from "@/lib/excel";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -307,7 +309,7 @@ function InvoiceDetailTrigger({ item, onRenderSub }: { item: any; onRenderSub?: 
                             <td className="py-2.5 px-4 text-slate-500">{formatDate(p.date)}</td>
                             <td className="py-2.5 px-4 text-right text-slate-600">{p.debit > 0 ? formatCurrency(p.debit) : "—"}</td>
                             <td className="py-2.5 px-4 text-right text-emerald-600 font-medium">{p.credit > 0 ? formatCurrency(p.credit) : "—"}</td>
-                            <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(Math.abs(p.amount_residual || 0))}</td>
+                            <td className="py-2.5 px-4 text-right font-medium text-slate-800">{formatCurrency(p.amount_residual || 0)}</td>
                             <td className="py-2.5 px-4 text-center">
                               {p.reconciled ? <span className="inline-block w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 text-[10px] font-bold leading-5 text-center">✓</span> : <span className="inline-block w-5 h-5 rounded-full bg-slate-100 text-slate-400 text-[10px] font-bold leading-5 text-center">—</span>}
                             </td>
@@ -344,6 +346,34 @@ function InvoiceDetailTrigger({ item, onRenderSub }: { item: any; onRenderSub?: 
   );
 }
 
+type ExcelAlerta = { nombre: string; tituloDias: string; dias: (item: any) => number };
+
+const EXCEL_POR_VENCER: ExcelAlerta = {
+  nombre: "Por vencer",
+  tituloDias: "Días para vencer",
+  dias: (i) => i.daysUntilDue ?? 0,
+};
+const EXCEL_VENCIDAS: ExcelAlerta = {
+  nombre: "Vencidas",
+  tituloDias: "Días vencida",
+  dias: (i) => i.agingDays ?? 0,
+};
+
+function filasExcel(list: any[], excel: ExcelAlerta) {
+  return list.map((i) => ({
+    Factura: i.name,
+    Cliente: i.partnerName,
+    Sede: i.companyName,
+    Vendedor: i.invoiceUserName,
+    "Fecha factura": i.invoiceDate ? formatDDMMYYYY(i.invoiceDate) : "",
+    Vencimiento: i.invoiceDateDue ? formatDDMMYYYY(i.invoiceDateDue) : "",
+    [excel.tituloDias]: excel.dias(i),
+    "Saldo factura": i.saldoFactura ?? i.amountResidual,
+    "Saldo a favor aplicado": i.creditoAplicado ?? 0,
+    "Saldo por cobrar": i.amountResidual,
+  }));
+}
+
 function AlertCard({
   title,
   icon,
@@ -352,7 +382,9 @@ function AlertCard({
   gradient,
   severity = 0,
   onRenderSub,
+  excel,
 }: {
+  excel: ExcelAlerta;
   title: string;
   icon: React.ReactNode;
   data: any[];
@@ -420,7 +452,20 @@ function AlertCard({
 
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold">{title}</DialogTitle>
+          <div className="flex items-center justify-between gap-3 pr-6">
+            <DialogTitle className="text-xl font-bold">{title}</DialogTitle>
+            <button
+              onClick={() =>
+                descargarExcel(`Facturas ${excel.nombre.toLowerCase()}`, [
+                  { nombre: excel.nombre, filas: filasExcel(filteredList, excel) },
+                ])
+              }
+              disabled={filteredList.length === 0}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 transition-all font-medium text-xs disabled:opacity-50"
+            >
+              <Download size={14} /> Exportar a Excel
+            </button>
+          </div>
           <DialogDescription className="sr-only">
             Detalle de {title.toLowerCase()} que requieren atención.
           </DialogDescription>
@@ -502,6 +547,19 @@ export default function CxcAlertas() {
             Facturas que requieren atención inmediata
           </p>
         </div>
+        <div className="flex gap-2 self-stretch sm:self-auto">
+        <button
+          onClick={() =>
+            descargarExcel("Alertas CxC", [
+              { nombre: "Por vencer", filas: filasExcel(data?.data?.facturasPorVencer || [], EXCEL_POR_VENCER) },
+              { nombre: "Vencidas", filas: filasExcel(data?.data?.facturasVencidas || [], EXCEL_VENCIDAS) },
+            ])
+          }
+          disabled={!data?.data}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 transition-all font-medium text-sm justify-center disabled:opacity-50"
+        >
+          <Download size={16} /> Exportar a Excel
+        </button>
         <button
           onClick={() => mutate()}
           className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 transition-all font-medium text-sm self-stretch sm:self-auto justify-center"
@@ -509,6 +567,7 @@ export default function CxcAlertas() {
           <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />{" "}
           Actualizar
         </button>
+        </div>
       </div>
 
       {!userCids && (
@@ -538,6 +597,7 @@ export default function CxcAlertas() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           <AlertCard
             title="Facturas por Vencer"
+            excel={EXCEL_POR_VENCER}
             icon={<Clock className="text-amber-500" />}
             data={data?.data?.facturasPorVencer}
             desc="Vencen en los próximos 3 días"
@@ -549,13 +609,20 @@ export default function CxcAlertas() {
                   Vence en {item.daysUntilDue} día
                   {item.daysUntilDue !== 1 ? "s" : ""}
                 </span>
-                <span>•</span>
-                <span>{formatCurrency(Math.abs(item.amountResidual))}</span>
+                {item.creditoAplicado > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>
+                      Factura {formatCurrency(item.saldoFactura)} − NC/a favor {formatCurrency(item.creditoAplicado)}
+                    </span>
+                  </>
+                )}
               </div>
             )}
           />
           <AlertCard
             title="Facturas Vencidas"
+            excel={EXCEL_VENCIDAS}
             icon={<AlertTriangle className="text-red-500" />}
             data={data?.data?.facturasVencidas}
             desc="Saldo vencido pendiente de cobro"
@@ -566,8 +633,14 @@ export default function CxcAlertas() {
                 <span className="text-red-500 font-semibold">
                   {item.agingDays} días vencido
                 </span>
-                <span>•</span>
-                <span>{formatCurrency(Math.abs(item.amountResidual))}</span>
+                {item.creditoAplicado > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>
+                      Factura {formatCurrency(item.saldoFactura)} − NC/a favor {formatCurrency(item.creditoAplicado)}
+                    </span>
+                  </>
+                )}
               </div>
             )}
           />

@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
 
     // Paso 1: re-resolver contra Odoo. El cliente puede mentir en su navegador,
     // pero no puede mentir contra Odoo.
-    const resultado = await buscarFacturaConSeriales(invoiceNumber, clientRif, clientCid);
+    const resultado = await buscarFacturaConSeriales(invoiceNumber, clientRif, clientCid, { smartbit: true });
 
     if (resultado.estado === "no_encontrada") {
       // Mensaje generico (issue #25: no distinguir entre "no existe" y "no
@@ -422,7 +422,7 @@ export async function POST(request: NextRequest) {
             createdBy,
             trackingToken,
             resultado.partner_id,
-            matched.producto_id,
+            matched.producto_id || null,
             serialFinal,
             // La garantía se congela acá: es la del día en que el cliente
             // reportó, no la que se calcularía al abrir el caso.
@@ -460,7 +460,7 @@ export async function POST(request: NextRequest) {
             brand: e.matched.marca || null,
             model: e.matched.nombre || null,
             serial: e.serialFinal,
-            odoo_product_id: e.matched.producto_id,
+            odoo_product_id: e.matched.producto_id || null,
             reported_fault: e.pedido.falla,
             garantia_estado: e.matched.garantia?.estado || null,
             garantia_meses: e.matched.garantia?.meses_cubiertos ?? null,

@@ -217,7 +217,13 @@ export async function obtenerNota(id: number): Promise<any | null> {
 }
 
 /** Solicitudes con los datos del caso y del producto, las más nuevas primero. */
-export async function listarNotas(estado: EstadoNota | null, limite = 200, id?: number): Promise<any[]> {
+/** `companyId`: solo las de casos de esa sede (null = todas). */
+export async function listarNotas(
+  estado: EstadoNota | null,
+  limite = 200,
+  id?: number,
+  companyId: number | null = null,
+): Promise<any[]> {
   if (!(await hayColumnasAprobacion())) return [];
   const conItem = await hayColumnaItemNota();
   await ensureTablas();
@@ -240,10 +246,10 @@ export async function listarNotas(estado: EstadoNota | null, limite = 200, id?: 
        JOIN rma_cases c ON c.id = nc.case_id
        ${conItem ? "LEFT JOIN rma_case_items i ON i.id = nc.item_id" : ""}
        LEFT JOIN nc_solicitudes f ON f.rma_nota_id = nc.id
-      WHERE 1=1${estado ? " AND nc.estado = ?" : ""}${id ? " AND nc.id = ?" : ""}
+      WHERE 1=1${estado ? " AND nc.estado = ?" : ""}${id ? " AND nc.id = ?" : ""}${companyId ? " AND c.company_id = ?" : ""}
       ORDER BY nc.created_at DESC, nc.id DESC
       LIMIT ${Math.max(1, Math.min(500, limite))}`,
-    [...(estado ? [estado] : []), ...(id ? [id] : [])],
+    [...(estado ? [estado] : []), ...(id ? [id] : []), ...(companyId ? [companyId] : [])],
   );
   return (r.rows as any[]).map((n) => ({
     ...n,

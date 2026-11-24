@@ -88,6 +88,8 @@ export interface SpiffVendedor {
 export interface ResumenSpiff {
   mes: string;
   reglas: number;
+  /** Las reglas que se aplicaron en el mes (también las que nadie vendió). */
+  reglasDelMes: ReglaSpiff[];
   totalSpiff: number;
   vendedores: SpiffVendedor[];
 }
@@ -156,7 +158,7 @@ export async function calcularSpiff(
     vendedorPorNombre.set(normalizar(s.name), { userId: Number(s.user_id) || 0, nombre: s.name });
   });
 
-  const resultadoVacio: ResumenSpiff = { mes: `${anio}-${mm}`, reglas: reglas.length, totalSpiff: 0, vendedores: [] };
+  const resultadoVacio: ResumenSpiff = { mes: `${anio}-${mm}`, reglas: reglas.length, reglasDelMes: reglas, totalSpiff: 0, vendedores: [] };
 
   const facturas = (await callOdooRPC<any[]>(
     "account.move",
@@ -345,6 +347,7 @@ export async function calcularSpiff(
   return {
     mes: `${anio}-${mm}`,
     reglas: reglas.length,
+    reglasDelMes: reglas,
     totalSpiff: vendedores.filter((v) => !v.excluido).reduce((s, v) => s + v.totalSpiff, 0),
     vendedores,
   };

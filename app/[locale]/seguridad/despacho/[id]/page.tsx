@@ -33,6 +33,7 @@ type Despacho = {
   almacenista_nombre: string;
   facturas_json: string | null;
   cliente_retira: string | null;
+  cedula_retira?: string | null;
   nd_numero: string | null;
   accesorios_integros: number;
   observaciones: string | null;
@@ -348,7 +349,10 @@ export default function DespachoDetailPage() {
             <DataField
               label={td("label_cliente_retira")}
               value={despacho.cliente_retira || td("no_value")}
-              full
+            />
+            <DataField
+              label={td("label_cedula_retira")}
+              value={despacho.cedula_retira || td("no_value")}
             />
             <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-[10px] border border-slate-200 px-3 py-2.5">
               <span className="text-sm font-medium text-slate-700">

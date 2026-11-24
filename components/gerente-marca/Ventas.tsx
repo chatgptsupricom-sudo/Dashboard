@@ -196,6 +196,12 @@ export function Ventas() {
             <p className="text-xs font-semibold text-slate-600">{modo === "mes" ? nombreMes(mes) : textoRango}</p>
           </div>
 
+          {data.desde > r.desde && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Odoo factura desde el {fecha(data.desde)}: lo de antes (desde el {fecha(r.desde)}) está en Smartbit, que no trae lo cobrado, y no entra en este reporte.
+            </p>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             <Tarjeta icono={Receipt} titulo="Facturado" valor={dineroCorto(total.facturado)} pie={`Sin IVA, ${textoRango}`} acento="bg-blue-50 text-blue-600" />
             <Tarjeta icono={HandCoins} titulo="Cobrado" valor={dineroCorto(total.cobrado)} pie={`${porcentaje(pctCobrado(total))} de lo facturado`} acento="bg-emerald-50 text-emerald-600" />

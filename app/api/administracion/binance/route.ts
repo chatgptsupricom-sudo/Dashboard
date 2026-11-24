@@ -4,10 +4,13 @@ import { ROLES_ADMINISTRACION } from "@/lib/administracion/auth";
 import {
   ArchivoIlegible,
   asignarMovimiento,
+  marcarImpresos,
   borrarMovimientosSemana,
-  capturaYaSubida,
+  capturaPorHuella,
   comprobantePorHuella,
-  conciliacionSemana,
+  conciliacion,
+  semanaValida,
+  TODAS_LAS_SEMANAS,
   clienteDelArchivo,
   diaDeCarpeta,
   eliminarComprobante,
@@ -22,7 +25,9 @@ import {
   movimientosBorrables,
   NOMBRE_SEDE,
   ordenesRegistradasEnOdoo,
+  conRegistroOdoo,
   esRolCxC,
+  esLado,
   ROL_CXC,
   rangoSemana,
   sedeBinance,
@@ -33,30 +38,35 @@ import { descargarDeDrive, ErrorDrive } from "@/lib/administracion/googleDrive";
 const MAX_BYTES = 8 * 1024 * 1024;
 const TIPOS = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 
-// GET /api/administracion/binance?semana=YYYY-MM-DD (lunes)
+// GET /api/administracion/binance?semana=YYYY-MM-DD (lunes)[&lado=salida]
 // Comprobantes de la semana cruzados con Binance Pay + pagos sin comprobante.
+// lado=salida: los pagos que hicimos nosotros (solo Administracion).
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, [...ROLES_ADMINISTRACION, ROL_CXC]);
   if (auth.error) return auth.error;
   const semana = request.nextUrl.searchParams.get("semana") || "";
-  if (!rangoSemana(semana)) {
-    return NextResponse.json({ error: "La semana debe ser un lunes (YYYY-MM-DD)" }, { status: 400 });
+  if (!semanaValida(semana)) {
+    return NextResponse.json({ error: "La semana debe ser un lunes (YYYY-MM-DD) o «todas»" }, { status: 400 });
   }
   const sede = sedeBinance(auth.payload);
   if (sede === undefined) return respuestaSedeNoPermitida();
+  const lado = request.nextUrl.searchParams.get("lado") === "salida" ? "salida" : "entrada";
+  if (lado === "salida" && esRolCxC(auth.payload)) {
+    return NextResponse.json({ error: "Las salidas las concilia Administración" }, { status: 403 });
+  }
   try {
     // ?vista=comprobantes: lo que ve Cuentas por Cobrar al subir, solo los
     // comprobantes de la semana con su estado (sin el estado de cuenta).
     if (request.nextUrl.searchParams.get("vista") === "comprobantes") {
-      const { comprobantes } = await conciliacionSemana(semana, sede);
-      return NextResponse.json({ success: true, semana, comprobantes });
+      const { comprobantes } = await conciliacion(semana, sede);
+      return NextResponse.json({ success: true, semana, comprobantes: await conRegistroOdoo(comprobantes) });
     }
     // Cuentas por Cobrar solo ve los conciliados que todavia no registro en Odoo
     // (ni pendientes ni pagos sin comprobante). ?vista=cxc: la misma vista para
     // el SuperAdmin y Administracion.
     const esCxC = esRolCxC(auth.payload);
     if (esCxC || request.nextUrl.searchParams.get("vista") === "cxc") {
-      const { comprobantes } = await conciliacionSemana(semana, sede);
+      const { comprobantes } = await conciliacion(semana, sede);
       const conciliados = comprobantes.filter((c) => c.estado === "conciliado" || c.estado === "manual");
       let registradas: Set<string>;
       try {
@@ -72,8 +82,14 @@ export async function GET(request: NextRequest) {
         registrados: conciliados.filter((c) => registradas.has(c.orderId)).length,
       });
     }
-    const [datos, borrables] = await Promise.all([conciliacionSemana(semana, sede), movimientosBorrables(semana, sede)]);
-    return NextResponse.json({ success: true, semana, ...datos, borrables });
+    const [datos, borrables] = await Promise.all([
+      conciliacion(semana, sede, lado),
+      // Con todas las semanas no se ofrece borrar el estado de cuenta (se borra por semana).
+      semana === TODAS_LAS_SEMANAS ? Promise.resolve(0) : movimientosBorrables(semana, sede),
+    ]);
+    // Las salidas son pagos nuestros: no llevan el ID de orden en un cobro de Odoo.
+    const comprobantes = lado === "entrada" ? await conRegistroOdoo(datos.comprobantes) : datos.comprobantes;
+    return NextResponse.json({ success: true, semana, ...datos, comprobantes, borrables });
   } catch (e: any) {
     console.error("[binance] conciliacion:", e?.message);
     return NextResponse.json({ error: "No se pudo cargar la conciliación" }, { status: 500 });
@@ -97,7 +113,7 @@ function respuestaRepetido(
   return NextResponse.json({ error, repetido: true, otraSede }, { status: 409 });
 }
 
-// POST /api/administracion/binance (multipart: archivo [, tipo=estado]) — un
+// POST /api/administracion/binance (multipart: archivo [, tipo=estado] [, lado=salida]) — un
 // archivo por llamada: la pantalla manda varios a la vez y muestra el avance.
 // Con tipo=estado es una captura/PDF del estado de cuenta, no un comprobante.
 // Un archivo que ya se subio (misma huella SHA-256) no se vuelve a leer con la
@@ -144,16 +160,27 @@ export async function POST(request: NextRequest) {
       if (esRolCxC(auth.payload)) {
         return NextResponse.json({ error: "El estado de cuenta lo sube Administración" }, { status: 403 });
       }
-      if (await capturaYaSubida(sha)) {
-        return NextResponse.json({ success: true, estado: true, yaEstaba: true, recibidos: 0, nuevos: 0, repetidos: 0 });
+      // Uno subido antes de guardar las salidas se vuelve a leer, para sacarle los pagos enviados.
+      const previo = await capturaPorHuella(sha);
+      if (previo?.conSalidas) {
+        return NextResponse.json({ success: true, estado: true, yaEstaba: true, recibidos: 0, enviados: 0, nuevos: 0, repetidos: 0 });
       }
       const { movs, leidas, captura } = await leerEstadoDeCuenta(datos, archivo.type);
       if (!leidas) {
         return NextResponse.json({ error: "No parece un estado de cuenta de Binance Pay" }, { status: 422 });
       }
       // SuperAdmin (sede null): sus pagos solo los borra el SuperAdmin.
-      const r = await guardarMovimientos(movs, { email, sede }, { datos, nombre: archivo.name, sha, captura });
-      return NextResponse.json({ success: true, estado: true, leidas, recibidos: movs.length, ...r });
+      const r = await guardarMovimientos(
+        movs,
+        { email, sede },
+        { datos, nombre: archivo.name, sha, captura },
+        previo?.id ?? null,
+      );
+      return NextResponse.json({ success: true, estado: true, leidas, ...r });
+    }
+    const lado = form.get("lado") === "salida" ? "salida" : "entrada";
+    if (lado === "salida" && esRolCxC(auth.payload)) {
+      return NextResponse.json({ error: "Los comprobantes de las salidas los sube Administración" }, { status: 403 });
     }
     const mismo = await comprobantePorHuella(sha);
     if (mismo) return respuestaRepetido(mismo.orderId, mismo, cids, true);
@@ -168,7 +195,7 @@ export async function POST(request: NextRequest) {
     } else if (dia !== null) {
       fecha = fechaConCarpeta(dia, leido.horaTelefono);
     } else {
-      const enSemana = await fechaSinComprobante(leido.orderId, String(form.get("semana") || ""));
+      const enSemana = await fechaSinComprobante(leido.orderId, String(form.get("semana") || ""), lado);
       if (!enSemana) {
         return NextResponse.json({ error: "El comprobante no trae la fecha y falta la semana" }, { status: 400 });
       }
@@ -178,6 +205,7 @@ export async function POST(request: NextRequest) {
       { ...leido, ...fecha },
       { nombre: archivo.name, mime: archivo.type, datos },
       { email, cids },
+      lado,
     );
     if ("repetido" in r) return respuestaRepetido(leido.orderId, r.repetido, cids, false);
     return NextResponse.json({
@@ -220,10 +248,21 @@ export async function POST(request: NextRequest) {
 
 // PATCH /api/administracion/binance {id, movimiento_id} — amarrar a mano un
 // comprobante con un pago del estado de cuenta (movimiento_id null = soltarlo).
+// PATCH {impresos: [id...]} — se imprimieron las hojas de esos conciliados.
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_ADMINISTRACION);
   if (auth.error) return auth.error;
   const b = await request.json().catch(() => ({}));
+  if (Array.isArray(b?.impresos)) {
+    const ids = b.impresos.map(Number);
+    if (ids.length > 1000 || !ids.every((n: number) => Number.isInteger(n) && n > 0)) {
+      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+    }
+    const sede = sedeBinance(auth.payload);
+    if (sede === undefined) return respuestaSedeNoPermitida();
+    await marcarImpresos(ids, sede, String(auth.payload?.email || ""));
+    return NextResponse.json({ success: true });
+  }
   const id = Number(b?.id);
   const mov = b?.movimiento_id === null ? null : Number(b?.movimiento_id);
   if (!Number.isInteger(id) || id <= 0 || (mov !== null && (!Number.isInteger(mov) || mov <= 0))) {
@@ -264,6 +303,6 @@ export async function DELETE(request: NextRequest) {
   }
   const id = Number(request.nextUrl.searchParams.get("id"));
   if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "id inválido" }, { status: 400 });
-  await eliminarComprobante(id, sede);
+  await eliminarComprobante(id, sede, esRolCxC(auth.payload));
   return NextResponse.json({ success: true });
 }

@@ -75,10 +75,12 @@ export default function MisClientesPage() {
   };
 
   const clientesFiltrados = useMemo(() => {
+    const texto = busqueda.toLowerCase();
+    // Odoo manda `false` en los campos vacíos: `false?.toLowerCase()` revienta.
     return clientes.filter(
       (c: any) =>
-        c.name?.toLowerCase().includes(busqueda.toLowerCase()) ||
-        c.vat?.toLowerCase().includes(busqueda.toLowerCase()),
+        String(c.name || "").toLowerCase().includes(texto) ||
+        String(c.vat || "").toLowerCase().includes(texto),
     );
   }, [clientes, busqueda]);
 

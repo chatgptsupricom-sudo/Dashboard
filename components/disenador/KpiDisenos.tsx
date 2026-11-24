@@ -25,6 +25,8 @@ interface Kpis {
   dias: Record<string, number>;
   semanas: { inicio: string; fin: string; total: number }[];
   categorias: Record<string, number>;
+  /** Solo llega a SuperAdmin y BI: un diseñador ve únicamente lo suyo. */
+  creadores?: string[];
 }
 
 const MESES = [
@@ -77,11 +79,14 @@ export default function KpiDisenos({
   const [arrastrando, setArrastrando] = useState<DisenoDelDia | null>(null);
   const [encima, setEncima] = useState<string | null>(null);
   const [moviendo, setMoviendo] = useState(false);
+  // SuperAdmin/BI: ver a un diseñador ("" = todos). Al diseñador la API le ignora el filtro.
+  const [creador, setCreador] = useState("");
+  const qCreador = creador ? `&creador=${encodeURIComponent(creador)}` : "";
 
   const fetchKpis = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/disenador/disenos/kpis?mes=${iso(anio, mes, 1).slice(0, 7)}`);
+      const res = await fetch(`/api/disenador/disenos/kpis?mes=${iso(anio, mes, 1).slice(0, 7)}${qCreador}`);
       const json = await res.json();
       if (json.success) {
         setData(json);
@@ -96,14 +101,14 @@ export default function KpiDisenos({
     } finally {
       setLoading(false);
     }
-  }, [anio, mes]);
+  }, [anio, mes, qCreador]);
 
   useEffect(() => { fetchKpis(); }, [fetchKpis, refreshKey]);
 
   const fetchDia = useCallback(async (fecha: string) => {
     setCargandoDia(true);
     try {
-      const res = await fetch(`/api/disenador/disenos?dia=${fecha}&limit=60`);
+      const res = await fetch(`/api/disenador/disenos?dia=${fecha}&limit=60${qCreador}`);
       const json = await res.json();
       setDelDia(json.success ? json.designs || [] : []);
     } catch {
@@ -111,7 +116,7 @@ export default function KpiDisenos({
     } finally {
       setCargandoDia(false);
     }
-  }, []);
+  }, [qCreador]);
 
   useEffect(() => {
     if (diaSel) fetchDia(diaSel);
@@ -182,6 +187,19 @@ export default function KpiDisenos({
           KPI de diseños
         </CardTitle>
         <div className="flex items-center gap-2">
+          {data?.creadores && (
+            <select
+              value={creador}
+              onChange={(e) => setCreador(e.target.value)}
+              className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+              aria-label="Diseñador"
+            >
+              <option value="">Todos los diseñadores</option>
+              {data.creadores.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          )}
           <Button variant="outline" size="sm" onClick={() => mover(-1)} className="h-8 w-8 p-0">
             <ChevronLeft className="w-4 h-4" />
           </Button>

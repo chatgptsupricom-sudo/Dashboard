@@ -39,6 +39,10 @@ const COLUMNAS_RECEPCION: Array<[string, string]> = [
   ["descartado_at", "TIMESTAMP NULL DEFAULT NULL"],
   ["descartado_por", "VARCHAR(200) DEFAULT NULL"],
   ["descartado_motivo", "VARCHAR(500) DEFAULT NULL"],
+  // Quién puso la OC de Odoo y cuándo (puede ser después de que llegó o se
+  // cerró: sin OC no se carga en Odoo).
+  ["odoo_oc_por", "VARCHAR(200) DEFAULT NULL"],
+  ["odoo_oc_at", "TIMESTAMP NULL DEFAULT NULL"],
 ];
 
 let columnasListas: Promise<void> | null = null;

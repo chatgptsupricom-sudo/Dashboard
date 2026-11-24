@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { InventariosGuardados } from "./InventariosGuardados";
+import { leerJson } from "@/lib/adminleads/material-pop/respuesta";
 
 /**
  * Inventario físico al estilo de Odoo: una fila por producto y ubicación con
@@ -164,7 +165,7 @@ export function InventoryTab({
           })),
         }),
       });
-      const json = await res.json().catch(() => ({}));
+      const json = await leerJson(res);
       if (!res.ok) throw new Error(json?.error || "No se pudo guardar el inventario");
       toast({
         title: `Inventario #${json.id} guardado`,

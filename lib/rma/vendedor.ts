@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { callOdooRPCEstricto } from "@/lib/odoo";
+import { asegurarColumnaCedula } from "@/lib/seguridad/columnaCedula";
 import { hayColumnasAprobacion, hayColumnaItemNota } from "@/lib/rma/notaCredito";
 
 /**
@@ -176,8 +177,9 @@ export async function ingresosDelCaso(caseId: number): Promise<any[]> {
 /** Despachos del equipo en Seguridad (acta de entrega al cliente). */
 export async function despachosDelCaso(caseId: number): Promise<any[]> {
   try {
+    await asegurarColumnaCedula();
     const r = await query(
-      `SELECT id, fecha_despacho, nd_numero, almacenista_nombre, cliente_retira,
+      `SELECT id, fecha_despacho, nd_numero, almacenista_nombre, cliente_retira, cedula_retira,
               accesorios_integros, observaciones, created_at
          FROM seguridad_despachos WHERE rma_case_id = ? ORDER BY created_at ASC`,
       [caseId],

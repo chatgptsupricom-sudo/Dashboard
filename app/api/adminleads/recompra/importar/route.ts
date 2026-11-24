@@ -6,6 +6,7 @@
 import { importarExcel, SEDES } from "@/lib/adminleads/recompra";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -15,6 +16,7 @@ const MAX_BYTES = 15 * 1024 * 1024;
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const form = await request.formData();

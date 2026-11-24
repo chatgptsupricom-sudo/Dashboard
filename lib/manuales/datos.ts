@@ -1,14 +1,20 @@
 import { db } from "@/lib/db";
-import { normRol } from "@/lib/manuales/permisos";
+import { enlaceValido, rolLector, tipoManual, type TipoManual } from "@/lib/manuales/permisos";
 
 /**
  * Manuales de procedimiento (sección "Manuales" del panel).
  *
  * Cada manual sigue el formato de procedimiento: código, versión, objetivo,
  * alcance, responsables, definiciones, pasos (con capturas) y control de
- * cambios. Por ahora la sección es solo del rol Procesos, que los escribe y
- * los lee; `roles` guarda qué roles los leerán cuando se abra a ellos. Las tablas se crean solas; las imágenes van
- * en MySQL (LONGBLOB), como product_images y los adjuntos de RMA.
+ * cambios. El rol Procesos los escribe y ve todos; cada rol lee los
+ * publicados que tienen su rol en `roles` (menú "Manual" / "Tutorial").
+ *
+ * `tipo`: "manual" = el procedimiento (qué hace el rol y con qué reglas);
+ * "tutorial" = recorrido por las pantallas del panel del rol, un paso por
+ * pantalla con su `enlace`. El contenido base de cada rol está en
+ * lib/manuales/semillas/ y Procesos lo carga desde la pantalla (borrador).
+ * Las tablas y columnas se crean solas; las imágenes van en MySQL (LONGBLOB),
+ * como product_images y los adjuntos de RMA.
  */
 
 export type Paso = {
@@ -17,6 +23,8 @@ export type Paso = {
   descripcion: string;
   imagenes: number[];
   nota: string;
+  /** Pantalla del panel a la que lleva el paso, sin idioma ("/vendedores/leads"). Opcional. */
+  enlace?: string;
 };
 
 export type Contenido = {
@@ -35,6 +43,7 @@ export type Manual = {
   titulo: string;
   area: string;
   version: string;
+  tipo: TipoManual;
   roles: string[];
   publicado: boolean;
   contenido: Contenido;
@@ -81,6 +90,9 @@ async function ensureTablas() {
       INDEX (manual_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  const [cols] = await db.execute("SHOW COLUMNS FROM manuales LIKE 'tipo'");
+  if (!(cols as any[]).length)
+    await db.execute("ALTER TABLE manuales ADD COLUMN tipo VARCHAR(20) NOT NULL DEFAULT 'manual' AFTER version");
   tablasListas = true;
 }
 
@@ -102,6 +114,7 @@ const aManual = (f: any): Manual => ({
   titulo: f.titulo,
   area: f.area || "",
   version: f.version || "",
+  tipo: tipoManual(f.tipo),
   roles: json<string[]>(f.roles, []),
   publicado: Boolean(f.publicado),
   contenido: { ...CONTENIDO_VACIO, ...json<Partial<Contenido>>(f.contenido, {}) },
@@ -109,15 +122,24 @@ const aManual = (f: any): Manual => ({
   updatedAt: f.updated_at ? new Date(f.updated_at).toISOString() : null,
 });
 
-export async function listarManuales(): Promise<Omit<Manual, "contenido">[]> {
+export type ResumenManual = Omit<Manual, "contenido">;
+
+export async function listarManuales(): Promise<ResumenManual[]> {
   await ensureTablas();
   const [filas] = await db.execute(
-    "SELECT id, codigo, titulo, area, version, roles, publicado, updated_by, updated_at FROM manuales ORDER BY area, codigo, titulo",
+    "SELECT id, codigo, titulo, area, version, tipo, roles, publicado, updated_by, updated_at FROM manuales ORDER BY area, codigo, titulo",
   );
   return (filas as any[]).map((f) => {
     const { contenido: _, ...m } = aManual(f);
     return m;
   });
+}
+
+/** Códigos ya usados (para saber qué contenido base falta cargar). */
+export async function codigosUsados(): Promise<Set<string>> {
+  await ensureTablas();
+  const [filas] = await db.execute("SELECT codigo FROM manuales WHERE codigo <> ''");
+  return new Set((filas as any[]).map((f) => String(f.codigo).trim().toUpperCase()));
 }
 
 export async function obtenerManual(id: number): Promise<Manual | null> {
@@ -141,7 +163,8 @@ export function limpiarManual(b: any) {
     titulo: texto(b?.titulo, 200),
     area: texto(b?.area, 80),
     version: texto(b?.version, 20) || "1.0",
-    roles: [...new Set(lista(b?.roles, 50, (r) => normRol(r)).filter((r) => r && r !== "superadmin"))],
+    tipo: tipoManual(b?.tipo),
+    roles: [...new Set(lista(b?.roles, 50, (r) => rolLector(r)).filter((r) => r && r !== "procesos"))],
     publicado: Boolean(b?.publicado),
     contenido: {
       objetivo: texto(c.objetivo, 5000),
@@ -160,6 +183,7 @@ export function limpiarManual(b: any) {
         descripcion: texto(p.descripcion, 10000),
         imagenes: ids(p.imagenes),
         nota: texto(p.nota, 2000),
+        enlace: enlaceValido(p.enlace),
       })),
       documentos: texto(c.documentos, 5000),
       cambios: lista(c.cambios, 60, (x) => ({
@@ -175,16 +199,16 @@ export async function guardarManual(id: number | null, b: any, por: string): Pro
   await ensureTablas();
   const m = limpiarManual(b);
   if (!m.titulo) throw new Error("El manual necesita un título.");
-  const valores = [m.codigo, m.titulo, m.area, m.version, JSON.stringify(m.roles), m.publicado ? 1 : 0, JSON.stringify(m.contenido), por];
+  const valores = [m.codigo, m.titulo, m.area, m.version, m.tipo, JSON.stringify(m.roles), m.publicado ? 1 : 0, JSON.stringify(m.contenido), por];
   if (id) {
     await db.execute(
-      "UPDATE manuales SET codigo=?, titulo=?, area=?, version=?, roles=?, publicado=?, contenido=?, updated_by=? WHERE id=?",
+      "UPDATE manuales SET codigo=?, titulo=?, area=?, version=?, tipo=?, roles=?, publicado=?, contenido=?, updated_by=? WHERE id=?",
       [...valores, id],
     );
     return id;
   }
   const [r] = await db.execute(
-    "INSERT INTO manuales (codigo, titulo, area, version, roles, publicado, contenido, updated_by) VALUES (?,?,?,?,?,?,?,?)",
+    "INSERT INTO manuales (codigo, titulo, area, version, tipo, roles, publicado, contenido, updated_by) VALUES (?,?,?,?,?,?,?,?,?)",
     valores,
   );
   return (r as any).insertId;
