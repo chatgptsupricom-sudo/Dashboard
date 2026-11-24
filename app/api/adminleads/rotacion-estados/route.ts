@@ -1,4 +1,5 @@
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 import { agregar, cambiar, leerRotacion, quitar } from "@/lib/adminleads/rotacionEstados";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -17,6 +18,7 @@ export const runtime = "nodejs";
 async function guardia(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return { error: auth.error };
+  auth.payload = payloadLeads(request, auth.payload);
   if (Number(auth.payload?.cids) === 7)
     return { error: NextResponse.json({ error: "Panamá no usa la rotación por estados." }, { status: 403 }) };
   const p = auth.payload as any;

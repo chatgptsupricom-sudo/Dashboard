@@ -13,6 +13,7 @@
 import { canalNormalizadoSql, CANALES_META } from "@/lib/canales";
 import { getCampaignMetrics } from "@/lib/campanas-meta";
 import { query } from "@/lib/db";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 import {
   buildIgSnapshot,
   fetchIgAccountInsights,
@@ -507,6 +508,7 @@ function construirPrioridades(datos: {
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const userCids = (auth.payload!.cids as number) ?? null;
@@ -915,6 +917,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const userCids = (auth.payload!.cids as number) ?? null;

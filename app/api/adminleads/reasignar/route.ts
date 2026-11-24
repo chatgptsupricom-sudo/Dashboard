@@ -147,7 +147,7 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
-import { mismaOperacion } from "@/lib/adminleads/sucursal";
+import { mismaOperacion, payloadLeads } from "@/lib/adminleads/sucursal";
 import { avisarReasignacion } from "@/lib/adminleads/reasignacion";
 
 declare global {
@@ -157,6 +157,7 @@ declare global {
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const payload = auth.payload!;

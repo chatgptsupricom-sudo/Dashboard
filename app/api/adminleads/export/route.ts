@@ -1,6 +1,7 @@
 import { calcularMetricas } from "@/lib/adminleads/metricas";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -10,6 +11,7 @@ const SEDES: Record<string, string> = { "7": "Panama", "9": "Valencia", "10": "C
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     // Mismos números que el Panel de Métricas desde el que se exporta.

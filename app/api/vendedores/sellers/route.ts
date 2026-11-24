@@ -2,10 +2,12 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/roles";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 
 export async function GET(request: NextRequest) {
   const auth = await requireSession(request);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const userCids = auth.payload!.cids as number;

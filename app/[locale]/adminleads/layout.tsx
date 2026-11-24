@@ -36,6 +36,7 @@
 
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { TopBar } from "@/components/dashboard/top-bar";
+import { SelectorPaisLeads } from "@/components/adminleads/SelectorPaisLeads";
 import { useEffect, useState } from "react";
 
 export default function AdminLeadsLayout({
@@ -72,7 +73,10 @@ export default function AdminLeadsLayout({
         <TopBar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
 
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 md:p-8 max-w-[1800px] mx-auto">{children}</div>
+          <div className="p-4 md:p-8 max-w-[1800px] mx-auto">
+            <SelectorPaisLeads />
+            {children}
+          </div>
         </main>
       </div>
     </div>

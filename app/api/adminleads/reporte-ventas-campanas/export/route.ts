@@ -4,6 +4,7 @@
 // venta por venta. Usa resolverRango/resolverSede del lib para que el archivo
 // coincida exactamente con lo que muestra la pantalla.
 
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 import {
   calcularVentasCampanas,
   resolverRango,
@@ -21,6 +22,7 @@ const USD = '"$"#,##0.00';
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const { searchParams } = new URL(request.url);
