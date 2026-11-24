@@ -59,10 +59,13 @@
     marca.setAttribute("aria-label", `Ver todo ${p.marca} en la tienda`);
     $(".producto-nombre").textContent = p.nombre;
     $(".producto-codigo").textContent = p.codigo;
-    $(".producto-disponible-texto").textContent = `Disponible en ${S.nombre}`;
-
-    const contenido = CONTENIDO[p.id] || {};
-    if (contenido.resumen) { $(".producto-resumen").textContent = contenido.resumen; $(".producto-resumen").hidden = false; }
+    // Con el catálogo en vivo se sabe si hay existencia en la sede; la copia solo trae lo que había.
+    const agotado = p.disponible === false;
+    $(".producto-disponible-texto").textContent = agotado
+        ? `Agotado en ${S.nombre}: cotízalo igual y tu vendedor te dice cuándo llega`
+        : `Disponible en ${S.nombre}`;
+    $(".producto-disponible").classList.toggle("agotado", agotado);
+    if (agotado) { chip.textContent = "Agotado"; chip.className = "prod-chip producto-chip agotado"; chip.hidden = false; }
 
     // Copiar el código: es lo que más se pega en una lista de pedido.
     const copiar = $(".producto-copiar");
@@ -141,28 +144,40 @@
     };
 
     /* ---------------------------------------------------------------- Detalles: características y especificaciones */
+    // Lo curado de fichas.js manda; si no hay, se pide a la API la descripción de Odoo de ese producto.
     // «Clave: valor» corto es una especificación; lo largo o sin clave, una característica.
-    const filas = [
-        ["Marca", p.marca],
-        ["Código", p.codigo, "es-codigo"],
-        ["Categoría", nombreCategoria[p.cat] || "—"],
-        ["Disponible en", S.nombre],
-    ];
-    const rasgos = [];
     const mayuscula = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-    for (const t of contenido.puntos || []) {
-        const m = t.match(/^([^:]{2,32}):\s*(.+)$/);
-        if (m && m[2].length <= 72) filas.push([m[1], mayuscula(m[2])]);
-        else rasgos.push(m ? [m[1], mayuscula(m[2])] : [null, t]);
-    }
-    $(".especificaciones").replaceChildren(...filas.map(([k, v, clase]) => crear("div", clase ? { class: clase } : {}, [crear("dt", { text: k }), crear("dd", { text: v })])));
-    if (rasgos.length) {
-        $(".detalle-caracteristicas").hidden = false;
+    const pintarDetalle = (contenido, final) => {
+        if (contenido.resumen) { $(".producto-resumen").textContent = contenido.resumen; $(".producto-resumen").hidden = false; }
+        const filas = [
+            ["Marca", p.marca],
+            ["Código", p.codigo, "es-codigo"],
+            ["Categoría", nombreCategoria[p.cat] || "—"],
+            [agotado ? "Existencia" : "Disponible en", agotado ? `Agotado en ${S.nombre}` : S.nombre],
+        ];
+        const rasgos = [];
+        for (const t of contenido.puntos || []) {
+            const m = t.match(/^([^:]{2,32}):\s*(.+)$/);
+            if (m && m[2].length <= 72) filas.push([m[1], mayuscula(m[2])]);
+            else rasgos.push(m ? [m[1], mayuscula(m[2])] : [null, t]);
+        }
+        $(".especificaciones").replaceChildren(...filas.map(([k, v, clase]) => crear("div", clase ? { class: clase } : {}, [crear("dt", { text: k }), crear("dd", { text: v })])));
+        $(".detalle-caracteristicas").hidden = !rasgos.length;
         $(".caracteristicas").replaceChildren(...rasgos.map(([titulo, texto]) => crear("li", {}, titulo
             ? [crear("strong", { text: titulo }), crear("span", { text: texto })]
             : [crear("span", { text: texto })])));
+        $(".detalle-falta").hidden = !final || Boolean(contenido.puntos && contenido.puntos.length);
+    };
+    const curado = CONTENIDO[p.id];
+    const api = window.SUPRICOM.apiActiva;
+    if (curado || !api) pintarDetalle(curado || {}, true);
+    else {
+        pintarDetalle({}, false);
+        fetch(`${api}/producto?id=${p.id}`, { credentials: "omit" })
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+            .then((d) => pintarDetalle({ resumen: d.resumen || "", puntos: Array.isArray(d.puntos) ? d.puntos : [] }, true))
+            .catch(() => pintarDetalle({}, true));
     }
-    $(".detalle-falta").hidden = Boolean(contenido.puntos && contenido.puntos.length);
 
     /* ---------------------------------------------------------------- Se pide junto con / más de la categoría */
     const tarjeta = (q, i) => {

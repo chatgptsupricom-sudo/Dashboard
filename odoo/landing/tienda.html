@@ -20,8 +20,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261124e">
-<link rel="stylesheet" href="tienda.css?v=20261124e">
+<link rel="stylesheet" href="estilos.css?v=20261124g">
+<link rel="stylesheet" href="tienda.css?v=20261124g">
 </head>
 <body data-pagina="tienda">
 <a class="saltar" href="#catalogo">Saltar al catálogo</a>
@@ -89,6 +89,7 @@
                 <div class="tienda-cabeza-texto">
                     <h1 class="tienda-titulo">Todo lo que tenemos en <span class="tienda-sede" data-sede-nombre>tu sede</span></h1>
                     <p class="tienda-nota"><strong class="tienda-total">0</strong> productos en existencia. Cotiza sin cuenta: tu vendedor te responde con los precios.</p>
+                    <p class="tienda-vivo" hidden><span class="punto" aria-hidden="true"></span>Existencia al día con nuestro inventario</p>
                     <p class="portada-entrar">¿Ya eres distribuidor? <a data-odoo="/web/login">Entra para ver tus precios<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
                 </div>
                 <div class="tienda-abanico" aria-hidden="true"></div>
@@ -149,6 +150,12 @@
                     <fieldset class="filtro">
                         <legend>Mostrar</legend>
                         <div class="filtro-opciones" data-filtro="lista"></div>
+                    </fieldset>
+                    <fieldset class="filtro filtro-existencia" hidden>
+                        <legend>Existencia</legend>
+                        <div class="filtro-opciones">
+                            <label class="opcion"><input type="checkbox" class="f-agotados"><span>Incluir agotados</span><span class="opcion-n"></span></label>
+                        </div>
                     </fieldset>
                     <fieldset class="filtro">
                         <legend>Marca</legend>
@@ -303,8 +310,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261124e"></script>
-<script src="app.js?v=20261124e"></script>
-<script src="tienda.js?v=20261124e"></script>
+<script src="datos.js?v=20261124g"></script>
+<script src="vivo.js?v=20261124g" data-despues="app.js?v=20261124g,tienda.js?v=20261124g"></script>
 </body>
 </html>

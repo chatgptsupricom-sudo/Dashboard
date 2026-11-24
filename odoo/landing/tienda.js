@@ -28,7 +28,12 @@
     const chipDe = (p) => LISTAS.find((l) => l.pos.has(p.id));
 
     $("[data-sede-nombre]").textContent = S.nombre;
-    $(".tienda-total").textContent = miles(productos.length);
+    // Con el catálogo en vivo llegan también los agotados: por defecto se ven solo los disponibles.
+    const agotado = (p) => p.disponible === false;
+    const hayAgotados = productos.some(agotado);
+    $(".tienda-total").textContent = miles(productos.filter((p) => !agotado(p)).length);
+    const vivo = window.SUPRICOM.enVivo;
+    if (vivo) $(".tienda-vivo").hidden = false;
     document.title = `Tienda ${S.nombre} · SUPRICOM`;
 
     /* ---------------------------------------------------------------- Estado (y el enlace) */
@@ -41,6 +46,7 @@
             cat: D.categorias.some((c) => c.id === u.get("cat")) ? u.get("cat") : "",
             marcas: new Set(marcas),
             lista: listaPorId[u.get("lista")] ? u.get("lista") : "",
+            agotados: hayAgotados && u.get("agotados") === "1",
             orden: ORDENES.includes(u.get("orden")) ? u.get("orden") : "recomendados",
             vista: u.get("vista") === "lista" ? "lista" : "grilla",
             n: POR_PAGINA,
@@ -57,6 +63,7 @@
         poner("lista", E.lista);
         poner("orden", E.orden === "recomendados" ? "" : E.orden);
         poner("vista", E.vista === "lista" ? "lista" : "");
+        poner("agotados", E.agotados ? "1" : "");
         if (u.href === location.href) return;
         history[nueva ? "pushState" : "replaceState"](null, "", u.href);
     };
@@ -67,6 +74,7 @@
         if (sin !== "cat" && E.cat && p.cat !== E.cat) return false;
         if (sin !== "marca" && E.marcas.size && !E.marcas.has(p.marca)) return false;
         if (sin !== "lista" && E.lista && !listaPorId[E.lista].pos.has(p.id)) return false;
+        if (sin !== "agotados" && !E.agotados && agotado(p)) return false;
         const q = normal(E.q.trim());
         if (q) {
             const t = indice.get(p.id);
@@ -91,7 +99,12 @@
             }
         }
     };
+    // Lo agotado va siempre después de lo disponible.
     const ordenar = (lista) => {
+        const enOrden = ordenarSinExistencia(lista);
+        return E.agotados ? [...enOrden.filter((p) => !agotado(p)), ...enOrden.filter(agotado)] : enOrden;
+    };
+    const ordenarSinExistencia = (lista) => {
         if (E.orden === "nombre") return lista.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
         if (E.orden === "marca") return lista.sort((a, b) => a.marca.localeCompare(b.marca, "es") || a.nombre.localeCompare(b.nombre, "es"));
         return lista.sort((a, b) => puntaje(a) - puntaje(b));
@@ -158,6 +171,11 @@
     });
     if (!LISTAS.length) opcionesLista.closest(".filtro").hidden = true;
 
+    // Existencia: con el catálogo en vivo, la opción de ver también lo agotado.
+    const casillaAgotados = $(".f-agotados");
+    $(".filtro-existencia").hidden = !hayAgotados;
+    casillaAgotados.addEventListener("change", () => cambiar({ agotados: casillaAgotados.checked }));
+
     const opcionesMarca = $('[data-filtro="marca"]');
     const botonMasMarcas = $(".filtro-mas");
     const VISIBLES_MARCAS = 8;
@@ -219,8 +237,9 @@
             crear("p", { class: "prod-precio" }, [crear("span", { text: "Precio" }), entrar]),
             crear("div", { class: "prod-pie" }, pie),
         ];
-        if (lista) hijos.unshift(crear("span", { class: `prod-chip ${lista.clase}`, text: lista.chip }));
-        const t = crear("article", { class: "prod prod-tienda", "aria-label": `${p.marca} ${p.nombre}` }, hijos);
+        if (agotado(p)) hijos.unshift(crear("span", { class: "prod-chip agotado", text: "Agotado" }));
+        else if (lista) hijos.unshift(crear("span", { class: `prod-chip ${lista.clase}`, text: lista.chip }));
+        const t = crear("article", { class: `prod prod-tienda${agotado(p) ? " prod-agotado" : ""}`, "aria-label": `${p.marca} ${p.nombre}${agotado(p) ? ", agotado" : ""}` }, hijos);
         t.style.setProperty("--i", String(Math.min(i % POR_PAGINA, 11)));
         return t;
     };
@@ -253,7 +272,7 @@
     let filtrados = [];
     let pintados = 0;
 
-    const cuantosFiltros = () => (E.cat ? 1 : 0) + E.marcas.size + (E.lista ? 1 : 0);
+    const cuantosFiltros = () => (E.cat ? 1 : 0) + E.marcas.size + (E.lista ? 1 : 0) + (E.agotados ? 1 : 0);
     const pintarFiltros = () => {
         // Cada opción dice cuántos productos quedarían al elegirla, con los demás filtros como están.
         botonesCat.forEach((b) => {
@@ -268,6 +287,8 @@
             r.closest(".opcion").querySelector(".opcion-n").textContent = miles(contar("cat", (p) => !r.value || p.cat === r.value));
         });
         radiosOrden.forEach((r) => { r.checked = E.orden === r.value; });
+        casillaAgotados.checked = E.agotados;
+        casillaAgotados.closest(".opcion").querySelector(".opcion-n").textContent = miles(contar("agotados", agotado));
         radiosLista.forEach((r) => {
             r.checked = E.lista === r.value;
             const n = contar("lista", (p) => !r.value || listaPorId[r.value].pos.has(p.id));
@@ -306,6 +327,7 @@
         if (E.q.trim()) lista.push(quitarChip(`«${E.q.trim()}»`, () => { campo.value = ""; borrar.hidden = true; cambiar({ q: "" }); }));
         if (E.cat) lista.push(quitarChip(nombreCategoria[E.cat], () => cambiar({ cat: "" })));
         if (E.lista) lista.push(quitarChip(listaPorId[E.lista].nombre, () => cambiar({ lista: "" })));
+        if (E.agotados) lista.push(quitarChip("Con agotados", () => cambiar({ agotados: false })));
         for (const m of E.marcas) lista.push(quitarChip(m, () => { const s = new Set(E.marcas); s.delete(m); cambiar({ marcas: s }); }));
         if (lista.length > 1) {
             const todo = crear("button", { type: "button", class: "enlace-chico", text: "Quitar todo" });
@@ -368,7 +390,7 @@
     const limpiar = () => {
         campo.value = "";
         borrar.hidden = true;
-        cambiar({ q: "", cat: "", marcas: new Set(), lista: "" });
+        cambiar({ q: "", cat: "", marcas: new Set(), lista: "", agotados: false });
     };
 
     botonMas.addEventListener("click", () => {

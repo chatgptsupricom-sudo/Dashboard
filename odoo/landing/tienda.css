@@ -13,6 +13,15 @@
 .tienda-nota { margin-top: 16px; color: var(--gris); font-size: 18px; line-height: 1.5; max-width: 46ch; text-wrap: pretty; }
 .tienda-nota strong { color: var(--tinta); font-variant-numeric: tabular-nums; }
 .tienda-cabeza .portada-entrar { margin-top: 12px; }
+.tienda-vivo { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--gris); font-size: 14px; font-weight: 600; }
+.tienda-vivo .punto, .producto-disponible .punto {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--ok); flex: 0 0 auto;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent);
+}
+
+/* Agotado (catálogo en vivo): se ve, se puede cotizar, pero queda atrás y apagado. */
+.prod-chip.agotado { background: var(--superficie-2); color: var(--gris); border: 1px solid var(--linea); }
+.prod-agotado .prod-foto img { opacity: .55; filter: grayscale(.6); }
 
 /* Tres productos de la sede en abanico que siguen al mouse (solo adorno). */
 .tienda-abanico { position: relative; height: 320px; perspective: 1200px; --mx: 0; --my: 0; }

@@ -11,22 +11,13 @@
     const CLAVE_SEDE = "supricom-sede";
     const sedeGuardada = () => { try { return localStorage.getItem(CLAVE_SEDE); } catch (e) { return null; } };
     const guardarSede = (s) => { try { localStorage.setItem(CLAVE_SEDE, s); } catch (e) { /* sin almacenamiento: dura hasta recargar */ } };
-    const elegirSede = () => {
-        const enlace = new URLSearchParams(location.search).get("sede");
-        if (TODO.sedes[enlace]) return { id: enlace, origen: "enlace" };
-        const host = location.hostname.replace(/^www\./, "");
-        const porDominio = IDS_SEDE.find((s) => TODO.sedes[s].dominio === host);
-        if (porDominio) return { id: porDominio, origen: "dominio" };
-        const antes = sedeGuardada();
-        if (TODO.sedes[antes]) return { id: antes, origen: "guardada" };
-        let zona = "";
-        try { zona = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { /* sin zona horaria */ }
-        return { id: zona === "America/Panama" ? "panama" : "valencia", origen: "supuesta" };
-    };
-    const SEDE = elegirSede();
+    const SEDE = TODO.elegirSede(); // en datos.js: la usa también vivo.js para pedir el catálogo de esa sede
     const S = TODO.sedes[SEDE.id];
     // Lo de la sede con la forma que usa el resto de la página.
-    const destacadoEn = (lista, cat) => lista.find((p) => p.cat === cat && p.destacado) || lista.find((p) => p.cat === cat);
+    // Con el catálogo en vivo puede haber agotados: el destacado de cada categoría es uno disponible si lo hay.
+    const hay = (p) => p.disponible !== false;
+    const destacadoEn = (lista, cat) => lista.find((p) => p.cat === cat && p.destacado && hay(p))
+        || lista.find((p) => p.cat === cat && hay(p)) || lista.find((p) => p.cat === cat);
     const D = {
         odoo: S.tienda,
         productos: S.productos,
@@ -1360,8 +1351,17 @@
         sinResultados.textContent = pareceCodigo(q)
             ? `No está en esta página. Pulsa Enter para pedir «${q.toUpperCase()}» igual: tu vendedor lo confirma.`
             : "No está entre los productos de esta página.";
-        enlaceCatalogo.hidden = !FICHAS;
-        if (FICHAS) { enlaceCatalogo.href = buscar(q); enlaceCatalogo.replaceChildren(`Buscar «${q}» en todo el catálogo `, icono("ir", "icono-ir")); }
+        // Con el catálogo en vivo, la tienda de esta página ya tiene todo; con la copia, solo Valencia
+        // ofrece el catálogo completo de Odoo (en las otras diría «Agotado»).
+        if (TODO.enVivo) {
+            enlaceCatalogo.hidden = false;
+            enlaceCatalogo.removeAttribute("target");
+            enlaceCatalogo.href = urlTienda({ q });
+            enlaceCatalogo.replaceChildren(`Ver «${q}» en la tienda `, icono("ir", "icono-ir"));
+        } else {
+            enlaceCatalogo.hidden = !FICHAS;
+            if (FICHAS) { enlaceCatalogo.href = buscar(q); enlaceCatalogo.replaceChildren(`Buscar «${q}» en todo el catálogo `, icono("ir", "icono-ir")); }
+        }
         panelBusqueda.hidden = false;
         buscador.setAttribute("aria-expanded", String(hay));
         marcar(-1);
@@ -1531,7 +1531,7 @@
     }
     const mostrarLista = (lista) => {
         const ids = S[lista] || [];
-        pistaEstante.replaceChildren(...ids.map((id) => porId.get(id)).filter(Boolean).map((p, i) => tarjetaProducto(p, lista, i)));
+        pistaEstante.replaceChildren(...ids.map((id) => porId.get(id)).filter((p) => p && hay(p)).map((p, i) => tarjetaProducto(p, lista, i)));
         pistaEstante.scrollLeft = 0;
         notaEstante.textContent = LISTAS[lista].nota;
         for (const t of pestanasEstante) {
@@ -1544,7 +1544,7 @@
         requestAnimationFrame(() => { girarEstante(); pintarFlechasEstante(); });
     };
     // Una pestaña sin productos no se muestra (por ejemplo, una sede sin novedades).
-    for (const t of pestanasEstante) t.hidden = !(S[t.dataset.lista] || []).length;
+    for (const t of pestanasEstante) t.hidden = !(S[t.dataset.lista] || []).some((id) => porId.get(id) && hay(porId.get(id)));
     const visibles = pestanasEstante.filter((t) => !t.hidden);
     for (const t of visibles) {
         t.addEventListener("click", () => mostrarLista(t.dataset.lista));

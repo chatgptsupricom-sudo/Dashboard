@@ -9,17 +9,40 @@
 // (diría «Agotado») sino que se agregan a la lista de cotización. Cuando Caracas y Panamá tengan su sitio
 // en Odoo, se cambia su `tienda` aquí y se les pone `tiendaPropia: true`.
 window.SUPRICOM = {
-    // Una tarjeta por categoría; cada sede muestra solo las que tienen productos suyos.
+    // Catálogo en vivo: la API pública del panel (app/api/tienda-web) lee Odoo y devuelve todo lo publicado
+    // en la web con su existencia sí/no por sede (vivo.js). Si no responde, la página usa los productos de
+    // abajo. `?api=` en el enlace la cambia para probar (por ejemplo, el panel en localhost) y `?api=no`
+    // fuerza la copia.
+    api: "https://panel.supricom.com.ve/api/tienda-web",
+    // Una tarjeta por categoría; cada sede muestra solo las que tienen productos suyos. Las categorías de
+    // Odoo se reparten en estas en lib/tienda-web/tipos.ts (`categoriaDe`).
     categorias: [
         { id: "impresion", nombre: "Impresoras", buscar: "impresora" },
         { id: "consumibles", nombre: "Consumibles y papel", buscar: "tinta" },
-        { id: "computo", nombre: "Laptops y monitores", buscar: "laptop" },
+        { id: "computo", nombre: "Cómputo y monitores", buscar: "laptop" },
         { id: "perifericos", nombre: "Periféricos", buscar: "mouse" },
         { id: "redes", nombre: "Redes y WiFi", buscar: "router" },
         { id: "audio", nombre: "Audio", buscar: "audifono" },
         { id: "seguridad", nombre: "Seguridad y hogar inteligente", buscar: "camara" },
-        { id: "energia", nombre: "Energía y UPS", buscar: "ups" }
+        { id: "energia", nombre: "Energía y UPS", buscar: "ups" },
+        { id: "otros", nombre: "Más productos", buscar: "" }
     ],
+    // La sede de la página, en este orden: por el enlace (?sede=caracas), por el dominio de la sede, por la
+    // que el visitante eligió antes y, si no hay nada, por la zona horaria. La usan vivo.js y app.js.
+    elegirSede() {
+        const ids = Object.keys(this.sedes);
+        const enlace = new URLSearchParams(location.search).get("sede");
+        if (this.sedes[enlace]) return { id: enlace, origen: "enlace" };
+        const host = location.hostname.replace(/^www\./, "");
+        const porDominio = ids.find((s) => this.sedes[s].dominio === host);
+        if (porDominio) return { id: porDominio, origen: "dominio" };
+        let antes = null;
+        try { antes = localStorage.getItem("supricom-sede"); } catch (e) { /* sin almacenamiento */ }
+        if (this.sedes[antes]) return { id: antes, origen: "guardada" };
+        let zona = "";
+        try { zona = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { /* sin zona horaria */ }
+        return { id: zona === "America/Panama" ? "panama" : "valencia", origen: "supuesta" };
+    },
     banners: {
         aliado: { nombre: "Somos el aliado", img: "../website_supricom_tienda/static/src/img/banners/aliado.jpg", alt: "Somos el aliado que respalda tu tienda mes a mes", buscar: "" },
         hikvision: { nombre: "Hikvision", img: "../website_supricom_tienda/static/src/img/banners/hikvision.jpg", alt: "Hikvision: promociones únicas durante todo el año", buscar: "hikvision" },
