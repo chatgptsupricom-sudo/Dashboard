@@ -22,6 +22,7 @@ import {
   leerFilasExcel,
   celular58,
   mismaReferencia,
+  ajustePermitido,
   saldosDelMes,
   type ComprobanteBanco,
   type EstadoLeido,
@@ -1087,10 +1088,141 @@ function rpc<T>(sede: number, model: string, method: string, args: any[], kwargs
  * en Odoo para terminarla alla).
  */
 export type Destino =
-  | { tipo: "pagos"; pagos: number[] }
+  /** ajustar: corregir en Odoo el monto del unico cobro/pago elegido al del banco (ver ajustarMontoEnOdoo). */
+  | { tipo: "pagos"; pagos: number[]; ajustar?: boolean }
   | { tipo: "cuenta"; cuentaId: number }
   | { tipo: "transferencia" }
   | { tipo: "sin_conciliar" };
+
+/**
+ * Corrige en Odoo el monto de un cobro/pago (o del asiento de un apunte, id
+ * negativo) para que sea el del movimiento del banco, cuando difieren poco
+ * (`ajustePermitido`: hasta 1 %, un error al escribirlo; Valencia, BANES/2026/00002
+ * Bs 95.698,45 y el banco 95.700,00, nov-2026). Lo pide una persona al aprobar.
+ * - Cobro/pago: borrador, monto nuevo (y su USD a la misma tasa acordada) y
+ *   confirmar: la moneda dual rehace los apuntes con la tasa del pago. No se toca
+ *   uno ya aplicado a facturas (cambiaria lo que paga): eso se corrige en Odoo.
+ * - Asiento: solo uno de dos lineas sin conciliar; las dos lineas pasan al monto
+ *   nuevo con la misma tasa.
+ * Si Odoo falla a mitad, se intenta dejarlo como estaba. Deja nota en el chatter.
+ * Devuelve el error o el texto de lo que se cambio.
+ */
+async function ajustarMontoEnOdoo(
+  cuenta: CuentaBanco,
+  id: number,
+  mov: { fecha: string; referencia: string; monto: number },
+  autor: { nombre: string; email: string },
+): Promise<{ error: string } | { hecho: string }> {
+  const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
+  const leer = async (modelo: string, dominio: any[], campos: string[]) =>
+    (await rpc<any[]>(cuenta.sede, modelo, "search_read", [dominio], { fields: campos, context: ctx })) || [];
+  const nuevo = Math.round(Math.abs(mov.monto) * 100) / 100;
+  const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const nota = async (modelo: string, resId: number, nombre: string, antes: number) => {
+    try {
+      await rpc(cuenta.sede, modelo, "message_post", [[resId]], {
+        body:
+          `Monto corregido desde el panel (Conciliación bancaria) por ${escaparHtml(autor.nombre || autor.email)} ` +
+          `(${escaparHtml(autor.email)}): de ${cifra(antes)} a ${cifra(nuevo)}, el del movimiento del banco del ${mov.fecha}, ` +
+          `ref ${escaparHtml(mov.referencia || "—")}. Se corrige porque al empezar a usar el sistema no dejaba cambiar la tasa ` +
+          "y por eso no se llegaba a registrar el monto exacto del banco.",
+        message_type: "comment",
+        subtype_xmlid: "mail.mt_note",
+        context: ctx,
+      });
+    } catch {
+      // la nota es informativa: el monto ya quedo corregido
+    }
+    return { hecho: `${nombre}: monto corregido de ${cifra(antes)} a ${cifra(nuevo)}` };
+  };
+
+  if (id > 0) {
+    const p = (
+      await leer("account.payment", [["id", "=", id]], ["name", "journal_id", "state", "amount", "payment_type", "custom_rate", "tax_today", "move_id"])
+    )[0];
+    if (!p) return { error: "Ese cobro/pago no existe en Odoo" };
+    if (!Array.isArray(p.journal_id) || p.journal_id[0] !== cuenta.id) return { error: `${p.name} es de otro diario` };
+    if (p.state !== "posted") return { error: `${p.name} no está confirmado en Odoo` };
+    const antes = Number(p.amount) || 0;
+    // Ya esta en el monto del banco (un reintento despues de corregirlo): nada que hacer.
+    if (Math.abs(antes - nuevo) < 0.005) return { hecho: "" };
+    if (!ajustePermitido(mov.monto, p.payment_type === "inbound" ? antes : -antes)) {
+      return { error: `${p.name} es por ${cifra(antes)} y el banco por ${cifra(nuevo)}: solo se corrige una diferencia de hasta 1 %` };
+    }
+    const lineas = await leer("account.move.line", [["move_id", "=", p.move_id[0]]], ["matched_debit_ids", "matched_credit_ids"]);
+    if (lineas.some((l) => (l.matched_debit_ids || []).length || (l.matched_credit_ids || []).length)) {
+      return { error: `${p.name} ya está aplicado a facturas o conciliado: corrige el monto en Odoo` };
+    }
+    const tasa = p.custom_rate && Number(p.tax_today) > 0 ? Number(p.tax_today) : null;
+    const valores = (monto: number) => ({ amount: monto, ...(tasa ? { amount_local: Math.round((monto / tasa) * 100) / 100 } : {}) });
+    await rpc(cuenta.sede, "account.payment", "action_draft", [[id]], { context: ctx });
+    try {
+      await rpc(cuenta.sede, "account.payment", "write", [[id], valores(nuevo)], { context: ctx });
+      await rpc(cuenta.sede, "account.payment", "action_post", [[id]], { context: ctx });
+    } catch (e) {
+      try {
+        await rpc(cuenta.sede, "account.payment", "write", [[id], valores(antes)], { context: ctx });
+        await rpc(cuenta.sede, "account.payment", "action_post", [[id]], { context: ctx });
+      } catch {
+        throw new Error(`${String((e as Error)?.message || e)} — y ${p.name} quedó en borrador en Odoo: confírmalo allá`);
+      }
+      throw e;
+    }
+    const ahora = (await leer("account.payment", [["id", "=", id]], ["amount", "state"]))[0];
+    if (ahora?.state !== "posted" || Math.abs(Number(ahora.amount) - nuevo) > 0.005) {
+      return { error: `Odoo no dejó ${p.name} en ${cifra(nuevo)}: revísalo allá` };
+    }
+    return nota("account.payment", id, p.name, antes);
+  }
+
+  // Apunte de un asiento contable (id negativo).
+  const apunte = (await leer("account.move.line", [["id", "=", -id]], ["move_id", "amount_currency", "balance", "account_id"]))[0];
+  if (!apunte) return { error: "Ese asiento no existe en Odoo" };
+  if (!(await pendientesDelDiario(cuenta)).includes(apunte.account_id?.[0])) {
+    return { error: `${apunte.move_id?.[1] || "Ese asiento"} no está en una cuenta de pendientes de este banco` };
+  }
+  const asiento = (await leer("account.move", [["id", "=", apunte.move_id[0]]], ["name", "state", "move_type", "line_ids"]))[0];
+  const nombre = String(asiento?.name || apunte.move_id[1] || "");
+  if (!asiento || asiento.move_type !== "entry" || asiento.state !== "posted") return { error: `${nombre} no es un asiento contable publicado` };
+  const lineas = await leer("account.move.line", [["move_id", "=", asiento.id]], ["amount_currency", "balance", "matched_debit_ids", "matched_credit_ids"]);
+  if (lineas.length !== 2) return { error: `${nombre} tiene ${lineas.length} líneas: corrige el monto en Odoo` };
+  if (lineas.some((l) => (l.matched_debit_ids || []).length || (l.matched_credit_ids || []).length)) {
+    return { error: `${nombre} ya está conciliado: corrige el monto en Odoo` };
+  }
+  const antesAc = Number(apunte.amount_currency) || 0;
+  if (Math.abs(Math.abs(antesAc) - nuevo) < 0.005) return { hecho: "" };
+  if (!ajustePermitido(mov.monto, antesAc)) {
+    return { error: `${nombre} es por ${cifra(Math.abs(antesAc))} y el banco por ${cifra(nuevo)}: solo se corrige una diferencia de hasta 1 %` };
+  }
+  // Misma tasa: el USD de cada linea se escala en la misma proporcion.
+  const factor = nuevo / Math.abs(antesAc);
+  const montos = (f: number) =>
+    lineas.map((l) => [1, l.id, { amount_currency: Math.round(Number(l.amount_currency) * f * 100) / 100, balance: Math.round(Number(l.balance) * f * 100) / 100 }]);
+  // Que cuadre al centimo: la otra linea es la contraria de la del apunte.
+  const cuadrar = (cmds: any[]) => {
+    const [a, b] = cmds[0][1] === -id ? [cmds[0], cmds[1]] : [cmds[1], cmds[0]];
+    b[2] = { amount_currency: -a[2].amount_currency, balance: -a[2].balance };
+    return cmds;
+  };
+  await rpc(cuenta.sede, "account.move", "button_draft", [[asiento.id]], { context: ctx });
+  try {
+    await rpc(cuenta.sede, "account.move", "write", [[asiento.id], { line_ids: cuadrar(montos(factor)) }], { context: ctx });
+    await rpc(cuenta.sede, "account.move", "action_post", [[asiento.id]], { context: ctx });
+  } catch (e) {
+    try {
+      await rpc(cuenta.sede, "account.move", "write", [[asiento.id], { line_ids: montos(1) }], { context: ctx });
+      await rpc(cuenta.sede, "account.move", "action_post", [[asiento.id]], { context: ctx });
+    } catch {
+      throw new Error(`${String((e as Error)?.message || e)} — y ${nombre} quedó en borrador en Odoo: publícalo allá`);
+    }
+    throw e;
+  }
+  const ahora = (await leer("account.move.line", [["id", "=", -id]], ["amount_currency", "parent_state"]))[0];
+  if (ahora?.parent_state !== "posted" || Math.abs(Math.abs(Number(ahora.amount_currency)) - nuevo) > 0.005) {
+    return { error: `Odoo no dejó ${nombre} en ${cifra(nuevo)}: revísalo allá` };
+  }
+  return nota("account.move", asiento.id, nombre, Math.abs(antesAc));
+}
 
 /**
  * Concilia en Odoo un movimiento del estado de cuenta cuando una persona lo
@@ -1153,8 +1285,15 @@ export async function conciliarEnOdoo(
   // cambiario (Valencia abr-2026: ~$30 mil). Con cobros/pagos: la de ellos; si no, la BCV del dia.
   const enBolivares = /VEF|VES|BS/i.test(cuenta.moneda);
   let tasa: number | null = null;
+  let ajuste = "";
   if (destino.tipo === "pagos") {
     const ids = [...new Set(destino.pagos)];
+    if (destino.ajustar) {
+      if (ids.length !== 1) return { error: "Para corregir el monto en Odoo elige uno solo" };
+      const r = await ajustarMontoEnOdoo(cuenta, ids[0], { fecha: mov.fecha, referencia: mov.referencia, monto }, autor);
+      if ("error" in r) return r;
+      ajuste = r.hecho;
+    }
     // id negativo = apunte de un asiento contable en las cuentas de pendientes (ver pagosOdoo).
     const idsPago = ids.filter((i) => i > 0);
     const idsApunte = ids.filter((i) => i < 0).map((i) => -i);
@@ -1216,7 +1355,7 @@ export async function conciliarEnOdoo(
       tasa = usd > 0 ? bs / usd : null;
     }
     errorPendiente = errorPagos(monto, lineas.map((l) => Math.abs(Number(l.amount_residual_currency) || 0)));
-    detalle = [...pagos.map((p) => p.name), ...apuntes.map((a) => a.move_id?.[1] || "")].join(", ");
+    detalle = [...pagos.map((p) => p.name), ...apuntes.map((a) => a.move_id?.[1] || "")].join(", ") + (ajuste ? ` (${ajuste})` : "");
   } else if (destino.tipo === "cuenta") {
     const c = (await cuentasContables(cuenta.sede)).find((x) => x.id === destino.cuentaId);
     if (!c) return { error: "Esa cuenta contable no es de la sede o no se puede usar de contrapartida" };
@@ -1245,27 +1384,35 @@ export async function conciliarEnOdoo(
               ["move_id.ref", "ilike", "comisi"],
               ["move_id.ref", "ilike", "debitos%bancarios"],
             ],
-            ["move_id", "amount_currency"],
+            ["move_id", "amount_currency", "ref", "name"],
           )
         : [];
       // Solo frena el asiento que SUMA las comisiones del mes. Un asiento de una sola comision (Caracas registra cada
       // una a mano: 1274, Bs 4.019,67, abr-2026) tiene el monto de un movimiento del banco: ese se concilia contra el
-      // asiento (sale de candidato) y no frena a las demas.
-      const { rows: comisionesMes } = await query(
-        `SELECT monto, descripcion, referencia FROM banco_movimientos
-          WHERE journal_id = ? AND monto < 0 AND fecha BETWEEN ? AND ?`,
+      // asiento (sale de candidato) y no frena a las demas. Tampoco frena el que trae en su referencia el numero de una
+      // operacion del estado de cuenta: es la comision de esa operacion, no la suma del mes (Caracas, asiento 1263
+      // ref 13324667894, Bs 6.619,08, la comision del cambio a Dora Gutierrez: frenaba todas las de abril, nov-2026).
+      const { rows: movsMes } = await query(
+        `SELECT monto, descripcion, referencia FROM banco_movimientos WHERE journal_id = ? AND fecha BETWEEN ? AND ?`,
         [cuenta.id, `${mes}-01`, finMes],
       );
-      const montosComision = comisionesMes
-        .filter((r: any) => esComision({ monto: Number(r.monto), descripcion: String(r.descripcion || ""), referencia: String(r.referencia || "") }))
+      const montosComision = movsMes
+        .filter((r: any) => Number(r.monto) < 0 && esComision({ monto: Number(r.monto), descripcion: String(r.descripcion || ""), referencia: String(r.referencia || "") }))
         .map((r: any) => Math.abs(Number(r.monto)));
-      const sumas = delMes.filter((a) => !montosComision.some((x: number) => Math.abs(x - Math.abs(Number(a.amount_currency) || 0)) < 0.01));
+      const refsMes = movsMes.map((r: any) => String(r.referencia || "")).filter(Boolean);
+      const deUnaOperacion = (a: any) =>
+        (`${a.ref || ""} ${a.name || ""}`.match(/\d{6,}/g) || []).some((n) => refsMes.some((r: string) => mismaReferencia(r, n)));
+      const sumas = delMes.filter(
+        (a) => !deUnaOperacion(a) && !montosComision.some((x: number) => Math.abs(x - Math.abs(Number(a.amount_currency) || 0)) < 0.01),
+      );
       if (sumas.length) {
         const a = sumas[0];
         return {
           error:
-            `${mes} ya tiene en Odoo el asiento de comisiones del mes (${a.move_id?.[1] || ""}, ${Math.abs(Number(a.amount_currency) || 0)}): ` +
-            "si se aprueban una por una, el gasto queda dos veces. Revérsalo en Odoo primero.",
+            `${mes} ya tiene en Odoo un asiento que suma las comisiones del mes contra Pagos Pendientes (asiento ${a.move_id?.[1] || ""}` +
+            `${a.ref ? `, ref. ${a.ref}` : ""}, ${Math.abs(Number(a.amount_currency) || 0).toLocaleString("es-VE", { minimumFractionDigits: 2 })}): ` +
+            "si se aprueban una por una, el gasto queda dos veces. Revérsalo en Odoo primero (o, si es la comisión de una sola operación, " +
+            "concíliala en Odoo contra su movimiento).",
         };
       }
     }

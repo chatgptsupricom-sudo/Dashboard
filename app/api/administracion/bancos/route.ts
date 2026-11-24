@@ -192,6 +192,7 @@ export async function POST(request: NextRequest) {
 //        cuenta_contable: id    una cuenta de la sede (comision, IGTF, intereses...)
 //        transferencia: true    la cuenta de transferencias internas (movimiento entre cuentas propias)
 //        sin_conciliar: true    la linea queda en Odoo para conciliarla alla
+//        pagos + ajustar_monto: true  antes corrige en Odoo el monto del unico elegido al del banco (hasta 1 %)
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_BANCOS);
   if (auth.error) return auth.error;
@@ -277,7 +278,8 @@ export async function PATCH(request: NextRequest) {
       // Un id negativo es el apunte de un asiento contable en las cuentas de pendientes (ver pagosOdoo).
       const idOdoo = (v: unknown) => Number.isInteger(Number(v)) && Number(v) !== 0;
       if (!b.pagos.length || b.pagos.length > 50 || !b.pagos.every(idOdoo)) return NextResponse.json({ error: "Pagos inválidos" }, { status: 400 });
-      destino = { tipo: "pagos", pagos: b.pagos.map(Number) };
+      // ajustar_monto: corregir en Odoo el monto del unico elegido al del banco (diferencia de hasta 1 %).
+      destino = { tipo: "pagos", pagos: b.pagos.map(Number), ajustar: b?.ajustar_monto === true };
     } else if (b?.cuenta_contable !== undefined) {
       if (!entero(b.cuenta_contable)) return NextResponse.json({ error: "Cuenta contable inválida" }, { status: 400 });
       destino = { tipo: "cuenta", cuentaId: Number(b.cuenta_contable) };
