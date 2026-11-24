@@ -49,7 +49,7 @@
                     <a class="s_supricom_marca" href="/shop?search=HP" title="HP">
                         <img src="/website_supricom_tienda/static/src/img/marcas/hp.svg" alt="HP" style="height: 42px;"/>
                     </a>
-                    <a class="s_supricom_marca s_supricom_marca_oscura" href="/shop?search=Havit" title="Havit">
+                    <a class="s_supricom_marca" href="/shop?search=Havit" title="Havit">
                         <img src="/website_supricom_tienda/static/src/img/marcas/havit.png" alt="Havit"/>
                     </a>
                     <a class="s_supricom_marca" href="/shop?search=Canon" title="Canon">
