@@ -1,0 +1,171 @@
+{
+  "name": "Tienda web - Solicitud de cuenta",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tienda-cuenta",
+        "options": {}
+      },
+      "name": "Webhook Tienda",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "tienda-cuenta"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Valida lo que manda el panel (lib/tienda-web/cuenta.ts): { evento: 'tienda_cuenta', solicitud_id }.\n// Solo eso: datos y destinatarios se leen de la MySQL en el nodo siguiente (el webhook es publico).\nconst body = $json.body || {};\nconst id = parseInt(body.solicitud_id, 10);\nif (body.evento !== 'tienda_cuenta' || !(id > 0)) return null;\nreturn { json: { id } };\n"
+      },
+      "name": "Validar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT id, sede, compra_mayor, nombre, apellido, telefono, correo, empresa, documento, estado, direccion,\n       tipo_negocio, comentario, destinatarios, DATE_FORMAT(creado_at, '%d/%m/%Y %H:%i') AS creado\n  FROM tienda_solicitudes_cuenta\n WHERE id = {{ $json.id }}\n   AND enviado_at IS NULL\n   AND creado_at > NOW() - INTERVAL 1 DAY",
+        "options": {}
+      },
+      "name": "Leer solicitud",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "REEMPLAZAR",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Arma el correo de una solicitud de cuenta de la tienda web con la fila de \"Leer solicitud\"\n// (tienda_solicitudes_cuenta). Nada viene del webhook (es público): datos y destinatarios los guardó el\n// panel (lib/tienda-web/cuenta.ts). Sin fila = ya se mandó o tiene más de un día.\nconst s = $json;\nif (!s || !s.id) return null;\n\nconst SEDES = { valencia: 'Valencia', caracas: 'Caracas', panama: 'Panamá' };\nconst sede = SEDES[s.sede] || s.sede;\nconst doc = s.sede === 'panama' ? 'RUC' : 'RIF';\nconst esc = (v) => String(v == null ? '' : v).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst para = String(s.destinatarios || '').split(',').map((c) => c.trim()).filter(Boolean);\nif (!para.length) return null;\n\n// WhatsApp: 0412… (Venezuela) pasa a 58412…; en Panamá, sin código de país, 507.\nlet digitos = String(s.telefono || '').replace(/\\D/g, '');\nif (s.sede !== 'panama' && digitos.startsWith('0')) digitos = '58' + digitos.slice(1);\nelse if (s.sede === 'panama' && digitos.length <= 8) digitos = '507' + digitos;\nconst whatsapp = 'https://wa.me/' + digitos;\nconst nombre = s.nombre + ' ' + s.apellido;\n\nconst filas = [\n  ['Empresa', s.empresa],\n  [doc, s.documento],\n  ['Contacto', nombre],\n  ['Teléfono', s.telefono],\n  ['Correo', s.correo],\n  [s.sede === 'panama' ? 'Provincia' : 'Estado', s.estado],\n  ['Dirección', s.direccion],\n  ['Tipo de negocio', s.tipo_negocio || 'No lo indicó'],\n  ['¿Compra al mayor?', Number(s.compra_mayor) ? 'Sí, para una tienda o empresa' : 'No'],\n  ...(s.comentario ? [['Comentario', s.comentario]] : []),\n];\nconst asunto = 'Solicitud de cuenta: ' + s.empresa + ' (' + doc + ' ' + s.documento + ') · ' + sede;\n\nconst html = '<!doctype html><html><body style=\"margin:0;background:#F4F5F2;font-family:Arial,Helvetica,sans-serif;color:#0B0D12\">'\n  + '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#F4F5F2;padding:24px 12px\"><tr><td align=\"center\">'\n  + '<table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#FFFFFF;border:1px solid #E0E2DB;border-radius:16px\">'\n  + '<tr><td style=\"padding:28px 32px 8px\"><p style=\"margin:0;font-size:13px;font-weight:bold;letter-spacing:.06em;color:#1D4ED8\">TIENDA WEB · SEDE ' + esc(sede.toUpperCase()) + '</p>'\n  + '<h1 style=\"margin:8px 0 6px;font-size:22px;line-height:1.25\">Nueva solicitud de cuenta de distribuidor</h1>'\n  + '<p style=\"margin:0;font-size:15px;line-height:1.5;color:#565C68\">' + esc(nombre) + ' pidió una cuenta para <strong style=\"color:#0B0D12\">' + esc(s.empresa) + '</strong>. Verifica los datos y, si procede, crea su cuenta en Odoo y asígnale un vendedor.</p></td></tr>'\n  + '<tr><td style=\"padding:16px 32px\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-top:1px solid #E0E2DB\">'\n  + filas.map(([k, v]) => '<tr><td style=\"padding:10px 12px 10px 0;border-bottom:1px solid #E0E2DB;font-size:14px;color:#565C68;width:150px;vertical-align:top\">' + esc(k) + '</td><td style=\"padding:10px 0;border-bottom:1px solid #E0E2DB;font-size:14px;font-weight:bold;vertical-align:top\">' + esc(v).replace(/\\n/g, '<br>') + '</td></tr>').join('')\n  + '</table></td></tr>'\n  + '<tr><td style=\"padding:8px 32px 28px\">'\n  + '<a href=\"mailto:' + esc(s.correo) + '\" style=\"display:inline-block;margin:0 8px 8px 0;padding:12px 20px;border-radius:999px;background:#0B0D12;color:#FFFFFF;font-size:14px;font-weight:bold;text-decoration:none\">Responder por correo</a>'\n  + '<a href=\"' + esc(whatsapp) + '\" style=\"display:inline-block;margin:0 0 8px;padding:12px 20px;border-radius:999px;background:#25D366;color:#0B0D12;font-size:14px;font-weight:bold;text-decoration:none\">Escribir por WhatsApp</a>'\n  + '<p style=\"margin:12px 0 0;font-size:12px;color:#565C68\">Solicitud n.º ' + esc(s.id) + ' · ' + esc(s.creado) + ' · Al responder este correo le escribes directamente al cliente.</p>'\n  + '</td></tr></table></td></tr></table></body></html>';\n\nconst texto = [\n  'Nueva solicitud de cuenta de distribuidor · Sede ' + sede,\n  '',\n  ...filas.map(([k, v]) => k + ': ' + v),\n  '',\n  'WhatsApp: ' + whatsapp,\n  'Solicitud n.º ' + s.id + ' · ' + s.creado,\n  'Al responder este correo le escribes directamente al cliente.',\n].join('\\n');\n\n// MIME multipart/alternative (texto + HTML) para la API de Gmail, con «Responder a» el cliente.\nconst b64 = (t) => Buffer.from(t, 'utf8').toString('base64');\nconst partir = (t) => t.replace(/.{1,76}/g, (l) => l + '\\r\\n');\nconst asuntoCorto = asunto.slice(0, 200);\nconst limite = 'tienda-' + s.id + '-' + Date.now().toString(36);\nconst mime = [\n  'From: =?UTF-8?B?' + b64('Tienda web SUPRICOM') + '?= <dmedina@supricom.com.ve>',\n  'To: ' + para.join(', '),\n  'Reply-To: =?UTF-8?B?' + b64(nombre) + '?= <' + s.correo + '>',\n  'Subject: =?UTF-8?B?' + b64(asuntoCorto) + '?=',\n  'MIME-Version: 1.0',\n  'Content-Type: multipart/alternative; boundary=\"' + limite + '\"',\n  '',\n  '--' + limite,\n  'Content-Type: text/plain; charset=\"UTF-8\"',\n  'Content-Transfer-Encoding: base64',\n  '',\n  partir(b64(texto)),\n  '--' + limite,\n  'Content-Type: text/html; charset=\"UTF-8\"',\n  'Content-Transfer-Encoding: base64',\n  '',\n  partir(b64(html)),\n  '--' + limite + '--',\n  '',\n].join('\\r\\n');\nconst raw = Buffer.from(mime, 'utf8').toString('base64').replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\nreturn { json: { solicitud_id: Number(s.id), para: para.join(', '), asunto: asuntoCorto, raw } };\n"
+      },
+      "name": "Armar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ raw: $json.raw }) }}",
+        "options": {}
+      },
+      "name": "Enviar correo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Cuenta del panel"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE tienda_solicitudes_cuenta SET enviado_at = NOW() WHERE id = {{ $('Armar correo').item.json.solicitud_id }}",
+        "options": {}
+      },
+      "name": "Marcar enviado",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        1100,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "REEMPLAZAR",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Tienda": {
+      "main": [
+        [
+          {
+            "node": "Validar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar": {
+      "main": [
+        [
+          {
+            "node": "Leer solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer solicitud": {
+      "main": [
+        [
+          {
+            "node": "Armar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar correo": {
+      "main": [
+        [
+          {
+            "node": "Enviar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar correo": {
+      "main": [
+        [
+          {
+            "node": "Marcar enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

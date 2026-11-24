@@ -14,6 +14,9 @@ window.SUPRICOM = {
     // abajo. `?api=` en el enlace la cambia para probar (por ejemplo, el panel en localhost) y `?api=no`
     // fuerza la copia.
     api: "https://panel.supricom.com.ve/api/tienda-web",
+    // Clave pública de Cloudflare Turnstile para el formulario de «Solicitar cuenta» (la misma
+    // NEXT_PUBLIC_TURNSTILE_SITE_KEY del panel). Vacía = sin captcha (el panel tampoco lo exige sin su clave).
+    turnstile: "",
     // Una tarjeta por categoría; cada sede muestra solo las que tienen productos suyos. Las categorías de
     // Odoo se reparten en estas en lib/tienda-web/tipos.ts (`categoriaDe`).
     categorias: [

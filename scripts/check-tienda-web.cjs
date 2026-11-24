@@ -59,4 +59,47 @@ assert.strictEqual(limpiarDescripcion("CANON IMPRESORA PIXMA TS3610", "").resume
 assert.strictEqual(textoPlano("A&amp;B<br>C"), "A&B C");
 assert.strictEqual(recortar("Uno dos tres. Cuatro cinco seis siete", 20), "Uno dos tres.");
 
+// Solicitud de cuenta (lib/tienda-web/cuentaTipos.ts)
+const fuenteCuenta = fs.readFileSync(path.join(__dirname, "..", "lib/tienda-web/cuentaTipos.ts"), "utf8");
+const jsCuenta = ts.transpileModule(fuenteCuenta, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+const mc = { exports: {} };
+new Function("require", "module", "exports", jsCuenta)(require, mc, mc.exports);
+const { validarSolicitud, normalizarRif, telefonoValido, correosDeSede } = mc.exports;
+
+assert.strictEqual(normalizarRif("j123456789"), "J-12345678-9");
+assert.strictEqual(normalizarRif("J-31737690-0"), "J-31737690-0");
+assert.strictEqual(normalizarRif("V 12.345.678"), "V-12345678");
+assert.strictEqual(normalizarRif("123456789"), null); // sin letra
+assert.strictEqual(normalizarRif("X123456789"), null);
+assert.ok(telefonoValido("0412-555 5555"));
+assert.ok(telefonoValido("+507 399-4554"));
+assert.ok(!telefonoValido("12345"));
+assert.ok(!telefonoValido("0412abc5555"));
+
+// A quién le llega: por sede, y la variable de entorno manda si trae correos válidos
+assert.deepStrictEqual(correosDeSede("caracas"), ["azampetti@supricom.com.ve"]);
+assert.deepStrictEqual(correosDeSede("valencia"), ["gerencia.ventas@supricom.com.ve"]);
+assert.deepStrictEqual(correosDeSede("panama"), ["contabilidad@supricom.com"]);
+assert.deepStrictEqual(correosDeSede("caracas", "valencia=a@x.com;caracas=b@x.com, c@x.com"), ["b@x.com", "c@x.com"]);
+assert.deepStrictEqual(correosDeSede("panama", "panama=no-es-correo"), ["contabilidad@supricom.com"]);
+
+const base = {
+    sede: "caracas", compraMayor: "si", nombre: "Ana", apellido: "Pérez", telefono: "0412 555 5555", correo: "Ana@Empresa.com",
+    empresa: "Tecno Ana C.A.", documento: "j-40123456-7", estado: "Miranda", direccion: "Av. Principal, local 3", tipoNegocio: "Otro",
+};
+const ok = validarSolicitud(base);
+assert.ok(ok.ok);
+assert.strictEqual(ok.datos.documento, "J-40123456-7");
+assert.strictEqual(ok.datos.correo, "ana@empresa.com");
+assert.strictEqual(ok.datos.compraMayor, true);
+assert.strictEqual(validarSolicitud({ ...base, sede: "maracaibo" }).campo, "sede");
+assert.strictEqual(validarSolicitud({ ...base, documento: "123" }).campo, "documento");
+assert.strictEqual(validarSolicitud({ ...base, estado: "Chiriquí" }).campo, "estado"); // provincia de Panamá en Caracas
+assert.strictEqual(validarSolicitud({ ...base, correo: "ana@" }).campo, "correo");
+assert.strictEqual(validarSolicitud({ ...base, compraMayor: "" }).campo, "compraMayor");
+assert.strictEqual(validarSolicitud({ ...base, tipoNegocio: "<script>" }).datos.tipoNegocio, ""); // fuera de la lista: vacío
+const pa = validarSolicitud({ ...base, sede: "panama", documento: "155612345-2-2021", estado: "Chiriquí" });
+assert.ok(pa.ok);
+assert.strictEqual(pa.datos.documento, "155612345-2-2021");
+
 console.log("tienda-web: todo bien");
