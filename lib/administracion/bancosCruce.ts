@@ -303,6 +303,16 @@ export function errorPagos(monto: number, pendientes: number[]): string | null {
   if (pendientes.length === 1) return total + 0.005 >= objetivo ? null : `Le quedan ${total.toFixed(2)} por conciliar y el movimiento es por ${objetivo.toFixed(2)}`;
   return Math.abs(total - objetivo) < 0.01 ? null : `Suman ${total.toFixed(2)} y el movimiento es por ${objetivo.toFixed(2)}`;
 }
+/** Hasta que diferencia se deja corregir en Odoo el monto de un cobro/pago para que sea el del banco (un error al escribirlo). */
+export const MAX_AJUSTE = 0.01;
+
+/** El registro de Odoo es del mismo signo que el movimiento y difiere en mas de un centimo y hasta MAX_AJUSTE (1 %). */
+export function ajustePermitido(movimiento: number, registro: number): boolean {
+  const a = Math.abs(movimiento);
+  const d = Math.abs(a - Math.abs(registro));
+  return movimiento !== 0 && Math.sign(movimiento) === Math.sign(registro) && d >= 0.005 && d <= a * MAX_AJUSTE;
+}
+
 export type EstadoComprobante = "conciliado" | "por_revisar" | "sin_registrar" | "no_encontrado" | "sin_estado";
 
 export type MovimientoCruzado = Movimiento & {

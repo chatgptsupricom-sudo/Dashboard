@@ -312,3 +312,14 @@ console.log("check-bancos: OK");
   assert.strictEqual(saldosDelMes([{ fecha: "2026-10-02", monto: 5, saldo: null }]), null);
 }
 console.log("saldosDelMes ok");
+
+// ajustePermitido: corregir en Odoo el monto de un cobro/pago que difiere poco del banco.
+{
+  const { ajustePermitido } = m.exports;
+  assert.ok(ajustePermitido(-95700, -95698.45)); // Valencia, BANES/2026/00002
+  assert.ok(ajustePermitido(1000, 1009.99));
+  assert.ok(!ajustePermitido(1000, 1011)); // mas de 1 %
+  assert.ok(!ajustePermitido(-1000, 999)); // signo contrario
+  assert.ok(!ajustePermitido(1000, 1000)); // ya es igual
+}
+console.log("ajustePermitido ok");

@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Aviso } from "@/components/administracion/comunes";
 import type { ConciliacionBanco, CuentaContable } from "@/lib/administracion/bancos";
-import type { PagoOdoo } from "@/lib/administracion/bancosCruce";
+import { ajustePermitido, type PagoOdoo } from "@/lib/administracion/bancosCruce";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -47,6 +47,8 @@ export function AprobarMovimiento({
   const [contables, setContables] = useState<CuentaContable[] | null>(null);
   const [textoContable, setTextoContable] = useState("");
   const [enviando, setEnviando] = useState(false);
+  /** Corregir en Odoo el monto del unico elegido al del banco (difiere hasta 1 %). */
+  const [ajustar, setAjustar] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
@@ -85,6 +87,9 @@ export function AprobarMovimiento({
     .slice(0, 40);
   const totalElegido = candidatos.filter((p) => elegidos.includes(p.id)).reduce((s, p) => s + p.monto, 0);
   const cuentaElegida = contables?.find((c) => textoCuenta(c) === textoContable) ?? (m.sugerida && textoCuenta(m.sugerida) === textoContable ? m.sugerida : null);
+  // Un solo cobro/pago elegido que difiere poco del banco: se ofrece corregir su monto en Odoo.
+  const unico = elegidos.length === 1 ? candidatos.find((p) => p.id === elegidos[0]) : undefined;
+  const ofrecerAjuste = opcion === "pagos" && !!unico && ajustePermitido(m.monto, unico.monto);
   const listoParaAprobar =
     opcion === "pagos" ? elegidos.length > 0 : opcion === "cuenta" ? !!cuentaElegida : true;
 
@@ -93,7 +98,7 @@ export function AprobarMovimiento({
     setError(null);
     const destino =
       opcion === "pagos"
-        ? { pagos: elegidos }
+        ? { pagos: elegidos, ...(ofrecerAjuste && ajustar ? { ajustar_monto: true } : {}) }
         : opcion === "cuenta"
           ? { cuenta_contable: cuentaElegida!.id }
           : opcion === "transferencia"
@@ -173,6 +178,19 @@ export function AprobarMovimiento({
                 <p className={`text-xs ${elegidos.length > 1 && Math.abs(totalElegido - m.monto) >= 0.01 ? "text-red-700" : "text-gray-500"}`}>
                   Elegido: {cifra(totalElegido)} de {cifra(m.monto)}. Uno solo puede ser mayor (se abonó en partes); varios tienen que sumar justo el movimiento.
                 </p>
+                {ofrecerAjuste && unico && (
+                  <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm cursor-pointer">
+                    <input type="checkbox" className="mt-1" checked={ajustar} onChange={(e) => setAjustar(e.target.checked)} />
+                    <span>
+                      Corregir en Odoo el monto de <span className="font-medium">{unico.nombre}</span> de {cifra(Math.abs(unico.monto))} a{" "}
+                      <span className="font-medium">{cifra(Math.abs(m.monto))}</span> (el del banco; diferencia {cifra(Math.abs(m.monto) - Math.abs(unico.monto))})
+                      <span className="block text-xs text-gray-600 mt-0.5">
+                        Se pasa a borrador, se le pone el monto del banco con la misma tasa y se vuelve a confirmar; queda una nota en Odoo.
+                        No se puede si ya está aplicado a facturas.
+                      </span>
+                    </span>
+                  </label>
+                )}
               </div>
             )}
 
