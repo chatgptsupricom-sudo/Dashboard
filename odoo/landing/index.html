@@ -20,7 +20,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261106h">
+<link rel="stylesheet" href="estilos.css?v=20261124b">
 </head>
 <body>
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -34,6 +34,7 @@
         <div class="cabecera-acciones">
             <nav id="menu" class="menu" aria-label="Secciones">
                 <div class="menu-sede"><span class="menu-sede-titulo" aria-hidden="true">Tu sede</span></div>
+                <a href="tienda.html" data-ir="tienda.html">Tienda</a>
                 <a href="#destacados">Destacados</a>
                 <a href="#comprar">Cómo comprar</a>
                 <a href="#categorias">Categorías</a>
@@ -155,7 +156,10 @@
             <div class="estante-pista"></div>
         </div>
         <div class="contenedor estante-pie">
-            <p class="estante-nota"></p>
+            <div class="estante-pie-texto">
+                <p class="estante-nota"></p>
+                <a class="estante-tienda" href="tienda.html" data-ir="tienda.html">Ver toda la tienda<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            </div>
             <div class="estante-flechas">
                 <button type="button" class="flecha-estante" data-mover="-1" aria-label="Ver los anteriores"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
                 <button type="button" class="flecha-estante" data-mover="1" aria-label="Ver los siguientes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
@@ -308,7 +312,7 @@
         </div>
         <nav aria-label="Tienda">
             <h3>Tienda</h3>
-            <a data-odoo="/shop">Catálogo</a>
+            <a href="tienda.html" data-ir="tienda.html">Catálogo</a>
             <a data-odoo="/web/login">Mi cuenta</a>
             <a data-odoo="/registro-de-cuenta">Solicitar cuenta</a>
         </nav>
@@ -397,7 +401,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261106h"></script>
-<script src="app.js?v=20261106h"></script>
+<script src="datos.js?v=20261124b"></script>
+<script src="app.js?v=20261124b"></script>
 </body>
 </html>

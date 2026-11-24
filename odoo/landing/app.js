@@ -43,6 +43,8 @@
     const escritorio = () => mqEscritorio.matches;
     const $ = (s, el = document) => el.querySelector(s);
     const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+    // El mismo script sirve el inicio y la tienda: lo propio de cada una solo corre en la suya.
+    const ES_INICIO = (document.body.dataset.pagina || "inicio") === "inicio";
     const foto = (id, tam = 512) => `${D.odoo}/web/image/product.template/${id}/image_${tam}`;
     const ficha = (id) => `${D.odoo}/shop/p-${id}`;
     const buscar = (q) => `${D.odoo}/shop${q ? `?search=${encodeURIComponent(q)}` : ""}`;
@@ -86,12 +88,23 @@
     const FICHAS = Boolean(S.tiendaPropia);
     // Lo arma la sección de la cotización; lo usan el anillo, las categorías, las marcas y el selector de sede.
     const enLaSede = { agregar: () => {}, buscar: () => {}, lista: () => null, usada: () => false, marcar: () => {} };
-    // Enlace a una búsqueda: en la tienda si la sede tiene la suya; si no, en el buscador de la lista.
-    const enlazarBusqueda = (a, q) => {
-        if (FICHAS) { a.href = buscar(q); return; }
-        a.href = "#carrito";
-        a.addEventListener("click", (ev) => { ev.preventDefault(); enLaSede.buscar(q); });
+    // Enlaces entre las páginas (inicio y tienda). Si la sede vino en el enlace (?sede=), viaja con él: si no,
+    // la otra página abriría la que el visitante tenía guardada.
+    const conSede = (ruta) => {
+        if (SEDE.origen !== "enlace") return ruta;
+        const [camino, ancla] = ruta.split("#");
+        const [base, consulta] = camino.split("?");
+        const q = new URLSearchParams(consulta || "");
+        q.set("sede", SEDE.id);
+        return `${base}?${q}${ancla ? `#${ancla}` : ""}`;
     };
+    for (const a of $$("[data-ir]")) a.href = conSede(a.dataset.ir);
+    // Categorías, marcas y banners llevan a la tienda con ese filtro puesto.
+    const urlTienda = (filtros = {}) => {
+        const q = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v)).toString();
+        return conSede(`tienda.html${q ? `?${q}` : ""}`);
+    };
+    const enlazarTienda = (a, filtros) => { a.href = urlTienda(filtros); };
 
     // Enlaces a la tienda real de Odoo.
     for (const a of $$("[data-odoo]")) a.href = D.odoo + a.dataset.odoo;
@@ -315,6 +328,15 @@
     }, { rootMargin: "-45% 0px -50% 0px" });
     for (const s of $$("[data-seccion]")) activa.observe(s);
 
+    // Fuera del inicio, la cabecera solo marca su borde al bajar.
+    if (!ES_INICIO) {
+        const bordeCabecera = () => cabecera.classList.toggle("con-scroll", window.scrollY > 8);
+        window.addEventListener("scroll", bordeCabecera, { passive: true });
+        bordeCabecera();
+    }
+
+    // Anillo, banners, marcas, categorías y pasos: solo en el inicio (la sangría de adentro quedó como estaba).
+    if (ES_INICIO) {
     /* ---------------------------------------------------------------- Portada: anillo 3D */
     const orbita = $(".orbita");
     const escena = $(".orbita-escena");
@@ -543,7 +565,7 @@
     const banners = D.banners.map((b, i) => {
         const a = crear("a", { class: "banner", "aria-roledescription": "diapositiva", "aria-label": `${i + 1} de ${nB}: ${b.alt}` },
             [crear("img", { src: b.img, alt: "", draggable: false, decoding: "async", loading: i === 0 ? "eager" : "lazy", fetchPriority: i === 0 ? "high" : "low" })]);
-        enlazarBusqueda(a, b.buscar);
+        enlazarTienda(a, { q: b.buscar });
         a.dataset.i = i;
         pistaBanners.append(a);
         return a;
@@ -636,7 +658,7 @@
     const pistaMarcas = $(".marcas-pista");
     const tarjetaMarca = (m, copia) => {
         const a = crear("a", { class: `marca-logo${m.oscura ? " oscura" : ""}`, title: m.nombre });
-        enlazarBusqueda(a, m.nombre);
+        enlazarTienda(a, { marca: m.nombre });
         a.append(crear("img", { src: `../website_supricom_tienda/static/src/img/marcas/${m.logo}`, alt: copia ? "" : m.nombre, style: `height:${m.alto}px` }));
         if (copia) { a.setAttribute("aria-hidden", "true"); a.tabIndex = -1; }
         return a;
@@ -678,7 +700,7 @@
             crear("div", { class: "cat-foto" }, [crear("img", { src: foto(c.foto), alt: "", loading: "lazy" })]),
             crear("span", { class: "cat-ir" }, ["Ver productos ", icono("ir", "icono-ir")]),
         ]);
-        enlazarBusqueda(a, FICHAS ? c.buscar : c.nombre);
+        enlazarTienda(a, { cat: c.id });
         pistaCats.append(a);
     }
     let sobranteCats = 0;
@@ -743,6 +765,7 @@
     window.addEventListener("load", () => { medirCats(); alScroll(); });
     medirCats();
     alScroll();
+    } // fin de lo que es solo del inicio
 
     /* ---------------------------------------------------------------- Cotización */
     // La cotización es una lista código → unidades que se guarda en el navegador, una por sede. Se suma con
@@ -991,11 +1014,12 @@
             b.setAttribute("aria-label", todos ? `Combo ${combo.titulo} en tu cotización. Agregar los que falten` : `Agregar el combo ${combo ? combo.titulo : ""}: ${ps.length} productos`);
         }
         const cierre = $(".cierre-carrito");
+        if (!cierre) return;
         cierre.hidden = !cotizacion.size;
         $(".cierre-carrito-n").textContent = miles([...cotizacion.values()].reduce((a, b) => a + b, 0));
     };
     enLaSede.marcar = () => { marcarBotones(); marcarCombos(); };
-    $(".cierre-carrito").addEventListener("click", () => abrirCarrito());
+    $(".cierre-carrito")?.addEventListener("click", () => abrirCarrito());
 
     // El número del carrito en la cabecera: las unidades que llevas.
     const pintarBotonCarrito = () => {
@@ -1437,13 +1461,15 @@
         if (!ev.currentTarget.contains(ev.relatedTarget)) cerrarBusqueda();
     });
     // En las sedes sin tienda propia, las categorías, marcas y banners buscan aquí.
+    // Abre la cotización con el buscador listo (la tienda lo usa para pedir algo que no encontró).
     enLaSede.buscar = (q) => {
-        if (!q) { $("#estantes").scrollIntoView({ behavior: QUIETO ? "auto" : "smooth", block: "start" }); return; }
-        buscador.value = q;
+        buscador.value = q || "";
         abrirCarrito(buscador);
         sugerir();
     };
 
+    // Estantes y combos: solo en el inicio.
+    if (ES_INICIO) {
     /* ---------------------------------------------------------------- Estantes */
     const LISTAS = {
         masVendidos: { chip: (i) => `N.º ${i + 1}`, clase: "", nota: "Ordenados por cuántas facturas tuvieron en los últimos 90 días." },
@@ -1560,6 +1586,16 @@
         contenedorCombos.append(tarjeta);
     });
     if (!contenedorCombos.children.length) $("#juntos").hidden = true;
+    } // fin de estantes y combos
+
+    // Lo que usa la tienda (tienda.js, que corre después de este archivo).
+    window.SUPRICOM_PAGINA = {
+        sede: SEDE, S, D, FICHAS, QUIETO, nombreCategoria,
+        foto, ficha, crear, icono, botonAgregar, urlTienda,
+        marcar: () => enLaSede.marcar(),
+        buscarEnCotizacion: (q) => enLaSede.buscar(q),
+        enCotizacion: (codigo) => cotizacion.get(codigo.toUpperCase()) || 0,
+    };
 
     cargarCotizacion();
     pintar();
