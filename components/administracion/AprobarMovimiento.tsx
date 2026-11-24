@@ -186,7 +186,8 @@ export function AprobarMovimiento({
                       <span className="font-medium">{cifra(Math.abs(m.monto))}</span> (el del banco; diferencia {cifra(Math.abs(m.monto) - Math.abs(unico.monto))})
                       <span className="block text-xs text-gray-600 mt-0.5">
                         Se pasa a borrador, se le pone el monto del banco con la misma tasa y se vuelve a confirmar; queda una nota en Odoo.
-                        No se puede si ya está aplicado a facturas.
+                        No se puede si ya está aplicado a facturas. En una transferencia entre cuentas propias, la diferencia en Bs pasa a su
+                        asiento de diferencial (el USD no cambia).
                       </span>
                     </span>
                   </label>

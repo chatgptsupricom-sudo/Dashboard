@@ -1095,6 +1095,94 @@ export type Destino =
   | { tipo: "sin_conciliar" };
 
 /**
+ * Transferencia interna entre cuentas propias: Odoo la deja en tres asientos con la
+ * misma referencia («TRANSF/nnnnn - Send», «- Receive» y «- Exchange Diff») contra la
+ * Cuenta Transitoria Diferencial Cambiario, que suma cero en Bs y en USD. Si se corrige
+ * el monto de una pata (`ajustarMontoEnOdoo`), la transitoria queda con esa diferencia
+ * en Bs (el USD sigue en cero, la tasa no cambia): se pasa al asiento de diferencial de
+ * la misma transferencia, sin tocar su USD (Valencia, TRANSF/00001 nov-2026: Bs 1,55).
+ * Sin asiento de diferencial, con USD descuadrado o si Odoo no lo deja, devuelve un aviso.
+ */
+async function cuadrarTransferencia(
+  cuenta: CuentaBanco,
+  moveId: number,
+  autor: { nombre: string; email: string },
+): Promise<{ hecho?: string; aviso?: string }> {
+  const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
+  const leer = async (modelo: string, dominio: any[], campos: string[]) =>
+    (await rpc<any[]>(cuenta.sede, modelo, "search_read", [dominio], { fields: campos, context: ctx })) || [];
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const ref = String((await leer("account.move", [["id", "=", moveId]], ["ref"]))[0]?.ref || "").trim();
+  const t = /^(TRANSF\/\d+) - (Send|Receive)$/i.exec(ref);
+  if (!t) return {};
+  const prefijo = t[1];
+  // La transitoria es la contrapartida del asiento corregido (la otra linea no es de pendientes del banco).
+  const pendientes = new Set(await pendientesDelDiario(cuenta));
+  const propias = await leer("account.move.line", [["move_id", "=", moveId]], ["account_id"]);
+  const transitoria = propias.map((l) => l.account_id?.[0]).find((a) => a && !pendientes.has(a));
+  if (!transitoria) return {};
+  const asientos = await leer(
+    "account.move",
+    [["ref", "=like", `${prefijo} - %`], ["state", "=", "posted"], ["company_id", "=", cuenta.sede]],
+    ["name", "ref"],
+  );
+  const enTransitoria = await leer(
+    "account.move.line",
+    [["move_id", "in", asientos.map((a) => a.id)], ["account_id", "=", transitoria]],
+    ["amount_currency", "balance"],
+  );
+  const bs = r2(enTransitoria.reduce((s, l) => s + (Number(l.amount_currency) || 0), 0));
+  const usd = r2(enTransitoria.reduce((s, l) => s + (Number(l.balance) || 0), 0));
+  if (Math.abs(bs) < 0.005) return {};
+  const aviso = { aviso: `La transferencia ${prefijo} quedó con Bs ${cifra(bs)} en la cuenta transitoria: ajústalo en Odoo` };
+  const exch = asientos.filter((a) => /- Exchange Diff$/i.test(String(a.ref || "")));
+  if (Math.abs(usd) >= 0.01 || exch.length !== 1) return aviso;
+  const e = exch[0];
+  const lineas = await leer("account.move.line", [["move_id", "=", e.id]], ["account_id", "amount_currency", "balance", "matched_debit_ids", "matched_credit_ids"]);
+  const deTransitoria = lineas.find((l) => l.account_id?.[0] === transitoria);
+  if (lineas.length !== 2 || !deTransitoria || lineas.some((l) => (l.matched_debit_ids || []).length || (l.matched_credit_ids || []).length)) {
+    return aviso;
+  }
+  // La diferencia sale de la transitoria y va a la otra linea del diferencial; el USD (balance) queda igual.
+  const comandos = (signo: number) =>
+    lineas.map((l) => [
+      1,
+      l.id,
+      { amount_currency: r2(Number(l.amount_currency) + signo * (l.id === deTransitoria.id ? -bs : bs)), balance: Number(l.balance) },
+    ]);
+  const antes = Math.abs(Number(deTransitoria.amount_currency) || 0);
+  try {
+    await rpc(cuenta.sede, "account.move", "button_draft", [[e.id]], { context: ctx });
+    try {
+      await rpc(cuenta.sede, "account.move", "write", [[e.id], { line_ids: comandos(1) }], { context: ctx });
+      await rpc(cuenta.sede, "account.move", "action_post", [[e.id]], { context: ctx });
+    } catch (err) {
+      await rpc(cuenta.sede, "account.move", "write", [[e.id], { line_ids: comandos(0) }], { context: ctx }).catch(() => null);
+      await rpc(cuenta.sede, "account.move", "action_post", [[e.id]], { context: ctx }).catch(() => null);
+      throw err;
+    }
+  } catch (err: any) {
+    return { aviso: `${aviso.aviso} (Odoo no dejó cambiar ${e.name}: ${String(err?.message || err).slice(0, 160)})` };
+  }
+  const despues = r2(Math.abs(Number(deTransitoria.amount_currency) - bs));
+  try {
+    await rpc(cuenta.sede, "account.move", "message_post", [[e.id]], {
+      body:
+        `Diferencia en Bs ajustada desde el panel (Conciliación bancaria) por ${escaparHtml(autor.nombre || autor.email)} ` +
+        `(${escaparHtml(autor.email)}): de ${cifra(antes)} a ${cifra(despues)}, porque el monto de la transferencia ${escaparHtml(prefijo)} ` +
+        "se corrigió al del banco. Así la cuenta transitoria queda en cero también en Bs; el monto en USD no cambia.",
+      message_type: "comment",
+      subtype_xmlid: "mail.mt_note",
+      context: ctx,
+    });
+  } catch {
+    // la nota es informativa
+  }
+  return { hecho: `${e.name}: diferencial de Bs ${cifra(antes)} a ${cifra(despues)}, transitoria en cero` };
+}
+
+/**
  * Corrige en Odoo el monto de un cobro/pago (o del asiento de un apunte, id
  * negativo) para que sea el del movimiento del banco, cuando difieren poco
  * (`ajustePermitido`: hasta 1 %, un error al escribirlo; Valencia, BANES/2026/00002
@@ -1112,7 +1200,7 @@ async function ajustarMontoEnOdoo(
   id: number,
   mov: { fecha: string; referencia: string; monto: number },
   autor: { nombre: string; email: string },
-): Promise<{ error: string } | { hecho: string }> {
+): Promise<{ error: string } | { hecho: string; aviso?: string }> {
   const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
   const leer = async (modelo: string, dominio: any[], campos: string[]) =>
     (await rpc<any[]>(cuenta.sede, modelo, "search_read", [dominio], { fields: campos, context: ctx })) || [];
@@ -1221,7 +1309,13 @@ async function ajustarMontoEnOdoo(
   if (ahora?.parent_state !== "posted" || Math.abs(Math.abs(Number(ahora.amount_currency)) - nuevo) > 0.005) {
     return { error: `Odoo no dejó ${nombre} en ${cifra(nuevo)}: revísalo allá` };
   }
-  return nota("account.move", asiento.id, nombre, Math.abs(antesAc));
+  const hecho = (await nota("account.move", asiento.id, nombre, Math.abs(antesAc))).hecho;
+  // Si es una pata de una transferencia interna, su diferencial absorbe la diferencia en Bs (ver cuadrarTransferencia).
+  const t = await cuadrarTransferencia(cuenta, asiento.id, autor).catch((e: any) => ({
+    hecho: undefined,
+    aviso: `No se pudo revisar la cuenta transitoria de la transferencia: ${String(e?.message || e).slice(0, 160)}`,
+  }));
+  return { hecho: [hecho, t.hecho].filter(Boolean).join("; "), aviso: t.aviso };
 }
 
 /**
@@ -1286,6 +1380,7 @@ export async function conciliarEnOdoo(
   const enBolivares = /VEF|VES|BS/i.test(cuenta.moneda);
   let tasa: number | null = null;
   let ajuste = "";
+  let avisoAjuste: string | undefined;
   if (destino.tipo === "pagos") {
     const ids = [...new Set(destino.pagos)];
     if (destino.ajustar) {
@@ -1293,6 +1388,7 @@ export async function conciliarEnOdoo(
       const r = await ajustarMontoEnOdoo(cuenta, ids[0], { fecha: mov.fecha, referencia: mov.referencia, monto }, autor);
       if ("error" in r) return r;
       ajuste = r.hecho;
+      avisoAjuste = r.aviso;
     }
     // id negativo = apunte de un asiento contable en las cuentas de pendientes (ver pagosOdoo).
     const idsPago = ids.filter((i) => i > 0);
@@ -1543,7 +1639,11 @@ export async function conciliarEnOdoo(
   } catch (e: any) {
     console.warn("[bancos] sin nota en el chatter:", e?.message);
   }
-  return { stLineId: linea.id, asiento: Array.isArray(linea.move_id) ? String(linea.move_id[1]) : "", aviso };
+  return {
+    stLineId: linea.id,
+    asiento: Array.isArray(linea.move_id) ? String(linea.move_id[1]) : "",
+    aviso: [aviso, avisoAjuste].filter(Boolean).join(" ") || undefined,
+  };
 }
 
 // ---------- Lineas viejas de Odoo (deshacer y rehacer desde el panel) ----------
