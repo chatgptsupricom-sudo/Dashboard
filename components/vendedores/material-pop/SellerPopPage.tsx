@@ -648,28 +648,35 @@ export function SellerPopPage() {
       )}
 
       {/* Mis solicitudes */}
-      <section className="grid gap-2.5" aria-label="Mis solicitudes">
+      <section className="grid grid-cols-1 gap-2.5" aria-label="Mis solicitudes">
         <h2 className="text-base font-semibold text-slate-900">Mis solicitudes</h2>
         {!loading && requests.length === 0 && (
           <p className="rounded-2xl border-2 border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
             Todavía no has solicitado material
           </p>
         )}
-        <div className="grid gap-3 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
           {requests.map((r) => {
             const paso = PASO[r.status];
+            const detalle =
+              `${r.clientName}, ${fmtFecha(r.createdAt)}` +
+              (r.odooOrderName ? ` · Orden ${r.odooOrderName}` : "") +
+              (r.deliveryCondition === "al_comprar" ? " · al comprar" : "");
             return (
-              <div key={r.id} className={cn("grid min-w-0 content-start gap-2.5 rounded-[20px] bg-white p-4", SOMBRA)}>
-                <div className="flex flex-wrap justify-between gap-2">
-                  <div className="min-w-0">
+              // grid-cols-1 = minmax(0,1fr): sin eso la columna implícita crece al
+              // ancho del texto largo y el contenido se sale encima de la vecina.
+              <div
+                key={r.id}
+                className={cn("grid min-w-0 grid-cols-1 content-start gap-2.5 overflow-hidden rounded-[20px] bg-white p-4", SOMBRA)}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
                     <b className="text-sm text-slate-900">{r.code}</b>
-                    <small className="block truncate text-xs text-slate-500">
-                      {r.clientName}, {fmtFecha(r.createdAt)}
-                      {r.odooOrderName ? ` · Orden ${r.odooOrderName}` : ""}
-                      {r.deliveryCondition === "al_comprar" ? " · al comprar" : ""}
+                    <small className="line-clamp-2 block break-words text-xs text-slate-500" title={detalle}>
+                      {detalle}
                     </small>
                   </div>
-                  <span className={cn("self-start rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize", ESTILO_ESTADO[r.status])}>
+                  <span className={cn("shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize", ESTILO_ESTADO[r.status])}>
                     {r.status}
                   </span>
                 </div>
@@ -681,10 +688,10 @@ export function SellerPopPage() {
                         <i key={n} className={cn("h-1 rounded-full", n <= paso ? "bg-violet-600" : "bg-slate-100")} />
                       ))}
                     </div>
-                    <div className="mt-1 flex justify-between text-[11px] text-slate-400">
+                    <div className="mt-1 grid grid-cols-3 gap-1 text-[11px] text-slate-400">
                       <span>Enviada</span>
-                      <span>Aprobada</span>
-                      <span>Entregada</span>
+                      <span className="text-center">Aprobada</span>
+                      <span className="text-right">Entregada</span>
                     </div>
                   </div>
                 )}
@@ -692,7 +699,7 @@ export function SellerPopPage() {
                 <ul className="grid gap-1 text-[13px] text-slate-600">
                   {r.items.map((it) => (
                     <li key={it.productId} className="flex justify-between gap-2">
-                      <span className="min-w-0 truncate">{it.name}</span>
+                      <span className="min-w-0 truncate" title={it.name}>{it.name}</span>
                       <span className="shrink-0">
                         {it.approvedQuantity != null && it.approvedQuantity !== it.quantity ? (
                           <>
