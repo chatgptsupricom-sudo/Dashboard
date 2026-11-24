@@ -1124,7 +1124,8 @@ async function ajustarMontoEnOdoo(
         body:
           `Monto corregido desde el panel (Conciliación bancaria) por ${escaparHtml(autor.nombre || autor.email)} ` +
           `(${escaparHtml(autor.email)}): de ${cifra(antes)} a ${cifra(nuevo)}, el del movimiento del banco del ${mov.fecha}, ` +
-          `ref ${escaparHtml(mov.referencia || "—")}.`,
+          `ref ${escaparHtml(mov.referencia || "—")}. Se corrige porque al empezar a usar el sistema no dejaba cambiar la tasa ` +
+          "y por eso no se llegaba a registrar el monto exacto del banco.",
         message_type: "comment",
         subtype_xmlid: "mail.mt_note",
         context: ctx,
