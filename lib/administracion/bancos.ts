@@ -1188,10 +1188,13 @@ async function cuadrarTransferencia(
  * (`ajustePermitido`: hasta 1 %, un error al escribirlo; Valencia, BANES/2026/00002
  * Bs 95.698,45 y el banco 95.700,00, nov-2026). Lo pide una persona al aprobar.
  * - Cobro/pago: borrador, monto nuevo (y su USD a la misma tasa acordada) y
- *   confirmar: la moneda dual rehace los apuntes con la tasa del pago. No se toca
- *   uno ya aplicado a facturas (cambiaria lo que paga): eso se corrige en Odoo.
- * - Asiento: solo uno de dos lineas sin conciliar; las dos lineas pasan al monto
- *   nuevo con la misma tasa.
+ *   confirmar: la moneda dual rehace los apuntes con la tasa del pago.
+ * - Asiento: solo uno de dos lineas; las dos pasan al monto nuevo con la misma tasa.
+ * Si ya esta aplicado a facturas (Caracas, IVA25/2026/07/0037: la linea de Clientes
+ * aplicada a la factura, Bs 7.785,16 contra 7.785,15 del banco), se suelta antes
+ * (pasarlo a borrador lo suelta igual) y se vuelve a aplicar a las mismas facturas
+ * despues; el USD no cambia. No se toca si ya esta conciliado con el banco o si lo
+ * aplicado tiene diferencial cambiario. Un mes con fecha de bloqueo lo frena Odoo.
  * Si Odoo falla a mitad, se intenta dejarlo como estaba. Deja nota en el chatter.
  * Devuelve el error o el texto de lo que se cambio.
  */
@@ -1223,10 +1226,50 @@ async function ajustarMontoEnOdoo(
     }
     return { hecho: `${nombre}: monto corregido de ${cifra(antes)} a ${cifra(nuevo)}` };
   };
+  type Aplicada = { cuenta: number; otra: number; nombre: string };
+  /** Lo que el asiento tiene aplicado fuera de la linea que espera al banco (sus facturas), para volver a aplicarlo. */
+  const aplicadas = async (moveId: number, esDelBanco: (l: any) => boolean): Promise<{ error: string } | { pares: Aplicada[] }> => {
+    const ls = await leer("account.move.line", [["move_id", "=", moveId]], ["account_id", "matched_debit_ids", "matched_credit_ids"]);
+    const conciliada = (l: any) => (l.matched_debit_ids || []).length || (l.matched_credit_ids || []).length;
+    if (ls.some((l) => esDelBanco(l) && conciliada(l))) return { error: "ya está conciliado con el banco" };
+    const ids = [...new Set(ls.flatMap((l) => [...(l.matched_debit_ids || []), ...(l.matched_credit_ids || [])]))];
+    if (!ids.length) return { pares: [] };
+    const parciales = await leer("account.partial.reconcile", [["id", "in", ids]], ["debit_move_id", "credit_move_id", "exchange_move_id"]);
+    if (parciales.some((p) => p.exchange_move_id)) return { error: "tiene diferencial cambiario en lo que tiene aplicado: corrige el monto en Odoo" };
+    const mias = new Map(ls.map((l) => [l.id, l]));
+    return {
+      pares: parciales.map((p) => {
+        const mia = mias.has(p.debit_move_id[0]) ? p.debit_move_id[0] : p.credit_move_id[0];
+        const otra = mia === p.debit_move_id[0] ? p.credit_move_id : p.debit_move_id;
+        return { cuenta: mias.get(mia).account_id[0], otra: otra[0], nombre: String(otra[1] || "").split(" ")[0] };
+      }),
+    };
+  };
+  /** Vuelve a aplicar cada linea a su factura (las lineas pudieron rehacerse: se buscan por cuenta). Devuelve las que fallaron. */
+  const reaplicar = async (moveId: number, pares: Aplicada[]) => {
+    const fallas: string[] = [];
+    for (const p of pares) {
+      const l = (await leer("account.move.line", [["move_id", "=", moveId], ["account_id", "=", p.cuenta], ["reconciled", "=", false]], ["id"]))[0];
+      if (!l) {
+        fallas.push(p.nombre);
+        continue;
+      }
+      try {
+        await rpc(cuenta.sede, "account.move.line", "reconcile", [[l.id, p.otra]], { context: ctx });
+      } catch {
+        // reconcile() puede devolver algo que el JSON-RPC no sabe mandar aunque lo haya hecho: se mira en Odoo.
+        const hechas = await leer("account.move.line", [["id", "in", [l.id, p.otra]], ["matching_number", "!=", false]], ["id"]);
+        if (hechas.length < 2) fallas.push(p.nombre);
+      }
+    }
+    return fallas;
+  };
+  const avisoReaplicar = (fallas: string[]) =>
+    fallas.length ? `No se pudo volver a aplicar a ${fallas.join(", ")}: aplícalo en Odoo` : undefined;
 
   if (id > 0) {
     const p = (
-      await leer("account.payment", [["id", "=", id]], ["name", "journal_id", "state", "amount", "payment_type", "custom_rate", "tax_today", "move_id"])
+      await leer("account.payment", [["id", "=", id]], ["name", "journal_id", "state", "amount", "payment_type", "custom_rate", "tax_today", "move_id", "outstanding_account_id"])
     )[0];
     if (!p) return { error: "Ese cobro/pago no existe en Odoo" };
     if (!Array.isArray(p.journal_id) || p.journal_id[0] !== cuenta.id) return { error: `${p.name} es de otro diario` };
@@ -1237,10 +1280,9 @@ async function ajustarMontoEnOdoo(
     if (!ajustePermitido(mov.monto, p.payment_type === "inbound" ? antes : -antes)) {
       return { error: `${p.name} es por ${cifra(antes)} y el banco por ${cifra(nuevo)}: solo se corrige una diferencia de hasta 1 %` };
     }
-    const lineas = await leer("account.move.line", [["move_id", "=", p.move_id[0]]], ["matched_debit_ids", "matched_credit_ids"]);
-    if (lineas.some((l) => (l.matched_debit_ids || []).length || (l.matched_credit_ids || []).length)) {
-      return { error: `${p.name} ya está aplicado a facturas o conciliado: corrige el monto en Odoo` };
-    }
+    const pendiente = Array.isArray(p.outstanding_account_id) ? p.outstanding_account_id[0] : 0;
+    const ap = await aplicadas(p.move_id[0], (l) => l.account_id?.[0] === pendiente);
+    if ("error" in ap) return { error: `${p.name} ${ap.error}` };
     const tasa = p.custom_rate && Number(p.tax_today) > 0 ? Number(p.tax_today) : null;
     const valores = (monto: number) => ({ amount: monto, ...(tasa ? { amount_local: Math.round((monto / tasa) * 100) / 100 } : {}) });
     await rpc(cuenta.sede, "account.payment", "action_draft", [[id]], { context: ctx });
@@ -1251,16 +1293,18 @@ async function ajustarMontoEnOdoo(
       try {
         await rpc(cuenta.sede, "account.payment", "write", [[id], valores(antes)], { context: ctx });
         await rpc(cuenta.sede, "account.payment", "action_post", [[id]], { context: ctx });
+        await reaplicar(p.move_id[0], ap.pares);
       } catch {
         throw new Error(`${String((e as Error)?.message || e)} — y ${p.name} quedó en borrador en Odoo: confírmalo allá`);
       }
       throw e;
     }
     const ahora = (await leer("account.payment", [["id", "=", id]], ["amount", "state"]))[0];
+    const fallas = ahora?.state === "posted" ? await reaplicar(p.move_id[0], ap.pares) : [];
     if (ahora?.state !== "posted" || Math.abs(Number(ahora.amount) - nuevo) > 0.005) {
       return { error: `Odoo no dejó ${p.name} en ${cifra(nuevo)}: revísalo allá` };
     }
-    return nota("account.payment", id, p.name, antes);
+    return { ...(await nota("account.payment", id, p.name, antes)), aviso: avisoReaplicar(fallas) };
   }
 
   // Apunte de un asiento contable (id negativo).
@@ -1272,11 +1316,10 @@ async function ajustarMontoEnOdoo(
   const asiento = (await leer("account.move", [["id", "=", apunte.move_id[0]]], ["name", "state", "move_type", "line_ids"]))[0];
   const nombre = String(asiento?.name || apunte.move_id[1] || "");
   if (!asiento || asiento.move_type !== "entry" || asiento.state !== "posted") return { error: `${nombre} no es un asiento contable publicado` };
-  const lineas = await leer("account.move.line", [["move_id", "=", asiento.id]], ["amount_currency", "balance", "matched_debit_ids", "matched_credit_ids"]);
+  const lineas = await leer("account.move.line", [["move_id", "=", asiento.id]], ["amount_currency", "balance"]);
   if (lineas.length !== 2) return { error: `${nombre} tiene ${lineas.length} líneas: corrige el monto en Odoo` };
-  if (lineas.some((l) => (l.matched_debit_ids || []).length || (l.matched_credit_ids || []).length)) {
-    return { error: `${nombre} ya está conciliado: corrige el monto en Odoo` };
-  }
+  const ap = await aplicadas(asiento.id, (l) => l.id === -id);
+  if ("error" in ap) return { error: `${nombre} ${ap.error}` };
   const antesAc = Number(apunte.amount_currency) || 0;
   if (Math.abs(Math.abs(antesAc) - nuevo) < 0.005) return { hecho: "" };
   if (!ajustePermitido(mov.monto, antesAc)) {
@@ -1300,11 +1343,13 @@ async function ajustarMontoEnOdoo(
     try {
       await rpc(cuenta.sede, "account.move", "write", [[asiento.id], { line_ids: montos(1) }], { context: ctx });
       await rpc(cuenta.sede, "account.move", "action_post", [[asiento.id]], { context: ctx });
+      await reaplicar(asiento.id, ap.pares);
     } catch {
       throw new Error(`${String((e as Error)?.message || e)} — y ${nombre} quedó en borrador en Odoo: publícalo allá`);
     }
     throw e;
   }
+  const fallas = await reaplicar(asiento.id, ap.pares);
   const ahora = (await leer("account.move.line", [["id", "=", -id]], ["amount_currency", "parent_state"]))[0];
   if (ahora?.parent_state !== "posted" || Math.abs(Math.abs(Number(ahora.amount_currency)) - nuevo) > 0.005) {
     return { error: `Odoo no dejó ${nombre} en ${cifra(nuevo)}: revísalo allá` };
@@ -1315,7 +1360,7 @@ async function ajustarMontoEnOdoo(
     hecho: undefined,
     aviso: `No se pudo revisar la cuenta transitoria de la transferencia: ${String(e?.message || e).slice(0, 160)}`,
   }));
-  return { hecho: [hecho, t.hecho].filter(Boolean).join("; "), aviso: t.aviso };
+  return { hecho: [hecho, t.hecho].filter(Boolean).join("; "), aviso: [avisoReaplicar(fallas), t.aviso].filter(Boolean).join(" ") || undefined };
 }
 
 /**
@@ -2113,7 +2158,8 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
   );
   const conciliadoEnOdoo = new Map<
     string,
-    { stLineId: number; asientoId: number; asiento: string; detalle: string; conciliada: boolean; por: string; el: string }
+    /** dePanel = la creo el panel (se puede revertir desde aqui); false = ya estaba en Odoo (creada a mano o importada). */
+    { stLineId: number; asientoId: number; asiento: string; detalle: string; conciliada: boolean; por: string; el: string; dePanel: boolean }
   >(
     filasConc
       .filter((r: any) => vivas.has(Number(r.st_line_id)))
@@ -2125,6 +2171,7 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
           ...vivas.get(Number(r.st_line_id))!,
           por: r.aprobado_por,
           el: new Date(r.created_at).toISOString(),
+          dePanel: true,
         },
       ]),
   );
@@ -2169,6 +2216,39 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
         sugerida: m.pago ? null : await sugeridaPara(cuenta, m).catch(() => null),
       })),
   );
+  // Movimientos que ya tienen su linea en el extracto de Odoo sin que la creara el panel (Caracas concilia a mano en
+  // Odoo: REGIONSBANK oct-2026, 118 lineas, todas conciliadas): el movimiento ya esta alla. Se emparejan por fecha y
+  // monto con la regla de «Lineas viejas» (`emparejarViejas`) y salen como conciliados (o «falta conciliar alla»).
+  const sinLinea = deLaSemana.filter((m) => !m.odoo);
+  if (sinLinea.length) {
+    const lineas =
+      (await callOdooRPCEstricto<any[]>(
+        "account.bank.statement.line",
+        "search_read",
+        [[["journal_id", "=", cuenta.id], ["date", ">=", sumarDias(inicio, -3)], ["date", "<=", sumarDias(fin, 3)], ["unique_import_id", "not ilike", "panel-"]]],
+        { fields: ["date", "amount", "payment_ref", "is_reconciled", "move_id"], context: { allowed_company_ids: [cuenta.sede] } },
+      )) || [];
+    const porId = new Map(lineas.map((l) => [l.id, l]));
+    const pares = emparejarViejas(
+      lineas.map((l) => ({ id: l.id, fecha: String(l.date), monto: Number(l.amount) || 0, ref: String(l.payment_ref || "") })),
+      sinLinea.map((m) => ({ id: m.id, fecha: m.fecha, monto: m.monto, referencia: m.referencia })),
+    );
+    const lineaDeMov = new Map([...pares].map(([lineaId, mov]) => [mov.id, porId.get(lineaId)]));
+    for (const m of sinLinea) {
+      const l = lineaDeMov.get(m.id);
+      if (!l) continue;
+      m.odoo = {
+        stLineId: l.id,
+        asientoId: Array.isArray(l.move_id) ? Number(l.move_id[0]) : 0,
+        asiento: Array.isArray(l.move_id) ? String(l.move_id[1]) : "",
+        detalle: "Ya estaba en Odoo",
+        conciliada: !!l.is_reconciled,
+        por: "",
+        el: "",
+        dePanel: false,
+      };
+    }
+  }
   const pagosTomados = new Set(cruce.movimientos.flatMap((m) => [m.pago, ...m.otrosPagos]).filter((p) => p).map((p) => p!.id));
   for (const id of cruce.pagosConfirmadosApi) pagosTomados.add(id);
   return {
@@ -2179,7 +2259,8 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
     /** Entradas y salidas del periodo; `odoo` = ya pasado a Odoo desde el panel (con o sin conciliar). */
     movimientos: deLaSemana,
     comprobantes: cruce.comprobantes.filter((c) => enSemana(c.fecha)),
-    pagosSinMovimiento: cruce.pagosSinMovimiento.filter((p) => enSemana(p.fecha)),
+    // Un cobro/pago ya conciliado en Odoo esta en el banco (lo concilio una linea del extracto): no es «en Odoo y no en el banco».
+    pagosSinMovimiento: cruce.pagosSinMovimiento.filter((p) => enSemana(p.fecha) && !p.conciliado),
     /** Cobros y pagos de Odoo de la ventana que no tomo ningun movimiento: para amarrar a mano. */
     pagosLibres: pagos.filter((p) => !pagosTomados.has(p.id)),
     /** Dias del periodo que no cubre ningun estado de cuenta. */
@@ -2366,9 +2447,10 @@ function revisarCierre(c: CuadreMes, sinMovimientos: boolean, saldoEscrito: numb
   if (!sinMovimientos && !c.movimientos) return { error: "No hay movimientos del mes: sube el estado de cuenta o ciérralo sin movimientos" };
   if (!sinMovimientos && c.diasSinEstado.length) return { error: `Falta el estado de cuenta de ${c.diasSinEstado.length} día(s) del mes` };
   if (!sinMovimientos && c.estado && !c.estado.cuadra) return { error: "Los saldos del estado de cuenta no cuadran: le falta algún movimiento" };
-  // El saldo escrito a mano solo cuando el panel no lo sabe (archivo sin columna de saldo, o sin movimientos y sin mes anterior).
+  // Con movimientos, el saldo escrito solo cuando el estado de cuenta no lo trae. Sin movimientos manda el escrito: el
+  // saldo que encontro el panel (cierre anterior o ultimo estado de cuenta) puede no ser el del banco (Caracas, nov-2026).
   const calculado = sinMovimientos ? (c.anterior?.saldo ?? null) : (c.estado?.final ?? null);
-  const saldo = calculado ?? saldoEscrito;
+  const saldo = sinMovimientos ? (saldoEscrito ?? calculado) : (calculado ?? saldoEscrito);
   if (saldo === null || !Number.isFinite(saldo)) return { error: "Escribe el saldo final del banco del mes" };
   if (c.lineasSinConciliar) return { error: `Odoo tiene ${c.lineasSinConciliar} línea(s) del banco del mes sin conciliar` };
   if (Math.abs(saldo - c.saldoLibros) >= 0.01) {

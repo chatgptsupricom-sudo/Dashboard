@@ -635,7 +635,7 @@ export default function ConciliacionBinance({
 
       {(subidas.length > 0 || ignorados > 0) && (
         <Card
-          className="fixed bottom-4 left-4 z-50 w-[min(440px,calc(100vw-2rem))] shadow-lg"
+          className="fixed bottom-4 right-4 z-[110] w-[min(440px,calc(100vw-2rem))] shadow-lg"
           role="status"
           onMouseEnter={() => setSobreAviso(true)}
           onMouseLeave={() => setSobreAviso(false)}

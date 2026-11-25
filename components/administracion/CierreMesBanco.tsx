@@ -104,7 +104,10 @@ export function CierreMesBanco({
   // "1.234,56" (como se escribe en Venezuela) o "1234.56".
   const escrito =
     saldoEscrito.trim() === "" ? null : Number(saldoEscrito.includes(",") ? saldoEscrito.replace(/\./g, "").replace(",", ".") : saldoEscrito);
-  const saldoBanco = c.cierre ? c.cierre.saldoBanco : (calculado ?? (escrito !== null && Number.isFinite(escrito) ? escrito : null));
+  const valeEscrito = escrito !== null && Number.isFinite(escrito) ? escrito : null;
+  // Sin movimientos lo escrito manda (el saldo que encontro el panel puede no ser el del banco); con movimientos, el del estado.
+  const saldoBanco = c.cierre ? c.cierre.saldoBanco : sinMovimientos ? (valeEscrito ?? calculado) : (calculado ?? valeEscrito);
+  const editable = !c.cierre && (sinMovimientos || calculado === null);
   const diferencia = saldoBanco === null ? null : Math.round((saldoBanco - c.saldoLibros) * 100) / 100;
   const preguntar = sinMovimientos && !c.cierre && tuvo === null;
 
@@ -143,7 +146,7 @@ export function CierreMesBanco({
     ) {
       return;
     }
-    patch({ cerrar: mes, sin_movimientos: sinMovimientos, saldo: calculado === null ? saldoBanco : undefined });
+    patch({ cerrar: mes, sin_movimientos: sinMovimientos, saldo: valeEscrito !== null && editable ? valeEscrito : undefined });
   };
   const reabrir = () => {
     const motivo = prompt(`¿Por qué se reabre ${nombreMes(mes)}? (queda guardado)`)?.trim();
@@ -213,18 +216,21 @@ export function CierreMesBanco({
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-gray-500">Saldo final del banco</p>
-                {saldoBanco === null && !c.cierre ? (
+                {editable ? (
                   <Input
                     className="h-8 mt-1"
                     inputMode="decimal"
-                    placeholder="Escríbelo del estado de cuenta"
+                    placeholder={calculado !== null ? cifra(calculado) : "Escríbelo del estado de cuenta"}
                     value={saldoEscrito}
                     onChange={(e) => setSaldoEscrito(e.target.value)}
                   />
                 ) : (
                   <p className="font-semibold tabular-nums">{saldoBanco === null ? "—" : `${cifra(saldoBanco)} ${moneda}`}</p>
                 )}
-                {calculado === null && escrito !== null && !c.cierre && <p className="text-xs text-gray-400">escrito a mano</p>}
+                {editable && valeEscrito !== null && <p className="text-xs text-gray-400">escrito a mano</p>}
+                {editable && valeEscrito === null && calculado !== null && (
+                  <p className="text-xs text-gray-400">{cifra(calculado)} del {c.anterior?.fuente}; si el banco dice otro, escríbelo</p>
+                )}
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-gray-500">Saldo en libros de Odoo al {dia(finDeMes(mes))}</p>

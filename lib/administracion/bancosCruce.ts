@@ -39,14 +39,16 @@ const COLUMNAS: Record<string, RegExp> = {
 };
 
 /** Dia (YYYY-MM-DD) de una celda: fecha de Excel, "2026/10/22", "27/10/2026" (dia/mes). */
-export function fechaDeCelda(v: unknown, orden: "dmy" | "mdy" = "dmy"): string | null {
+export function fechaDeCelda(v: unknown, orden: "dmy" | "mdy" = "dmy", invertirSerial = false): string | null {
   const iso = (y: number, m: number, d: number) => {
     const f = new Date(Date.UTC(y, m - 1, d));
     return y >= 2000 && f.getUTCMonth() === m - 1 && f.getUTCDate() === d ? f.toISOString().slice(0, 10) : null;
   };
   if (v instanceof Date) return iso(v.getFullYear(), v.getMonth() + 1, v.getDate());
   if (typeof v === "number" && v > 30000 && v < 80000) {
-    return new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400_000).toISOString().slice(0, 10);
+    const f = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400_000).toISOString().slice(0, 10);
+    // Excel guardo «01/04/2026» (dia/mes) como 4 de enero: se devuelven mes y dia a su lugar (ver serialesInvertidos).
+    return invertirSerial && +f.slice(8) <= 12 ? iso(+f.slice(0, 4), +f.slice(8), +f.slice(5, 7)) : f;
   }
   const s = String(v ?? "").trim();
   let r = /^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})/.exec(s);
@@ -65,6 +67,29 @@ export function fechaDeCelda(v: unknown, orden: "dmy" | "mdy" = "dmy"): string |
  * de Banesco Panama: «04/13/2026»; leido como dia/mes salian del 04/01 al 04/10 y las
  * de dia > 12 se perdian, nov-2026).
  */
+/**
+ * Fechas guardadas por un Excel en ingles con dia y mes cruzados: los dias 1 al 12
+ * quedan como fecha real con el mes y el dia al reves («01/04/2026» = 4 de enero) y
+ * los del 13 en adelante como texto «13/04/2026», que Excel no pudo convertir
+ * (Banesco Panama «Abril 2026.xlsx», nov-2026: 27 de 72 filas caian en enero, junio,
+ * julio...). true si la columna mezcla las dos cosas y, al cruzarlas, las fechas reales
+ * caen en los meses del texto.
+ */
+export function serialesInvertidos(valores: unknown[]): boolean {
+  const meses = new Set<number>();
+  for (const v of valores) {
+    const r = typeof v === "string" ? /^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?!\d)/.exec(v) : null;
+    if (r && +r[1] > 12) meses.add(+r[2]);
+  }
+  const seriales = valores
+    .filter((v): v is number => typeof v === "number" && v > 30000 && v < 80000)
+    .map((v) => new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400_000));
+  if (!meses.size || !seriales.length) return false;
+  const tal = seriales.filter((f) => meses.has(f.getUTCMonth() + 1)).length;
+  const cruzado = seriales.filter((f) => f.getUTCDate() <= 12 && meses.has(f.getUTCDate())).length;
+  return cruzado > tal;
+}
+
 export function ordenDeFechas(valores: unknown[]): "dmy" | "mdy" {
   let primero = false;
   let segundo = false;
@@ -150,10 +175,12 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
     const filas: FilaEstado[] = [];
     const dias: string[] = [];
     let fecha: string | null = null;
-    const orden = ordenDeFechas(celdas.slice(h + 1).map((f) => f?.[c.fecha]));
+    const valoresFecha = celdas.slice(h + 1).map((f) => f?.[c.fecha]);
+    const orden = ordenDeFechas(valoresFecha);
+    const invertir = serialesInvertidos(valoresFecha);
     for (const fila of celdas.slice(h + 1)) {
       const celda = (i: number) => (i >= 0 ? fila?.[i] : undefined);
-      fecha = fechaDeCelda(celda(c.fecha), orden) ?? (String(celda(c.fecha) ?? "").trim() ? null : fecha);
+      fecha = fechaDeCelda(celda(c.fecha), orden, invertir) ?? (String(celda(c.fecha) ?? "").trim() ? null : fecha);
       if (!fecha) continue;
       dias.push(fecha);
       const descripcion = String(celda(c.descripcion) ?? "").replace(/\s+/g, " ").trim();
@@ -755,7 +782,7 @@ export function distanciaMonto(odoo: number, banco: number): number | null {
  * monto mal cargado (`distanciaMonto`), mismo dia o la misma referencia hasta 3
  * dias. Primero los pares mas parecidos.
  */
-export function emparejarViejas(lineas: LineaOdooVieja[], movs: MovPanel[]): Map<number, MovPanel> {
+export function emparejarViejas<M extends MovPanel>(lineas: LineaOdooVieja[], movs: M[]): Map<number, M> {
   const pares: { linea: number; mov: number; puntos: number }[] = [];
   lineas.forEach((l, i) => {
     movs.forEach((m, j) => {
@@ -770,7 +797,7 @@ export function emparejarViejas(lineas: LineaOdooVieja[], movs: MovPanel[]): Map
   pares.sort((a, b) => a.puntos - b.puntos);
   const usadas = new Set<number>();
   const tomados = new Set<number>();
-  const res = new Map<number, MovPanel>();
+  const res = new Map<number, M>();
   for (const p of pares) {
     if (usadas.has(p.linea) || tomados.has(p.mov)) continue;
     usadas.add(p.linea);
