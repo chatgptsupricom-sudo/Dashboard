@@ -295,6 +295,27 @@ assert.strictEqual(porMov("rep2").pago, null);
 assert.strictEqual(porMov("dos").pago, null);
 assert.strictEqual(porMov("com").estado, "comision");
 
+// Misma fecha y monto casi igual (Odoo con unos centimos de diferencia): un unico candidato
+const casi = cruzarBanco(
+  [
+    mov("t2", "2026-04-06", "13313570942", -861300, "TRFOB 0102 V022730491 JOSE LINAREZ 4182"), // TRANSF/00002 en Odoo -861.300,29
+    mov("lejos", "2026-04-06", "999", -50000), // pago casi igual, pero 14 dias despues: nada
+    mov("d1", "2026-04-07", "1", -1000), // dos movimientos casi iguales al mismo pago: duda, nada
+    mov("d2", "2026-04-07", "2", -1000.5),
+  ],
+  [pg(95, "2026-04-06", -861300.29, "TRANSF/00002 - Send"), pg(96, "2026-04-20", -50010, "y"), pg(97, "2026-04-07", -1000.2, "z")],
+  [],
+  new Map(),
+  () => true,
+);
+const casiMov = (id) => casi.movimientos.find((x) => x.id === id);
+assert.strictEqual(casiMov("t2").pago?.id, 95);
+assert.strictEqual(casiMov("t2").estado, "parcial");
+assert.ok(casiMov("t2").coincide.fecha && !casiMov("t2").coincide.monto);
+assert.strictEqual(casiMov("lejos").pago, null); // fuera de los dias
+assert.strictEqual(casiMov("d1").pago, null);
+assert.strictEqual(casiMov("d2").pago, null);
+
 console.log("check-bancos: OK");
 
 // saldosDelMes: archivo en cualquier orden, saldo inicial y final del mes.
