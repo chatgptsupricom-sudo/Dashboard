@@ -203,6 +203,11 @@ async function ensureTablas() {
       INDEX (journal_id, mes)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  // Si el saldo del banco se escribio a mano al cerrar y cual calculaba el panel (llegaron despues).
+  const { rows: colsCierre } = await query("SHOW COLUMNS FROM banco_cierres LIKE 'saldo_manual'");
+  if (!colsCierre.length) {
+    await db.execute("ALTER TABLE banco_cierres ADD COLUMN saldo_manual TINYINT NOT NULL DEFAULT 0, ADD COLUMN saldo_sugerido DECIMAL(20,2) NULL");
+  }
   // detalle llego despues (la tabla pudo crearse sin ella).
   const { rows: colsConc } = await query("SHOW COLUMNS FROM banco_conciliaciones LIKE 'detalle'");
   if (!colsConc.length) await db.execute("ALTER TABLE banco_conciliaciones ADD COLUMN detalle VARCHAR(255) NOT NULL DEFAULT ''");
@@ -2355,7 +2360,7 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
       [cuenta.id, fin, inicio],
     ),
     query(
-      `SELECT sin_movimientos, saldo_banco, saldo_libros, cerrado_por, cerrado_at, reabierto_por, reabierto_at, motivo_reapertura
+      `SELECT sin_movimientos, saldo_banco, saldo_libros, saldo_manual, saldo_sugerido, cerrado_por, cerrado_at, reabierto_por, reabierto_at, motivo_reapertura
          FROM banco_cierres WHERE journal_id = ? AND mes = ? ORDER BY id DESC`,
       [cuenta.id, mes],
     ),
@@ -2391,6 +2396,12 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
     if (s) anterior = { saldo: s.final, fuente: `estado de cuenta del ${dia.split("-").reverse().join("/")}` };
   }
 
+  // Sin columna de saldo en el estado de cuenta, el final se calcula con el saldo con que arranco el mes (cierre o
+  // estado anterior) + los movimientos del mes (Banesco Panama: Fecha, Referencia y Monto). Se puede corregir a mano.
+  const suma = Math.round(lista.reduce((t: number, m: { monto: number }) => t + Math.round(m.monto * 100), 0)) / 100;
+  const estado: { inicial: number; final: number; cuadra: boolean; deAnterior?: boolean } | null =
+    saldos ?? (lista.length && anterior ? { inicial: anterior.saldo, final: Math.round((anterior.saldo + suma) * 100) / 100, cuadra: true, deAnterior: true } : null);
+
   const ctx = { allowed_company_ids: [cuenta.sede] };
   const [libros, sinConciliar] = await Promise.all([
     saldoLibros(cuenta, fin),
@@ -2405,6 +2416,9 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
     sinMovimientos: !!r.sin_movimientos,
     saldoBanco: Number(r.saldo_banco),
     saldoLibros: Number(r.saldo_libros),
+    /** El saldo del banco se escribio a mano (no era el que calculaba el panel, `saldoSugerido`). */
+    saldoManual: !!r.saldo_manual,
+    saldoSugerido: r.saldo_sugerido === null ? null : Number(r.saldo_sugerido),
     cerradoPor: String(r.cerrado_por),
     cerradoEl: new Date(r.cerrado_at).toISOString(),
     reabiertoPor: r.reabierto_por ? String(r.reabierto_por) : null,
@@ -2417,7 +2431,7 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
     terminado: fin < hoyCaracas(),
     movimientos: lista.length,
     /** Saldo inicial y final segun el estado de cuenta (null = sus filas no traen saldo); cuadra = no falta ninguna fila. */
-    estado: saldos,
+    estado,
     /** Con que saldo arranco el mes (cierre o estado de cuenta anterior); sin movimientos es tambien el final. */
     anterior,
     saldoLibros: libros,
@@ -2440,7 +2454,11 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
 export type CuadreMes = Awaited<ReturnType<typeof cuadreMes>>;
 
 /** Saldo del banco con que se cierra y, si no se puede cerrar, por que. */
-function revisarCierre(c: CuadreMes, sinMovimientos: boolean, saldoEscrito: number | null): { saldo: number } | { error: string } {
+function revisarCierre(
+  c: CuadreMes,
+  sinMovimientos: boolean,
+  saldoEscrito: number | null,
+): { saldo: number; manual: boolean; sugerido: number | null } | { error: string } {
   if (!c.terminado) return { error: "El mes todavía no termina" };
   if (c.cierre) return { error: "Ese mes ya está cerrado" };
   if (sinMovimientos && c.movimientos) return { error: `El estado de cuenta tiene ${c.movimientos} movimientos en el mes` };
@@ -2449,8 +2467,11 @@ function revisarCierre(c: CuadreMes, sinMovimientos: boolean, saldoEscrito: numb
   if (!sinMovimientos && c.estado && !c.estado.cuadra) return { error: "Los saldos del estado de cuenta no cuadran: le falta algún movimiento" };
   // Con movimientos, el saldo escrito solo cuando el estado de cuenta no lo trae. Sin movimientos manda el escrito: el
   // saldo que encontro el panel (cierre anterior o ultimo estado de cuenta) puede no ser el del banco (Caracas, nov-2026).
+  // Lo mismo si el saldo final salio del mes anterior + los movimientos (el estado de cuenta no trae saldo).
   const calculado = sinMovimientos ? (c.anterior?.saldo ?? null) : (c.estado?.final ?? null);
-  const saldo = sinMovimientos ? (saldoEscrito ?? calculado) : (calculado ?? saldoEscrito);
+  const mandaEscrito = sinMovimientos || !!c.estado?.deAnterior;
+  const saldo = mandaEscrito ? (saldoEscrito ?? calculado) : (calculado ?? saldoEscrito);
+  const manual = saldoEscrito !== null && (mandaEscrito || calculado === null) && (calculado === null || Math.abs(saldoEscrito - calculado) >= 0.005);
   if (saldo === null || !Number.isFinite(saldo)) return { error: "Escribe el saldo final del banco del mes" };
   if (c.lineasSinConciliar) return { error: `Odoo tiene ${c.lineasSinConciliar} línea(s) del banco del mes sin conciliar` };
   if (Math.abs(saldo - c.saldoLibros) >= 0.01) {
@@ -2458,7 +2479,7 @@ function revisarCierre(c: CuadreMes, sinMovimientos: boolean, saldoEscrito: numb
       error: `El saldo del banco (${saldo.toFixed(2)}) no es el de Odoo (${c.saldoLibros.toFixed(2)}): diferencia ${(saldo - c.saldoLibros).toFixed(2)}`,
     };
   }
-  return { saldo };
+  return { saldo, manual, sugerido: calculado };
 }
 
 /** Cierra el mes si quedo bien (ver revisarCierre): desde ahi no se concilia, revierte ni sube nada de ese mes. */
@@ -2472,8 +2493,8 @@ export async function cerrarMes(
   const r = revisarCierre(c, opciones.sinMovimientos, opciones.saldo);
   if ("error" in r) return r;
   await query(
-    "INSERT INTO banco_cierres (journal_id, company_id, mes, sin_movimientos, saldo_banco, saldo_libros, cerrado_por) VALUES (?,?,?,?,?,?,?)",
-    [cuenta.id, cuenta.sede, mes, opciones.sinMovimientos ? 1 : 0, r.saldo, c.saldoLibros, email],
+    "INSERT INTO banco_cierres (journal_id, company_id, mes, sin_movimientos, saldo_banco, saldo_libros, saldo_manual, saldo_sugerido, cerrado_por) VALUES (?,?,?,?,?,?,?,?,?)",
+    [cuenta.id, cuenta.sede, mes, opciones.sinMovimientos ? 1 : 0, r.saldo, c.saldoLibros, r.manual ? 1 : 0, r.sugerido, email],
   );
   return { ok: true };
 }
