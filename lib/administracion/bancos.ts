@@ -1117,7 +1117,8 @@ export type Destino =
   /** ajustar: corregir en Odoo el monto del unico cobro/pago elegido al del banco (ver ajustarMontoEnOdoo). */
   | { tipo: "pagos"; pagos: number[]; ajustar?: boolean }
   | { tipo: "cuenta"; cuentaId: number }
-  | { tipo: "transferencia" }
+  /** otraCuenta: el diario de donde salio (entrada) o adonde fue (salida): se registra la transferencia interna. */
+  | { tipo: "transferencia"; otraCuenta?: number; tasa?: number }
   | { tipo: "sin_conciliar" };
 
 /**
@@ -1409,6 +1410,36 @@ async function ajustarMontoEnOdoo(
  * (necesita Contabilidad y no estar en «Restricciones de Usuario (Supricom)»,
  * que no deja tocar dias pasados). Sin las dos, el usuario de la API del panel.
  */
+/**
+ * Lineas del extracto de Odoo que el panel creo para un movimiento que sigue en el estado de cuenta. Las demas
+ * lineas del panel quedaron huerfanas: su movimiento se borro con su archivo y, al volver a subir el estado de
+ * cuenta, el movimiento tiene otra huella (Caracas, Bancamiga BS may-2026: se volvieron a aprobar 7 y quedaron
+ * conciliados dos veces). Esas cuentan como «ya estaba en Odoo».
+ */
+async function lineasLigadas(journalId: number): Promise<Set<number>> {
+  await ensureTablas();
+  const { rows } = await query(
+    `SELECT c.st_line_id FROM banco_conciliaciones c
+      WHERE c.journal_id = ? AND EXISTS (SELECT 1 FROM banco_movimientos m WHERE m.journal_id = c.journal_id AND m.huella = c.huella)`,
+    [journalId],
+  );
+  return new Set(rows.map((r: any) => Number(r.st_line_id)));
+}
+
+/** Diarios de banco y caja de la sede, menos el de la cuenta: la otra pata de una transferencia interna. */
+export async function otrasCuentasDeLaSede(cuenta: CuentaBanco): Promise<{ id: number; nombre: string; moneda: string }[]> {
+  const diarios =
+    (await callOdooRPCEstricto<any[]>(
+      "account.journal",
+      "search_read",
+      [[["type", "in", ["bank", "cash"]], ["company_id", "=", cuenta.sede], ["id", "!=", cuenta.id]]],
+      { fields: ["name", "currency_id"], context: { allowed_company_ids: [cuenta.sede] } },
+    )) || [];
+  return diarios
+    .map((d) => ({ id: d.id, nombre: String(d.name || "").trim(), moneda: Array.isArray(d.currency_id) ? String(d.currency_id[1]) : "" }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
 export async function conciliarEnOdoo(
   cuenta: CuentaBanco,
   huellaMov: string,
@@ -1452,6 +1483,12 @@ export async function conciliarEnOdoo(
   let tasa: number | null = null;
   let ajuste = "";
   let avisoAjuste: string | undefined;
+  if (destino.tipo === "transferencia" && destino.otraCuenta) {
+    const r = await transferenciaInterna(cuenta, { fecha: mov.fecha, referencia: mov.referencia, descripcion: mov.descripcion, monto }, destino.otraCuenta, destino.tasa ?? null, autor);
+    if ("error" in r) return r;
+    destino = { tipo: "pagos", pagos: [r.pagoId] };
+    ajuste = r.hecho;
+  }
   if (destino.tipo === "pagos") {
     const ids = [...new Set(destino.pagos)];
     if (destino.ajustar) {
@@ -1611,16 +1648,21 @@ export async function conciliarEnOdoo(
   // Si la linea ya existe es un reintento: lo que falta es solo conciliar (o nada).
   if (!linea) {
     if (errorPendiente) return { error: errorPendiente };
+    // Ya hay en Odoo una linea del mismo dia y monto que no es de otro movimiento del estado de cuenta: creada a mano,
+    // importada o por el panel con un estado de cuenta que se borro. Crear otra la duplicaria.
+    const ligadas = await lineasLigadas(cuenta.id);
     const importada = (
-      await leer(
-        "account.bank.statement.line",
-        [["journal_id", "=", cuenta.id], ["date", "=", mov.fecha], ["amount", "=", monto], ["unique_import_id", "not ilike", "panel-"]],
-        ["move_id"],
-      )
-    )[0];
+      await leer("account.bank.statement.line", [["journal_id", "=", cuenta.id], ["date", "=", mov.fecha], ["amount", "=", monto]], [
+        "move_id",
+        "unique_import_id",
+      ])
+    ).find((l) => !ligadas.has(l.id));
     if (importada) {
+      const delPanel = String(importada.unique_import_id || "").startsWith("panel-");
       return {
-        error: `Odoo ya tiene esta línea de extracto (${importada.move_id?.[1] || importada.id}): concíliala en Odoo, o deshazla en «Líneas que ya estaban en Odoo» y apruébala aquí`,
+        error: delPanel
+          ? `Este movimiento ya se aprobó antes en el panel (${importada.move_id?.[1] || importada.id}, con un estado de cuenta que se quitó): ya está en Odoo, no hace falta aprobarlo otra vez`
+          : `Odoo ya tiene esta línea de extracto (${importada.move_id?.[1] || importada.id}): concíliala en Odoo, o deshazla en «Líneas que ya estaban en Odoo» y apruébala aquí`,
       };
     }
     const id = await rpc<number>(
@@ -2247,13 +2289,17 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
   // monto con la regla de «Lineas viejas» (`emparejarViejas`) y salen como conciliados (o «falta conciliar alla»).
   const sinLinea = deLaSemana.filter((m) => !m.odoo);
   if (sinLinea.length) {
-    const lineas =
+    // Todas menos las del panel que son de un movimiento que sigue en el estado de cuenta (las huerfanas, de un archivo
+    // que se quito, tambien cuentan: ver lineasLigadas).
+    const ligadas = await lineasLigadas(cuenta.id);
+    const lineas = (
       (await callOdooRPCEstricto<any[]>(
         "account.bank.statement.line",
         "search_read",
-        [[["journal_id", "=", cuenta.id], ["date", ">=", sumarDias(inicio, -3)], ["date", "<=", sumarDias(fin, 3)], ["unique_import_id", "not ilike", "panel-"]]],
-        { fields: ["date", "amount", "payment_ref", "is_reconciled", "move_id"], context: { allowed_company_ids: [cuenta.sede] } },
-      )) || [];
+        [[["journal_id", "=", cuenta.id], ["date", ">=", sumarDias(inicio, -3)], ["date", "<=", sumarDias(fin, 3)]]],
+        { fields: ["date", "amount", "payment_ref", "is_reconciled", "move_id", "unique_import_id"], context: { allowed_company_ids: [cuenta.sede] } },
+      )) || []
+    ).filter((l) => !ligadas.has(l.id));
     const porId = new Map(lineas.map((l) => [l.id, l]));
     const pares = emparejarViejas(
       lineas.map((l) => ({ id: l.id, fecha: String(l.date), monto: Number(l.amount) || 0, ref: String(l.payment_ref || "") })),
@@ -2267,11 +2313,12 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
         stLineId: l.id,
         asientoId: Array.isArray(l.move_id) ? Number(l.move_id[0]) : 0,
         asiento: Array.isArray(l.move_id) ? String(l.move_id[1]) : "",
-        detalle: "Ya estaba en Odoo",
+        detalle: String(l.unique_import_id || "").startsWith("panel-") ? "Ya estaba en Odoo (aprobado antes en el panel)" : "Ya estaba en Odoo",
         conciliada: !!l.is_reconciled,
         por: "",
         el: "",
-        dePanel: false,
+        // Una del panel se puede revertir desde aqui (deshacerLineaVieja con dePanel).
+        dePanel: String(l.unique_import_id || "").startsWith("panel-"),
       };
     }
   }
@@ -2473,6 +2520,153 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
 }
 
 export type CuadreMes = Awaited<ReturnType<typeof cuadreMes>>;
+
+/**
+ * Que forma el saldo en libros del banco en un mes: el saldo al empezar y cada apunte de la cuenta del banco en
+ * Odoo, con su asiento, contra que cuenta quedo y si esta repetido (mismo dia y monto mas veces en Odoo que en el
+ * estado de cuenta: Bancamiga BS may-2026, 7 aprobados dos veces). Para entrar y anular lo que sobra.
+ */
+export async function librosDelMes(cuenta: CuentaBanco, mes: string) {
+  await ensureTablas();
+  const inicio = `${mes}-01`;
+  const fin = finDeMes(mes);
+  const ctx = { allowed_company_ids: [cuenta.sede] };
+  const leer = async (modelo: string, dominio: any[], campos: string[], extra: Record<string, any> = {}) =>
+    (await callOdooRPCEstricto<any[]>(modelo, "search_read", [dominio], { fields: campos, context: ctx, ...extra })) || [];
+  const diario = (await leer("account.journal", [["id", "=", cuenta.id]], ["default_account_id"]))[0];
+  const cuentaId = Array.isArray(diario?.default_account_id) ? diario.default_account_id[0] : 0;
+  if (!cuentaId) throw new Error("El diario no tiene cuenta del banco en Odoo");
+  const monto = (l: any) => Math.round(Number(cuenta.moneda ? l.amount_currency : l.balance) * 100) / 100;
+  const [inicial, apuntes, { rows: movs }] = await Promise.all([
+    saldoLibros(cuenta, sumarDias(inicio, -1)),
+    leer(
+      "account.move.line",
+      [["account_id", "=", cuentaId], ["parent_state", "=", "posted"], ["date", ">=", inicio], ["date", "<=", fin]],
+      ["date", "move_id", "name", "amount_currency", "balance", "statement_line_id"],
+      { order: "date, id" },
+    ),
+    query(
+      `SELECT DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, m.monto FROM banco_movimientos m
+         JOIN (SELECT MIN(id) AS id FROM banco_movimientos WHERE journal_id = ? AND fecha BETWEEN ? AND ? GROUP BY huella) u ON u.id = m.id`,
+      [cuenta.id, inicio, fin],
+    ),
+  ]);
+  // Contra que quedo cada asiento (las otras cuentas) y si su linea de extracto esta conciliada.
+  const moveIds = [...new Set(apuntes.map((a) => a.move_id[0]))];
+  const otras = moveIds.length
+    ? await leer("account.move.line", [["move_id", "in", moveIds], ["account_id", "!=", cuentaId]], ["move_id", "account_id"])
+    : [];
+  const contra = new Map<number, string[]>();
+  for (const o of otras) contra.set(o.move_id[0], [...new Set([...(contra.get(o.move_id[0]) || []), String(o.account_id[1] || "")])]);
+  const stIds = apuntes.map((a) => (Array.isArray(a.statement_line_id) ? a.statement_line_id[0] : 0)).filter(Boolean);
+  const st = new Map<number, any>(
+    (stIds.length ? await leer("account.bank.statement.line", [["id", "in", stIds]], ["is_reconciled", "unique_import_id"]) : []).map((l) => [l.id, l]),
+  );
+  const clave = (fecha: string, m: number) => `${fecha}|${Math.round(m * 100)}`;
+  const enBanco = new Map<string, number>();
+  for (const m of movs) enBanco.set(clave(m.fecha, Number(m.monto)), (enBanco.get(clave(m.fecha, Number(m.monto))) || 0) + 1);
+  const enOdoo = new Map<string, number>();
+  for (const a of apuntes) enOdoo.set(clave(String(a.date), monto(a)), (enOdoo.get(clave(String(a.date), monto(a))) || 0) + 1);
+  const lineas = apuntes.map((a) => {
+    const linea = Array.isArray(a.statement_line_id) ? st.get(a.statement_line_id[0]) : null;
+    const k = clave(String(a.date), monto(a));
+    return {
+      fecha: String(a.date),
+      asientoId: Number(a.move_id[0]),
+      asiento: String(a.move_id[1] || ""),
+      descripcion: String(a.name || ""),
+      monto: monto(a),
+      contra: contra.get(a.move_id[0]) || [],
+      deExtracto: !!linea,
+      conciliada: linea ? !!linea.is_reconciled : null,
+      delPanel: linea ? String(linea.unique_import_id || "").startsWith("panel-") : false,
+      /** Mas veces en Odoo que en el estado de cuenta (mismo dia y monto): uno sobra. */
+      repetido: (enOdoo.get(k) || 0) > (enBanco.get(k) || 0) && (enOdoo.get(k) || 0) > 1,
+      /** No esta en el estado de cuenta del panel (mismo dia y monto). */
+      noEnBanco: movs.length > 0 && !enBanco.has(k),
+    };
+  });
+  const total = Math.round(lineas.reduce((t, l) => t + Math.round(l.monto * 100), 0)) / 100;
+  return { mes, inicial, total, final: Math.round((inicial + total) * 100) / 100, lineas };
+}
+
+/**
+ * Registra en Odoo la transferencia interna de un movimiento del banco (Caracas: de Banesco a Bancamiga para pagar
+ * alcaldia, SENIAT o nomina; Valencia: de Banesco a Criptos con el cambista) como la registran en Odoo: un pago con
+ * diario destino (`is_internal_transfer`); al confirmarlo Odoo crea sola la otra pata. Entrada = vino de `otraCuenta`;
+ * salida = fue a `otraCuenta`. Si ya hay una transferencia del mismo monto entre esas dos cuentas en +-3 dias, sin
+ * conciliar en este diario (la otra cuenta se concilio primero), usa esa. Devuelve el pago de este diario.
+ */
+async function transferenciaInterna(
+  cuenta: CuentaBanco,
+  mov: { fecha: string; referencia: string; descripcion: string; monto: number },
+  otraCuenta: number,
+  tasa: number | null,
+  autor: { nombre: string; email: string },
+): Promise<{ error: string } | { pagoId: number; hecho: string }> {
+  const ctx = { allowed_company_ids: [cuenta.sede], company_id: cuenta.sede };
+  const leer = async (modelo: string, dominio: any[], campos: string[]) =>
+    (await rpc<any[]>(cuenta.sede, modelo, "search_read", [dominio], { fields: campos, context: ctx })) || [];
+  const otra = (await otrasCuentasDeLaSede(cuenta)).find((d) => d.id === otraCuenta);
+  if (!otra) return { error: "Esa cuenta no es de la sede o no es un banco o caja" };
+  const entrada = mov.monto > 0;
+  const importe = Math.round(Math.abs(mov.monto) * 100) / 100;
+  const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dias = (n: number) => sumarDias(mov.fecha, n);
+  // La pata de este diario de una transferencia que ya existe.
+  const existentes = await leer(
+    "account.payment",
+    [
+      ["journal_id", "=", cuenta.id],
+      ["is_internal_transfer", "=", true],
+      ["state", "=", "posted"],
+      ["payment_type", "=", entrada ? "inbound" : "outbound"],
+      ["amount", "=", importe],
+      ["date", ">=", dias(-3)],
+      ["date", "<=", dias(3)],
+      ["is_matched", "=", false],
+    ],
+    ["name", "destination_journal_id", "paired_internal_transfer_payment_id"],
+  );
+  const ya = existentes.find((p) => {
+    const destino = Array.isArray(p.destination_journal_id) ? p.destination_journal_id[0] : 0;
+    return destino === otraCuenta || destino === cuenta.id;
+  });
+  if (ya) return { pagoId: ya.id, hecho: `transferencia ya registrada en Odoo (${ya.name})` };
+
+  const otraMoneda = (otra.moneda || "USD") !== (cuenta.moneda || "USD");
+  if (otraMoneda && !(tasa && tasa > 0)) return { error: `${otra.nombre} es de otra moneda: escribe la tasa del cambio` };
+  const valores: Record<string, unknown> = {
+    payment_type: entrada ? "inbound" : "outbound",
+    is_internal_transfer: true,
+    journal_id: cuenta.id,
+    destination_journal_id: otraCuenta,
+    amount: importe,
+    date: mov.fecha,
+    ref: (mov.referencia || mov.descripcion || "Transferencia interna").slice(0, 120),
+  };
+  if (tasa && tasa > 0) Object.assign(valores, { custom_rate: true, tax_today: tasa, amount_local: Math.round((importe / tasa) * 100) / 100 });
+  const pagoId = Number(await rpc<number>(cuenta.sede, "account.payment", "create", [valores], { context: ctx }));
+  if (!pagoId) return { error: "Odoo no creó la transferencia" };
+  await rpc(cuenta.sede, "account.payment", "action_post", [[pagoId]], { context: ctx });
+  const pago = (await leer("account.payment", [["id", "=", pagoId]], ["name", "state", "paired_internal_transfer_payment_id"]))[0];
+  if (pago?.state !== "posted") return { error: "Odoo no confirmó la transferencia: revísala allá" };
+  try {
+    await rpc(cuenta.sede, "account.payment", "message_post", [[pagoId]], {
+      body:
+        `Transferencia interna registrada desde el panel (Conciliación bancaria) por ${escaparHtml(autor.nombre || autor.email)} ` +
+        `(${escaparHtml(autor.email)}): ${entrada ? "entrada desde" : "salida a"} ${escaparHtml(otra.nombre)}, ${cifra(importe)}, ` +
+        `movimiento del banco del ${mov.fecha}, ref ${escaparHtml(mov.referencia || "—")}.`,
+      message_type: "comment",
+      subtype_xmlid: "mail.mt_note",
+      context: ctx,
+    });
+  } catch {
+    // la nota es informativa
+  }
+  const par = Array.isArray(pago.paired_internal_transfer_payment_id) ? ` y ${pago.paired_internal_transfer_payment_id[1]} en ${otra.nombre}` : "";
+  return { pagoId, hecho: `transferencia interna registrada: ${pago.name}${par}` };
+}
 
 /** Saldo del banco con que se cierra y, si no se puede cerrar, por que. */
 function revisarCierre(
