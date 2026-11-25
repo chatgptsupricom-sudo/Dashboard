@@ -20,8 +20,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261124h">
-<link rel="stylesheet" href="tienda.css?v=20261124h">
+<link rel="stylesheet" href="estilos.css?v=20261125b">
+<link rel="stylesheet" href="tienda.css?v=20261125b">
 </head>
 <body data-pagina="tienda">
 <a class="saltar" href="#catalogo">Saltar al catálogo</a>
@@ -88,7 +88,7 @@
             <div class="tienda-cabeza">
                 <div class="tienda-cabeza-texto">
                     <h1 class="tienda-titulo">Todo lo que tenemos en <span class="tienda-sede" data-sede-nombre>tu sede</span></h1>
-                    <p class="tienda-nota"><strong class="tienda-total">0</strong> productos en existencia. Cotiza sin cuenta: tu vendedor te responde con los precios.</p>
+                    <p class="tienda-nota"><strong class="tienda-total"></strong> productos en existencia. Cotiza sin cuenta: tu vendedor te responde con los precios.</p>
                     <p class="tienda-vivo" hidden><span class="punto" aria-hidden="true"></span>Existencia al día con nuestro inventario</p>
                     <p class="portada-entrar">¿Ya eres distribuidor? <a data-odoo="/web/login">Entra para ver tus precios<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
                 </div>
@@ -174,11 +174,30 @@
             </aside>
 
             <div class="resultados">
+                <!-- Los precios se ven con cuenta: un solo aviso aquí en vez de repetirlo en cada tarjeta -->
+                <div class="aviso-precios">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
+                    <p><strong>¿Eres distribuidor?</strong> Entra con tu cuenta y ves tu precio en cada producto.</p>
+                    <div class="aviso-precios-acciones">
+                        <a class="boton boton-tinta" data-odoo="/web/login">Entrar</a>
+                        <a class="enlace-chico enlace-acento" href="cuenta.html" data-ir="cuenta.html">Pedir mi cuenta</a>
+                    </div>
+                </div>
                 <div class="resultados-cabeza">
-                    <p id="tienda-conteo" class="tienda-conteo" role="status"></p>
+                    <p id="tienda-conteo" class="tienda-conteo" role="status">Cargando productos…</p>
                     <div class="tienda-chips" aria-label="Filtros puestos"></div>
                 </div>
-                <div class="tienda-grilla" aria-label="Productos"></div>
+                <div class="tienda-grilla" aria-label="Productos" aria-busy="true">
+                    <!-- Mientras llega el catálogo; tienda.js las reemplaza por los productos -->
+                    <div class="prod prod-esqueleto" aria-hidden="true"><div class="esqueleto esq-foto"></div><div class="esqueleto esq-linea corta"></div><div class="esqueleto esq-linea"></div><div class="esqueleto esq-linea media"></div><div class="esqueleto esq-boton"></div></div>
+                    <div class="prod prod-esqueleto" aria-hidden="true"><div class="esqueleto esq-foto"></div><div class="esqueleto esq-linea corta"></div><div class="esqueleto esq-linea"></div><div class="esqueleto esq-linea media"></div><div class="esqueleto esq-boton"></div></div>
+                    <div class="prod prod-esqueleto" aria-hidden="true"><div class="esqueleto esq-foto"></div><div class="esqueleto esq-linea corta"></div><div class="esqueleto esq-linea"></div><div class="esqueleto esq-linea media"></div><div class="esqueleto esq-boton"></div></div>
+                    <div class="prod prod-esqueleto" aria-hidden="true"><div class="esqueleto esq-foto"></div><div class="esqueleto esq-linea corta"></div><div class="esqueleto esq-linea"></div><div class="esqueleto esq-linea media"></div><div class="esqueleto esq-boton"></div></div>
+                    <div class="prod prod-esqueleto" aria-hidden="true"><div class="esqueleto esq-foto"></div><div class="esqueleto esq-linea corta"></div><div class="esqueleto esq-linea"></div><div class="esqueleto esq-linea media"></div><div class="esqueleto esq-boton"></div></div>
+                    <div class="prod prod-esqueleto" aria-hidden="true"><div class="esqueleto esq-foto"></div><div class="esqueleto esq-linea corta"></div><div class="esqueleto esq-linea"></div><div class="esqueleto esq-linea media"></div><div class="esqueleto esq-boton"></div></div>
+                    <div class="prod prod-esqueleto" aria-hidden="true"><div class="esqueleto esq-foto"></div><div class="esqueleto esq-linea corta"></div><div class="esqueleto esq-linea"></div><div class="esqueleto esq-linea media"></div><div class="esqueleto esq-boton"></div></div>
+                    <div class="prod prod-esqueleto" aria-hidden="true"><div class="esqueleto esq-foto"></div><div class="esqueleto esq-linea corta"></div><div class="esqueleto esq-linea"></div><div class="esqueleto esq-linea media"></div><div class="esqueleto esq-boton"></div></div>
+                </div>
                 <div class="tienda-vacio" hidden>
                     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8.5 11h5"/></svg>
                     <h2 class="tienda-vacio-titulo"></h2>
@@ -310,7 +329,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261124h"></script>
-<script src="vivo.js?v=20261124h" data-despues="app.js?v=20261124h,tienda.js?v=20261124h"></script>
+<script src="datos.js?v=20261125b"></script>
+<script src="vivo.js?v=20261125b" data-despues="app.js?v=20261125b,tienda.js?v=20261125b"></script>
 </body>
 </html>

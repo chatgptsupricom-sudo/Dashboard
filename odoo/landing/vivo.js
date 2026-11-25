@@ -21,6 +21,8 @@
     };
 
     const sede = T.elegirSede().id;
+    // El nombre de la sede ya se sabe: se pone enseguida, sin esperar al catálogo.
+    for (const el of document.querySelectorAll("[data-sede-nombre]")) if (T.sedes[sede]) el.textContent = T.sedes[sede].nombre;
     const pedida = new URLSearchParams(location.search).get("api");
     const api = (pedida === "no" ? "" : pedida || T.api || "").replace(/\/+$/, "");
     T.enVivo = null;
