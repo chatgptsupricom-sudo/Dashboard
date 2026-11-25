@@ -316,6 +316,27 @@ assert.strictEqual(casiMov("lejos").pago, null); // fuera de los dias
 assert.strictEqual(casiMov("d1").pago, null);
 assert.strictEqual(casiMov("d2").pago, null);
 
+// Dos registros identicos (mismo monto y dia) y dos movimientos: se emparejan en orden; con uno solo, toma el primero
+const gemelos = cruzarBanco(
+  [mov("g1", "2026-04-23", "13322883918", -2497740), mov("g2", "2026-04-23", "13322883999", -2497740)],
+  [pg(48, "2026-04-23", -2497740.43, "TRANSF/00048 - Send"), pg(47, "2026-04-23", -2497740.43, "TRANSF/00047 - Send")],
+  [],
+  new Map(),
+  () => true,
+);
+assert.deepStrictEqual(gemelos.movimientos.map((x) => x.pago?.id).sort(), [47, 48]);
+const uno = cruzarBanco([mov("g1", "2026-04-23", "13322883918", -2497740)], [pg(48, "2026-04-23", -2497740.43, "a"), pg(47, "2026-04-23", -2497740.43, "b")], [], new Map(), () => true);
+assert.strictEqual(uno.movimientos[0].pago?.id, 47);
+// Tres movimientos para dos registros identicos: duda, nada
+const tresDos = cruzarBanco(
+  [mov("a", "2026-04-23", "1", -2497740), mov("b", "2026-04-23", "2", -2497740), mov("c", "2026-04-23", "3", -2497740)],
+  [pg(48, "2026-04-23", -2497740.43, "a"), pg(47, "2026-04-23", -2497740.43, "b")],
+  [],
+  new Map(),
+  () => true,
+);
+assert.ok(tresDos.movimientos.every((x) => x.pago === null));
+
 console.log("check-bancos: OK");
 
 // saldosDelMes: archivo en cualquier orden, saldo inicial y final del mes.

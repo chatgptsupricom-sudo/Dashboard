@@ -488,16 +488,24 @@ export function cruzarBanco(
   // Misma fecha y monto casi igual: Odoo lo registro con unos centimos o bolivares de diferencia y otra referencia
   // (al empezar no dejaba cambiar la tasa; Valencia 06/04: banco 861.300,00 y BANES/2026/00003 TRANSF/00002 - Send
   // 861.300,29). Se propone para revisar (alli se ofrece corregir el monto en Odoo) solo si no hay duda: un unico
-  // cobro/pago libre en +-DIAS_FECHA dias a menos de MAX(2, 0,1 %) y ningun otro movimiento sin amarrar que lo quiera.
+  // cobro/pago libre en +-DIAS_FECHA dias a menos de MAX(2, 0,1 %) y ningun otro movimiento sin amarrar que lo quiera
+  // (o varios identicos, ver abajo).
   const cerca = (a: number, b: number) => a > 0 === b > 0 && Math.abs(Math.abs(a) - Math.abs(b)) <= Math.max(2, Math.abs(b) * 0.001);
   const aunSinPago = todos.filter((m) => !pagoDe.has(m.id) && !esComision(m));
+  // Varios candidatos identicos (mismo monto y dia: TRANSF/00047 y 00048, 2.497.740,43 el 23/04) son intercambiables:
+  // se toman en orden mientras alcancen para este movimiento y los otros que los quieren.
   for (const m of aunSinPago) {
-    const candidatos = pagos.filter((p) => !usados.has(p.id) && cerca(p.monto, m.monto) && dias(p.fecha, m.fecha) <= DIAS_FECHA);
-    if (candidatos.length !== 1) continue;
+    if (pagoDe.has(m.id)) continue;
+    const candidatos = pagos
+      .filter((p) => !usados.has(p.id) && cerca(p.monto, m.monto) && dias(p.fecha, m.fecha) <= DIAS_FECHA)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+    if (!candidatos.length) continue;
+    const identicos = candidatos.every((p) => mismoMonto(p.monto, candidatos[0].monto) && p.fecha === candidatos[0].fecha);
+    if (!identicos) continue;
     const rivales = aunSinPago.filter(
       (o) => o.id !== m.id && !pagoDe.has(o.id) && cerca(candidatos[0].monto, o.monto) && dias(o.fecha, candidatos[0].fecha) <= DIAS_FECHA,
     );
-    if (!rivales.length) tomar(m, candidatos[0], "parcial");
+    if (rivales.length + 1 <= candidatos.length) tomar(m, candidatos[0], "parcial");
   }
 
   const movDePago = new Map([...pagoDe].map(([movId, { pago }]) => [pago.id, movId]));
