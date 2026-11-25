@@ -7,7 +7,7 @@ import { cachear, hoyCaracas } from "@/lib/compras/datosOdoo";
 import { nombreBonito } from "@/lib/tienda-web/tipos";
 import {
   claveDocumento, COMPANIAS_TIENDA, nucleoDocumento, diasDeAtraso, esCorreoInterno, estadoFactura, etapaPedido, NOMBRE_ESTADO_FACTURA,
-  NOMBRE_ETAPA, redondear, SEDE_DE_COMPANIA,
+  NOMBRE_ETAPA, redondear, SEDE_DE_COMPANIA, TRAMOS_DEUDA, tramoDeuda, avanceDespacho, type TramoDeuda,
 } from "./tipos";
 
 const CONTEXTO = { allowed_company_ids: COMPANIAS_TIENDA };
@@ -99,22 +99,62 @@ const pedidoCorto = (p: any) => {
 export interface FiltroPedidos { sede?: string; etapa?: string; q?: string; pagina?: number }
 const POR_PAGINA = 20;
 
+/**
+ * Lo que la lista muestra de cada pedido además de su cabecera: cuántos productos y unidades, cuánto se ha
+ * despachado y las fotos de los primeros productos (plantillas, para /web/image de la tienda).
+ */
+async function conLineas(pedidos: any[]) {
+  const ids = pedidos.map((p) => p.id);
+  const lineas = ids.length
+    ? await leer<any[]>("sale.order.line", [["order_id", "in", ids], ["display_type", "=", false]], {
+      fields: ["order_id", "product_template_id", "product_uom_qty", "qty_delivered"], order: "order_id asc, sequence asc, id asc", limit: 3000,
+    })
+    : [];
+  const porPedido = new Map<number, any[]>();
+  for (const l of lineas || []) {
+    const k = l.order_id?.[0];
+    if (!porPedido.has(k)) porPedido.set(k, []);
+    porPedido.get(k)!.push(l);
+  }
+  return pedidos.map((p) => {
+    const ls = porPedido.get(p.id) || [];
+    const fotos = [...new Set(ls.map((l) => l.product_template_id?.[0]).filter(Boolean))].slice(0, 3) as number[];
+    return {
+      ...pedidoCorto(p),
+      productos: ls.length,
+      unidades: ls.reduce((a, l) => a + (Number(l.product_uom_qty) || 0), 0),
+      avance: avanceDespacho(ls.map((l) => ({ cantidad: Number(l.product_uom_qty) || 0, despachado: Number(l.qty_delivered) || 0 }))),
+      fotos,
+    };
+  });
+}
+
+const DOMINIO_ETAPA: Record<string, any[]> = {
+  cotizacion: [["state", "in", ["draft", "sent"]]],
+  abiertos: [["state", "=", "sale"], ["invoice_status", "!=", "invoiced"]],
+  facturado: [["state", "=", "sale"], ["invoice_status", "=", "invoiced"]],
+  anulado: [["state", "=", "cancel"]],
+};
+
 export async function pedidosDe(c: ClienteOdoo, f: FiltroPedidos) {
   const companias = f.sede ? COMPANIAS_TIENDA.filter((id) => SEDE_DE_COMPANIA[id].id === f.sede) : COMPANIAS_TIENDA;
-  const dominio: any[] = [["partner_id", "child_of", c.partners], ["company_id", "in", companias]];
-  if (f.etapa === "cotizacion") dominio.push(["state", "in", ["draft", "sent"]]);
-  else if (f.etapa === "anulado") dominio.push(["state", "=", "cancel"]);
-  else if (f.etapa === "abiertos") dominio.push(["state", "=", "sale"], ["invoice_status", "!=", "invoiced"]);
-  else if (f.etapa === "facturado") dominio.push(["state", "=", "sale"], ["invoice_status", "=", "invoiced"]);
-  else dominio.push(["state", "!=", "cancel"]);
+  const base: any[] = [["partner_id", "child_of", c.partners], ["company_id", "in", companias]];
   const q = String(f.q || "").trim().slice(0, 40);
-  if (q) dominio.push("|", ["name", "ilike", q], ["client_order_ref", "ilike", q]);
+  if (q) base.push("|", ["name", "ilike", q], ["client_order_ref", "ilike", q]);
+  const dominio = [...base, ...(DOMINIO_ETAPA[f.etapa || ""] || [["state", "!=", "cancel"]])];
   const pagina = Math.max(1, Math.min(500, Number(f.pagina) || 1));
-  const [total, filas] = await Promise.all([
+  // Cuántos hay en cada estado (con la sede y la búsqueda de ahora), para los filtros.
+  const etapas = ["", ...Object.keys(DOMINIO_ETAPA)];
+  const [total, filas, ...cuentas] = await Promise.all([
     contar("sale.order", dominio),
     leerPedidos(dominio, { order: "date_order desc, id desc", limit: POR_PAGINA, offset: (pagina - 1) * POR_PAGINA }),
+    ...etapas.map((e) => contar("sale.order", [...base, ...(DOMINIO_ETAPA[e] || [["state", "!=", "cancel"]])])),
   ]);
-  return { total: Number(total) || 0, pagina, porPagina: POR_PAGINA, pedidos: filas.map(pedidoCorto) };
+  return {
+    total: Number(total) || 0, pagina, porPagina: POR_PAGINA,
+    porEtapa: Object.fromEntries(etapas.map((e, i) => [e || "todos", Number(cuentas[i]) || 0])),
+    pedidos: await conLineas(filas),
+  };
 }
 
 /** Un pedido con sus líneas, sus facturas y sus despachos. null = no es de este cliente. */
@@ -195,15 +235,26 @@ export async function facturasDe(c: ClienteOdoo, f: FiltroFacturas) {
     };
   });
 
-  // Estado de cuenta por sede (con todo lo abierto, sin filtros).
-  const cuenta = new Map<string, { sede: { id: string; nombre: string }; saldo: number; vencido: number; facturasAbiertas: number; masVieja: number }>();
+  // Estado de cuenta por sede (con todo lo abierto, sin filtros): saldo, vencido, antigüedad y lo próximo a vencer.
+  type Cuenta = {
+    sede: { id: string; nombre: string }; saldo: number; vencido: number; facturasAbiertas: number; masVieja: number;
+    tramos: Record<TramoDeuda, number>; proximos: { numero: string; vence: string; saldo: number }[];
+  };
+  const cuenta = new Map<string, Cuenta>();
   for (const x of todas) {
     if (!x.saldo) continue;
     const k = x.sede.id || x.sede.nombre;
-    const s = cuenta.get(k) ?? { sede: x.sede, saldo: 0, vencido: 0, facturasAbiertas: 0, masVieja: 0 };
+    const s = cuenta.get(k) ?? {
+      sede: x.sede, saldo: 0, vencido: 0, facturasAbiertas: 0, masVieja: 0, proximos: [],
+      tramos: Object.fromEntries(TRAMOS_DEUDA.map((t) => [t.id, 0])) as Record<TramoDeuda, number>,
+    };
     s.saldo += x.saldo;
     if (x.estado === "vencida") { s.vencido += x.saldo; s.masVieja = Math.max(s.masVieja, x.atraso || 0); }
-    if (x.saldo > 0) s.facturasAbiertas += 1;
+    if (x.saldo > 0) {
+      s.facturasAbiertas += 1;
+      s.tramos[tramoDeuda(x.atraso)] += x.saldo;
+      if (x.estado !== "vencida" && x.vence) s.proximos.push({ numero: x.numero, vence: x.vence, saldo: x.saldo });
+    }
     cuenta.set(k, s);
   }
 
@@ -214,7 +265,13 @@ export async function facturasDe(c: ClienteOdoo, f: FiltroFacturas) {
     && (!q || x.numero.toLowerCase().includes(q) || x.pedido.toLowerCase().includes(q)));
   const pagina = Math.max(1, Math.min(500, Number(f.pagina) || 1));
   return {
-    estadoDeCuenta: [...cuenta.values()].map((s) => ({ ...s, saldo: redondear(s.saldo), vencido: redondear(s.vencido) })),
+    estadoDeCuenta: [...cuenta.values()].map((s) => ({
+      ...s,
+      saldo: redondear(s.saldo),
+      vencido: redondear(s.vencido),
+      tramos: Object.fromEntries(Object.entries(s.tramos).map(([k, v]) => [k, redondear(v)])),
+      proximos: s.proximos.sort((a, b) => a.vence.localeCompare(b.vence)).slice(0, 4),
+    })),
     total: filtradas.length,
     pagina,
     porPagina: POR_PAGINA,
@@ -229,5 +286,54 @@ export async function resumenDe(c: ClienteOdoo) {
     leerPedidos([["partner_id", "child_of", c.partners], ["company_id", "in", COMPANIAS_TIENDA], ["state", "!=", "cancel"]], { order: "date_order desc, id desc", limit: 5 }),
     facturasDe(c, { estado: "abiertas" }),
   ]);
-  return { pedidosAbiertos: Number(abiertos) || 0, ultimosPedidos: ultimos.map(pedidoCorto), estadoDeCuenta: facturas.estadoDeCuenta };
+  return { pedidosAbiertos: Number(abiertos) || 0, ultimosPedidos: await conLineas(ultimos), estadoDeCuenta: facturas.estadoDeCuenta };
+}
+
+/* ------------------------------------------------------------------ Perfil */
+const direccion = (p: any) => [p.street, p.street2, p.city, p.state_id?.[1]?.replace(/\s*\([A-Z]{2}\)$/, ""), p.country_id?.[1]]
+  .map((x) => String(x || "").trim()).filter(Boolean).join(", ");
+
+/**
+ * Los datos de su empresa (solo lectura: para cambiarlos se le escribe al vendedor), y por cada sede donde
+ * compra: su vendedor, su plazo de pago y su cupo de crédito (campos que en Odoo son por empresa), y sus
+ * direcciones de entrega.
+ */
+export async function perfilDe(c: ClienteOdoo) {
+  const campos = ["id", "name", "vat", "street", "street2", "city", "state_id", "country_id", "phone", "mobile", "email"];
+  const [empresas, direcciones, porSede] = await Promise.all([
+    leer<any[]>("res.partner", [["id", "in", c.partners]], { fields: campos }),
+    leer<any[]>("res.partner", [["parent_id", "child_of", c.partners], ["type", "=", "delivery"], ["active", "=", true]], { fields: ["id", "name", "street", "street2", "city", "state_id", "country_id", "phone"], limit: 30 }),
+    // Dónde compra: pedidos confirmados por sede.
+    callOdooRPCEstricto<any[]>("sale.order", "read_group", [[["partner_id", "child_of", c.partners], ["state", "=", "sale"], ["company_id", "in", COMPANIAS_TIENDA]], ["company_id"], ["company_id"]], { context: CONTEXTO, lazy: false }),
+  ]);
+  const sedesConCompras = new Set((porSede || []).map((g: any) => g.company_id?.[0]).filter(Boolean));
+  const sedes = [];
+  for (const cid of COMPANIAS_TIENDA) {
+    // Vendedor, plazo y cupo dependen de la empresa con la que se lee.
+    const filas = await callOdooRPCEstricto<any[]>("res.partner", "read", [c.partners, ["user_id", "property_payment_term_id", "credit_limit"]], {
+      context: { ...CONTEXTO, allowed_company_ids: [cid, ...COMPANIAS_TIENDA.filter((x) => x !== cid)] },
+    }).catch(() => []);
+    const f = (filas || []).find((x) => x.user_id) || (filas || [])[0];
+    if (!sedesConCompras.has(cid) && !f?.user_id) continue;
+    let vendedor = null as null | { nombre: string; correo: string; telefono: string };
+    if (f?.user_id) {
+      const [u] = (await leer<any[]>("res.users", [["id", "=", f.user_id[0]]], { fields: ["name", "email", "phone", "mobile"], limit: 1 }).catch(() => [])) || [];
+      vendedor = { nombre: String(u?.name || f.user_id[1] || ""), correo: String(u?.email || ""), telefono: String(u?.mobile || u?.phone || "") };
+    }
+    sedes.push({
+      sede: SEDE_DE_COMPANIA[cid],
+      vendedor,
+      plazo: f?.property_payment_term_id ? String(f.property_payment_term_id[1]) : "",
+      cupo: redondear(Math.max(...(filas || []).map((x) => Number(x.credit_limit) || 0), 0)),
+    });
+  }
+  const e = (empresas || [])[0] || {};
+  return {
+    empresa: {
+      nombre: String(e.name || c.empresa), documento: String(e.vat || c.documento || ""), direccion: direccion(e),
+      telefono: String(e.phone || e.mobile || ""), correo: String(e.email || ""),
+    },
+    sedes,
+    direcciones: (direcciones || []).map((d) => ({ nombre: String(d.name || ""), direccion: direccion(d), telefono: String(d.phone || "") })).filter((d) => d.direccion),
+  };
 }

@@ -218,6 +218,34 @@ export async function entrar(correo: string, clave: string, recordar: boolean): 
   return { ok: true, token: await firmarSesion(Number(c.id), Number(c.version), recordar) };
 }
 
+/**
+ * Cambiar la contraseña desde el perfil, con la actual. Cierra las otras sesiones y devuelve una nueva para
+ * este equipo. false = la actual no es correcta.
+ */
+export async function cambiarClave(id: number, actual: string, nueva: string, recordar: boolean): Promise<string | null> {
+  await asegurarTablas();
+  const [filas]: any = await db.execute("SELECT clave_hash FROM tienda_clientes WHERE id = ?", [id]);
+  const c = filas?.[0];
+  if (!c || !(await claveCorrecta(actual, String(c.clave_hash)))) return null;
+  await db.execute(
+    "UPDATE tienda_clientes SET clave_hash = ?, version = version + 1, clave_cambiada_at = NOW(), fallidos = 0, bloqueado_hasta = NULL WHERE id = ?",
+    [await cifrarClave(nueva), id],
+  );
+  const [v]: any = await db.execute("SELECT version FROM tienda_clientes WHERE id = ?", [id]);
+  return firmarSesion(id, Number(v[0].version), recordar);
+}
+
+/** Cuándo se creó el acceso, cuándo entró por última vez y cuándo cambió la contraseña. */
+export async function datosAcceso(id: number) {
+  await asegurarTablas();
+  const [filas]: any = await db.execute(
+    "SELECT DATE_FORMAT(creado_at, '%Y-%m-%d') AS creado, DATE_FORMAT(ultimo_ingreso, '%Y-%m-%d %H:%i') AS ultimo, DATE_FORMAT(clave_cambiada_at, '%Y-%m-%d') AS clave FROM tienda_clientes WHERE id = ?",
+    [id],
+  );
+  const f = filas?.[0] || {};
+  return { creado: f.creado || "", ultimoIngreso: f.ultimo || "", claveCambiada: f.clave || "" };
+}
+
 /** Cerrar la sesión en todos los equipos (sube la versión de la cuenta). */
 export async function cerrarTodas(id: number): Promise<void> {
   await asegurarTablas();
