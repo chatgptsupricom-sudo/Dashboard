@@ -66,13 +66,28 @@ function origenDePanelPermitido(origin: string): boolean {
  * tocan: no hay ninguna ruta GET que mute datos (confirmado en el estudio
  * de seguridad), asi que no hay nada que este chequeo proteja ahi.
  */
+// La tienda web (odoo/landing) vive en los dominios de cada sede y manda a
+// /api/tienda-web/* la solicitud de cuenta. Solo esas rutas aceptan además
+// estos orígenes; no usan cookies, así que no hay sesión que forjar.
+function origenDeTiendaPermitido(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname.toLowerCase().replace(/^www\./, "");
+    return ["supricom.com.ve", "supricom.com.pa", "supricom.com"].some(
+      (d) => host === d || host.endsWith(`.${d}`),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function verificarOrigenApi(request: NextRequest): NextResponse {
   if (!METODOS_ESCRITURA.has(request.method.toUpperCase())) {
     return NextResponse.next();
   }
   const origin = request.headers.get("origin");
   if (!origin) return NextResponse.next();
-  if (!origenDePanelPermitido(origin)) {
+  const deTienda = request.nextUrl.pathname.startsWith("/api/tienda-web/") && origenDeTiendaPermitido(origin);
+  if (!deTienda && !origenDePanelPermitido(origin)) {
     return NextResponse.json({ error: "Origen no permitido" }, { status: 403 });
   }
   return NextResponse.next();

@@ -11,22 +11,13 @@
     const CLAVE_SEDE = "supricom-sede";
     const sedeGuardada = () => { try { return localStorage.getItem(CLAVE_SEDE); } catch (e) { return null; } };
     const guardarSede = (s) => { try { localStorage.setItem(CLAVE_SEDE, s); } catch (e) { /* sin almacenamiento: dura hasta recargar */ } };
-    const elegirSede = () => {
-        const enlace = new URLSearchParams(location.search).get("sede");
-        if (TODO.sedes[enlace]) return { id: enlace, origen: "enlace" };
-        const host = location.hostname.replace(/^www\./, "");
-        const porDominio = IDS_SEDE.find((s) => TODO.sedes[s].dominio === host);
-        if (porDominio) return { id: porDominio, origen: "dominio" };
-        const antes = sedeGuardada();
-        if (TODO.sedes[antes]) return { id: antes, origen: "guardada" };
-        let zona = "";
-        try { zona = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { /* sin zona horaria */ }
-        return { id: zona === "America/Panama" ? "panama" : "valencia", origen: "supuesta" };
-    };
-    const SEDE = elegirSede();
+    const SEDE = TODO.elegirSede(); // en datos.js: la usa también vivo.js para pedir el catálogo de esa sede
     const S = TODO.sedes[SEDE.id];
     // Lo de la sede con la forma que usa el resto de la página.
-    const destacadoEn = (lista, cat) => lista.find((p) => p.cat === cat && p.destacado) || lista.find((p) => p.cat === cat);
+    // Con el catálogo en vivo puede haber agotados: el destacado de cada categoría es uno disponible si lo hay.
+    const hay = (p) => p.disponible !== false;
+    const destacadoEn = (lista, cat) => lista.find((p) => p.cat === cat && p.destacado && hay(p))
+        || lista.find((p) => p.cat === cat && hay(p)) || lista.find((p) => p.cat === cat);
     const D = {
         odoo: S.tienda,
         productos: S.productos,
@@ -43,8 +34,11 @@
     const escritorio = () => mqEscritorio.matches;
     const $ = (s, el = document) => el.querySelector(s);
     const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+    // El mismo script sirve el inicio y la tienda: lo propio de cada una solo corre en la suya.
+    const ES_INICIO = (document.body.dataset.pagina || "inicio") === "inicio";
     const foto = (id, tam = 512) => `${D.odoo}/web/image/product.template/${id}/image_${tam}`;
-    const ficha = (id) => `${D.odoo}/shop/p-${id}`;
+    // La ficha es la página propia (producto.html), para las tres sedes; la de Odoo diría «Agotado» fuera de Valencia.
+    const ficha = (id) => conSede(`producto.html?id=${id}`);
     const buscar = (q) => `${D.odoo}/shop${q ? `?search=${encodeURIComponent(q)}` : ""}`;
     const miles = (n) => n.toLocaleString("es-VE");
     const crear = (tag, props = {}, hijos = []) => {
@@ -80,18 +74,29 @@
         i.removeAttribute("src");
         i.classList.add("sin-foto");
     }, true);
-    // Odoo tiene una sola tienda, con la existencia de Valencia: en las sedes sin tienda propia una ficha
-    // diría «Agotado» aunque la sede lo tenga. Ahí los productos van a la lista de cotización y las
-    // categorías, marcas y banners se buscan entre los productos de la sede (los arma la sección de la lista).
+    // Odoo tiene una sola tienda, con la existencia de Valencia: fuera de Valencia diría «Agotado» aunque la
+    // sede lo tenga. Por eso solo Valencia ofrece buscar en el catálogo completo de Odoo (desde la cotización);
+    // las fichas son las de esta página (producto.html) en las tres sedes.
     const FICHAS = Boolean(S.tiendaPropia);
     // Lo arma la sección de la cotización; lo usan el anillo, las categorías, las marcas y el selector de sede.
     const enLaSede = { agregar: () => {}, buscar: () => {}, lista: () => null, usada: () => false, marcar: () => {} };
-    // Enlace a una búsqueda: en la tienda si la sede tiene la suya; si no, en el buscador de la lista.
-    const enlazarBusqueda = (a, q) => {
-        if (FICHAS) { a.href = buscar(q); return; }
-        a.href = "#carrito";
-        a.addEventListener("click", (ev) => { ev.preventDefault(); enLaSede.buscar(q); });
+    // Enlaces entre las páginas (inicio y tienda). Si la sede vino en el enlace (?sede=), viaja con él: si no,
+    // la otra página abriría la que el visitante tenía guardada.
+    const conSede = (ruta) => {
+        if (SEDE.origen !== "enlace") return ruta;
+        const [camino, ancla] = ruta.split("#");
+        const [base, consulta] = camino.split("?");
+        const q = new URLSearchParams(consulta || "");
+        q.set("sede", SEDE.id);
+        return `${base}?${q}${ancla ? `#${ancla}` : ""}`;
     };
+    for (const a of $$("[data-ir]")) a.href = conSede(a.dataset.ir);
+    // Categorías, marcas y banners llevan a la tienda con ese filtro puesto.
+    const urlTienda = (filtros = {}) => {
+        const q = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v)).toString();
+        return conSede(`tienda.html${q ? `?${q}` : ""}`);
+    };
+    const enlazarTienda = (a, filtros) => { a.href = urlTienda(filtros); };
 
     // Enlaces a la tienda real de Odoo.
     for (const a of $$("[data-odoo]")) a.href = D.odoo + a.dataset.odoo;
@@ -315,6 +320,15 @@
     }, { rootMargin: "-45% 0px -50% 0px" });
     for (const s of $$("[data-seccion]")) activa.observe(s);
 
+    // Fuera del inicio, la cabecera solo marca su borde al bajar.
+    if (!ES_INICIO) {
+        const bordeCabecera = () => cabecera.classList.toggle("con-scroll", window.scrollY > 8);
+        window.addEventListener("scroll", bordeCabecera, { passive: true });
+        bordeCabecera();
+    }
+
+    // Anillo, banners, marcas, categorías y pasos: solo en el inicio (la sangría de adentro quedó como estaba).
+    if (ES_INICIO) {
     /* ---------------------------------------------------------------- Portada: anillo 3D */
     const orbita = $(".orbita");
     const escena = $(".orbita-escena");
@@ -337,14 +351,14 @@
         ficha_.nombre.textContent = p.nombre;
         ficha_.marca.textContent = p.marca;
         ficha_.codigo.textContent = p.codigo;
-        ficha_.ver.href = FICHAS ? ficha(p.id) : "#carrito";
+        ficha_.ver.href = ficha(p.id);
         ficha_.cotizar.dataset.agregar = p.codigo.toUpperCase();
         enLaSede.marcar();
         minis.forEach((b, k) => b.setAttribute("aria-current", String(k === i)));
     };
     const paso = 360 / enAnillo.length;
     const items = enAnillo.map((p, i) => {
-        const a = crear("a", { class: "orbita-item", href: FICHAS ? ficha(p.id) : "#carrito", draggable: false, "aria-label": FICHAS ? `${p.marca} ${p.nombre}` : `Agregar ${p.marca} ${p.nombre} a tu cotización` }, [
+        const a = crear("a", { class: "orbita-item", href: ficha(p.id), draggable: false, "aria-label": `${p.marca} ${p.nombre}` }, [
             crear("img", { src: foto(p.id), alt: "", draggable: false }),
             crear("span", { text: p.marca }),
         ]);
@@ -478,10 +492,7 @@
         if (!item) return;
         const i = Number(item.dataset.i);
         if (i !== frenteActual) { ev.preventDefault(); destino = anguloMasCercano(i); arrancar(); }
-        else if (!FICHAS) { ev.preventDefault(); enLaSede.agregar(enAnillo[i], item.querySelector("img")); }
     }, true);
-    // Sin tienda propia no hay ficha que ver: queda solo «Cotizar».
-    if (!FICHAS) ficha_.ver.hidden = true;
     // El anillo gira siempre y solo se detiene mientras el mouse está sobre una tarjeta (las del anillo o la
     // ficha), mientras se recorre con el teclado o si se pausó con el botón. Al salir, sigue girando.
     const filaVitrina = $(".vitrina-fila");
@@ -543,7 +554,7 @@
     const banners = D.banners.map((b, i) => {
         const a = crear("a", { class: "banner", "aria-roledescription": "diapositiva", "aria-label": `${i + 1} de ${nB}: ${b.alt}` },
             [crear("img", { src: b.img, alt: "", draggable: false, decoding: "async", loading: i === 0 ? "eager" : "lazy", fetchPriority: i === 0 ? "high" : "low" })]);
-        enlazarBusqueda(a, b.buscar);
+        enlazarTienda(a, { q: b.buscar });
         a.dataset.i = i;
         pistaBanners.append(a);
         return a;
@@ -636,7 +647,7 @@
     const pistaMarcas = $(".marcas-pista");
     const tarjetaMarca = (m, copia) => {
         const a = crear("a", { class: `marca-logo${m.oscura ? " oscura" : ""}`, title: m.nombre });
-        enlazarBusqueda(a, m.nombre);
+        enlazarTienda(a, { marca: m.nombre });
         a.append(crear("img", { src: `../website_supricom_tienda/static/src/img/marcas/${m.logo}`, alt: copia ? "" : m.nombre, style: `height:${m.alto}px` }));
         if (copia) { a.setAttribute("aria-hidden", "true"); a.tabIndex = -1; }
         return a;
@@ -678,7 +689,7 @@
             crear("div", { class: "cat-foto" }, [crear("img", { src: foto(c.foto), alt: "", loading: "lazy" })]),
             crear("span", { class: "cat-ir" }, ["Ver productos ", icono("ir", "icono-ir")]),
         ]);
-        enlazarBusqueda(a, FICHAS ? c.buscar : c.nombre);
+        enlazarTienda(a, { cat: c.id });
         pistaCats.append(a);
     }
     let sobranteCats = 0;
@@ -743,6 +754,7 @@
     window.addEventListener("load", () => { medirCats(); alScroll(); });
     medirCats();
     alScroll();
+    } // fin de lo que es solo del inicio
 
     /* ---------------------------------------------------------------- Cotización */
     // La cotización es una lista código → unidades que se guarda en el navegador, una por sede. Se suma con
@@ -991,11 +1003,12 @@
             b.setAttribute("aria-label", todos ? `Combo ${combo.titulo} en tu cotización. Agregar los que falten` : `Agregar el combo ${combo ? combo.titulo : ""}: ${ps.length} productos`);
         }
         const cierre = $(".cierre-carrito");
+        if (!cierre) return;
         cierre.hidden = !cotizacion.size;
         $(".cierre-carrito-n").textContent = miles([...cotizacion.values()].reduce((a, b) => a + b, 0));
     };
     enLaSede.marcar = () => { marcarBotones(); marcarCombos(); };
-    $(".cierre-carrito").addEventListener("click", () => abrirCarrito());
+    $(".cierre-carrito")?.addEventListener("click", () => abrirCarrito());
 
     // El número del carrito en la cabecera: las unidades que llevas.
     const pintarBotonCarrito = () => {
@@ -1008,6 +1021,8 @@
     };
 
     let primeraVez = true;
+    // Otras páginas (la ficha) se enteran de cada cambio de la cotización, también los hechos en el panel.
+    const oyentesCotizacion = [];
     const pintar = () => {
         for (const [c, fila] of filasTicket) if (!cotizacion.has(c)) { fila.remove(); filasTicket.delete(c); }
         const texto = [`Hola, quiero cotizar en la sede ${S.nombre}:`, ""];
@@ -1071,6 +1086,7 @@
         marcarBotones();
         marcarCombos();
         pintarBotonCarrito();
+        for (const f of oyentesCotizacion) f();
         primeraVez = false;
     };
 
@@ -1114,14 +1130,14 @@
             botonCarrito.classList.remove("salta"); void botonCarrito.offsetWidth; botonCarrito.classList.add("salta");
         };
     };
-    const agregarProducto = (p, img) => {
+    const agregarProducto = (p, img, n = 1) => {
         const codigo = p.codigo.toUpperCase();
         const vuelo = prepararVuelo(img);
-        poner(codigo, (cotizacion.get(codigo) || 0) + 1);
+        poner(codigo, (cotizacion.get(codigo) || 0) + n);
         cambio();
         volar(vuelo);
-        mostrarAvisoCarrito(p.id, `${p.marca} ${p.nombre}`);
-        anunciar(`Sumado a tu cotización: ${p.marca} ${p.nombre}. Llevas ${unidadesTxt(cotizacion.get(codigo))}.`);
+        mostrarAvisoCarrito(p.id, n > 1 ? `${miles(n)} × ${p.marca} ${p.nombre}` : `${p.marca} ${p.nombre}`);
+        anunciar(`Sumado a tu cotización: ${n > 1 ? `${unidadesTxt(n)} de ` : ""}${p.marca} ${p.nombre}. Llevas ${unidadesTxt(cotizacion.get(codigo))}.`);
     };
     enLaSede.agregar = (p, img) => agregarProducto(p, img);
 
@@ -1335,8 +1351,17 @@
         sinResultados.textContent = pareceCodigo(q)
             ? `No está en esta página. Pulsa Enter para pedir «${q.toUpperCase()}» igual: tu vendedor lo confirma.`
             : "No está entre los productos de esta página.";
-        enlaceCatalogo.hidden = !FICHAS;
-        if (FICHAS) { enlaceCatalogo.href = buscar(q); enlaceCatalogo.replaceChildren(`Buscar «${q}» en todo el catálogo `, icono("ir", "icono-ir")); }
+        // Con el catálogo en vivo, la tienda de esta página ya tiene todo; con la copia, solo Valencia
+        // ofrece el catálogo completo de Odoo (en las otras diría «Agotado»).
+        if (TODO.enVivo) {
+            enlaceCatalogo.hidden = false;
+            enlaceCatalogo.removeAttribute("target");
+            enlaceCatalogo.href = urlTienda({ q });
+            enlaceCatalogo.replaceChildren(`Ver «${q}» en la tienda `, icono("ir", "icono-ir"));
+        } else {
+            enlaceCatalogo.hidden = !FICHAS;
+            if (FICHAS) { enlaceCatalogo.href = buscar(q); enlaceCatalogo.replaceChildren(`Buscar «${q}» en todo el catálogo `, icono("ir", "icono-ir")); }
+        }
         panelBusqueda.hidden = false;
         buscador.setAttribute("aria-expanded", String(hay));
         marcar(-1);
@@ -1437,13 +1462,15 @@
         if (!ev.currentTarget.contains(ev.relatedTarget)) cerrarBusqueda();
     });
     // En las sedes sin tienda propia, las categorías, marcas y banners buscan aquí.
+    // Abre la cotización con el buscador listo (la tienda lo usa para pedir algo que no encontró).
     enLaSede.buscar = (q) => {
-        if (!q) { $("#estantes").scrollIntoView({ behavior: QUIETO ? "auto" : "smooth", block: "start" }); return; }
-        buscador.value = q;
+        buscador.value = q || "";
         abrirCarrito(buscador);
         sugerir();
     };
 
+    // Estantes y combos: solo en el inicio.
+    if (ES_INICIO) {
     /* ---------------------------------------------------------------- Estantes */
     const LISTAS = {
         masVendidos: { chip: (i) => `N.º ${i + 1}`, clase: "", nota: "Ordenados por cuántas facturas tuvieron en los últimos 90 días." },
@@ -1455,11 +1482,8 @@
     const pestanasEstante = $$(".estantes-pestanas [role='tab']");
     const tarjetaProducto = (p, lista, i) => {
         const imagen = crear("img", { src: foto(p.id), alt: "", loading: "lazy" });
-        const marco = FICHAS
-            ? crear("a", { class: "prod-foto", href: ficha(p.id), tabIndex: -1, "aria-hidden": "true" }, [imagen])
-            : crear("div", { class: "prod-foto" }, [imagen]);
-        const pie = [botonAgregar(p)];
-        if (FICHAS) pie.unshift(crear("a", { class: "prod-ver", href: ficha(p.id), text: "Ver ficha", "aria-label": `Ver la ficha de ${p.marca} ${p.nombre}` }));
+        const marco = crear("a", { class: "prod-foto", href: ficha(p.id), tabIndex: -1, "aria-hidden": "true" }, [imagen]);
+        const pie = [crear("a", { class: "prod-ver", href: ficha(p.id), text: "Ver ficha", "aria-label": `Ver la ficha de ${p.marca} ${p.nombre}` }), botonAgregar(p)];
         const t = crear("article", { class: "prod" }, [
             crear("span", { class: `prod-chip ${LISTAS[lista].clase}`, text: LISTAS[lista].chip(i) }),
             marco,
@@ -1507,7 +1531,7 @@
     }
     const mostrarLista = (lista) => {
         const ids = S[lista] || [];
-        pistaEstante.replaceChildren(...ids.map((id) => porId.get(id)).filter(Boolean).map((p, i) => tarjetaProducto(p, lista, i)));
+        pistaEstante.replaceChildren(...ids.map((id) => porId.get(id)).filter((p) => p && hay(p)).map((p, i) => tarjetaProducto(p, lista, i)));
         pistaEstante.scrollLeft = 0;
         notaEstante.textContent = LISTAS[lista].nota;
         for (const t of pestanasEstante) {
@@ -1520,7 +1544,7 @@
         requestAnimationFrame(() => { girarEstante(); pintarFlechasEstante(); });
     };
     // Una pestaña sin productos no se muestra (por ejemplo, una sede sin novedades).
-    for (const t of pestanasEstante) t.hidden = !(S[t.dataset.lista] || []).length;
+    for (const t of pestanasEstante) t.hidden = !(S[t.dataset.lista] || []).some((id) => porId.get(id) && hay(porId.get(id)));
     const visibles = pestanasEstante.filter((t) => !t.hidden);
     for (const t of visibles) {
         t.addEventListener("click", () => mostrarLista(t.dataset.lista));
@@ -1560,6 +1584,21 @@
         contenedorCombos.append(tarjeta);
     });
     if (!contenedorCombos.children.length) $("#juntos").hidden = true;
+    } // fin de estantes y combos
+
+    // Lo que usa la tienda (tienda.js, que corre después de este archivo).
+    window.SUPRICOM_PAGINA = {
+        sede: SEDE, S, D, FICHAS, QUIETO, nombreCategoria,
+        foto, ficha, crear, icono, botonAgregar, urlTienda,
+        marcar: () => enLaSede.marcar(),
+        buscarEnCotizacion: (q) => enLaSede.buscar(q),
+        enCotizacion: (codigo) => cotizacion.get(codigo.toUpperCase()) || 0,
+        // Suma n unidades de un producto (la ficha, con su selector de cantidad), con la foto que vuela.
+        agregar: (p, n, img) => agregarProducto(p, img, Math.max(1, Math.min(MAX_CANT, n | 0))),
+        alCambiarCotizacion: (f) => oyentesCotizacion.push(f),
+        abrirCotizacion: () => abrirCarrito(),
+        porId, MAX_CANT, LISTAS_SEDE: { masVendidos: S.masVendidos || [], novedades: S.novedades || [], menosRotan: S.menosRotan || [] },
+    };
 
     cargarCotizacion();
     pintar();

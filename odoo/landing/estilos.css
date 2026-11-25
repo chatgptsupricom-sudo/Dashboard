@@ -450,6 +450,9 @@ button { font: inherit; color: inherit; }
 .prod-ver:hover { color: var(--tinta); }
 .estante-pie { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .estante-nota { color: var(--gris); font-size: 14px; }
+.estante-pie-texto { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; }
+.estante-tienda { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--acento); font-size: 15px; font-weight: 700; text-decoration: none; }
+.estante-tienda:hover { text-decoration: underline; }
 .estante-flechas { display: flex; gap: 8px; }
 .flecha-estante {
     width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--banda-linea); background: var(--superficie); color: var(--tinta);
