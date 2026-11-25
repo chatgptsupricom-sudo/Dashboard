@@ -105,6 +105,7 @@
     const entrarCon = (token, recordar) => {
         guardarToken(token, recordar);
         for (const a of $$("[data-cuenta-entrar]")) a.textContent = "Mi cuenta";
+        for (const a of $$(".cabecera-cta")) a.hidden = true; // ya es cliente: no se le ofrece pedir cuenta
         mostrarPanel();
     };
 
@@ -177,6 +178,7 @@
         panel.hidden = true;
         acceso.hidden = false;
         for (const a of $$("[data-cuenta-entrar]")) a.textContent = "Entrar";
+        for (const a of $$(".cabecera-cta")) a.hidden = false;
         irPaso("entrar", false);
         if (aviso) fallo(formEntrar, aviso);
         document.title = "Mi cuenta · SUPRICOM";
@@ -193,29 +195,28 @@
         crear("span", { class: "esqueleto esq-linea media" }), crear("span", { class: "esqueleto esq-linea corta" }),
     ]));
 
+    // Una fila de la tabla de pedidos: toda la fila abre el detalle. Cada dato en su columna; en el teléfono
+    // las columnas se acomodan como una tarjeta (mi-cuenta.css).
+    const celda = (clase, hijos) => crear("span", { class: `celda ${clase}`, role: "cell" }, hijos);
     const filaPedido = (p) => {
-        const b = crear("button", { type: "button", class: "fila fila-pedido", "aria-label": `Pedido ${p.numero}, ${p.etapaNombre}, ${dinero(p.total, p.moneda)}. Ver el detalle` }, [
-            crear("span", { class: "fila-principal" }, [
-                crear("strong", { text: p.numero }),
-                crear("small", { text: [fecha(p.fecha), p.sede.nombre, p.referencia ? `Ref. ${p.referencia}` : ""].filter(Boolean).join(" · ") }),
-            ]),
-            insignia(p.etapa, p.etapaNombre),
-            crear("span", { class: "fila-monto", text: dinero(p.total, p.moneda) }),
-            crear("span", { class: "fila-ir", "aria-hidden": "true" }, [P.icono("ir", "icono-ir")]),
+        const b = crear("button", { type: "button", class: "fila fila-pedido", role: "row", "aria-label": `Pedido ${p.numero} del ${fecha(p.fecha)}, ${p.sede.nombre}, ${p.etapaNombre}, ${dinero(p.total, p.moneda)}. Ver el detalle` }, [
+            celda("c-numero", [crear("strong", { text: p.numero }), ...(p.referencia ? [crear("small", { text: `Ref. ${p.referencia}` })] : [])]),
+            celda("c-fecha", [fecha(p.fecha)]),
+            celda("c-sede", [p.sede.nombre]),
+            celda("c-estado", [insignia(p.etapa, p.etapaNombre)]),
+            celda("c-monto", [dinero(p.total, p.moneda)]),
+            crear("span", { class: "celda c-ir", "aria-hidden": "true" }, [P.icono("ir", "icono-ir")]),
         ]);
         b.addEventListener("click", () => abrirDetalle(p.id, b));
         return b;
     };
-    const filaFactura = (f) => crear("div", { class: "fila fila-factura", role: "listitem" }, [
-        crear("span", { class: "fila-principal" }, [
-            crear("strong", { text: f.numero }),
-            crear("small", { text: [`Emitida ${fecha(f.fecha)}`, f.estado !== "nota" && f.vence ? `vence ${fecha(f.vence)}` : "", f.sede.nombre, f.pedido ? `Pedido ${f.pedido}` : ""].filter(Boolean).join(" · ") }),
-        ]),
-        insignia(f.estado, f.estado === "vencida" && f.atraso ? `Vencida hace ${f.atraso} ${f.atraso === 1 ? "día" : "días"}` : f.estadoNombre),
-        crear("span", { class: "fila-monto" }, [
-            crear("span", { text: dinero(f.total) }),
-            ...(f.saldo && f.estado !== "pagada" ? [crear("small", { text: `Saldo ${dinero(f.saldo)}` })] : []),
-        ]),
+    const filaFactura = (f) => crear("div", { class: "fila fila-factura", role: "row" }, [
+        celda("c-numero", [crear("strong", { text: f.numero }), crear("small", { text: [f.sede.nombre, f.pedido ? `Pedido ${f.pedido}` : ""].filter(Boolean).join(" · ") })]),
+        celda("c-fecha", [fecha(f.fecha)]),
+        celda("c-vence", [f.estado === "nota" || !f.vence ? "—" : fecha(f.vence)]),
+        celda("c-estado", [insignia(f.estado, f.estado === "vencida" && f.atraso ? `Vencida · ${f.atraso} ${f.atraso === 1 ? "día" : "días"}` : f.estadoNombre)]),
+        celda("c-monto", [dinero(f.total)]),
+        celda(`c-saldo${f.saldo > 0.009 ? " con-saldo" : ""}`, [f.saldo > 0.009 ? dinero(f.saldo) : "—"]),
     ]);
 
     const tarjetasCuenta = (estado, pedidosAbiertos) => {
@@ -263,7 +264,8 @@
         $(".panel-avatar").textContent = iniciales(c.empresa || c.nombre);
         $(".panel-empresa").textContent = c.empresa || "";
         $(".panel-saludo").textContent = nombre ? `Hola, ${nombre.charAt(0)}${nombre.slice(1).toLowerCase()}` : "Hola";
-        $(".panel-datos").textContent = [c.documento, c.correo].filter(Boolean).join(" · ");
+        $(".panel-datos").replaceChildren(...[c.documento, c.correo].filter(Boolean).map((t) => crear("span", { text: t })));
+        $(".resumen-nota").textContent = `Esto es lo que pasa en la cuenta de ${c.empresa || "tu empresa"}: lo que debes, tus pedidos en curso y lo último que pediste.`;
         document.title = `Mi cuenta · ${c.empresa || "SUPRICOM"}`;
         $(".tarjetas-resumen").replaceChildren(...tarjetasCuenta(r.datos.estadoDeCuenta, r.datos.pedidosAbiertos));
         const ult = r.datos.ultimosPedidos || [];
@@ -308,10 +310,11 @@
         const d = r.datos;
         const filas = tipo === "pedidos" ? d.pedidos : d.facturas;
         if (tipo === "facturas") $(".facturas-cuenta").replaceChildren(...tarjetasCuenta(d.estadoDeCuenta));
-        conteo.textContent = d.total ? `${d.total.toLocaleString("es-VE")} ${tipo === "pedidos" ? (d.total === 1 ? "pedido" : "pedidos") : (d.total === 1 ? "documento" : "documentos")}` : "";
-        lista.setAttribute("role", "list");
+        conteo.textContent = tipo === "pedidos"
+            ? `${d.total.toLocaleString("es-VE")} ${d.total === 1 ? "pedido" : "pedidos"} con estos filtros. Toca uno para ver su detalle.`
+            : `${d.total.toLocaleString("es-VE")} ${d.total === 1 ? "documento" : "documentos"} con estos filtros. Montos en dólares.`;
         lista.replaceChildren(...(filas.length
-            ? filas.map((x) => { const el = tipo === "pedidos" ? filaPedido(x) : filaFactura(x); if (tipo === "pedidos") { const li = crear("div", { role: "listitem" }, [el]); return li; } return el; })
+            ? filas.map((x) => (tipo === "pedidos" ? filaPedido(x) : filaFactura(x)))
             : [crear("p", { class: "lista-vacia", text: tipo === "pedidos" ? "No hay pedidos con estos filtros." : "No hay facturas con estos filtros." })]));
         paginas(tipo, d.total, d.pagina, d.porPagina);
         if (subir) vista.scrollIntoView({ behavior: P.QUIETO ? "auto" : "smooth", block: "start" });
@@ -329,7 +332,7 @@
     }
 
     // Pestañas (y el enlace: #pedidos, #facturas)
-    const pestanas = $$(".panel-pestanas [role=tab]");
+    const pestanas = $$(".panel-nav [role=tab]");
     const cargadas = new Set();
     function irVista(nombre, { foco = false, historial = true } = {}) {
         if (!["resumen", "pedidos", "facturas"].includes(nombre)) nombre = "resumen";
@@ -347,10 +350,11 @@
     for (const t of pestanas) {
         t.addEventListener("click", () => irVista(t.dataset.vista));
         t.addEventListener("keydown", (ev) => {
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(ev.key)) return;
+            if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(ev.key)) return;
             ev.preventDefault();
             const i = pestanas.indexOf(t);
-            const j = ev.key === "Home" ? 0 : ev.key === "End" ? pestanas.length - 1 : (i + (ev.key === "ArrowRight" ? 1 : -1) + pestanas.length) % pestanas.length;
+            const adelante = ev.key === "ArrowRight" || ev.key === "ArrowDown";
+            const j = ev.key === "Home" ? 0 : ev.key === "End" ? pestanas.length - 1 : (i + (adelante ? 1 : -1) + pestanas.length) % pestanas.length;
             irVista(pestanas[j].dataset.vista, { foco: true });
         });
     }
