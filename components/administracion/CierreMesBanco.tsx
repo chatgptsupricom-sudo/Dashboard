@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Aviso } from "@/components/administracion/comunes";
-import type { CuadreMes } from "@/lib/administracion/bancos";
+import type { CuadreMes, librosDelMes } from "@/lib/administracion/bancos";
 import { useAuthStore } from "@/lib/stores/auth.store";
 import { CheckCircle2, Loader2, Lock, LockOpen, XCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -15,6 +15,8 @@ const dia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice
 const cuando = (iso: string) => new Date(iso).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" });
 const nombreMes = (mes: string) =>
   new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7) - 1, 1)).toLocaleDateString("es-VE", { month: "long", year: "numeric", timeZone: "UTC" });
+type Libros = Awaited<ReturnType<typeof librosDelMes>>;
+const ODOO_URL = (process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com").replace(/\/$/, "");
 const finDeMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).toISOString().slice(0, 10);
 
 /**
@@ -51,6 +53,10 @@ export function CierreMesBanco({
   /** null = no respondio; true/false = la cuenta tuvo o no movimientos en el mes. */
   const [tuvo, setTuvo] = useState<boolean | null>(null);
   const [saldoEscrito, setSaldoEscrito] = useState("");
+  /** Que forma el saldo en libros de Odoo (se lee al abrirlo). */
+  const [libros, setLibros] = useState<Libros | null>(null);
+  const [verLibros, setVerLibros] = useState(false);
+  const [cargandoLibros, setCargandoLibros] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -70,7 +76,22 @@ export function CierreMesBanco({
   useEffect(() => {
     setTuvo(null);
     setSaldoEscrito("");
+    setVerLibros(false);
+    setLibros(null);
   }, [cuenta, mes]);
+  // Si la pantalla recarga (se concilio o se revirtio algo), el detalle abierto se vuelve a leer.
+  useEffect(() => {
+    setLibros(null);
+  }, [version]);
+  useEffect(() => {
+    if (!verLibros || libros) return;
+    setCargandoLibros(true);
+    fetch(`/api/administracion/bancos?cuenta=${cuenta}&libros=${mes}`)
+      .then((r) => r.json())
+      .then((j) => (j.success ? setLibros(j.libros) : setError(j.error || "No se pudo leer el saldo de Odoo")))
+      .catch(() => setError("No se pudo leer el saldo de Odoo"))
+      .finally(() => setCargandoLibros(false));
+  }, [verLibros, libros, cuenta, mes]);
 
   const patch = async (cuerpo: Record<string, unknown>) => {
     setEnviando(true);
@@ -140,7 +161,8 @@ export function CierreMesBanco({
         { ok: c.lineasSinConciliar === 0, texto: c.lineasSinConciliar ? `Odoo tiene ${c.lineasSinConciliar} línea(s) del banco sin conciliar en el mes` : "Todas las líneas del banco del mes están conciliadas en Odoo" },
         { ok: diferencia === 0, texto: diferencia === 0 ? "El saldo del banco es el de Odoo" : "El saldo del banco no es el de Odoo" },
       ];
-  const listo = !c.cierre && !preguntar && tuvo !== true && pasos.every((p) => p.ok);
+  // «¿Tuvo movimientos? Sí» solo cuenta mientras el mes sigue sin movimientos: subido el estado de cuenta ya no frena el cierre.
+  const listo = !c.cierre && !preguntar && !(sinMovimientos && tuvo === true) && pasos.every((p) => p.ok);
   const saldoInicial = sinMovimientos ? c.anterior?.saldo ?? null : c.estado?.inicial ?? null;
   // El estado arranca en otro saldo que el que dejo el mes anterior: falta un movimiento entre los dos.
   const saltoInicial =
@@ -260,6 +282,9 @@ export function CierreMesBanco({
                 {c.cierre && Math.abs(c.cierre.saldoLibros - c.saldoLibros) >= 0.01 && (
                   <p className="text-xs text-red-600">Hoy Odoo dice {cifra(c.saldoLibros)}: alguien lo cambió en Odoo después del cierre</p>
                 )}
+                <button type="button" className="text-xs text-blue-600 hover:underline mt-1" onClick={() => setVerLibros((v) => !v)}>
+                  {verLibros ? "Ocultar qué lo forma" : "Ver qué lo forma"}
+                </button>
               </div>
               <div className={`rounded-lg border p-3 ${diferencia === 0 ? "bg-emerald-50 border-emerald-200" : diferencia === null ? "" : "bg-red-50 border-red-200"}`}>
                 <p className="text-xs text-gray-500">Diferencia</p>
@@ -268,6 +293,78 @@ export function CierreMesBanco({
                 </p>
               </div>
             </div>
+
+            {verLibros && (
+              <div className="rounded-lg border p-3 space-y-2 text-sm">
+                {!libros ? (
+                  <p className="text-gray-500 flex items-center gap-2">
+                    {cargandoLibros && <Loader2 className="h-4 w-4 animate-spin" />} Leyendo los apuntes del banco en Odoo…
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-gray-600">
+                      Saldo en Odoo al empezar el mes <span className="font-semibold tabular-nums">{cifra(libros.inicial)}</span> + apuntes del mes{" "}
+                      <span className="font-semibold tabular-nums">{cifra(libros.total)}</span> = <span className="font-semibold tabular-nums">{cifra(libros.final)} {moneda}</span>.
+                      {libros.lineas.some((l) => l.repetido) && (
+                        <span className="text-red-700">
+                          {" "}
+                          En rojo, los que están más veces en Odoo que en el estado de cuenta (mismo día y monto): uno sobra; ábrelo en Odoo para anularlo, o
+                          revierte la conciliación duplicada desde la tabla de arriba.
+                        </span>
+                      )}
+                    </p>
+                    <div className="max-h-96 overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="text-gray-500 text-left sticky top-0 bg-white">
+                          <tr>
+                            <th className="py-1 pr-2">Fecha</th>
+                            <th className="py-1 pr-2">Asiento</th>
+                            <th className="py-1 pr-2">Descripción</th>
+                            <th className="py-1 pr-2">Contra</th>
+                            <th className="py-1 pr-2 text-right">Monto</th>
+                            <th className="py-1" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {libros.lineas.map((l, i) => (
+                            <tr key={i} className={`border-t ${l.repetido ? "bg-red-50" : ""}`}>
+                              <td className="py-1 pr-2 whitespace-nowrap">{dia(l.fecha)}</td>
+                              <td className="py-1 pr-2 whitespace-nowrap">
+                                <a
+                                  href={`${ODOO_URL}/web#id=${l.asientoId}&model=account.move&view_type=form`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  {l.asiento}
+                                </a>
+                              </td>
+                              <td className="py-1 pr-2">{l.descripcion}</td>
+                              <td className="py-1 pr-2 text-gray-500">{l.contra.join(", ")}</td>
+                              <td className={`py-1 pr-2 text-right tabular-nums ${l.monto < 0 ? "text-red-700" : ""}`}>{cifra(l.monto)}</td>
+                              <td className="py-1 whitespace-nowrap">
+                                {l.repetido && <span className="text-red-700 font-medium">Repetido </span>}
+                                {!l.repetido && l.noEnBanco && <span className="text-amber-700">No está en el estado de cuenta </span>}
+                                {!l.deExtracto && <span className="text-gray-500">Sin línea de extracto </span>}
+                                {l.deExtracto && l.conciliada === false && <span className="text-amber-700">Sin conciliar </span>}
+                                {l.delPanel && <span className="text-gray-400">· panel</span>}
+                              </td>
+                            </tr>
+                          ))}
+                          {libros.lineas.length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="py-2 text-gray-500">
+                                En el mes no hay apuntes en la cuenta del banco en Odoo.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {saltoInicial !== null && (
               <Aviso>

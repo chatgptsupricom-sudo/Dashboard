@@ -11,6 +11,8 @@ import {
   cerrarMes,
   conciliacionPeriodo,
   cuadreMes,
+  librosDelMes,
+  otrasCuentasDeLaSede,
   MesCerrado,
   reabrirMes,
   conciliarEnOdoo,
@@ -73,6 +75,8 @@ async function cuentaPedida(payload: any, id: unknown): Promise<CuentaBanco | Ne
 // GET /api/administracion/bancos?cuenta=<diario>&desde=&hasta=&viejas=1 — lineas de extracto de Odoo que no creo el panel.
 // GET /api/administracion/bancos?cuenta=<diario>&contables=1 — cuentas contables de la sede (contrapartida al aprobar).
 // GET /api/administracion/bancos?cuenta=<diario>&cierre=YYYY-MM — saldo del banco vs libros de Odoo y cierre del mes.
+// GET /api/administracion/bancos?cuenta=<diario>&libros=YYYY-MM — que forma el saldo en libros de Odoo del mes.
+// GET /api/administracion/bancos?cuenta=<diario>&diarios=1 — los otros bancos y cajas de la sede (transferencia interna).
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_BANCOS);
   if (auth.error) return auth.error;
@@ -84,7 +88,19 @@ export async function GET(request: NextRequest) {
       if (!sedes) return respuestaSedeNoPermitida();
       return NextResponse.json({ success: true, cuentas: await cuentasBancarias(sedes) });
     }
-    if (cxc && (p.get("contables") || p.get("viejas") || p.get("cierre"))) return soloAdministracion();
+    if (cxc && (p.get("contables") || p.get("viejas") || p.get("cierre") || p.get("libros") || p.get("diarios"))) return soloAdministracion();
+    if (p.get("libros")) {
+      const mes = String(p.get("libros"));
+      if (!MES.test(mes)) return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
+      const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
+      if (cuenta instanceof NextResponse) return cuenta;
+      return NextResponse.json({ success: true, libros: await librosDelMes(cuenta, mes) });
+    }
+    if (p.get("diarios")) {
+      const cuenta = await cuentaPedida(auth.payload, p.get("cuenta"));
+      if (cuenta instanceof NextResponse) return cuenta;
+      return NextResponse.json({ success: true, diarios: await otrasCuentasDeLaSede(cuenta) });
+    }
     if (p.get("cierre")) {
       const mes = String(p.get("cierre"));
       if (!MES.test(mes)) return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
@@ -190,7 +206,8 @@ export async function POST(request: NextRequest) {
 //   {cuenta, conciliar: huella, ...}      — aprobado: crea la linea de extracto en Odoo y la concilia contra
 //        pagos: [ids]           uno o varios cobros/pagos de Odoo (varios = suman justo el movimiento)
 //        cuenta_contable: id    una cuenta de la sede (comision, IGTF, intereses...)
-//        transferencia: true    la cuenta de transferencias internas (movimiento entre cuentas propias)
+//        transferencia: true    la cuenta de transferencias internas (movimiento entre cuentas propias); con
+//                               otra_cuenta (y tasa si es de otra moneda) registra la transferencia interna en Odoo
 //        sin_conciliar: true    la linea queda en Odoo para conciliarla alla
 //        pagos + ajustar_monto: true  antes corrige en Odoo el monto del unico elegido al del banco (hasta 1 %)
 export async function PATCH(request: NextRequest) {
@@ -283,7 +300,14 @@ export async function PATCH(request: NextRequest) {
     } else if (b?.cuenta_contable !== undefined) {
       if (!entero(b.cuenta_contable)) return NextResponse.json({ error: "Cuenta contable inválida" }, { status: 400 });
       destino = { tipo: "cuenta", cuentaId: Number(b.cuenta_contable) };
-    } else if (b?.transferencia === true) destino = { tipo: "transferencia" };
+    } else if (b?.transferencia === true) {
+      // otra_cuenta: de donde salio (entrada) o adonde fue (salida): se registra la transferencia interna en Odoo.
+      const otra = b?.otra_cuenta === undefined || b?.otra_cuenta === null || b?.otra_cuenta === "" ? undefined : Number(b.otra_cuenta);
+      if (otra !== undefined && !entero(otra)) return NextResponse.json({ error: "Cuenta de la transferencia inválida" }, { status: 400 });
+      const tasa = b?.tasa === undefined || b?.tasa === null || b?.tasa === "" ? undefined : Number(b.tasa);
+      if (tasa !== undefined && !(tasa > 0 && tasa < 1e7)) return NextResponse.json({ error: "La tasa debe ser mayor que 0" }, { status: 400 });
+      destino = { tipo: "transferencia", otraCuenta: otra, tasa };
+    }
     else if (b?.sin_conciliar === true) destino = { tipo: "sin_conciliar" };
     else return NextResponse.json({ error: "Falta contra qué conciliar" }, { status: 400 });
     const p = auth.payload as any;

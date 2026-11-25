@@ -902,7 +902,14 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
               <RegistrarCobroOdoo cuenta={cuenta} comprobante={registrar} cerrar={() => setRegistrar(null)} listo={cargar} />
             )}
             {cuenta && !cxc && (
-              <AprobarMovimiento cuenta={cuenta} movimiento={aprobar} pagosLibres={datos.pagosLibres} cerrar={() => setAprobar(null)} listo={cargar} />
+              <AprobarMovimiento
+                cuenta={cuenta}
+                moneda={cuentaElegida?.moneda || "USD"}
+                movimiento={aprobar}
+                pagosLibres={datos.pagosLibres}
+                cerrar={() => setAprobar(null)}
+                listo={cargar}
+              />
             )}
 
             {pestanas.length > 0 && (
