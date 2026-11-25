@@ -81,6 +81,45 @@ function Registro({ registrada }: { registrada: boolean }) {
   );
 }
 
+/** Cómo quedó el paso automático del perfil a Odoo. */
+function EstadoOdoo({ odoo, detalle = false }: { odoo: PerfilPanel["odoo"]; detalle?: boolean }) {
+  const estilos: Record<string, [string, string]> = {
+    ok: ["border-emerald-200 bg-emerald-50 text-emerald-700", "En Odoo"],
+    error: ["border-red-200 bg-red-50 text-red-700", "No pasó a Odoo"],
+    pendiente: ["border-blue-200 bg-blue-50 text-blue-700", "Pasando a Odoo"],
+    sin_fichas: ["border-slate-200 bg-slate-50 text-slate-600", "Sin ficha en Odoo"],
+  };
+  const [clase, texto] = estilos[odoo.estado] || estilos.pendiente;
+  const insignia = (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${clase}`}>
+      {odoo.estado === "ok" ? <Check className="h-3 w-3" /> : odoo.estado === "pendiente" ? <RefreshCw className="h-3 w-3" /> : null}
+      {texto}
+    </span>
+  );
+  if (!detalle) return insignia;
+  return (
+    <div className="space-y-1 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        {insignia}
+        {odoo.sincronizado && <span className="text-xs text-muted-foreground">Última vez: {fechaHora(odoo.sincronizado)}</span>}
+      </div>
+      {odoo.estado === "ok" && (odoo.creadas + odoo.actualizadas + odoo.archivadas > 0) && (
+        <p className="text-xs text-muted-foreground">
+          Direcciones de entrega: {odoo.creadas} creadas, {odoo.actualizadas} actualizadas, {odoo.archivadas} archivadas. Cada cambio queda anotado en el
+          historial de la ficha en Odoo.
+        </p>
+      )}
+      {odoo.estado === "error" && <p className="text-xs text-red-700">{odoo.error} Se reintenta solo cada hora.</p>}
+      {odoo.sinOdoo.length > 0 && (
+        <p className="text-xs text-amber-800">
+          No se crean solas en Odoo (su RIF no está en una ficha de este cliente): {odoo.sinOdoo.join(", ")}. Créalas en Odoo y sus sucursales pasan en el
+          próximo guardado o en la próxima hora.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function BotonCopiar({ texto, etiqueta }: { texto: string; etiqueta: string }) {
   const [listo, setListo] = useState(false);
   return (
@@ -153,12 +192,13 @@ function Detalle({ clave, sede, onCerrar }: { clave: string | null; sede: string
             {perfil.porConfirmar > 0 && (
               <Aviso>
                 {perfil.porConfirmar === 1 ? "Una razón social no está" : `${perfil.porConfirmar} razones sociales no están`} en Odoo con ese RIF.
-                Revísala con el cliente y, si corresponde, créala o corrige el RIF en Odoo.
+                Sus sucursales no pasan a Odoo hasta que exista: revísala con el cliente y, si corresponde, créala o corrige el RIF en Odoo.
               </Aviso>
             )}
 
             <section className="space-y-2">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">En Odoo</h3>
+              <EstadoOdoo odoo={perfil.odoo} detalle />
               {perfil.enOdoo.length ? (
                 <ul className="flex flex-wrap gap-2">
                   {perfil.enOdoo.map((o) => (
@@ -340,7 +380,7 @@ export default function PantallaPerfiles() {
             Lo que cada cliente escribió de su empresa en «Mi cuenta» de la tienda web: razones sociales con su RIF, sucursales con
             dirección y contacto, redes y logo.{" "}
             {alcance === "vendedor" ? "Ves los clientes que tienes asignados en Odoo." : alcance === "sede" ? "Ves los clientes de tu sede." : ""}{" "}
-            No cambia Odoo: úsalo para mantener al día sus fichas.
+            Lo que el cliente guarda pasa solo a Odoo como direcciones de entrega de su ficha (con su ubicación), junto con su página web y su logo.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -428,6 +468,7 @@ export default function PantallaPerfiles() {
                       </span>
                     ))}
                     {!p.enOdoo.length && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">Sin ficha en Odoo</span>}
+                    <EstadoOdoo odoo={p.odoo} />
                     {p.porConfirmar > 0 && (
                       <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                         {p.porConfirmar} por revisar

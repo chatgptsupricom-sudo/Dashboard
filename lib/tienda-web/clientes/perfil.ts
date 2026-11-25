@@ -9,6 +9,7 @@
  * Tablas `tienda_perfiles` (una fila por empresa, `version` para que dos personas no se pisen) y
  * `tienda_perfiles_historial` (lo que había antes de cada cambio, quién y cuándo). Se crean solas.
  */
+import crypto from "crypto";
 import { db } from "@/lib/db";
 import { fichasDe, type ClienteOdoo } from "./odoo";
 import { claveDocumento, LOGO_MAX_BYTES, rifValido, telefonoValido, tipoDeImagen, validarPerfil, type DatosPerfil } from "./tipos";
@@ -153,6 +154,8 @@ export type ResultadoGuardar =
 /** Guarda el perfil si nadie lo cambió desde que lo abrió (`version`); deja en el historial lo que había. */
 export async function guardarPerfil(c: ClienteOdoo, correo: string, cuerpo: Record<string, unknown>): Promise<ResultadoGuardar> {
   const v = validarPerfil(cuerpo);
+  // Cada sucursal nueva recibe su id: con él se enlaza a su dirección de entrega en Odoo (./sincronizarOdoo.ts).
+  if (v.ok) for (const r of v.datos.razones) for (const suc of r.sucursales) if (!suc.id) suc.id = crypto.randomBytes(6).toString("hex");
   if (!v.ok) return { ok: false, status: 400, error: v.error, campo: v.campo };
   const l = leerLogo(cuerpo.logo);
   if (!l.ok) return { ok: false, status: 400, error: l.error, campo: "logo" };
@@ -192,6 +195,14 @@ export async function guardarPerfil(c: ClienteOdoo, correo: string, cuerpo: Reco
     throw e;
   } finally {
     conn.release();
+  }
+  // A Odoo solo y sin hacer esperar al cliente; si falla, el cron lo reintenta (sincronizarOdoo.ts).
+  try {
+    const { guardarFichasPermitidas, sincronizarPerfilEnOdoo } = await import("./sincronizarOdoo");
+    await guardarFichasPermitidas(clave, c.partners);
+    void sincronizarPerfilEnOdoo(clave);
+  } catch (e: any) {
+    console.error("[tienda-web/perfil→odoo] no se pudo programar:", e?.message || e);
   }
   return { ok: true, perfil: await perfilEditable(c) };
 }

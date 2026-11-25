@@ -244,4 +244,68 @@ assert.deepStrictEqual(redesEnHtml(`
   tiktok: "https://tiktok.com/@mitienda",
 });
 
+// Sincronización del perfil con Odoo (lib/tienda-web/clientes/sincronizarTipos.ts): plan puro
+{
+  const fuenteSync = fs.readFileSync(path.join(__dirname, "..", "lib/tienda-web/clientes/sincronizarTipos.ts"), "utf8")
+    .replace(/import \{[^}]*\} from "\.\/tipos";/, "");
+  const jsSync = ts.transpileModule(fuenteSync, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+  const ms = { exports: {} };
+  new Function("require", "module", "exports", "claveDocumento", jsSync)(require, ms, ms.exports, mk.exports.claveDocumento);
+  const { planearSincronizacion, valsDireccion, firmaVals, direccionComparable } = ms.exports;
+  const { idSucursalValido } = mk.exports;
+
+  assert.ok(idSucursalValido("a1b2c3d4e5f6"));
+  assert.ok(!idSucursalValido("ABC"));
+  // validarPerfil conserva un id válido y descarta uno repetido o raro
+  const conIds = validarPerfil({ ...bien, razones: [{ ...bien.razones[0], sucursales: [{ ...suc, id: "a1b2c3d4e5f6" }, { ...suc, nombre: "Otra", id: "a1b2c3d4e5f6" }, { ...suc, nombre: "Tercera", id: "<script>" }] }] });
+  assert.strictEqual(conIds.datos.razones[0].sucursales[0].id, "a1b2c3d4e5f6");
+  assert.strictEqual(conIds.datos.razones[0].sucursales[1].id, undefined);
+  assert.strictEqual(conIds.datos.razones[0].sucursales[2].id, undefined);
+  assert.strictEqual(direccionComparable("Av. Bolívar  Norte, Torre"), direccionComparable("av bolivar norte torre"));
+
+  const s1 = { id: "s1s1s1s1", nombre: "Principal", direccion: "Av. Bolívar Norte, Valencia", contacto: "Ana", telefono: "0241-8251234", lat: 10.2, lng: -68 };
+  const s2 = { id: "s2s2s2s2", nombre: "Almacén", direccion: "Zona Industrial Los Guayos, galpón 12", contacto: "Luis", telefono: "0241-5550000" };
+  const datos = { nombre: "Ana", redes: {}, razones: [
+    { razon: "Ana C.A.", rif: "J-12345678-9", sucursales: [s1, s2] },
+    { razon: "Nueva C.A.", rif: "J-99999999-9", sucursales: [{ ...s1, id: "s3s3s3s3" }] }, // no está en Odoo
+  ] };
+  // Dos fichas (Valencia y Caracas) con el mismo RIF; en Valencia ya hay una dirección igual a la del almacén.
+  const padres = [
+    { id: 100, company: 9, clave: "J123456789", pais: 238, hijos: [{ id: 501, name: "Ana - Los Guayos", street: "Zona Industrial los guayos galpon 12", active: true }] },
+    { id: 200, company: 10, clave: "J123456789", pais: 238, hijos: [] },
+  ];
+  let plan = planearSincronizacion(datos, padres, []);
+  assert.deepStrictEqual(plan.sinOdoo, ["Nueva C.A."]); // no se crea la empresa sola
+  assert.deepStrictEqual(plan.ops.map((o) => [o.tipo, o.sucursalId, o.company, o.partnerId || o.padre]), [
+    ["crear", "s1s1s1s1", 9, 100], ["crear", "s1s1s1s1", 10, 200],
+    ["adoptar", "s2s2s2s2", 9, 501], // misma dirección: se adopta, no se duplica
+    ["crear", "s2s2s2s2", 10, 200],
+  ]);
+  assert.strictEqual(plan.ops[0].vals.name, "Ana C.A. - Principal");
+  assert.strictEqual(plan.ops[0].vals.partner_latitude, 10.2);
+  assert.match(valsDireccion("X", { ...s1, contacto: "<b>Ana</b>" }).comment, /&lt;b&gt;Ana/); // el contacto va escapado
+  // Ya sincronizado: nada que hacer
+  const enlaces = [
+    { sucursalId: "s1s1s1s1", company: 9, partnerId: 601, firma: firmaVals(valsDireccion("Ana C.A.", s1)) },
+    { sucursalId: "s1s1s1s1", company: 10, partnerId: 602, firma: firmaVals(valsDireccion("Ana C.A.", s1)) },
+    { sucursalId: "s2s2s2s2", company: 9, partnerId: 501, firma: firmaVals(valsDireccion("Ana C.A.", s2)) },
+    { sucursalId: "s2s2s2s2", company: 10, partnerId: 603, firma: firmaVals(valsDireccion("Ana C.A.", s2)) },
+  ];
+  const padres2 = [
+    { ...padres[0], hijos: [{ id: 501, name: "a", street: "x", active: true }, { id: 601, name: "b", street: "y", active: true }] },
+    { ...padres[1], hijos: [{ id: 602, name: "c", street: "z", active: true }, { id: 603, name: "d", street: "w", active: false }] },
+  ];
+  plan = planearSincronizacion(datos, padres2, enlaces);
+  assert.deepStrictEqual(plan.ops, []); // 603 la archivó el vendedor: no se revive
+  // Cambia el teléfono de la principal y quitan el almacén
+  const datos2 = JSON.parse(JSON.stringify(datos));
+  datos2.razones[0].sucursales = [{ ...s1, telefono: "0414-0000000" }];
+  plan = planearSincronizacion(datos2, padres2, enlaces);
+  assert.deepStrictEqual(plan.ops.map((o) => [o.tipo, o.partnerId]), [["actualizar", 601], ["actualizar", 602], ["archivar", 501]]);
+  // Una sucursal sin dirección todavía no se manda a Odoo
+  const datos3 = JSON.parse(JSON.stringify(datos));
+  datos3.razones[0].sucursales = [{ ...s2, id: "s4s4s4s4", direccion: "" }];
+  assert.ok(planearSincronizacion(datos3, padres, []).ops.every((o) => o.tipo !== "crear"));
+}
+
 console.log("tienda-web: todo bien");
