@@ -485,6 +485,20 @@ export function cruzarBanco(
     );
     if (!rivales.length) tomar(m, candidatos[0], "parcial");
   }
+  // Misma fecha y monto casi igual: Odoo lo registro con unos centimos o bolivares de diferencia y otra referencia
+  // (al empezar no dejaba cambiar la tasa; Valencia 06/04: banco 861.300,00 y BANES/2026/00003 TRANSF/00002 - Send
+  // 861.300,29). Se propone para revisar (alli se ofrece corregir el monto en Odoo) solo si no hay duda: un unico
+  // cobro/pago libre en +-DIAS_FECHA dias a menos de MAX(2, 0,1 %) y ningun otro movimiento sin amarrar que lo quiera.
+  const cerca = (a: number, b: number) => a > 0 === b > 0 && Math.abs(Math.abs(a) - Math.abs(b)) <= Math.max(2, Math.abs(b) * 0.001);
+  const aunSinPago = todos.filter((m) => !pagoDe.has(m.id) && !esComision(m));
+  for (const m of aunSinPago) {
+    const candidatos = pagos.filter((p) => !usados.has(p.id) && cerca(p.monto, m.monto) && dias(p.fecha, m.fecha) <= DIAS_FECHA);
+    if (candidatos.length !== 1) continue;
+    const rivales = aunSinPago.filter(
+      (o) => o.id !== m.id && !pagoDe.has(o.id) && cerca(candidatos[0].monto, o.monto) && dias(o.fecha, candidatos[0].fecha) <= DIAS_FECHA,
+    );
+    if (!rivales.length) tomar(m, candidatos[0], "parcial");
+  }
 
   const movDePago = new Map([...pagoDe].map(([movId, { pago }]) => [pago.id, movId]));
   const porMovId = new Map(entradas.map((m) => [m.id, m] as const));
