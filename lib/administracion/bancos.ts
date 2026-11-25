@@ -208,6 +208,10 @@ async function ensureTablas() {
   if (!colsCierre.length) {
     await db.execute("ALTER TABLE banco_cierres ADD COLUMN saldo_manual TINYINT NOT NULL DEFAULT 0, ADD COLUMN saldo_sugerido DECIMAL(20,2) NULL");
   }
+  // Dias sin estado de cuenta que quien cerro confirmo sin movimientos (el estado de cuenta empieza el primer dia con
+  // movimientos: Bancamiga BS may-2026 del 08/05; llegaron despues).
+  const { rows: colsDias } = await query("SHOW COLUMNS FROM banco_cierres LIKE 'dias_sin_movimientos'");
+  if (!colsDias.length) await db.execute("ALTER TABLE banco_cierres ADD COLUMN dias_sin_movimientos VARCHAR(400) NOT NULL DEFAULT ''");
   // detalle llego despues (la tabla pudo crearse sin ella).
   const { rows: colsConc } = await query("SHOW COLUMNS FROM banco_conciliaciones LIKE 'detalle'");
   if (!colsConc.length) await db.execute("ALTER TABLE banco_conciliaciones ADD COLUMN detalle VARCHAR(255) NOT NULL DEFAULT ''");
@@ -2428,7 +2432,7 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
       [cuenta.id, fin, inicio],
     ),
     query(
-      `SELECT sin_movimientos, saldo_banco, saldo_libros, saldo_manual, saldo_sugerido, cerrado_por, cerrado_at, reabierto_por, reabierto_at, motivo_reapertura
+      `SELECT sin_movimientos, saldo_banco, saldo_libros, saldo_manual, saldo_sugerido, dias_sin_movimientos, cerrado_por, cerrado_at, reabierto_por, reabierto_at, motivo_reapertura
          FROM banco_cierres WHERE journal_id = ? AND mes = ? ORDER BY id DESC`,
       [cuenta.id, mes],
     ),
@@ -2487,6 +2491,8 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
     /** El saldo del banco se escribio a mano (no era el que calculaba el panel, `saldoSugerido`). */
     saldoManual: !!r.saldo_manual,
     saldoSugerido: r.saldo_sugerido === null ? null : Number(r.saldo_sugerido),
+    /** Dias sin estado de cuenta que se confirmaron sin movimientos al cerrar. */
+    diasSinMovimientos: String(r.dias_sin_movimientos || "").split(",").filter(Boolean),
     cerradoPor: String(r.cerrado_por),
     cerradoEl: new Date(r.cerrado_at).toISOString(),
     reabiertoPor: r.reabierto_por ? String(r.reabierto_por) : null,
@@ -2673,12 +2679,16 @@ function revisarCierre(
   c: CuadreMes,
   sinMovimientos: boolean,
   saldoEscrito: number | null,
+  /** Quien cierra confirma que los dias sin estado de cuenta no tuvieron movimientos. */
+  diasConfirmados = false,
 ): { saldo: number; manual: boolean; sugerido: number | null } | { error: string } {
   if (!c.terminado) return { error: "El mes todavía no termina" };
   if (c.cierre) return { error: "Ese mes ya está cerrado" };
   if (sinMovimientos && c.movimientos) return { error: `El estado de cuenta tiene ${c.movimientos} movimientos en el mes` };
   if (!sinMovimientos && !c.movimientos) return { error: "No hay movimientos del mes: sube el estado de cuenta o ciérralo sin movimientos" };
-  if (!sinMovimientos && c.diasSinEstado.length) return { error: `Falta el estado de cuenta de ${c.diasSinEstado.length} día(s) del mes` };
+  if (!sinMovimientos && c.diasSinEstado.length && !diasConfirmados) {
+    return { error: `Falta el estado de cuenta de ${c.diasSinEstado.length} día(s) del mes: súbelo o confirma que esos días no hubo movimientos` };
+  }
   if (!sinMovimientos && c.estado && !c.estado.cuadra) return { error: "Los saldos del estado de cuenta no cuadran: le falta algún movimiento" };
   // Con movimientos, el saldo escrito solo cuando el estado de cuenta no lo trae. Sin movimientos manda el escrito: el
   // saldo que encontro el panel (cierre anterior o ultimo estado de cuenta) puede no ser el del banco (Caracas, nov-2026).
@@ -2701,15 +2711,17 @@ function revisarCierre(
 export async function cerrarMes(
   cuenta: CuentaBanco,
   mes: string,
-  opciones: { sinMovimientos: boolean; saldo: number | null },
+  opciones: { sinMovimientos: boolean; saldo: number | null; diasSinMovimientos?: boolean },
   email: string,
 ): Promise<{ error: string } | { ok: true }> {
   const c = await cuadreMes(cuenta, mes);
-  const r = revisarCierre(c, opciones.sinMovimientos, opciones.saldo);
+  const r = revisarCierre(c, opciones.sinMovimientos, opciones.saldo, !!opciones.diasSinMovimientos);
   if ("error" in r) return r;
+  // Queda anotado que dias se dieron por sin movimientos (y quien, en cerrado_por).
+  const dias = opciones.sinMovimientos ? "" : c.diasSinEstado.join(",").slice(0, 400);
   await query(
-    "INSERT INTO banco_cierres (journal_id, company_id, mes, sin_movimientos, saldo_banco, saldo_libros, saldo_manual, saldo_sugerido, cerrado_por) VALUES (?,?,?,?,?,?,?,?,?)",
-    [cuenta.id, cuenta.sede, mes, opciones.sinMovimientos ? 1 : 0, r.saldo, c.saldoLibros, r.manual ? 1 : 0, r.sugerido, email],
+    "INSERT INTO banco_cierres (journal_id, company_id, mes, sin_movimientos, saldo_banco, saldo_libros, saldo_manual, saldo_sugerido, dias_sin_movimientos, cerrado_por) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    [cuenta.id, cuenta.sede, mes, opciones.sinMovimientos ? 1 : 0, r.saldo, c.saldoLibros, r.manual ? 1 : 0, r.sugerido, dias, email],
   );
   return { ok: true };
 }

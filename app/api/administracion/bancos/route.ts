@@ -201,7 +201,8 @@ export async function POST(request: NextRequest) {
 //        y la borra (para rehacerla aqui); sus asientos de diferencial se revierten o se borran del todo
 //   {cuenta, revertir: st_line_id, motivo} — revertir una conciliacion que hizo el panel (el motivo queda guardado)
 //   {cuenta, cerrar: "YYYY-MM"[, sin_movimientos: true][, saldo]} — cerrar el mes si cuadra con Odoo (saldo = el
-//        del banco escrito a mano, solo si el panel no lo sabe)
+//        del banco escrito a mano, solo si el panel no lo sabe; dias_sin_movimientos: true = los dias sin estado de
+//        cuenta no tuvieron movimientos, quedan anotados en el cierre)
 //   {cuenta, reabrir: "YYYY-MM", motivo} — reabrir un mes cerrado (solo SuperAdmin)
 //   {cuenta, conciliar: huella, ...}      — aprobado: crea la linea de extracto en Odoo y la concilia contra
 //        pagos: [ids]           uno o varios cobros/pagos de Odoo (varios = suman justo el movimiento)
@@ -254,7 +255,12 @@ export async function PATCH(request: NextRequest) {
       }
       const saldo = b?.saldo === undefined || b?.saldo === null || b?.saldo === "" ? null : Number(b.saldo);
       if (saldo !== null && !Number.isFinite(saldo)) return NextResponse.json({ error: "Saldo inválido" }, { status: 400 });
-      const r = await cerrarMes(cuenta, mes, { sinMovimientos: b?.sin_movimientos === true, saldo }, email);
+      const r = await cerrarMes(
+        cuenta,
+        mes,
+        { sinMovimientos: b?.sin_movimientos === true, saldo, diasSinMovimientos: b?.dias_sin_movimientos === true },
+        email,
+      );
       if ("error" in r) return NextResponse.json({ error: r.error }, { status: 409 });
       return NextResponse.json({ success: true });
     } catch (e: any) {

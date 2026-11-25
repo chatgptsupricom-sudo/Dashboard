@@ -18,6 +18,18 @@ const nombreMes = (mes: string) =>
 type Libros = Awaited<ReturnType<typeof librosDelMes>>;
 const ODOO_URL = (process.env.NEXT_PUBLIC_ODOO_URL || "https://supricom2.odoo.com").replace(/\/$/, "");
 const finDeMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).toISOString().slice(0, 10);
+/** Dias seguidos juntos: ["2026-05-01".."2026-05-07", "2026-05-20"] -> "01/05 al 07/05, 20/05". */
+const tramos = (dias: string[]) => {
+  const corto = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  const grupos: string[][] = [];
+  for (const d of [...dias].sort()) {
+    const ultimo = grupos[grupos.length - 1];
+    const previo = ultimo?.[ultimo.length - 1];
+    if (previo && Date.parse(d) - Date.parse(previo) === 86400000) ultimo.push(d);
+    else grupos.push([d]);
+  }
+  return grupos.map((g) => (g.length === 1 ? corto(g[0]) : `${corto(g[0])} al ${corto(g[g.length - 1])}`)).join(", ");
+};
 
 /**
  * Cierre del mes de una cuenta de banco (al final de la pestaña Conciliar):
@@ -25,7 +37,10 @@ const finDeMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice
  * falta para cerrar y, si cuadra, «Cerrar el mes» (desde ahi el servidor no deja
  * conciliar, revertir, amarrar ni subir/quitar movimientos de ese mes; el
  * SuperAdmin lo reabre con motivo). Un mes sin estado de cuenta pregunta si la
- * cuenta tuvo movimientos: si no, se cierra con el saldo con que arranco.
+ * cuenta tuvo movimientos: si no, se cierra con el saldo con que arranco. Los dias
+ * que el estado de cuenta no cubre se pueden confirmar sin movimientos (quedan
+ * anotados en el cierre). `incrustado`: va dentro de la tarjeta de avance, sin
+ * tarjeta propia.
  */
 export function CierreMesBanco({
   cuenta,
@@ -34,7 +49,9 @@ export function CierreMesBanco({
   version,
   subirEstado,
   alCambiar,
+  incrustado = false,
 }: {
+  incrustado?: boolean;
   cuenta: number;
   mes: string;
   moneda: string;
@@ -53,6 +70,8 @@ export function CierreMesBanco({
   /** null = no respondio; true/false = la cuenta tuvo o no movimientos en el mes. */
   const [tuvo, setTuvo] = useState<boolean | null>(null);
   const [saldoEscrito, setSaldoEscrito] = useState("");
+  /** Quien cierra confirma que los dias sin estado de cuenta no tuvieron movimientos. */
+  const [diasConfirmados, setDiasConfirmados] = useState(false);
   /** Que forma el saldo en libros de Odoo (se lee al abrirlo). */
   const [libros, setLibros] = useState<Libros | null>(null);
   const [verLibros, setVerLibros] = useState(false);
@@ -76,6 +95,7 @@ export function CierreMesBanco({
   useEffect(() => {
     setTuvo(null);
     setSaldoEscrito("");
+    setDiasConfirmados(false);
     setVerLibros(false);
     setLibros(null);
   }, [cuenta, mes]);
@@ -109,12 +129,17 @@ export function CierreMesBanco({
   };
 
   if (!c) {
-    return (
+    const leyendo = (
+      <p className="text-sm text-gray-500 flex items-center gap-2">
+        {cargando ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        {error || "Leyendo el saldo en libros de Odoo…"}
+      </p>
+    );
+    return incrustado ? (
+      <div className="border-t pt-3">{leyendo}</div>
+    ) : (
       <Card>
-        <CardContent className="p-4 text-sm text-gray-500 flex items-center gap-2">
-          {cargando ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {error || "Leyendo el saldo en libros de Odoo…"}
-        </CardContent>
+        <CardContent className="p-4">{leyendo}</CardContent>
       </Card>
     );
   }
@@ -145,8 +170,12 @@ export function CierreMesBanco({
     : [
         { ok: c.terminado, texto: c.terminado ? "El mes terminó" : "El mes todavía no termina" },
         {
-          ok: c.diasSinEstado.length === 0,
-          texto: c.diasSinEstado.length ? `Falta el estado de cuenta de ${c.diasSinEstado.length} día(s)` : "El estado de cuenta cubre todo el mes",
+          ok: c.diasSinEstado.length === 0 || diasConfirmados,
+          texto: !c.diasSinEstado.length
+            ? "El estado de cuenta cubre todo el mes"
+            : diasConfirmados
+              ? `Sin movimientos del ${tramos(c.diasSinEstado)} (confirmado)`
+              : `Falta el estado de cuenta del ${tramos(c.diasSinEstado)}`,
         },
         {
           ok: !c.estado || c.estado.cuadra,
@@ -178,7 +207,12 @@ export function CierreMesBanco({
     ) {
       return;
     }
-    patch({ cerrar: mes, sin_movimientos: sinMovimientos, saldo: valeEscrito !== null && editable ? valeEscrito : undefined });
+    patch({
+      cerrar: mes,
+      sin_movimientos: sinMovimientos,
+      saldo: valeEscrito !== null && editable ? valeEscrito : undefined,
+      dias_sin_movimientos: !sinMovimientos && c.diasSinEstado.length > 0 && diasConfirmados,
+    });
   };
   const reabrir = () => {
     const motivo = prompt(`¿Por qué se reabre ${nombreMes(mes)}? (queda guardado)`)?.trim();
@@ -187,9 +221,8 @@ export function CierreMesBanco({
     patch({ reabrir: mes, motivo });
   };
 
-  return (
-    <Card className={c.cierre ? "border-emerald-300" : ""}>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-3">
+  const cabecera = (
+    <>
         <CardTitle className="text-base flex items-center gap-2">
           {c.cierre ? <Lock className="h-4 w-4 text-emerald-600" /> : <LockOpen className="h-4 w-4 text-gray-400" />}
           Cierre de {nombreMes(mes)}
@@ -208,8 +241,10 @@ export function CierreMesBanco({
         ) : (
           <Badge variant="outline">Abierto</Badge>
         )}
-      </CardHeader>
-      <CardContent className="space-y-4">
+    </>
+  );
+  const cuerpo = (
+    <>
         {error && <Aviso tono="rojo">{error}</Aviso>}
 
         {preguntar ? (
@@ -373,16 +408,40 @@ export function CierreMesBanco({
               </Aviso>
             )}
 
+            {c.cierre && c.cierre.diasSinMovimientos.length > 0 && (
+              <p className="text-xs text-gray-500">
+                {c.cierre.cerradoPor} confirmó al cerrar que no hubo movimientos del {tramos(c.cierre.diasSinMovimientos)} (el estado de cuenta no
+                cubre esos días).
+              </p>
+            )}
+
             {!c.cierre && (
               <div className="flex flex-wrap items-end justify-between gap-3">
-                <ul className="space-y-1 text-sm">
-                  {pasos.map((p) => (
-                    <li key={p.texto} className="flex items-center gap-2">
-                      {p.ok ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-500" />}
-                      <span className={p.ok ? "" : "text-red-700"}>{p.texto}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="space-y-2">
+                  <ul className="space-y-1 text-sm">
+                    {pasos.map((p) => (
+                      <li key={p.texto} className="flex items-center gap-2">
+                        {p.ok ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-500" />}
+                        <span className={p.ok ? "" : "text-red-700"}>{p.texto}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {!sinMovimientos && c.diasSinEstado.length > 0 && (
+                    // El estado de cuenta suele empezar el primer dia con movimientos (Bancamiga BS may-2026 arranca el 08/05).
+                    <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm max-w-xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4"
+                        checked={diasConfirmados}
+                        onChange={(e) => setDiasConfirmados(e.target.checked)}
+                      />
+                      <span>
+                        Confirmo que la cuenta no tuvo movimientos del {tramos(c.diasSinEstado)}. Si los tuvo, sube el estado de cuenta de esos días.
+                        <span className="block text-xs text-gray-500">Queda anotado en el cierre con tu nombre.</span>
+                      </span>
+                    </label>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   {sinMovimientos && (
                     <Button size="sm" variant="ghost" onClick={() => setTuvo(null)}>
@@ -432,7 +491,17 @@ export function CierreMesBanco({
             </ul>
           </details>
         )}
-      </CardContent>
+    </>
+  );
+  return incrustado ? (
+    <div className="border-t pt-4 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">{cabecera}</div>
+      {cuerpo}
+    </div>
+  ) : (
+    <Card className={c.cierre ? "border-emerald-300" : ""}>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-3">{cabecera}</CardHeader>
+      <CardContent className="space-y-4">{cuerpo}</CardContent>
     </Card>
   );
 }

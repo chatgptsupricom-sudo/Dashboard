@@ -981,6 +981,17 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                           </span>
                         ))}
                       </div>
+                      {mes !== RANGO && cuenta && (
+                        <CierreMesBanco
+                          incrustado
+                          cuenta={cuenta}
+                          mes={mes}
+                          moneda={moneda}
+                          version={datos}
+                          subirEstado={botonSubirEstado("default")}
+                          alCambiar={cargar}
+                        />
+                      )}
                     </CardContent>
                   </Card>
 
@@ -1259,7 +1270,8 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                   </Card>
                 </div>
               )}
-            {!cxc && pestana === "conciliar" && mes !== RANGO && cuenta && (
+            {/* Sin estado de cuenta en el periodo: el cierre va aparte (con estado de cuenta va dentro de la tarjeta de avance). */}
+            {!cxc && pestana === "conciliar" && datos.archivos.length === 0 && mes !== RANGO && cuenta && (
               <CierreMesBanco
                 cuenta={cuenta}
                 mes={mes}
