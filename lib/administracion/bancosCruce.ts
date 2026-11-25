@@ -782,7 +782,7 @@ export function distanciaMonto(odoo: number, banco: number): number | null {
  * monto mal cargado (`distanciaMonto`), mismo dia o la misma referencia hasta 3
  * dias. Primero los pares mas parecidos.
  */
-export function emparejarViejas(lineas: LineaOdooVieja[], movs: MovPanel[]): Map<number, MovPanel> {
+export function emparejarViejas<M extends MovPanel>(lineas: LineaOdooVieja[], movs: M[]): Map<number, M> {
   const pares: { linea: number; mov: number; puntos: number }[] = [];
   lineas.forEach((l, i) => {
     movs.forEach((m, j) => {
@@ -797,7 +797,7 @@ export function emparejarViejas(lineas: LineaOdooVieja[], movs: MovPanel[]): Map
   pares.sort((a, b) => a.puntos - b.puntos);
   const usadas = new Set<number>();
   const tomados = new Set<number>();
-  const res = new Map<number, MovPanel>();
+  const res = new Map<number, M>();
   for (const p of pares) {
     if (usadas.has(p.linea) || tomados.has(p.mov)) continue;
     usadas.add(p.linea);

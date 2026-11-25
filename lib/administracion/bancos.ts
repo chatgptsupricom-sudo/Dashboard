@@ -2113,7 +2113,8 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
   );
   const conciliadoEnOdoo = new Map<
     string,
-    { stLineId: number; asientoId: number; asiento: string; detalle: string; conciliada: boolean; por: string; el: string }
+    /** dePanel = la creo el panel (se puede revertir desde aqui); false = ya estaba en Odoo (creada a mano o importada). */
+    { stLineId: number; asientoId: number; asiento: string; detalle: string; conciliada: boolean; por: string; el: string; dePanel: boolean }
   >(
     filasConc
       .filter((r: any) => vivas.has(Number(r.st_line_id)))
@@ -2125,6 +2126,7 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
           ...vivas.get(Number(r.st_line_id))!,
           por: r.aprobado_por,
           el: new Date(r.created_at).toISOString(),
+          dePanel: true,
         },
       ]),
   );
@@ -2169,6 +2171,39 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
         sugerida: m.pago ? null : await sugeridaPara(cuenta, m).catch(() => null),
       })),
   );
+  // Movimientos que ya tienen su linea en el extracto de Odoo sin que la creara el panel (Caracas concilia a mano en
+  // Odoo: REGIONSBANK oct-2026, 118 lineas, todas conciliadas): el movimiento ya esta alla. Se emparejan por fecha y
+  // monto con la regla de «Lineas viejas» (`emparejarViejas`) y salen como conciliados (o «falta conciliar alla»).
+  const sinLinea = deLaSemana.filter((m) => !m.odoo);
+  if (sinLinea.length) {
+    const lineas =
+      (await callOdooRPCEstricto<any[]>(
+        "account.bank.statement.line",
+        "search_read",
+        [[["journal_id", "=", cuenta.id], ["date", ">=", sumarDias(inicio, -3)], ["date", "<=", sumarDias(fin, 3)], ["unique_import_id", "not ilike", "panel-"]]],
+        { fields: ["date", "amount", "payment_ref", "is_reconciled", "move_id"], context: { allowed_company_ids: [cuenta.sede] } },
+      )) || [];
+    const porId = new Map(lineas.map((l) => [l.id, l]));
+    const pares = emparejarViejas(
+      lineas.map((l) => ({ id: l.id, fecha: String(l.date), monto: Number(l.amount) || 0, ref: String(l.payment_ref || "") })),
+      sinLinea.map((m) => ({ id: m.id, fecha: m.fecha, monto: m.monto, referencia: m.referencia })),
+    );
+    const lineaDeMov = new Map([...pares].map(([lineaId, mov]) => [mov.id, porId.get(lineaId)]));
+    for (const m of sinLinea) {
+      const l = lineaDeMov.get(m.id);
+      if (!l) continue;
+      m.odoo = {
+        stLineId: l.id,
+        asientoId: Array.isArray(l.move_id) ? Number(l.move_id[0]) : 0,
+        asiento: Array.isArray(l.move_id) ? String(l.move_id[1]) : "",
+        detalle: "Ya estaba en Odoo",
+        conciliada: !!l.is_reconciled,
+        por: "",
+        el: "",
+        dePanel: false,
+      };
+    }
+  }
   const pagosTomados = new Set(cruce.movimientos.flatMap((m) => [m.pago, ...m.otrosPagos]).filter((p) => p).map((p) => p!.id));
   for (const id of cruce.pagosConfirmadosApi) pagosTomados.add(id);
   return {
@@ -2179,7 +2214,8 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
     /** Entradas y salidas del periodo; `odoo` = ya pasado a Odoo desde el panel (con o sin conciliar). */
     movimientos: deLaSemana,
     comprobantes: cruce.comprobantes.filter((c) => enSemana(c.fecha)),
-    pagosSinMovimiento: cruce.pagosSinMovimiento.filter((p) => enSemana(p.fecha)),
+    // Un cobro/pago ya conciliado en Odoo esta en el banco (lo concilio una linea del extracto): no es «en Odoo y no en el banco».
+    pagosSinMovimiento: cruce.pagosSinMovimiento.filter((p) => enSemana(p.fecha) && !p.conciliado),
     /** Cobros y pagos de Odoo de la ventana que no tomo ningun movimiento: para amarrar a mano. */
     pagosLibres: pagos.filter((p) => !pagosTomados.has(p.id)),
     /** Dias del periodo que no cubre ningun estado de cuenta. */
@@ -2366,9 +2402,10 @@ function revisarCierre(c: CuadreMes, sinMovimientos: boolean, saldoEscrito: numb
   if (!sinMovimientos && !c.movimientos) return { error: "No hay movimientos del mes: sube el estado de cuenta o ciérralo sin movimientos" };
   if (!sinMovimientos && c.diasSinEstado.length) return { error: `Falta el estado de cuenta de ${c.diasSinEstado.length} día(s) del mes` };
   if (!sinMovimientos && c.estado && !c.estado.cuadra) return { error: "Los saldos del estado de cuenta no cuadran: le falta algún movimiento" };
-  // El saldo escrito a mano solo cuando el panel no lo sabe (archivo sin columna de saldo, o sin movimientos y sin mes anterior).
+  // Con movimientos, el saldo escrito solo cuando el estado de cuenta no lo trae. Sin movimientos manda el escrito: el
+  // saldo que encontro el panel (cierre anterior o ultimo estado de cuenta) puede no ser el del banco (Caracas, nov-2026).
   const calculado = sinMovimientos ? (c.anterior?.saldo ?? null) : (c.estado?.final ?? null);
-  const saldo = calculado ?? saldoEscrito;
+  const saldo = sinMovimientos ? (saldoEscrito ?? calculado) : (calculado ?? saldoEscrito);
   if (saldo === null || !Number.isFinite(saldo)) return { error: "Escribe el saldo final del banco del mes" };
   if (c.lineasSinConciliar) return { error: `Odoo tiene ${c.lineasSinConciliar} línea(s) del banco del mes sin conciliar` };
   if (Math.abs(saldo - c.saldoLibros) >= 0.01) {
