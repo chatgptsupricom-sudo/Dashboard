@@ -95,7 +95,11 @@
     const CLAVE_SESION_CLIENTE = "supricom-cliente-token";
     let haySesionCliente = false;
     try { haySesionCliente = Boolean(localStorage.getItem(CLAVE_SESION_CLIENTE) || sessionStorage.getItem(CLAVE_SESION_CLIENTE)); } catch (e) { /* sin almacenamiento */ }
-    if (haySesionCliente) for (const a of $$("[data-cuenta-entrar]")) a.textContent = "Mi cuenta";
+    if (haySesionCliente) {
+        for (const a of $$("[data-cuenta-entrar]")) a.textContent = "Mi cuenta";
+        // Ya es cliente: la cabecera no le ofrece «Solicitar cuenta».
+        for (const a of $$(".cabecera-cta")) a.hidden = true;
+    }
     // Categorías, marcas y banners llevan a la tienda con ese filtro puesto.
     const urlTienda = (filtros = {}) => {
         const q = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v)).toString();

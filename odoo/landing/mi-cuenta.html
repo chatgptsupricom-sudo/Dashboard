@@ -21,10 +21,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125f">
-<link rel="stylesheet" href="tienda.css?v=20261125f">
-<link rel="stylesheet" href="cuenta.css?v=20261125f">
-<link rel="stylesheet" href="mi-cuenta.css?v=20261125f">
+<link rel="stylesheet" href="estilos.css?v=20261125h">
+<link rel="stylesheet" href="tienda.css?v=20261125h">
+<link rel="stylesheet" href="cuenta.css?v=20261125h">
+<link rel="stylesheet" href="mi-cuenta.css?v=20261125h">
 </head>
 <body data-pagina="mi-cuenta">
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -177,96 +177,130 @@
         </div>
     </section>
 
-    <!-- Con sesión: resumen, pedidos y facturas -->
+    <!-- Con sesión: menú lateral con la empresa y, a la derecha, resumen, pedidos y facturas -->
     <section class="panel-cliente" hidden>
-        <div class="panel-cabeza">
-            <div class="contenedor">
-                <nav class="migas" aria-label="Estás en">
-                    <a href="./" data-ir="./">Inicio</a>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                    <span aria-current="page">Mi cuenta</span>
-                </nav>
-                <div class="panel-cabeza-fila">
-                    <div class="panel-quien">
-                        <span class="panel-avatar" aria-hidden="true"></span>
+        <div class="contenedor panel-marco">
+            <aside class="panel-lado" aria-label="Tu cuenta">
+                <div class="panel-perfil">
+                    <span class="panel-avatar" aria-hidden="true"></span>
+                    <div class="panel-perfil-texto">
+                        <p class="panel-empresa"></p>
+                        <p class="panel-datos"></p>
+                    </div>
+                </div>
+                <div class="panel-nav" role="tablist" aria-orientation="vertical" aria-label="Secciones de tu cuenta">
+                    <button type="button" role="tab" id="p-resumen" data-vista="resumen" aria-controls="vista-resumen" aria-selected="true">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>Resumen
+                    </button>
+                    <button type="button" role="tab" id="p-pedidos" data-vista="pedidos" aria-controls="vista-pedidos" aria-selected="false" tabindex="-1">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>Pedidos
+                    </button>
+                    <button type="button" role="tab" id="p-facturas" data-vista="facturas" aria-controls="vista-facturas" aria-selected="false" tabindex="-1">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h7"/></svg>Facturas
+                    </button>
+                </div>
+                <div class="panel-lado-pie">
+                    <a class="panel-enlace" href="tienda.html" data-ir="tienda.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5 5.5 4h13L20 9.5M4 9.5h16v10.5H4zM9 20v-5h6v5"/></svg>Ir a la tienda</a>
+                    <button type="button" class="panel-enlace panel-salir"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>Cerrar sesión</button>
+                </div>
+            </aside>
+
+            <div class="panel-principal">
+                <div class="panel-aviso" role="alert" hidden></div>
+
+                <!-- Resumen -->
+                <div id="vista-resumen" class="panel-vista" role="tabpanel" aria-labelledby="p-resumen">
+                    <header class="vista-cabeza">
                         <div>
-                            <p class="panel-empresa"></p>
-                            <h1 class="panel-saludo"></h1>
-                            <p class="panel-datos"></p>
+                            <h1 class="vista-titulo panel-saludo">Tu cuenta</h1>
+                            <p class="vista-nota resumen-nota">Lo que debes, tus pedidos en curso y lo último que pediste.</p>
+                        </div>
+                    </header>
+                    <div class="tarjetas-resumen"></div>
+                    <div class="tabla-caja">
+                        <div class="tabla-barra">
+                            <h2 class="tabla-titulo">Últimos pedidos</h2>
+                            <button type="button" class="enlace-chico enlace-acento" data-ir-vista="pedidos">Ver todos los pedidos</button>
+                        </div>
+                        <div class="tabla tabla-pedidos" role="table" aria-label="Últimos pedidos">
+                            <div class="tabla-cabeza" role="row"><span role="columnheader">Pedido</span><span role="columnheader">Fecha</span><span role="columnheader">Sede</span><span role="columnheader">Estado</span><span role="columnheader" class="a-la-derecha">Total</span><span aria-hidden="true"></span></div>
+                            <div class="tabla-cuerpo resumen-pedidos" role="rowgroup"></div>
                         </div>
                     </div>
-                    <div class="panel-acciones">
-                        <a class="boton boton-tinta" href="tienda.html" data-ir="tienda.html">Ir a la tienda</a>
-                        <button type="button" class="boton boton-claro panel-salir">Cerrar sesión</button>
+                </div>
+
+                <!-- Pedidos -->
+                <div id="vista-pedidos" class="panel-vista" role="tabpanel" aria-labelledby="p-pedidos" hidden>
+                    <header class="vista-cabeza">
+                        <div>
+                            <h1 class="vista-titulo">Pedidos</h1>
+                            <p class="vista-nota panel-conteo" role="status"></p>
+                        </div>
+                    </header>
+                    <div class="tabla-caja">
+                        <form class="tabla-barra panel-filtros" data-filtros="pedidos" role="search">
+                            <div class="tienda-buscar">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                                <label class="solo-lectores" for="f-pedido">Buscar pedido</label>
+                                <input id="f-pedido" name="q" type="search" placeholder="Número o tu referencia" autocomplete="off">
+                            </div>
+                            <div class="filtros-derecha">
+                                <label class="solo-lectores" for="f-pedido-sede">Sede</label>
+                                <select id="f-pedido-sede" name="sede" class="selector"><option value="">Todas las sedes</option></select>
+                                <label class="solo-lectores" for="f-pedido-etapa">Estado</label>
+                                <select id="f-pedido-etapa" name="etapa" class="selector">
+                                    <option value="">Todos los estados</option>
+                                    <option value="abiertos">En curso</option>
+                                    <option value="cotizacion">Cotizaciones</option>
+                                    <option value="facturado">Facturados</option>
+                                    <option value="anulado">Anulados</option>
+                                </select>
+                            </div>
+                        </form>
+                        <div class="tabla tabla-pedidos" role="table" aria-label="Pedidos">
+                            <div class="tabla-cabeza" role="row"><span role="columnheader">Pedido</span><span role="columnheader">Fecha</span><span role="columnheader">Sede</span><span role="columnheader">Estado</span><span role="columnheader" class="a-la-derecha">Total</span><span aria-hidden="true"></span></div>
+                            <div class="tabla-cuerpo pedidos-lista" role="rowgroup"></div>
+                        </div>
+                        <div class="panel-paginas" data-paginas="pedidos"></div>
                     </div>
                 </div>
-                <div class="estantes-pestanas panel-pestanas" role="tablist" aria-label="Mi cuenta">
-                    <button type="button" role="tab" id="p-resumen" data-vista="resumen" aria-controls="vista-resumen" aria-selected="true">Resumen</button>
-                    <button type="button" role="tab" id="p-pedidos" data-vista="pedidos" aria-controls="vista-pedidos" aria-selected="false" tabindex="-1">Pedidos</button>
-                    <button type="button" role="tab" id="p-facturas" data-vista="facturas" aria-controls="vista-facturas" aria-selected="false" tabindex="-1">Facturas</button>
+
+                <!-- Facturas -->
+                <div id="vista-facturas" class="panel-vista" role="tabpanel" aria-labelledby="p-facturas" hidden>
+                    <header class="vista-cabeza">
+                        <div>
+                            <h1 class="vista-titulo">Facturas</h1>
+                            <p class="vista-nota panel-conteo" role="status"></p>
+                        </div>
+                    </header>
+                    <div class="tarjetas-resumen facturas-cuenta"></div>
+                    <div class="tabla-caja">
+                        <form class="tabla-barra panel-filtros" data-filtros="facturas" role="search">
+                            <div class="tienda-buscar">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                                <label class="solo-lectores" for="f-factura">Buscar factura</label>
+                                <input id="f-factura" name="q" type="search" placeholder="Número de factura o pedido" autocomplete="off">
+                            </div>
+                            <div class="filtros-derecha">
+                                <label class="solo-lectores" for="f-factura-sede">Sede</label>
+                                <select id="f-factura-sede" name="sede" class="selector"><option value="">Todas las sedes</option></select>
+                                <label class="solo-lectores" for="f-factura-estado">Estado</label>
+                                <select id="f-factura-estado" name="estado" class="selector">
+                                    <option value="abiertas">Por pagar</option>
+                                    <option value="vencida">Vencidas</option>
+                                    <option value="pagada">Pagadas</option>
+                                    <option value="nota">Notas de crédito</option>
+                                    <option value="">Todas</option>
+                                </select>
+                            </div>
+                        </form>
+                        <div class="tabla tabla-facturas" role="table" aria-label="Facturas">
+                            <div class="tabla-cabeza" role="row"><span role="columnheader">Factura</span><span role="columnheader">Emitida</span><span role="columnheader">Vence</span><span role="columnheader">Estado</span><span role="columnheader" class="a-la-derecha">Total</span><span role="columnheader" class="a-la-derecha">Saldo</span></div>
+                            <div class="tabla-cuerpo facturas-lista" role="rowgroup"></div>
+                        </div>
+                        <div class="panel-paginas" data-paginas="facturas"></div>
+                    </div>
                 </div>
-            </div>
-        </div>
-
-        <div class="contenedor panel-cuerpo">
-            <div class="panel-aviso" role="alert" hidden></div>
-
-            <div id="vista-resumen" class="panel-vista" role="tabpanel" aria-labelledby="p-resumen">
-                <div class="tarjetas-resumen"></div>
-                <div class="bloque">
-                    <div class="bloque-cabeza">
-                        <h2>Últimos pedidos</h2>
-                        <button type="button" class="enlace-chico enlace-acento" data-ir-vista="pedidos">Ver todos</button>
-                    </div>
-                    <div class="lista-filas resumen-pedidos"></div>
-                </div>
-            </div>
-
-            <div id="vista-pedidos" class="panel-vista" role="tabpanel" aria-labelledby="p-pedidos" hidden>
-                <form class="panel-filtros" data-filtros="pedidos" role="search">
-                    <div class="tienda-buscar">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-                        <label class="solo-lectores" for="f-pedido">Buscar pedido</label>
-                        <input id="f-pedido" name="q" type="search" placeholder="Número o tu referencia" autocomplete="off">
-                    </div>
-                    <label class="solo-lectores" for="f-pedido-sede">Sede</label>
-                    <select id="f-pedido-sede" name="sede" class="selector"><option value="">Todas las sedes</option></select>
-                    <label class="solo-lectores" for="f-pedido-etapa">Estado</label>
-                    <select id="f-pedido-etapa" name="etapa" class="selector">
-                        <option value="">Todos</option>
-                        <option value="abiertos">En curso</option>
-                        <option value="cotizacion">Cotizaciones</option>
-                        <option value="facturado">Facturados</option>
-                        <option value="anulado">Anulados</option>
-                    </select>
-                </form>
-                <p class="panel-conteo" role="status"></p>
-                <div class="lista-filas pedidos-lista"></div>
-                <div class="panel-paginas" data-paginas="pedidos"></div>
-            </div>
-
-            <div id="vista-facturas" class="panel-vista" role="tabpanel" aria-labelledby="p-facturas" hidden>
-                <div class="tarjetas-resumen facturas-cuenta"></div>
-                <form class="panel-filtros" data-filtros="facturas" role="search">
-                    <div class="tienda-buscar">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-                        <label class="solo-lectores" for="f-factura">Buscar factura</label>
-                        <input id="f-factura" name="q" type="search" placeholder="Número de factura o pedido" autocomplete="off">
-                    </div>
-                    <label class="solo-lectores" for="f-factura-sede">Sede</label>
-                    <select id="f-factura-sede" name="sede" class="selector"><option value="">Todas las sedes</option></select>
-                    <label class="solo-lectores" for="f-factura-estado">Estado</label>
-                    <select id="f-factura-estado" name="estado" class="selector">
-                        <option value="abiertas">Por pagar</option>
-                        <option value="vencida">Vencidas</option>
-                        <option value="pagada">Pagadas</option>
-                        <option value="nota">Notas de crédito</option>
-                        <option value="">Todas</option>
-                    </select>
-                </form>
-                <p class="panel-conteo" role="status"></p>
-                <div class="lista-filas facturas-lista"></div>
-                <div class="panel-paginas" data-paginas="facturas"></div>
             </div>
         </div>
     </section>
@@ -385,7 +419,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261125f"></script>
-<script src="vivo.js?v=20261125f" data-despues="app.js?v=20261125f,mi-cuenta.js?v=20261125f"></script>
+<script src="datos.js?v=20261125h"></script>
+<script src="vivo.js?v=20261125h" data-despues="app.js?v=20261125h,mi-cuenta.js?v=20261125h"></script>
 </body>
 </html>
