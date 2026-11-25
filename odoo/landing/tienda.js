@@ -224,7 +224,6 @@
         const imagen = crear("img", { src: foto(p.id), alt: "", loading: i < 8 ? "eager" : "lazy", decoding: "async" });
         const marco = crear("a", { class: "prod-foto", href: ficha(p.id), tabIndex: -1, "aria-hidden": "true" }, [imagen]);
         const pie = [crear("a", { class: "prod-ver", href: ficha(p.id), text: "Ver ficha", "aria-label": `Ver la ficha de ${p.marca} ${p.nombre}` }), botonAgregar(p)];
-        const entrar = crear("a", { class: "prod-precio-entrar", href: `${D.odoo}/web/login`, text: "Entra para verlo" });
         const lista = chipDe(p);
         const hijos = [
             marco,
@@ -234,7 +233,6 @@
                 crear("p", { class: "prod-codigo", text: p.codigo }),
                 crear("p", { class: "prod-cat", text: nombreCategoria[p.cat] || "" }),
             ]),
-            crear("p", { class: "prod-precio" }, [crear("span", { text: "Precio" }), entrar]),
             crear("div", { class: "prod-pie" }, pie),
         ];
         if (agotado(p)) hijos.unshift(crear("span", { class: "prod-chip agotado", text: "Agotado" }));
@@ -351,6 +349,7 @@
         pintados = Math.min(E.n, filtrados.length);
         grilla.classList.toggle("lista", E.vista === "lista");
         grilla.replaceChildren(...filtrados.slice(0, pintados).map(tarjeta));
+        grilla.removeAttribute("aria-busy");
         vacio.hidden = filtrados.length > 0;
         if (!filtrados.length) {
             const q = E.q.trim();

@@ -164,23 +164,17 @@
 
 .tienda-grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 18px; perspective: 1600px; }
 .prod-tienda {
-    flex: none; grid-template-rows: auto minmax(0, 1fr) auto auto;
+    flex: none; grid-template-rows: auto minmax(0, 1fr) auto;
     transform: perspective(1000px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
     transition: transform .45s var(--curva), box-shadow .4s, border-color .3s, background .35s;
 }
 .prod-tienda .prod-cat { display: none; }
-.prod-precio {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--linea);
-    color: var(--gris); font-size: 13px; font-weight: 600;
-}
-.prod-precio-entrar { color: var(--acento); font-weight: 700; text-decoration: none; }
-.prod-precio-entrar:hover { text-decoration: underline; }
 .prod-tienda .prod-pie { flex-wrap: wrap; }
 
 /* Vista de lista: una fila por producto, para recorrer por código. */
 .tienda-grilla.lista { grid-template-columns: minmax(0, 1fr); gap: 10px; perspective: none; }
 .lista .prod-tienda {
-    grid-template-columns: 92px minmax(0, 1fr) auto auto; grid-template-rows: auto; align-items: center; gap: 20px;
+    grid-template-columns: 92px minmax(0, 1fr) auto; grid-template-rows: auto; align-items: center; gap: 20px;
     padding: 10px 16px 10px 10px; transform: none;
 }
 .lista .prod-foto { width: 92px; }
@@ -188,7 +182,6 @@
 .lista .prod-chip { top: 6px; left: 6px; padding: 2px 8px; font-size: 11px; }
 .lista .prod-nombre { -webkit-line-clamp: 1; }
 .lista .prod-cat { display: block; margin-top: 2px; color: var(--gris); font-size: 13px; }
-.lista .prod-precio { flex-direction: column; align-items: flex-end; gap: 0; padding: 0; border: 0; }
 .lista .prod-pie { flex-wrap: nowrap; gap: 14px; }
 
 /* Sin resultados */
@@ -263,7 +256,6 @@
     .prod-tienda .prod-foto img { padding: 8px; }
     .prod-tienda .prod-nombre { font-size: 14px; }
     .prod-tienda .prod-codigo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .prod-precio { flex-direction: column; align-items: flex-start; gap: 0; font-size: 12px; }
     .prod-tienda .prod-pie { flex-direction: column-reverse; align-items: stretch; gap: 4px; }
     .prod-tienda .agregar { width: 100%; padding: 0 10px; }
     .prod-tienda .prod-ver { justify-content: center; margin: 0; min-height: 36px; }
@@ -272,10 +264,48 @@
 @media (max-width: 960px) {
     .lista .prod-tienda { grid-template-columns: 72px minmax(0, 1fr); gap: 8px 14px; padding: 10px; }
     .lista .prod-foto { width: 72px; }
-    .lista .prod-precio { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; }
     .lista .prod-pie { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; }
     .lista .prod-tienda .agregar { width: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
     .prod-tienda { transform: none !important; }
 }
+
+/* ------------------------------------------------------------------ Pulido (nov-2026) */
+/* Un solo aviso de precios sobre los productos (antes iba «Precio · Entra para verlo» en cada tarjeta). */
+.aviso-precios {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 20px; padding: 14px 16px 14px 18px; border-radius: var(--r-2);
+    background: var(--superficie); border: 1px solid var(--linea); transition: background .35s;
+}
+.aviso-precios > svg { width: 22px; height: 22px; flex: 0 0 auto; fill: none; stroke: var(--acento); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.aviso-precios p { flex: 1; min-width: 0; color: var(--gris); font-size: 15px; line-height: 1.4; }
+.aviso-precios strong { color: var(--tinta); }
+.aviso-precios-acciones { display: flex; align-items: center; gap: 6px 14px; flex: 0 0 auto; }
+.aviso-precios-acciones .boton { min-height: 40px; padding: 0 16px; font-size: 14px; }
+
+/* Tarjetas fantasma mientras llega el catálogo */
+.prod-esqueleto { display: grid; gap: 10px; align-content: start; animation: none; }
+html:not(.js) .prod-esqueleto { display: none; }
+.esq-foto { aspect-ratio: 1; border-radius: var(--r-1); }
+.esq-linea { height: 12px; border-radius: 6px; }
+.esq-linea.corta { width: 35%; }
+.esq-linea.media { width: 60%; }
+.esq-boton { height: 40px; width: 50%; margin-top: 4px; border-radius: 999px; justify-self: end; }
+.lista .prod-esqueleto { grid-template-columns: 92px minmax(0, 1fr); }
+
+@media (max-width: 600px) {
+    .aviso-precios { flex-wrap: wrap; gap: 8px 12px; padding: 12px 14px; }
+    .aviso-precios p { flex-basis: calc(100% - 40px); font-size: 14px; }
+    .aviso-precios-acciones { margin-left: 34px; }
+}
+.abanico-carta { background: var(--foto-tarjeta); }
+.abanico-carta img { mix-blend-mode: multiply; }
+:root[data-tema="oscuro"] .abanico-carta { border-color: transparent; }
+:root[data-tema="oscuro"] .cat-pastilla img { filter: brightness(.9); }
+/* Mientras carga: el total y los filtros brillan en su lugar. */
+.tienda-total:empty, .js .filtro-opciones:empty {
+    background: linear-gradient(100deg, var(--superficie-2) 35%, color-mix(in srgb, var(--superficie-2) 45%, var(--superficie)) 50%, var(--superficie-2) 65%);
+    background-size: 250% 100%; animation: brillo 1.3s linear infinite;
+}
+.tienda-total:empty { display: inline-block; width: 2.2em; height: .95em; border-radius: 6px; vertical-align: -1px; }
+.js .filtro-opciones:empty { height: 132px; border-radius: 12px; }

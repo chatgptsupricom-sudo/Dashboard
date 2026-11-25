@@ -892,3 +892,38 @@ h1, h2, h3, .ficha-nombre, .combo-titulo, .acordeon summary { text-wrap: balance
 .linea-quitada p { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .linea-quitada strong { color: var(--tinta); font-weight: 700; }
 .linea-quitada .enlace-chico { flex: 0 0 auto; }
+
+/* ------------------------------------------------------------------ Pulido (nov-2026): fotos parejas, carga y oscuro */
+/* Fondo común de las fotos de producto: un gris muy suave en claro y uno apagado en oscuro (el blanco puro
+   encandila sobre el fondo negro). Las fotos de Odoo traen fondo blanco: con `multiply` ese blanco toma el
+   tono del recuadro y todas se ven del mismo estudio, tengan o no recorte. */
+:root, :root[data-tema="claro"] { --foto: #F1F2EE; --foto-tarjeta: #FFFFFF; }
+:root[data-tema="oscuro"] { --foto: #D3D7DE; --foto-tarjeta: #E2E5EA; }
+.prod-foto, .ficha-mini button { background: var(--foto); }
+.prod-foto img { padding: 11%; mix-blend-mode: multiply; }
+.orbita-item, .cat-foto, .combo-abanico img { background: var(--foto-tarjeta); }
+.orbita-item img { mix-blend-mode: multiply; }
+.ficha-mini img { mix-blend-mode: multiply; }
+:root[data-tema="oscuro"] .orbita-item, :root[data-tema="oscuro"] .cat-foto { border-color: transparent; }
+:root[data-tema="oscuro"] .buscador-opciones img, :root[data-tema="oscuro"] .linea-pedido img,
+:root[data-tema="oscuro"] .sugerido img, :root[data-tema="oscuro"] .carrito-aviso-foto, :root[data-tema="oscuro"] .vuela { filter: brightness(.9); }
+
+/* Mientras llega el catálogo (en vivo, hasta 5 s): formas que brillan en vez de huecos vacíos. */
+@keyframes brillo { from { background-position: 120% 0; } to { background-position: -20% 0; } }
+.esqueleto, .js .banners-pista:empty::before, .js .estante-pista:empty::before {
+    background: linear-gradient(100deg, var(--superficie-2) 35%, color-mix(in srgb, var(--superficie-2) 45%, var(--superficie)) 50%, var(--superficie-2) 65%);
+    background-size: 250% 100%; animation: brillo 1.3s linear infinite;
+}
+.js .banners-pista:empty::before {
+    content: ""; position: absolute; left: 50%; top: 20px; width: 74%; max-width: 1120px; aspect-ratio: 1920 / 638;
+    transform: translateX(-50%); border-radius: var(--r-2);
+}
+.js .estante-pista:empty::before {
+    content: ""; flex: 0 0 min(100%, 1060px); height: 370px; border-radius: var(--r-2);
+    -webkit-mask: repeating-linear-gradient(90deg, #000 0 250px, transparent 250px 268px);
+    mask: repeating-linear-gradient(90deg, #000 0 250px, transparent 250px 268px);
+}
+@media (max-width: 960px) {
+    .js .banners-pista:empty::before { width: 88%; }
+    .js .estante-pista:empty::before { height: 330px; -webkit-mask: repeating-linear-gradient(90deg, #000 0 72vw, transparent 72vw calc(72vw + 18px)); mask: repeating-linear-gradient(90deg, #000 0 72vw, transparent 72vw calc(72vw + 18px)); }
+}

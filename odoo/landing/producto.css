@@ -159,3 +159,20 @@
     .producto-foto { transform: none !important; }
     .producto-foto.acercada .producto-img { transform: scale(2.1); }
 }
+
+/* ------------------------------------------------------------------ Pulido (nov-2026) */
+.producto-foto { background: var(--foto-tarjeta); }
+:root[data-tema="oscuro"] .producto-foto { border-color: transparent; }
+.producto-img { mix-blend-mode: multiply; }
+.producto-barra-foto { background: var(--foto); }
+/* Mientras llega el catálogo: la foto, la marca, el nombre y el código brillan en su lugar. */
+.producto-foto:has(.producto-img:not([src])),
+.producto-marca:empty, .producto-nombre:empty, .producto-codigo:empty, .producto-disponible-texto:empty {
+    background: linear-gradient(100deg, var(--superficie-2) 35%, color-mix(in srgb, var(--superficie-2) 45%, var(--superficie)) 50%, var(--superficie-2) 65%);
+    background-size: 250% 100%; animation: brillo 1.3s linear infinite; border-color: transparent; color: transparent;
+}
+.producto-img:not([src]) { visibility: hidden; }
+.producto-marca:empty { width: 90px; }
+.producto-nombre:empty { width: 85%; height: 2.1em; border-radius: 14px; }
+.producto-codigo:empty { display: inline-block; width: 120px; height: 30px; }
+.producto-disponible-texto:empty { display: inline-block; width: 170px; height: 18px; border-radius: 9px; }
