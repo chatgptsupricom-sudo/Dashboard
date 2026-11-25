@@ -327,6 +327,15 @@ assert.strictEqual(casiMov("d2").pago, null);
   assert.deepStrictEqual(pan.filas.map((f) => f.fecha), ["2026-04-01", "2026-04-13"]);
 }
 
+// Excel en ingles con dia/mes cruzados: dias 1-12 como fecha real al reves, 13+ como texto (Banesco Panama abril)
+{
+  const filas = [["Fecha ", "Referencia", "monto"], [46026, "ACH A", 3029.64], [46177, "ACH B", 2149.13], ["13/04/2026", "ACH C", 100], ["30/04/2026", "ACH D", 50]];
+  const l = leerFilasExcel(filas);
+  assert.deepStrictEqual(l.filas.map((f) => f.fecha), ["2026-04-01", "2026-04-06", "2026-04-13", "2026-04-30"]);
+  // Un Excel normal con fechas reales no se toca
+  assert.deepStrictEqual(leerFilasExcel([["Fecha", "Monto"], [46026, 10], [46177, 20]]).filas.map((f) => f.fecha), ["2026-01-04", "2026-06-04"]);
+}
+
 // Cobro dividido del mismo cliente (principal + 4 %) con Memo que no es la referencia del banco
 const pc = (id, fecha, monto, ref, cliente) => ({ id, nombre: "P/" + id, fecha, monto, cliente, ref });
 const div = cruzarBanco(
