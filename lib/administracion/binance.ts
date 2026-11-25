@@ -1092,7 +1092,10 @@ const INSTRUCCIONES =
   "Devuelve SOLO lo que esta en la imagen, sin inventar. " +
   "order_id: el 'ID de orden' / 'Order ID' completo, solo digitos; copia cada digito con cuidado, es lo que se usa para conciliar. " +
   "Normalmente tiene 18 digitos: si cuentas menos, vuelve a leerlo, sobre todo donde hay digitos repetidos seguidos (777, 000). " +
-  "monto: el monto pagado, sin signo ni separador de miles. moneda: el codigo (USDT, USDC, BTC...). " +
+  "monto: el monto grande de arriba, debajo de 'Pago completado' / 'Pago exitoso' / 'Payment successful' (ej. '2500 USDT'), " +
+  "sin signo ni separador de miles; es el que sale en el estado de cuenta. NO uses el de 'Se pagó con' / 'Paid with' / " +
+  "'Pagado con' de los detalles de abajo, que puede ser menor (ej. 2497.64). Solo si la captura no trae el monto grande, usa ese. " +
+  "moneda: el codigo (USDT, USDC, BTC...). " +
   "fecha: fecha y hora del pago como 'YYYY-MM-DD HH:MM:SS'; fecha_en_utc = true si el comprobante dice UTC. " +
   "Si la captura no muestra la fecha, fecha = '' (no la inventes). " +
   "hora_telefono: si es una captura de pantalla del telefono, la hora del reloj de la barra de estado " +
