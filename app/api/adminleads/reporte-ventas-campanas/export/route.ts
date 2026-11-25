@@ -4,7 +4,7 @@
 // venta por venta. Usa resolverRango/resolverSede del lib para que el archivo
 // coincida exactamente con lo que muestra la pantalla.
 
-import { payloadLeads } from "@/lib/adminleads/sucursal";
+import { cidsLeads, payloadLeads, sedeLeadsNum } from "@/lib/adminleads/sucursal";
 import {
   calcularVentasCampanas,
   resolverRango,
@@ -29,8 +29,8 @@ export async function GET(request: NextRequest) {
     const { desde, hasta } = resolverRango(searchParams);
 
     const data = await calcularVentasCampanas({
-      userCids: (auth.payload!.cids as number) ?? null,
-      sede: resolverSede(searchParams),
+      userCids: cidsLeads(auth.payload),
+      sede: sedeLeadsNum(auth.payload, resolverSede(searchParams)),
       desde,
       hasta,
     });

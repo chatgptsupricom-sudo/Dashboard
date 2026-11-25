@@ -8,7 +8,7 @@
 import { actualizarLeadExcel, ErrorLeadExcel, listarLeadsExcel } from "@/lib/adminleads/leadsExcel";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { NextRequest, NextResponse } from "next/server";
-import { payloadLeads } from "@/lib/adminleads/sucursal";
+import { payloadLeads, sedeElegida } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   auth.payload = payloadLeads(request, auth.payload);
   try {
     const cerrados = request.nextUrl.searchParams.get("cerrados") === "1";
-    return NextResponse.json(await listarLeadsExcel(cidsDe(auth.payload), cerrados), {
+    return NextResponse.json(await listarLeadsExcel(cidsDe(auth.payload), cerrados, sedeElegida(auth.payload)), {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error: any) {

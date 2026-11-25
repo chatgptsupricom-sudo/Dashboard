@@ -6,7 +6,7 @@
 import { revisarLeads } from "@/lib/adminleads/recompra";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
-import { payloadLeads } from "@/lib/adminleads/sucursal";
+import { payloadLeads, sedeElegida } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -17,7 +17,10 @@ export async function GET(request: NextRequest) {
   auth.payload = payloadLeads(request, auth.payload);
 
   try {
-    const leads = await revisarLeads(Number(auth.payload!.cids) === 7 ? 7 : null);
+    const elegida = sedeElegida(auth.payload);
+    const leads = await revisarLeads(
+      typeof elegida === "number" ? elegida : elegida !== "todas" && Number(auth.payload!.cids) === 7 ? 7 : null,
+    );
     return NextResponse.json({ leads });
   } catch (error: any) {
     console.error("GET /api/adminleads/recompra/revisar error:", error?.message);

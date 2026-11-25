@@ -6,7 +6,7 @@
 import { calcularRecompra, filtrosRecompra } from "@/lib/adminleads/recompra";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
-import { payloadLeads } from "@/lib/adminleads/sucursal";
+import { payloadLeads, sedeElegida, sedeLeadsNum } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -17,9 +17,12 @@ export async function GET(request: NextRequest) {
   auth.payload = payloadLeads(request, auth.payload);
 
   try {
+    const filtros = filtrosRecompra(request.nextUrl.searchParams);
     const data = await calcularRecompra({
-      userCids: (auth.payload!.cids as number) ?? null,
-      ...filtrosRecompra(request.nextUrl.searchParams),
+      // Con las tres sedes elegidas, sin restricción (null), como el SuperAdmin.
+      userCids: sedeElegida(auth.payload) === "todas" ? null : ((auth.payload!.cids as number) ?? null),
+      ...filtros,
+      sede: sedeLeadsNum(auth.payload, filtros.sede),
     });
     return NextResponse.json(data);
   } catch (error: any) {

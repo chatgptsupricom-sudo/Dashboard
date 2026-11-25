@@ -21,7 +21,7 @@
 // el Histórico (Excel). `lead_id = 0` = se está pasando.
 
 import { query } from "@/lib/db";
-import { mismaOperacion } from "@/lib/adminleads/sucursal";
+import { mismaOperacion, sedeElegida, type SedeElegida } from "@/lib/adminleads/sucursal";
 import { asegurarTablas } from "@/lib/adminleads/recompra";
 import { normalizarRif } from "@/lib/smartbit";
 import { normalizarCanal, SIN_CANAL } from "@/lib/canales";
@@ -52,8 +52,13 @@ export function estatusDelTablero(estatus: unknown, delPanel: string[]): { statu
   return { status: "CONTACTADO", motivo: null };
 }
 
-/** Condición de sede: Panamá ve Panamá; los demás, Venezuela (como /api/adminleads/leads). */
-function alcanceSql(userCids: number | null) {
+/**
+ * Condición de sede: Panamá ve Panamá; los demás, Venezuela (como /api/adminleads/leads).
+ * `elegida`: la del AdminLeads de Panamá que eligió otra (lib/adminleads/sucursal.ts).
+ */
+function alcanceSql(userCids: number | null, elegida?: SedeElegida) {
+  if (elegida === "todas") return "1=1";
+  if (elegida) return `COALESCE(s.cids, h.company_id) = ${elegida}`;
   return userCids === PANAMA
     ? `COALESCE(s.cids, h.company_id) = ${PANAMA}`
     : `COALESCE(s.cids, h.company_id) <> ${PANAMA}`;
@@ -72,7 +77,7 @@ const estadosDelPanel = async () => {
 };
 
 /** Leads de Excel con la forma de un lead del panel. `soloCerradosEnPanel`: los de la sección Cierres. */
-export async function listarLeadsExcel(userCids: number | null, soloCerradosEnPanel = false) {
+export async function listarLeadsExcel(userCids: number | null, soloCerradosEnPanel = false, elegida?: SedeElegida) {
   await asegurarTablas();
   const delPanel = await estadosDelPanel();
   // Los que se reasignaron antes de que reasignar los pasara al panel.
@@ -81,7 +86,7 @@ export async function listarLeadsExcel(userCids: number | null, soloCerradosEnPa
     await pasarAlPanel(h, h.seller_id, delPanel).catch((e) => console.error("Pasar lead de Excel al panel:", h.id, e?.message));
   }
   const { rows } = await query(
-    `${SELECT_LEAD} WHERE h.lead_id IS NULL AND ${alcanceSql(userCids)} ${soloCerradosEnPanel ? "AND h.cerrado_en_panel = 1" : ""}`,
+    `${SELECT_LEAD} WHERE h.lead_id IS NULL AND ${alcanceSql(userCids, elegida)} ${soloCerradosEnPanel ? "AND h.cerrado_en_panel = 1" : ""}`,
   );
   return rows.map((h: any) => comoLead(h, delPanel));
 }
@@ -175,7 +180,7 @@ export async function actualizarLeadExcel(body: any, userCids: number | null, pa
   await asegurarTablas();
   const id = Number(body.id ?? body.leadId);
   if (!id) throw new ErrorLeadExcel("ID requerido");
-  const { rows } = await query(`${SELECT_LEAD} WHERE h.id = ? AND ${alcanceSql(userCids)}`, [id]);
+  const { rows } = await query(`${SELECT_LEAD} WHERE h.id = ? AND ${alcanceSql(userCids, sedeElegida(payload))}`, [id]);
   const lead = rows[0];
   if (!lead) throw new ErrorLeadExcel("Lead no encontrado", 404);
   if (lead.lead_id != null) throw new ErrorLeadExcel("Este lead ya está en el tablero del panel", 409);
