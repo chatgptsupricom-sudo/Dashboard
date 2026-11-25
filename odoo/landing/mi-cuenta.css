@@ -219,19 +219,65 @@ body.detalle-abierto .detalle-pedido { transform: none; visibility: visible; tra
 }
 @media (max-width: 960px) {
     .acceso-tarjeta { justify-self: stretch; max-width: none; }
-    /* El menú lateral pasa arriba: la empresa y las secciones en una fila que se desliza. */
-    .panel-marco { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-top: 88px; }
-    .panel-lado { position: static; grid-template-columns: minmax(0, 1fr); padding: 12px; }
-    .panel-perfil { padding: 4px 4px 12px; }
-    .panel-nav { grid-auto-flow: column; grid-auto-columns: max-content; gap: 4px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; }
-    .panel-nav::-webkit-scrollbar { display: none; }
-    .panel-nav button { scroll-snap-align: start; }
-    .panel-nav button { justify-content: center; gap: 8px; padding: 0 8px; }
-    .panel-lado-pie { grid-auto-flow: column; grid-auto-columns: 1fr; margin-top: 4px; }
-    .panel-enlace { justify-content: center; }
 }
-@media (max-width: 720px) {
-    /* Las tablas se vuelven filas tipo tarjeta: número y monto arriba, fecha y estado abajo. */
+/* Tableta: el menú sigue a la izquierda, angosto, con el ícono y el nombre debajo. */
+@media (min-width: 641px) and (max-width: 960px) {
+    .panel-marco { grid-template-columns: 88px minmax(0, 1fr); gap: 22px; padding-top: 96px; }
+    .panel-lado { top: 88px; padding: 10px 8px; justify-items: stretch; max-height: calc(100vh - 104px); overflow-y: auto; scrollbar-width: none; }
+    .panel-perfil { justify-content: center; padding: 4px 0 12px; margin-bottom: 4px; }
+    .panel-perfil-texto { display: none; }
+    .panel-avatar { width: 46px; height: 46px; font-size: 16px; }
+    .panel-nav button, .panel-enlace {
+        flex-direction: column; justify-content: center; gap: 5px; min-height: 66px; padding: 8px 4px; border-radius: 14px;
+        font-size: 11px; line-height: 1.2; text-align: center; letter-spacing: -0.01em;
+    }
+    .panel-nav svg, .panel-enlace svg { width: 22px; height: 22px; }
+    .panel-lado-pie { margin-top: 6px; padding-top: 6px; }
+}
+/* Celular: el menú entra desde la izquierda; arriba queda una barra con la sección actual que lo abre. */
+.panel-barra, .panel-lado-fondo, .panel-cerrar { display: none; }
+@media (max-width: 640px) {
+    .panel-marco { grid-template-columns: minmax(0, 1fr); gap: 18px; padding-top: 84px; }
+    .panel-barra {
+        position: sticky; top: 70px; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 8px 8px 8px 6px; border-radius: 18px; background: color-mix(in srgb, var(--superficie) 88%, transparent);
+        border: 1px solid var(--linea); box-shadow: 0 18px 36px -30px var(--sombra);
+        -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
+    }
+    .panel-menu {
+        display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px 0 10px; border: 0; border-radius: 14px;
+        background: none; color: var(--tinta); font: inherit; text-align: left; cursor: pointer; min-width: 0;
+    }
+    .panel-menu:hover { background: var(--superficie-2); }
+    .panel-menu svg { width: 24px; height: 24px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+    .panel-barra-texto { display: grid; line-height: 1.15; min-width: 0; }
+    .panel-barra-texto small { color: var(--gris); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .panel-barra-seccion { font-size: 16px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .panel-avatar-chico { width: 40px; height: 40px; border-radius: 12px; font-size: 14px; }
+
+    .panel-lado {
+        position: fixed; top: 0; left: 0; bottom: 0; z-index: 85; width: min(304px, 86vw); align-content: start;
+        padding: 20px 14px calc(20px + env(safe-area-inset-bottom)); border-radius: 0 26px 26px 0; border-left: 0;
+        overflow-y: auto; overscroll-behavior: contain; box-shadow: 40px 0 80px -40px rgba(0, 0, 0, .5);
+        transform: translateX(-104%); visibility: hidden; transition: transform .45s var(--curva), visibility .45s, background .35s;
+    }
+    body.menu-cuenta-abierto .panel-lado { transform: none; visibility: visible; transition: transform .45s var(--curva), visibility 0s; }
+    .panel-lado-fondo {
+        display: block; position: fixed; inset: 0; z-index: 84; background: rgba(5, 7, 13, .5);
+        opacity: 0; visibility: hidden; transition: opacity .35s, visibility .35s;
+    }
+    body.menu-cuenta-abierto .panel-lado-fondo { opacity: 1; visibility: visible; }
+    body.menu-cuenta-abierto { overflow: hidden; }
+    .panel-cerrar {
+        display: grid; place-items: center; justify-self: end; width: 40px; height: 40px; margin: -6px -2px -8px 0; border: 0; border-radius: 50%;
+        background: var(--superficie-2); color: var(--tinta); cursor: pointer;
+    }
+    .panel-cerrar svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+    .panel-nav button, .panel-enlace { min-height: 50px; }
+}
+@media (max-width: 960px) {
+    /* Con el menú al lado (tableta) o en el celular, las tablas se vuelven filas tipo tarjeta:
+       número y monto arriba, fecha y estado abajo. */
     .tabla-cabeza { display: none; }
     .fila, .tabla-pedidos .fila, .tabla-facturas .fila {
         grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "numero monto" "fecha estado"; gap: 6px 12px; padding: 14px 16px;
@@ -246,18 +292,23 @@ body.detalle-abierto .detalle-pedido { transform: none; visibility: visible; tra
     .c-saldo { grid-area: saldo; text-align: left; font-size: 13px; }
     .c-saldo.con-saldo::before { content: "Saldo "; color: var(--gris); font-weight: 600; }
     .c-saldo:not(.con-saldo) { display: none; }
+    .c-estado { justify-items: end; }
+    .avance { width: 140px; text-align: right; }
+    .fila-mes { padding: 12px 16px 6px; }
+    .tabla-rma .fila { grid-template-areas: "numero numero" "equipos estado"; }
+    .c-equipos { grid-area: equipos; }
+    .tabla-rma .c-ir { display: none; }
+    .fila-rma-factura { grid-template-areas: "numero monto" "fecha fecha"; }
+}
+@media (max-width: 720px) {
     .tabla-barra .tienda-buscar { flex-basis: 100%; max-width: none; }
     .filtros-derecha { width: 100%; }
     .filtros-derecha .selector { flex: 1; }
     .vista-nota { font-size: 15px; }
 }
 @media (max-width: 640px) {
-    /* Las cinco secciones a la vista, en dos filas, en vez de una fila que se desliza y esconde las últimas. */
-    .panel-nav { display: flex; flex-wrap: wrap; justify-content: center; overflow: visible; }
-    .panel-nav button { width: auto; flex: 1 1 auto; min-height: 40px; padding: 0 12px; font-size: 14px; }
     .detalle-datos { grid-template-columns: minmax(0, 1fr); }
     .etapas li { font-size: 11px; }
-    .panel-nav button svg { display: none; }
 }
 .panel-datos span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 720px) { .filtros-derecha .selector { flex: 1 1 0; min-width: 0; } }
@@ -485,13 +536,6 @@ button.fila:hover .fotos-pila > * { transform: none; }
 @media (max-width: 720px) {
     .fotos-pila { width: 76px; }
     .fotos-pila > * { width: 36px; height: 36px; }
-    .c-estado { justify-items: end; }
-    .avance { width: 140px; text-align: right; }
-    .fila-mes { padding: 12px 16px 6px; }
-    .tabla-rma .fila { grid-template-areas: "numero numero" "equipos estado"; }
-    .c-equipos { grid-area: equipos; }
-    .tabla-rma .c-ir { display: none; }
-    .fila-rma-factura { grid-template-areas: "numero monto" "fecha fecha"; }
     .rma-pasos { order: 3; width: 100%; margin: 0; }
     .rma-pasos li { flex: 1; justify-content: center; padding: 0 6px 0 4px; }
     .rma-productos { grid-template-columns: minmax(0, 1fr); padding: 12px; }

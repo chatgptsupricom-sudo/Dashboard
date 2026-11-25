@@ -329,7 +329,7 @@
         datosYo = r.datos;
         const c = r.datos.cliente || {};
         const nombre = (c.nombre || "").split(/\s+/)[0] || "";
-        $(".panel-avatar").textContent = iniciales(c.empresa || c.nombre);
+        for (const a of $$(".panel-avatar")) a.textContent = iniciales(c.empresa || c.nombre);
         $(".panel-empresa").textContent = c.empresa || "";
         $(".panel-saludo").textContent = nombre ? `Hola, ${nombre.charAt(0)}${nombre.slice(1).toLowerCase()}` : "Hola";
         $(".panel-datos").replaceChildren(...[c.documento, c.correo].filter(Boolean).map((t) => crear("span", { text: t })));
@@ -709,6 +709,32 @@
         ])) : [crear("p", { class: "lista-vacia", text: "Todavía no tienes casos de servicio técnico." })]));
     };
 
+    // Menú lateral en el celular: entra desde la izquierda y se cierra al elegir, con Esc o tocando afuera.
+    const lado = $(".panel-lado");
+    const botonMenu = $(".panel-menu");
+    const celular = window.matchMedia("(max-width: 640px)");
+    const menuAbierto = () => document.body.classList.contains("menu-cuenta-abierto");
+    const ajustarMenu = () => { lado.inert = celular.matches && !menuAbierto(); };
+    const abrirMenu = () => {
+        document.body.classList.add("menu-cuenta-abierto");
+        botonMenu.setAttribute("aria-expanded", "true");
+        ajustarMenu();
+        ($(".panel-nav [aria-selected=true]") || $(".panel-cerrar")).focus({ preventScroll: true });
+    };
+    const cerrarMenu = (devolverFoco = true) => {
+        if (!menuAbierto()) return;
+        document.body.classList.remove("menu-cuenta-abierto");
+        botonMenu.setAttribute("aria-expanded", "false");
+        ajustarMenu();
+        if (devolverFoco) botonMenu.focus({ preventScroll: true });
+    };
+    botonMenu.addEventListener("click", abrirMenu);
+    $(".panel-cerrar").addEventListener("click", () => cerrarMenu());
+    $(".panel-lado-fondo").addEventListener("click", () => cerrarMenu());
+    lado.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && menuAbierto()) { ev.preventDefault(); cerrarMenu(); } });
+    celular.addEventListener("change", () => { if (!celular.matches) cerrarMenu(false); ajustarMenu(); });
+    ajustarMenu();
+
     // Pestañas (y el enlace: #pedidos, #facturas, #rma, #perfil)
     const pestanas = $$(".panel-nav [role=tab]");
     const cargadas = new Set();
@@ -720,7 +746,9 @@
             t.tabIndex = activa ? 0 : -1;
             $(`#vista-${t.dataset.vista}`).hidden = !activa;
             if (activa && foco) t.focus();
+            if (activa) $(".panel-barra-seccion").textContent = t.textContent.trim();
         }
+        cerrarMenu(false);
         if (historial && location.hash !== `#${nombre}`) history.replaceState(null, "", nombre === "resumen" ? location.pathname + location.search : `#${nombre}`);
         if (nombre === "resumen" && !cargadas.has("resumen")) { cargadas.add("resumen"); cargarResumen(); }
         if (nombre === "pedidos" || nombre === "facturas") { cargadas.add(nombre); cargarLista(nombre); }
