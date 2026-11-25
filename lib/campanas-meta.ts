@@ -50,7 +50,7 @@ export interface CampaignSummary {
 }
 
 export interface CampaignMetricsParams {
-  userCids: number;
+  userCids: number | "todas" | null;
   sede?: string | null;
   fechaInicio?: string | null;
   fechaFin?: string | null;
@@ -99,7 +99,7 @@ export async function getCampaignMetrics({
   if (sede) {
     leadConditions.push("seller_id IN (SELECT id FROM sellers WHERE cids = ?)");
     leadParams.push(parseInt(sede));
-  } else if (userCids !== 7) {
+  } else if (userCids !== 7 && userCids !== "todas") {
     // NULL IN (...) no es TRUE: sin el OR, los leads sin vendedor asignado
     // quedaban fuera de las metricas de campanas.
     leadConditions.push(
@@ -159,7 +159,7 @@ export async function getCampaignMetrics({
 
   if (userCids === 7) {
     convConditions.push("pais IN ('Panama', 'PA')");
-  } else {
+  } else if (userCids !== "todas") {
     convConditions.push("pais IN ('Venezuela', 'VE')");
   }
 

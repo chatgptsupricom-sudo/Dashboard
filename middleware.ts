@@ -11,6 +11,7 @@ import { puedeVerSolicitudesPersonal } from "@/lib/solicitudes-personal/tipos";
 import { puedeVerSemaforo } from "@/lib/semaforo-clientes/acceso";
 import { puedeVerCupo } from "@/lib/cupo-credito/acceso";
 import { puedeVerRotacion } from "@/lib/rotacion-inventario/acceso";
+import { payloadSesion } from "@/lib/adminleads/sucursal";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -195,7 +196,8 @@ export default async function middleware(request: NextRequest) {
     }
 
     try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
+      // AdminLeads de Panamá con Venezuela elegida entra como Valencia (lib/adminleads/sucursal.ts).
+      const payload = payloadSesion(request, (await jwtVerify(token, JWT_SECRET)).payload);
 
       // Aseguramos que sea string y normalizamos
       const userRole = ((payload.role as string) || "").toLowerCase().trim();

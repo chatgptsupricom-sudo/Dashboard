@@ -5,7 +5,7 @@
 // con inversión), acá entran todos los canales: Meta, Whatsapp, referidos y los
 // leads sin campaña registrada, para que ninguna venta quede fuera del total.
 
-import { payloadLeads } from "@/lib/adminleads/sucursal";
+import { cidsLeads, payloadLeads, sedeLeadsNum } from "@/lib/adminleads/sucursal";
 import {
   calcularVentasCampanas,
   resolverRango,
@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
     const { desde, hasta } = resolverRango(searchParams);
 
     const data = await calcularVentasCampanas({
-      userCids: (auth.payload!.cids as number) ?? null,
-      sede: resolverSede(searchParams),
+      userCids: cidsLeads(auth.payload),
+      sede: sedeLeadsNum(auth.payload, resolverSede(searchParams)),
       desde,
       hasta,
     });

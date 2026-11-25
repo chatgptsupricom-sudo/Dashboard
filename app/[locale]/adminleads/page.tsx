@@ -808,6 +808,7 @@ export default function MetricsDashboardPage() {
         <div className="flex flex-wrap gap-2 items-center">
           {(activeTab === "general" || activeTab === "historico") && (
             <>
+          {!data?.sedeFija && (
           <select
             className="px-4 py-2 rounded-xl border border-zinc-200 bg-white text-sm font-medium shadow-sm"
             value={sede}
@@ -816,13 +817,14 @@ export default function MetricsDashboardPage() {
               setSellerId("");
             }}
           >
-            <option value="">{data?.puedePanama ? "Venezuela (Valencia + Caracas)" : "Todas las sedes"}</option>
+            <option value="">{data?.todasLasSedes ? "Las tres sedes" : data?.puedePanama ? "Venezuela (Valencia + Caracas)" : "Todas las sedes"}</option>
             {SEDES.filter((s) => !s.soloSinSede || data?.puedePanama).map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
               </option>
             ))}
           </select>
+          )}
           {activeTab === "general" && (
           <>
           <select

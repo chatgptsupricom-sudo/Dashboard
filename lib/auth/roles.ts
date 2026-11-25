@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtSecretBytes } from "@/lib/secretos";
 import { respuestaSesionTerminada, sesionVigente } from "@/lib/auth/vigencia";
 import { esEscrituraBI, esRolBI, MENSAJE_SOLO_LECTURA_BI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
+import { payloadSesion } from "@/lib/adminleads/sucursal";
 import { esEscrituraMarketingElectro, esRolMarketingElectro } from "@/lib/auth/marketingElectro";
 
 /**
@@ -40,7 +41,8 @@ async function verificarSesion(
   if (!(await sesionVigente(payload))) {
     return { error: respuestaSesionTerminada() };
   }
-  return { payload };
+  // AdminLeads de Panamá con Venezuela elegida: todo el panel lo trata como Valencia.
+  return { payload: payloadSesion(request, payload) };
 }
 
 /**

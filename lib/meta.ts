@@ -70,8 +70,10 @@ export function getAdAccounts(): MetaAdAccount[] {
 
 export function filterByCids(
   accounts: MetaAdAccount[],
-  userCids: number,
+  userCids: number | "todas" | null,
 ): MetaAdAccount[] {
+  // "todas": AdminLeads de Panamá con las tres sedes elegidas (lib/adminleads/sucursal.ts).
+  if (userCids === "todas") return accounts;
   if (userCids === 7) {
     return accounts.filter((a) => a.pais === "Panama");
   }

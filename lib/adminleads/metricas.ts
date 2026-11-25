@@ -26,17 +26,22 @@
 import { asegurarTablas } from "@/lib/adminleads/recompra";
 import { canalNormalizadoSql, canalSumaVentasSql, SIN_CANAL } from "@/lib/canales";
 import { query } from "@/lib/db";
+import { sedeElegida } from "@/lib/adminleads/sucursal";
 
 const PANAMA = 7;
 const SEDES_VALIDAS = [7, 9, 10];
 const ES_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function calcularMetricas(payload: any, sp: URLSearchParams) {
-  const userCids = Number(payload?.cids) || null;
+  // AdminLeads de Panamá con otra sede elegida: esa, o las tres sin filtro.
+  const elegida = sedeElegida(payload);
+  const todas = elegida === "todas";
+  const userCids = todas ? null : Number(payload?.cids) || null;
   const deVenezuela = userCids === 9 || userCids === 10;
 
   let sede: number | null = SEDES_VALIDAS.includes(Number(sp.get("sede"))) ? Number(sp.get("sede")) : null;
-  if (userCids === PANAMA) sede = PANAMA;
+  if (typeof elegida === "number") sede = elegida;
+  else if (userCids === PANAMA) sede = PANAMA;
   else if (deVenezuela && sede === PANAMA) sede = null;
 
   const sellerId = /^\d+$/.test(sp.get("seller_id") || "") ? Number(sp.get("seller_id")) : null;
@@ -55,7 +60,7 @@ export async function calcularMetricas(payload: any, sp: URLSearchParams) {
   if (sede) {
     filtros.push("l.seller_id IN (SELECT id FROM sellers WHERE cids = ?)");
     params.push(sede);
-  } else {
+  } else if (!todas) {
     filtros.push(`(l.seller_id IS NULL OR l.seller_id NOT IN (SELECT id FROM sellers WHERE cids = ${PANAMA}))`);
   }
   if (sellerId) {
@@ -120,7 +125,7 @@ export async function calcularMetricas(payload: any, sp: URLSearchParams) {
      LEFT JOIN sellers sx ON sx.id = h.seller_id
      WHERE h.cerrado_en_panel = 1 AND h.panel_status = 'CERRADO' AND h.lead_id IS NULL
        ${conFechas ? `AND ${entre("h.panel_fecha_cierre")}` : ""}
-       ${sede ? `AND ${sedeExcel} = ?` : `AND ${sedeExcel} <> ${PANAMA}`}
+       ${sede ? `AND ${sedeExcel} = ?` : todas ? "" : `AND ${sedeExcel} <> ${PANAMA}`}
        ${sellerId ? "AND h.seller_id = ?" : ""}
        ${canal ? `AND ${canalNormalizadoSql("h.red_social")} = ?` : ""}`,
     [...(sede ? [sede] : []), ...(sellerId ? [sellerId] : []), ...(canal ? [canal] : [])],
@@ -177,7 +182,7 @@ export async function calcularMetricas(payload: any, sp: URLSearchParams) {
        ${canal ? `AND ${canalNormalizadoSql("l.canal_origen")} = ?` : ""}
        AND (${conFechas ? `(${entrada}) OR (${ventaEnPeriodo})` : "1=1"})
      WHERE (s.activo = 1 OR l.id IS NOT NULL)
-       ${sede ? "AND s.cids = ?" : `AND (s.cids IS NULL OR s.cids != ${PANAMA})`}
+       ${sede ? "AND s.cids = ?" : todas ? "" : `AND (s.cids IS NULL OR s.cids != ${PANAMA})`}
      GROUP BY s.id`,
     [...(sellerId ? [sellerId] : []), ...(canal ? [canal] : []), ...(sede ? [sede] : [])],
   );
@@ -228,6 +233,10 @@ export async function calcularMetricas(payload: any, sp: URLSearchParams) {
     fechaFin,
     // Panamá se ofrece en el selector solo a quien no está atado a una sede (SuperAdmin y compañía).
     puedePanama: userCids == null,
+    // Sin sede en el selector = las tres (AdminLeads de Panamá con todas elegidas).
+    todasLasSedes: todas,
+    // Con Valencia o Caracas elegida en el selector de arriba, el de la pantalla no aplica.
+    sedeFija: typeof elegida === "number",
     stats,
     canales,
     stageData: stageResult.rows || [],

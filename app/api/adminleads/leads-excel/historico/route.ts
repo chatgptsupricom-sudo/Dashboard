@@ -9,7 +9,7 @@ import { asegurarTablas } from "@/lib/adminleads/recompra";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { payloadLeads } from "@/lib/adminleads/sucursal";
+import { payloadLeads, sedeElegida } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 
@@ -22,10 +22,12 @@ export async function GET(request: NextRequest) {
   let sede: number | null = [7, 9, 10].includes(Number(request.nextUrl.searchParams.get("sede")))
     ? Number(request.nextUrl.searchParams.get("sede"))
     : null;
-  if (userCids === 7) sede = 7;
-  else if ((userCids === 9 || userCids === 10) && sede === 7) sede = null;
+  const elegida = sedeElegida(auth.payload);
+  if (typeof elegida === "number") sede = elegida;
+  else if (userCids === 7) sede = 7;
+  else if (elegida !== "todas" && (userCids === 9 || userCids === 10) && sede === 7) sede = null;
   // Los que pasaron al panel ya cuentan como leads del panel.
-  const donde = `lead_id IS NULL AND ${sede ? "company_id = ?" : "company_id <> 7"}`;
+  const donde = `lead_id IS NULL AND ${sede ? "company_id = ?" : elegida === "todas" ? "1=1" : "company_id <> 7"}`;
 
   try {
     await asegurarTablas();

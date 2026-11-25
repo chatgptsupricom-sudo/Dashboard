@@ -37,27 +37,117 @@ export function mismaOperacion(userCids: unknown, targetCids: unknown): boolean 
 
 /**
  * AdminLeads de Venezuela que ademas ven Panama (por correo de login,
- * nov-2026). Eligen el pais con el selector del modulo, que guarda la cookie
- * COOKIE_PAIS_LEADS; con "PA" el modulo los trata como AdminLeads de Panama.
+ * nov-2026). Eligen el pais con el selector, que guarda la cookie
+ * COOKIE_PAIS_LEADS ("VE" | "PA"; sin cookie = Venezuela); con "PA" el modulo
+ * de Leads los trata como AdminLeads de Panama.
+ *
+ * Al reves, todo AdminLeads de Panama ve tambien Venezuela, y no solo en
+ * Leads: elige Panama, Valencia, Caracas o las tres (cookie "PA" | "VAL" |
+ * "CCS" | "TODAS"; sin cookie = Panama). payloadSesion() lo aplica en el guard
+ * de las APIs y en el middleware: con Valencia o Caracas queda con ese `cids`
+ * y con las tres con el de Valencia (para entrar a lo que es solo de
+ * Valencia, como Material POP); ademas `sedeLeads` marca lo que eligio, porque
+ * Leads junta Valencia y Caracas y "las tres" no es ningun `cids`
+ * (sedeElegida / condSedeElegida).
  */
 export const ADMINLEADS_CON_PANAMA = ["marketing@supricom.com"];
 export const COOKIE_PAIS_LEADS = "leads_pais";
 
-export function veAmbosPaises(payload: { role?: unknown; email?: unknown } | null | undefined): boolean {
+type PayloadPais = { role?: unknown; email?: unknown; cids?: unknown } | null | undefined;
+export type SedeElegida = 9 | 10 | "todas";
+
+/** Opciones del selector del AdminLeads de Panama: valor de la cookie → sede. */
+export const SEDES_ADMINLEADS_PANAMA: { valor: string; etiqueta: string; sede: SedeElegida | 7 }[] = [
+  { valor: "PA", etiqueta: "Panamá", sede: PANAMA },
+  { valor: "VAL", etiqueta: "Valencia", sede: 9 },
+  { valor: "CCS", etiqueta: "Caracas", sede: 10 },
+  { valor: "TODAS", etiqueta: "Las tres sedes", sede: "todas" },
+];
+
+const esAdminLeads = (payload: PayloadPais) => String(payload?.role ?? "").toLowerCase().trim() === "adminleads";
+
+export function esAdminLeadsPanama(payload: PayloadPais): boolean {
+  return esAdminLeads(payload) && Number(payload?.cids) === PANAMA;
+}
+
+export function veAmbosPaises(payload: PayloadPais): boolean {
   return (
-    String(payload?.role ?? "").toLowerCase().trim() === "adminleads" &&
-    ADMINLEADS_CON_PANAMA.includes(String(payload?.email ?? "").toLowerCase().trim())
+    esAdminLeadsPanama(payload) ||
+    (esAdminLeads(payload) && ADMINLEADS_CON_PANAMA.includes(String(payload?.email ?? "").toLowerCase().trim()))
   );
 }
 
+type ConCookies = { cookies: { get(nombre: string): { value: string } | undefined } };
+
 /**
  * Payload con el `cids` que usa el modulo de Leads. Solo cambia para quien
- * veAmbosPaises() y eligio Panama; la cookie de cualquier otro se ignora.
+ * veAmbosPaises() y eligio otra sede; la cookie de cualquier otro se ignora.
+ * Ya cambiado no vuelve a cambiar (las rutas de Leads lo llaman de nuevo).
  */
-export function payloadLeads<T extends { role?: unknown; email?: unknown; cids?: unknown } | null | undefined>(
-  request: { cookies: { get(nombre: string): { value: string } | undefined } },
-  payload: T,
-): T {
-  if (!veAmbosPaises(payload) || request.cookies.get(COOKIE_PAIS_LEADS)?.value !== "PA") return payload;
-  return { ...payload, cids: PANAMA } as T;
+export function payloadLeads<T extends object>(request: ConCookies, payload: T): T {
+  if (!veAmbosPaises(payload as PayloadPais)) return payload;
+  const valor = request.cookies.get(COOKIE_PAIS_LEADS)?.value;
+  if (esAdminLeadsPanama(payload as PayloadPais)) {
+    const sede = SEDES_ADMINLEADS_PANAMA.find((o) => o.valor === valor)?.sede;
+    if (!sede || sede === PANAMA) return payload;
+    return { ...payload, cids: sede === "todas" ? 9 : sede, sedeLeads: sede } as T;
+  }
+  return valor === "PA" ? ({ ...payload, cids: PANAMA } as T) : payload;
+}
+
+/** Para todo el panel: solo el AdminLeads de Panama cambia de sede fuera de Leads. */
+export function payloadSesion<T extends object>(request: ConCookies, payload: T): T {
+  return esAdminLeadsPanama(payload as PayloadPais) ? payloadLeads(request, payload) : payload;
+}
+
+/** Sede que eligio el AdminLeads de Panama fuera de la suya; undefined = la regla de siempre. */
+export function sedeElegida(payload: unknown): SedeElegida | undefined {
+  const s = (payload as { sedeLeads?: unknown } | null)?.sedeLeads;
+  return s === 9 || s === 10 || s === "todas" ? s : undefined;
+}
+
+/**
+ * Condicion SQL sobre la sede de un vendedor (`col`, ej. "s.cids") segun
+ * sedeElegida(): la sede sola o, con las tres, ninguna. undefined = la regla
+ * de siempre (Panama solo, o Valencia + Caracas juntas).
+ */
+export function condSedeElegida(payload: unknown, col: string): string | undefined {
+  const s = sedeElegida(payload);
+  if (s === undefined) return undefined;
+  return s === "todas" ? "1=1" : `${col} = ${s}`;
+}
+
+/**
+ * `cids` para las funciones de Leads que reciben (userCids, sede): "todas"
+ * con las tres sedes elegidas (sin filtro de operacion), si no el del token.
+ */
+export function cidsLeads(payload: unknown): number | "todas" | null {
+  if (sedeElegida(payload) === "todas") return "todas";
+  const c = Number((payload as PayloadPais)?.cids);
+  return Number.isFinite(c) && c > 0 ? c : null;
+}
+
+/** `?sede=` que vale: con Valencia o Caracas elegida, esa; si no, la pedida. */
+export function sedeLeadsParam(payload: unknown, sede: string | null): string | null {
+  const s = sedeElegida(payload);
+  return typeof s === "number" ? String(s) : sede;
+}
+
+/** Igual que sedeLeadsParam, con la sede ya como numero. */
+export function sedeLeadsNum(payload: unknown, sede: number | null): number | null {
+  const s = sedeElegida(payload);
+  return typeof s === "number" ? s : sede;
+}
+
+/** Valor de la cookie del selector en el navegador ("" sin elegir). */
+export function cookiePaisLeads(): string {
+  if (typeof document === "undefined") return "";
+  return document.cookie.split("; ").find((c) => c.startsWith(`${COOKIE_PAIS_LEADS}=`))?.slice(COOKIE_PAIS_LEADS.length + 1) ?? "";
+}
+
+/** `cids` con que el navegador arma el menu (misma regla que payloadSesion). */
+export function cidsEnPantalla(user: PayloadPais): unknown {
+  if (!esAdminLeadsPanama(user)) return user?.cids;
+  const sede = SEDES_ADMINLEADS_PANAMA.find((o) => o.valor === cookiePaisLeads())?.sede;
+  return sede === "todas" ? 9 : (sede ?? user?.cids);
 }
