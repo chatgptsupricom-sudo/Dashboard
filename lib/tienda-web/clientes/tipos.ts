@@ -122,3 +122,137 @@ export function avanceDespacho(lineas: { cantidad: number; despachado: number }[
   const hecho = lineas.reduce((a, l) => a + Math.min(Math.max(0, Number(l.despachado) || 0), Math.max(0, Number(l.cantidad) || 0)), 0);
   return Math.round((hecho / total) * 100);
 }
+
+/* ------------------------------------------------------------------ Perfil editable */
+// Lo que el cliente escribe de su empresa en «Mi cuenta» › Perfil (tabla tienda_perfiles). No cambia Odoo:
+// lo ve su vendedor para actualizarlo allá.
+export interface SucursalPerfil { nombre: string; direccion: string; contacto: string; telefono: string }
+export interface RazonPerfil { razon: string; rif: string; sucursales: SucursalPerfil[] }
+export type RedSocial = "instagram" | "facebook" | "tiktok" | "x" | "linkedin" | "web";
+export interface DatosPerfil { nombre: string; razones: RazonPerfil[]; redes: Partial<Record<RedSocial, string>> }
+
+export const MAX_RAZONES = 10;
+export const MAX_SUCURSALES = 30;
+export const REDES: { id: RedSocial; nombre: string; hosts: string[]; base: string }[] = [
+  { id: "instagram", nombre: "Instagram", hosts: ["instagram.com"], base: "https://instagram.com/" },
+  { id: "facebook", nombre: "Facebook", hosts: ["facebook.com", "fb.com"], base: "https://facebook.com/" },
+  { id: "tiktok", nombre: "TikTok", hosts: ["tiktok.com"], base: "https://tiktok.com/@" },
+  { id: "x", nombre: "X (Twitter)", hosts: ["x.com", "twitter.com"], base: "https://x.com/" },
+  { id: "linkedin", nombre: "LinkedIn", hosts: ["linkedin.com"], base: "https://linkedin.com/company/" },
+  { id: "web", nombre: "Página web", hosts: [], base: "" },
+];
+
+const textoLimpio = (v: unknown, max: number) => String(v ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+
+/** RIF (Venezuela: J-12345678-9) o RUC (Panamá: 155612345-2-2021, 8-123-456): normalizado en mayúsculas. null = no parece uno. */
+export function rifValido(v: unknown): string | null {
+  const t = String(v ?? "").toUpperCase().replace(/\s+/g, "").replace(/\./g, "");
+  if (!t || t.length > 25) return null;
+  // 8 números y el dígito verificador: «J317376900» → «J-31737690-0».
+  const ve = t.match(/^([VJEGP])-?(\d{5,8})-?(\d)?$/);
+  if (ve) return `${ve[1]}-${ve[2]}${ve[3] ? `-${ve[3]}` : ""}`;
+  if (/^[0-9A-Z]{1,12}(-[0-9A-Z]{1,10}){1,4}$/.test(t) && (t.match(/\d/g) || []).length >= 5) return t;
+  return null;
+}
+
+/**
+ * Una red social como enlace https. Acepta el usuario (@tienda o tienda) o el enlace completo; el enlace tiene
+ * que ser de esa red (la web, cualquier sitio). "" = vacío; null = no sirve.
+ */
+export function enlaceRed(red: RedSocial, v: unknown): string | null {
+  let t = String(v ?? "").trim();
+  if (!t) return "";
+  if (t.length > 200) return null;
+  const def = REDES.find((r) => r.id === red);
+  if (!def) return null;
+  const pareceUrl = /^[a-z][a-z0-9+.-]*:/i.test(t) || /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/i.test(t);
+  if (!pareceUrl) {
+    if (red === "web") return null;
+    const usuario = t.replace(/^@/, "");
+    if (!/^[A-Za-z0-9._-]{1,60}$/.test(usuario)) return null;
+    return def.base + usuario;
+  }
+  if (!/^https?:\/\//i.test(t)) {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return null; // javascript:, mailto:, data:…
+    t = `https://${t}`;
+  }
+  let u: URL;
+  try { u = new URL(t); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  if (u.username || u.password) return null;
+  const host = u.hostname.toLowerCase().replace(/^(www\.|m\.)/, "");
+  if (def.hosts.length && !def.hosts.some((h) => host === h || host.endsWith(`.${h}`))) return null;
+  if (!def.hosts.length && !/\.[a-z]{2,}$/i.test(host)) return null;
+  u.protocol = "https:";
+  if (def.hosts.length) u.hostname = host; // sin www. ni m.
+  return u.toString().replace(/\/$/, "");
+}
+
+/** Teléfono: al menos 7 dígitos; se guarda como lo escribió (sin letras raras). */
+export const telefonoValido = (v: unknown) => {
+  const t = textoLimpio(v, 30);
+  return /^[+\d\s().\-\/]+$/.test(t) && (t.match(/\d/g) || []).length >= 7 ? t : null;
+};
+
+export type ResultadoPerfil = { ok: true; datos: DatosPerfil } | { ok: false; error: string; campo: string };
+
+/**
+ * Valida y limpia lo que manda la pantalla. Mínimo una razón social, y cada razón social con al menos una
+ * sucursal. El campo con error va como ruta («razones.0.sucursales.1.telefono») para que la pantalla lo marque.
+ */
+export function validarPerfil(c: any): ResultadoPerfil {
+  const mal = (campo: string, error: string): ResultadoPerfil => ({ ok: false, campo, error });
+  const nombre = textoLimpio(c?.nombre, 120);
+  if (nombre.length < 2) return mal("nombre", "Escribe el nombre del cliente o de la empresa");
+  const razonesIn = Array.isArray(c?.razones) ? c.razones : [];
+  if (!razonesIn.length) return mal("razones", "Agrega al menos una razón social");
+  if (razonesIn.length > MAX_RAZONES) return mal("razones", `Puedes tener hasta ${MAX_RAZONES} razones sociales`);
+  const razones: RazonPerfil[] = [];
+  const vistos = new Set<string>();
+  for (let i = 0; i < razonesIn.length; i++) {
+    const r = razonesIn[i] || {};
+    const p = `razones.${i}`;
+    const razon = textoLimpio(r.razon, 160);
+    if (razon.length < 2) return mal(`${p}.razon`, `Escribe la razón social ${razonesIn.length > 1 ? `n.º ${i + 1}` : ""}`.trim());
+    const rif = rifValido(r.rif);
+    if (!rif) return mal(`${p}.rif`, `Revisa el RIF de ${razon}: por ejemplo J-12345678-9`);
+    const clave = claveDocumento(rif);
+    if (vistos.has(clave)) return mal(`${p}.rif`, `El RIF ${rif} está repetido`);
+    vistos.add(clave);
+    const sucIn = Array.isArray(r.sucursales) ? r.sucursales : [];
+    if (!sucIn.length) return mal(`${p}.sucursales`, `${razon} necesita al menos una sucursal`);
+    if (sucIn.length > MAX_SUCURSALES) return mal(`${p}.sucursales`, `Puedes tener hasta ${MAX_SUCURSALES} sucursales por razón social`);
+    const sucursales: SucursalPerfil[] = [];
+    for (let j = 0; j < sucIn.length; j++) {
+      const s = sucIn[j] || {};
+      const q = `${p}.sucursales.${j}`;
+      const cual = `la sucursal ${j + 1} de ${razon}`;
+      const nombreS = textoLimpio(s.nombre, 80);
+      if (nombreS.length < 2) return mal(`${q}.nombre`, `Ponle un nombre a ${cual} (por ejemplo «Principal»)`);
+      const direccion = textoLimpio(s.direccion, 300);
+      if (direccion.length < 8) return mal(`${q}.direccion`, `Escribe la dirección de ${cual}`);
+      const contacto = textoLimpio(s.contacto, 80);
+      if (contacto.length < 2) return mal(`${q}.contacto`, `Escribe el nombre de contacto de ${cual}`);
+      const telefono = telefonoValido(s.telefono);
+      if (!telefono) return mal(`${q}.telefono`, `Revisa el teléfono de ${cual}: necesita al menos 7 números`);
+      sucursales.push({ nombre: nombreS, direccion, contacto, telefono });
+    }
+    razones.push({ razon, rif, sucursales });
+  }
+  const redes: Partial<Record<RedSocial, string>> = {};
+  for (const red of REDES) {
+    const v = enlaceRed(red.id, c?.redes?.[red.id]);
+    if (v === null) return mal(`redes.${red.id}`, red.id === "web" ? "Revisa la dirección de tu página web" : `Revisa tu ${red.nombre}: escribe tu usuario o el enlace de tu perfil`);
+    if (v) redes[red.id] = v;
+  }
+  return { ok: true, datos: { nombre, razones, redes } };
+}
+
+/** Logo: PNG, JPEG o WebP (por sus primeros bytes, no por lo que diga el nombre), hasta 400 KB. */
+export const LOGO_MAX_BYTES = 400 * 1024;
+export function tipoDeImagen(b: Uint8Array): "image/png" | "image/jpeg" | "image/webp" | null {
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b.length >= 12 && String.fromCharCode(...b.slice(0, 4)) === "RIFF" && String.fromCharCode(...b.slice(8, 12)) === "WEBP") return "image/webp";
+  return null;
+}

@@ -337,3 +337,25 @@ export async function perfilDe(c: ClienteOdoo) {
     direcciones: (direcciones || []).map((d) => ({ nombre: String(d.name || ""), direccion: direccion(d), telefono: String(d.phone || "") })).filter((d) => d.direccion),
   };
 }
+
+/**
+ * Sus empresas en Odoo con su RIF/RUC, dirección y teléfono, y las direcciones de entrega de cada una: para
+ * proponer el perfil la primera vez y para saber qué RIF ya tenemos registrados.
+ */
+export async function fichasDe(c: ClienteOdoo) {
+  const [empresas, entregas] = await Promise.all([
+    leer<any[]>("res.partner", [["id", "in", c.partners]], { fields: ["id", "name", "vat", "street", "street2", "city", "state_id", "country_id", "phone", "mobile"] }),
+    leer<any[]>("res.partner", [["parent_id", "child_of", c.partners], ["type", "=", "delivery"], ["active", "=", true]], {
+      fields: ["id", "name", "commercial_partner_id", "street", "street2", "city", "state_id", "country_id", "phone", "mobile"], limit: 60,
+    }),
+  ]);
+  return (empresas || []).map((e) => ({
+    nombre: String(e.name || ""),
+    documento: String(e.vat || ""),
+    direccion: direccion(e),
+    telefono: String(e.phone || e.mobile || ""),
+    entregas: (entregas || []).filter((d) => d.commercial_partner_id?.[0] === e.id)
+      .map((d) => ({ nombre: String(d.name || ""), direccion: direccion(d), telefono: String(d.phone || d.mobile || "") }))
+      .filter((d) => d.direccion),
+  }));
+}

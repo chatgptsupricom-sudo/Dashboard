@@ -21,10 +21,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125k">
-<link rel="stylesheet" href="tienda.css?v=20261125k">
-<link rel="stylesheet" href="cuenta.css?v=20261125k">
-<link rel="stylesheet" href="mi-cuenta.css?v=20261125k">
+<link rel="stylesheet" href="estilos.css?v=20261125l">
+<link rel="stylesheet" href="tienda.css?v=20261125l">
+<link rel="stylesheet" href="cuenta.css?v=20261125l">
+<link rel="stylesheet" href="mi-cuenta.css?v=20261125l">
 </head>
 <body data-pagina="mi-cuenta">
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -406,19 +406,27 @@
                     </div>
                 </div>
 
-                <!-- Perfil: su empresa, sus sedes, direcciones y la seguridad de su acceso -->
+                <!-- Perfil: lo que el cliente escribe de su empresa (nombre, logo, redes, razones sociales con sus
+                     sucursales), su vendedor en cada sede y la seguridad de su acceso -->
                 <div id="vista-perfil" class="panel-vista" role="tabpanel" aria-labelledby="p-perfil" hidden>
                     <header class="vista-cabeza">
                         <div>
                             <h1 class="vista-titulo">Perfil</h1>
-                            <p class="vista-nota">Los datos de tu empresa como los tenemos. Si algo cambió, escríbele a tu vendedor y lo actualiza.</p>
+                            <p class="vista-nota">Así conocemos a tu empresa. Mantén al día tus razones sociales y sucursales: tu vendedor las usa para tus pedidos, facturas y despachos.</p>
                         </div>
+                        <button type="button" class="boton boton-tinta perfil-editar" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>Editar perfil</button>
                     </header>
+                    <section class="perfil-hero" aria-label="Tu empresa"></section>
+                    <form class="perfil-editor" hidden novalidate aria-label="Editar el perfil"></form>
+                    <section class="perfil-razones-caja" aria-labelledby="t-perfil-razones">
+                        <h2 id="t-perfil-razones" class="perfil-titulo perfil-titulo-fuera">Razones sociales y sucursales</h2>
+                        <div class="perfil-razones"></div>
+                    </section>
+                    <section aria-labelledby="t-perfil-sedes">
+                        <h2 id="t-perfil-sedes" class="perfil-titulo perfil-titulo-fuera">Tu vendedor en cada sede</h2>
+                        <div class="perfil-sedes"></div>
+                    </section>
                     <div class="perfil-rejilla">
-                        <section class="tarjeta-perfil perfil-empresa" aria-labelledby="t-perfil-empresa">
-                            <h2 id="t-perfil-empresa" class="perfil-titulo">Tu empresa</h2>
-                            <dl class="perfil-datos"></dl>
-                        </section>
                         <section class="tarjeta-perfil perfil-acceso" aria-labelledby="t-perfil-acceso">
                             <h2 id="t-perfil-acceso" class="perfil-titulo">Acceso y seguridad</h2>
                             <dl class="perfil-datos perfil-acceso-datos"></dl>
@@ -441,14 +449,6 @@
                             </form>
                         </section>
                     </div>
-                    <section aria-labelledby="t-perfil-sedes">
-                        <h2 id="t-perfil-sedes" class="perfil-titulo perfil-titulo-fuera">Tus sedes</h2>
-                        <div class="perfil-sedes"></div>
-                    </section>
-                    <section class="perfil-direcciones-caja" aria-labelledby="t-perfil-dir" hidden>
-                        <h2 id="t-perfil-dir" class="perfil-titulo perfil-titulo-fuera">Direcciones de entrega</h2>
-                        <div class="perfil-direcciones"></div>
-                    </section>
                 </div>
             </div>
         </div>
@@ -568,7 +568,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261125k"></script>
-<script src="vivo.js?v=20261125k" data-despues="app.js?v=20261125k,mi-cuenta.js?v=20261125k"></script>
+<script src="datos.js?v=20261125l"></script>
+<script src="vivo.js?v=20261125l" data-despues="app.js?v=20261125l,mi-cuenta.js?v=20261125l"></script>
 </body>
 </html>
