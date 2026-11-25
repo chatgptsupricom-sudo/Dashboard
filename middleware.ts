@@ -9,6 +9,7 @@ import { esHostNC, RUTA_INTERNA, RUTA_PUBLICA } from "@/lib/notas-credito/hostCl
 import { puedeEditarPoliticas, puedeVerPoliticas } from "@/lib/politicas/permisos";
 import { puedeVerSolicitudesPersonal } from "@/lib/solicitudes-personal/tipos";
 import { puedeVerSemaforo } from "@/lib/semaforo-clientes/acceso";
+import { puedeVerPerfilesClientes } from "@/lib/tienda-web/clientes/accesoPanel";
 import { puedeVerCupo } from "@/lib/cupo-credito/acceso";
 import { puedeVerRotacion } from "@/lib/rotacion-inventario/acceso";
 import { payloadSesion } from "@/lib/adminleads/sucursal";
@@ -200,6 +201,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/solicitudes-personal") ||
     // Semáforo de clientes: vendedores, Gerencia de Ventas, SuperAdmin y BI (lib/semaforo-clientes/acceso.ts).
     pathname.includes("/semaforo-clientes") ||
+    // Perfiles de clientes de la tienda web: vendedores, gerencia comercial y SuperAdmin (lib/tienda-web/clientes/accesoPanel.ts).
+    pathname.includes("/perfiles-clientes") ||
     // Cupo de crédito: vendedores, Gerencia comercial, SuperAdmin y BI (lib/cupo-credito/acceso.ts).
     pathname.includes("/cupo-credito") ||
     // Rotación de inventario: SuperAdmin, Compras, Gerente de Marca, gerencias y BI (lib/rotacion-inventario/acceso.ts).
@@ -473,6 +476,11 @@ export default async function middleware(request: NextRequest) {
 
       // 10f. Semáforo de clientes: el vendedor ve su cartera, la gerencia su sede, la dirección todo.
       if (pathname.includes("/semaforo-clientes") && !puedeVerSemaforo(userRole)) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
+      // 10f-ter. Perfiles de clientes de la tienda web: el vendedor los suyos, la gerencia su sede, el SuperAdmin todo.
+      if (pathname.includes("/perfiles-clientes") && !puedeVerPerfilesClientes(userRole)) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 

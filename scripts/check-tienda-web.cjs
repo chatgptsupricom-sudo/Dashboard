@@ -161,4 +161,57 @@ assert.strictEqual(avanceDespacho([{ cantidad: 3, despachado: 1 }, { cantidad: 1
 assert.strictEqual(avanceDespacho([{ cantidad: 2, despachado: 5 }]), 100); // de más no pasa del 100
 assert.strictEqual(avanceDespacho([{ cantidad: 0, despachado: 0 }]), 0);
 
+// Perfil editable
+const { rifValido, enlaceRed, telefonoValido: telefonoPerfil, validarPerfil, tipoDeImagen } = mk.exports;
+assert.strictEqual(rifValido("j317376900"), "J-31737690-0");
+assert.strictEqual(rifValido("J-31737690-0"), "J-31737690-0");
+assert.strictEqual(rifValido("v 12.345.678"), "V-12345678");
+assert.strictEqual(rifValido("155612345-2-2021"), "155612345-2-2021"); // RUC de Panamá
+assert.strictEqual(rifValido("8-123-456"), "8-123-456");
+assert.strictEqual(rifValido("hola"), null);
+assert.strictEqual(rifValido("J-12"), null);
+assert.strictEqual(enlaceRed("instagram", "@mitienda.ve"), "https://instagram.com/mitienda.ve");
+assert.strictEqual(enlaceRed("instagram", "https://www.instagram.com/mitienda/"), "https://instagram.com/mitienda");
+assert.strictEqual(enlaceRed("instagram", "https://facebook.com/mitienda"), null); // enlace de otra red
+assert.strictEqual(enlaceRed("facebook", "facebook.com/mitienda"), "https://facebook.com/mitienda");
+assert.strictEqual(enlaceRed("tiktok", "mitienda"), "https://tiktok.com/@mitienda");
+assert.strictEqual(enlaceRed("web", "javascript:alert(1)"), null);
+assert.strictEqual(enlaceRed("instagram", "javascript:alert(1)"), null);
+assert.strictEqual(enlaceRed("web", "mitienda.com.ve"), "https://mitienda.com.ve");
+assert.strictEqual(enlaceRed("web", "mitienda"), null);
+assert.strictEqual(enlaceRed("x", ""), "");
+assert.strictEqual(telefonoPerfil("0414-123.45.67"), "0414-123.45.67");
+assert.strictEqual(telefonoPerfil("12345"), null);
+assert.strictEqual(telefonoPerfil("0414abc1234"), null);
+const suc = { nombre: "Principal", direccion: "Av. Bolívar, Valencia", contacto: "Ana", telefono: "0241-8251234" };
+const bien = { nombre: "Tienda Ana", razones: [{ razon: "Ana C.A.", rif: "j123456789", sucursales: [suc] }], redes: { instagram: "@ana" } };
+let r = validarPerfil(bien);
+assert.ok(r.ok);
+assert.strictEqual(r.datos.razones[0].rif, "J-12345678-9");
+assert.strictEqual(r.datos.redes.instagram, "https://instagram.com/ana");
+assert.strictEqual(validarPerfil({ ...bien, razones: [] }).campo, "razones"); // mínimo una razón social
+assert.strictEqual(validarPerfil({ ...bien, razones: [{ ...bien.razones[0], sucursales: [] }] }).campo, "razones.0.sucursales"); // mínimo una sucursal
+assert.strictEqual(validarPerfil({ ...bien, razones: [bien.razones[0], { ...bien.razones[0], razon: "Otra" }] }).campo, "razones.1.rif"); // RIF repetido
+assert.strictEqual(validarPerfil({ ...bien, razones: [{ ...bien.razones[0], sucursales: [{ ...suc, telefono: "12" }] }] }).campo, "razones.0.sucursales.0.telefono");
+assert.strictEqual(validarPerfil({ ...bien, redes: { web: "javascript:alert(1)" } }).campo, "redes.web");
+assert.strictEqual(tipoDeImagen(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10])), "image/png");
+assert.strictEqual(tipoDeImagen(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0])), "image/jpeg");
+assert.strictEqual(tipoDeImagen(Uint8Array.from(Buffer.from("<svg onload=alert(1)>"))), null);
+// Historial del panel: qué cambió entre dos versiones
+const { resumenCambios } = mk.exports;
+const v1 = validarPerfil(bien).datos;
+assert.match(resumenCambios(null, v1)[0], /primera vez: 1 razón social y 1 sucursal/);
+assert.deepStrictEqual(resumenCambios(v1, v1), []);
+const v2 = JSON.parse(JSON.stringify(v1));
+v2.razones[0].sucursales[0].telefono = "0241-0000000";
+v2.razones[0].sucursales.push({ ...suc, nombre: "Almacén" });
+v2.razones.push({ razon: "Otra C.A.", rif: "J-11111111-1", sucursales: [suc] });
+v2.redes.web = "https://ana.com";
+assert.deepStrictEqual(resumenCambios(v1, v2), [
+  "Agregó la razón social Otra C.A. (J-11111111-1) con 1 sucursal",
+  "Cambió el teléfono de la sucursal Principal de Ana C.A.",
+  "Agregó la sucursal Almacén de Ana C.A.",
+  "Agregó su Página web",
+]);
+
 console.log("tienda-web: todo bien");

@@ -47,6 +47,9 @@
             if (k === "class") el.className = v;
             else if (k === "text") el.textContent = v;
             else if (k.startsWith("data-") || k.startsWith("aria-") || k === "role") el.setAttribute(k, v);
+            else if (k === "for") el.htmlFor = v;
+            // maxlength, inputmode, tabindex… no son propiedades con ese nombre: van como atributo.
+            else if (!(k in el)) { if (v !== false && v !== null && v !== undefined) el.setAttribute(k, v === true ? "" : v); }
             else el[k] = v;
         }
         for (const h of hijos) el.append(h);
