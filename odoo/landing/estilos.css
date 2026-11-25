@@ -927,3 +927,7 @@ h1, h2, h3, .ficha-nombre, .combo-titulo, .acordeon summary { text-wrap: balance
     .js .banners-pista:empty::before { width: 88%; }
     .js .estante-pista:empty::before { height: 330px; -webkit-mask: repeating-linear-gradient(90deg, #000 0 72vw, transparent 72vw calc(72vw + 18px)); mask: repeating-linear-gradient(90deg, #000 0 72vw, transparent 72vw calc(72vw + 18px)); }
 }
+
+/* Los <button> con estilo de borde no llevan el fondo gris del navegador. */
+button.boton-claro, button.boton-borde-blanco { background: transparent; }
+button.boton-claro:hover { background: color-mix(in srgb, var(--tinta) 5%, transparent); }

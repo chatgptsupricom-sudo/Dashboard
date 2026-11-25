@@ -91,6 +91,11 @@
         return `${base}?${q}${ancla ? `#${ancla}` : ""}`;
     };
     for (const a of $$("[data-ir]")) a.href = conSede(a.dataset.ir);
+    // Con sesión de «Mi cuenta» (mi-cuenta.js guarda el token), «Entrar» de la cabecera dice «Mi cuenta».
+    const CLAVE_SESION_CLIENTE = "supricom-cliente-token";
+    let haySesionCliente = false;
+    try { haySesionCliente = Boolean(localStorage.getItem(CLAVE_SESION_CLIENTE) || sessionStorage.getItem(CLAVE_SESION_CLIENTE)); } catch (e) { /* sin almacenamiento */ }
+    if (haySesionCliente) for (const a of $$("[data-cuenta-entrar]")) a.textContent = "Mi cuenta";
     // Categorías, marcas y banners llevan a la tienda con ese filtro puesto.
     const urlTienda = (filtros = {}) => {
         const q = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v)).toString();
@@ -1140,6 +1145,19 @@
         anunciar(`Sumado a tu cotización: ${n > 1 ? `${unidadesTxt(n)} de ` : ""}${p.marca} ${p.nombre}. Llevas ${unidadesTxt(cotizacion.get(codigo))}.`);
     };
     enLaSede.agregar = (p, img) => agregarProducto(p, img);
+    // «Repetir pedido» de Mi cuenta: varios códigos con su cantidad de una vez. Un código que la página no
+    // conoce entra igual, «por revisar» (lo confirma el vendedor).
+    const sumarCodigos = (lista) => {
+        let n = 0;
+        for (const [codigo, cant] of lista) {
+            const k = String(codigo || "").trim().toUpperCase();
+            if (!k || k.length > 50) continue;
+            poner(k, (cotizacion.get(k) || 0) + Math.max(1, Math.min(MAX_CANT, Math.round(Number(cant) || 1))));
+            n += 1;
+        }
+        if (n) { cambio(); anunciar(`Sumados ${n} ${n === 1 ? "producto" : "productos"} a tu cotización.`); }
+        return n;
+    };
 
     // Cualquier botón con data-agregar suma una unidad de ese producto; un combo suma todos los suyos.
     document.addEventListener("click", (ev) => {
@@ -1596,6 +1614,8 @@
         // Suma n unidades de un producto (la ficha, con su selector de cantidad), con la foto que vuela.
         agregar: (p, n, img) => agregarProducto(p, img, Math.max(1, Math.min(MAX_CANT, n | 0))),
         alCambiarCotizacion: (f) => oyentesCotizacion.push(f),
+        sumarCodigos: (lista) => sumarCodigos(lista),
+        haySesionCliente,
         abrirCotizacion: () => abrirCarrito(),
         porId, MAX_CANT, LISTAS_SEDE: { masVendidos: S.masVendidos || [], novedades: S.novedades || [], menosRotan: S.menosRotan || [] },
     };

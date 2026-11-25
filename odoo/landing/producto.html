@@ -20,9 +20,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125b">
-<link rel="stylesheet" href="tienda.css?v=20261125b">
-<link rel="stylesheet" href="producto.css?v=20261125b">
+<link rel="stylesheet" href="estilos.css?v=20261125f">
+<link rel="stylesheet" href="tienda.css?v=20261125f">
+<link rel="stylesheet" href="producto.css?v=20261125f">
 </head>
 <body data-pagina="producto">
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -41,7 +41,7 @@
                 <a href="./#comprar" data-ir="./#comprar">Cómo comprar</a>
                 <a href="./#marcas" data-ir="./#marcas">Marcas</a>
                 <button type="button" class="menu-tema">Cambiar a modo oscuro</button>
-                <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
+                <a class="boton boton-claro" href="mi-cuenta.html" data-ir="mi-cuenta.html" data-cuenta-entrar>Entrar</a>
             </nav>
             <a class="boton boton-tinta cabecera-cta" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
             <div class="sede-selector">
@@ -78,7 +78,7 @@
 
 <main id="contenido">
 
-    <!-- Ficha: foto a la izquierda y, a la derecha, nombre, código, precio con cuenta y la cantidad para cotizar -->
+    <!-- Ficha: foto a la izquierda y, a la derecha, nombre, código, precio con la cotización y la cantidad para cotizar -->
     <section class="producto-portada">
         <div class="contenedor">
             <nav class="migas" aria-label="Estás en">
@@ -118,9 +118,8 @@
                     <div class="producto-precio">
                         <div>
                             <p class="producto-precio-titulo">Precio de distribuidor</p>
-                            <p class="producto-precio-texto">Entra con tu cuenta para verlo. Sin cuenta, tu vendedor te lo manda con la cotización.</p>
+                            <p class="producto-precio-texto">Te lo envía tu vendedor con la cotización, según tu lista de precios.</p>
                         </div>
-                        <a class="boton boton-claro producto-entrar" data-odoo="/web/login">Entrar</a>
                     </div>
 
                     <div class="producto-comprar">
@@ -209,7 +208,7 @@
             <div class="cierre-caja">
                 <div>
                     <h2>Pide tu cuenta de distribuidor</h2>
-                    <p>Se pide con el <span data-sede="documento">RIF</span> de tu empresa y con ella ves tus precios en la tienda. Mientras la aprobamos, ya puedes cotizar aquí.</p>
+                    <p>Se pide con el <span data-sede="documento">RIF</span> de tu empresa y con ella tienes tu vendedor y ves tus pedidos y facturas en línea. Mientras la aprobamos, ya puedes cotizar aquí.</p>
                 </div>
                 <div class="acciones">
                     <a class="boton boton-blanco boton-grande" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
@@ -237,7 +236,7 @@
         <nav aria-label="Tienda">
             <h3>Tienda</h3>
             <a href="tienda.html" data-ir="tienda.html">Catálogo</a>
-            <a data-odoo="/web/login">Mi cuenta</a>
+            <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Mi cuenta</a>
             <a href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
         </nav>
         <nav aria-label="Ayuda">
@@ -323,8 +322,8 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261125b"></script>
-<script src="fichas.js?v=20261125b"></script>
-<script src="vivo.js?v=20261125b" data-despues="app.js?v=20261125b,producto.js?v=20261125b"></script>
+<script src="datos.js?v=20261125f"></script>
+<script src="fichas.js?v=20261125f"></script>
+<script src="vivo.js?v=20261125f" data-despues="app.js?v=20261125f,producto.js?v=20261125f"></script>
 </body>
 </html>

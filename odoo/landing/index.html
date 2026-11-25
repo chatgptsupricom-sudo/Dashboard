@@ -20,7 +20,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125b">
+<link rel="stylesheet" href="estilos.css?v=20261125f">
 </head>
 <body>
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -40,7 +40,7 @@
                 <a href="#categorias">Categorías</a>
                 <a href="#marcas">Marcas</a>
                 <button type="button" class="menu-tema">Cambiar a modo oscuro</button>
-                <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
+                <a class="boton boton-claro" href="mi-cuenta.html" data-ir="mi-cuenta.html" data-cuenta-entrar>Entrar</a>
             </nav>
             <a class="boton boton-tinta cabecera-cta" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
             <div class="sede-selector">
@@ -99,7 +99,7 @@
                 <a class="boton boton-tinta boton-grande" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
                 <a class="boton boton-claro boton-grande" href="#carrito" data-abrir-lista>Cotizar con mi lista de códigos</a>
             </div>
-            <p class="portada-entrar">¿Ya eres distribuidor? <a data-odoo="/web/login">Entra para ver tus precios<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
+            <p class="portada-entrar">¿Ya eres cliente? <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Entra a tu cuenta: pedidos y facturas<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
         </div>
     </section>
 
@@ -127,7 +127,7 @@
                         <div><dt>Categoría</dt><dd class="ficha-cat"></dd></div>
                         <div><dt>Marca</dt><dd class="ficha-marca"></dd></div>
                         <div><dt>Código</dt><dd class="ficha-codigo"></dd></div>
-                        <div><dt>Precio</dt><dd><a class="ficha-entrar" data-odoo="/web/login">Entra para verlo</a></dd></div>
+                        <div><dt>Precio</dt><dd><span class="ficha-precio">Con tu cotización</span></dd></div>
                     </dl>
                     <div class="acciones">
                         <button type="button" class="boton boton-tinta agregar ficha-cotizar"><svg class="icono-mas" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><svg class="icono-listo" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Cotizar</span></button>
@@ -185,7 +185,7 @@
                 <li class="paso">
                     <span class="paso-num">3</span>
                     <h3>Con tu cuenta, más rápido</h3>
-                    <p>Pídela con el <span data-sede="documento">RIF</span> de tu empresa y ves tus precios en la tienda.</p>
+                    <p>Pídela con el <span data-sede="documento">RIF</span> de tu empresa: tienes tu vendedor y ves tus pedidos y facturas en línea.</p>
                 </li>
             </ol>
         </div>
@@ -264,7 +264,7 @@
             <div class="acordeon">
                 <details>
                     <summary>¿Por qué no veo los precios?</summary>
-                    <p>Somos mayoristas: los precios son los de tu lista de distribuidor y se ven en la tienda al entrar con tu cuenta. Sin cuenta igual puedes pedir tu cotización y tu vendedor te responde con los precios.</p>
+                    <p>Somos mayoristas: los precios son los de tu lista de distribuidor y te los envía tu vendedor con la cotización. Puedes pedirla aquí, con o sin cuenta.</p>
                 </details>
                 <details>
                     <summary>¿Cómo pido mi cuenta?</summary>
@@ -292,7 +292,7 @@
             <div class="cierre-caja aparece">
                 <div>
                     <h2>Pide tu cuenta de distribuidor</h2>
-                    <p>Se pide con el <span data-sede="documento">RIF</span> de tu empresa y con ella ves tus precios en la tienda. Mientras la aprobamos, ya puedes cotizar aquí.</p>
+                    <p>Se pide con el <span data-sede="documento">RIF</span> de tu empresa y con ella tienes tu vendedor y ves tus pedidos y facturas en línea. Mientras la aprobamos, ya puedes cotizar aquí.</p>
                 </div>
                 <div class="acciones">
                     <a class="boton boton-blanco boton-grande" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
@@ -313,7 +313,7 @@
         <nav aria-label="Tienda">
             <h3>Tienda</h3>
             <a href="tienda.html" data-ir="tienda.html">Catálogo</a>
-            <a data-odoo="/web/login">Mi cuenta</a>
+            <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Mi cuenta</a>
             <a href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
         </nav>
         <nav aria-label="Ayuda">
@@ -401,7 +401,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261125b"></script>
-<script src="vivo.js?v=20261125b" data-despues="app.js?v=20261125b"></script>
+<script src="datos.js?v=20261125f"></script>
+<script src="vivo.js?v=20261125f" data-despues="app.js?v=20261125f"></script>
 </body>
 </html>

@@ -20,8 +20,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125b">
-<link rel="stylesheet" href="tienda.css?v=20261125b">
+<link rel="stylesheet" href="estilos.css?v=20261125f">
+<link rel="stylesheet" href="tienda.css?v=20261125f">
 </head>
 <body data-pagina="tienda">
 <a class="saltar" href="#catalogo">Saltar al catálogo</a>
@@ -40,7 +40,7 @@
                 <a href="./#comprar" data-ir="./#comprar">Cómo comprar</a>
                 <a href="./#marcas" data-ir="./#marcas">Marcas</a>
                 <button type="button" class="menu-tema">Cambiar a modo oscuro</button>
-                <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
+                <a class="boton boton-claro" href="mi-cuenta.html" data-ir="mi-cuenta.html" data-cuenta-entrar>Entrar</a>
             </nav>
             <a class="boton boton-tinta cabecera-cta" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
             <div class="sede-selector">
@@ -90,7 +90,7 @@
                     <h1 class="tienda-titulo">Todo lo que tenemos en <span class="tienda-sede" data-sede-nombre>tu sede</span></h1>
                     <p class="tienda-nota"><strong class="tienda-total"></strong> productos en existencia. Cotiza sin cuenta: tu vendedor te responde con los precios.</p>
                     <p class="tienda-vivo" hidden><span class="punto" aria-hidden="true"></span>Existencia al día con nuestro inventario</p>
-                    <p class="portada-entrar">¿Ya eres distribuidor? <a data-odoo="/web/login">Entra para ver tus precios<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
+                    <p class="portada-entrar">¿Ya eres cliente? <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Entra a tu cuenta: pedidos y facturas<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
                 </div>
                 <div class="tienda-abanico" aria-hidden="true"></div>
             </div>
@@ -174,12 +174,12 @@
             </aside>
 
             <div class="resultados">
-                <!-- Los precios se ven con cuenta: un solo aviso aquí en vez de repetirlo en cada tarjeta -->
+                <!-- Un solo aviso sobre los precios y la cuenta, en vez de repetirlo en cada tarjeta -->
                 <div class="aviso-precios">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
-                    <p><strong>¿Eres distribuidor?</strong> Entra con tu cuenta y ves tu precio en cada producto.</p>
+                    <p><strong>¿Ya eres cliente?</strong> En tu cuenta ves tus pedidos y facturas. Los precios te los envía tu vendedor con la cotización.</p>
                     <div class="aviso-precios-acciones">
-                        <a class="boton boton-tinta" data-odoo="/web/login">Entrar</a>
+                        <a class="boton boton-tinta" href="mi-cuenta.html" data-ir="mi-cuenta.html">Mi cuenta</a>
                         <a class="enlace-chico enlace-acento" href="cuenta.html" data-ir="cuenta.html">Pedir mi cuenta</a>
                     </div>
                 </div>
@@ -222,7 +222,7 @@
             <div class="cierre-caja">
                 <div>
                     <h2>Pide tu cuenta de distribuidor</h2>
-                    <p>Se pide con el <span data-sede="documento">RIF</span> de tu empresa y con ella ves tus precios en la tienda. Mientras la aprobamos, ya puedes cotizar aquí.</p>
+                    <p>Se pide con el <span data-sede="documento">RIF</span> de tu empresa y con ella tienes tu vendedor y ves tus pedidos y facturas en línea. Mientras la aprobamos, ya puedes cotizar aquí.</p>
                 </div>
                 <div class="acciones">
                     <a class="boton boton-blanco boton-grande" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
@@ -243,7 +243,7 @@
         <nav aria-label="Tienda">
             <h3>Tienda</h3>
             <a href="tienda.html" data-ir="tienda.html">Catálogo</a>
-            <a data-odoo="/web/login">Mi cuenta</a>
+            <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Mi cuenta</a>
             <a href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
         </nav>
         <nav aria-label="Ayuda">
@@ -329,7 +329,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261125b"></script>
-<script src="vivo.js?v=20261125b" data-despues="app.js?v=20261125b,tienda.js?v=20261125b"></script>
+<script src="datos.js?v=20261125f"></script>
+<script src="vivo.js?v=20261125f" data-despues="app.js?v=20261125f,tienda.js?v=20261125f"></script>
 </body>
 </html>
