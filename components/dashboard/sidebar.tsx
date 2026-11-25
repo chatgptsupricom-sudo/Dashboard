@@ -392,6 +392,8 @@ export function Sidebar({
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
     // Semáforo de clientes: cartera en verde/amarillo/rojo contra su historial (lib/semaforo-clientes).
     { id: "semaforo_clientes", label: "Semáforo de clientes", icon: TrafficCone, slug: "/semaforo-clientes", absoluteHref: true },
+    // Perfiles que los clientes escriben en «Mi cuenta» de la tienda web (lib/tienda-web/clientes/perfilesPanel.ts).
+    { id: "perfiles_clientes", label: "Perfiles de clientes", icon: IdCard, slug: "/perfiles-clientes", absoluteHref: true },
     // Cupo de crédito: consumo del límite por cliente, vendedor (equipo) y zona, con histórico (lib/cupo-credito).
     { id: "cupo_credito", label: "Cupo de crédito", icon: CreditCard, slug: "/cupo-credito", absoluteHref: true },
     // Rotación de inventario: productos en verde/amarillo/rojo por días sin venta y apoyo de las marcas (lib/rotacion-inventario).
@@ -627,7 +629,7 @@ export function Sidebar({
   // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
   // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
   const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
-  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes", "cupo_credito", "crear_cliente"];
+  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes", "cupo_credito", "perfiles_clientes", "crear_cliente"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -668,7 +670,7 @@ export function Sidebar({
           [...administracionDropdownIds, ...itSuperAdminIds, ...rrhhSuperAdminIds, ...gerenteMarcaSuperAdminIds, ...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         !(isBIRole && [...marketingSuperAdminIds, ...ventasSuperAdminIds].includes(item.id)) &&
         // Gerente de Operaciones: el Semáforo va dentro de su desplegable Ventas.
-        !(showVentasDropdown && isGerenteOperaciones && ["semaforo_clientes", "cupo_credito"].includes(item.id)) &&
+        !(showVentasDropdown && isGerenteOperaciones && ["semaforo_clientes", "cupo_credito", "perfiles_clientes"].includes(item.id)) &&
         !(isSellerPausado && (item.id === "leads" || item.id === "cierres")) &&
         !(item.id === "cuentas_por_cobrar" && userRole === "cuentas por cobrar") &&
         // El SuperAdmin ya la tiene completa en el desplegable "Administración".
@@ -1518,6 +1520,13 @@ export function Sidebar({
                               label: "Semáforo de clientes",
                               href: `/${locale}/semaforo-clientes`,
                               permission: "semaforo_clientes",
+                            }]
+                          : []),
+                        ...((isSuperAdminRole || isGerenteOperaciones) && allowedSections.includes("perfiles_clientes")
+                          ? [{
+                              label: "Perfiles de clientes",
+                              href: `/${locale}/perfiles-clientes`,
+                              permission: "perfiles_clientes",
                             }]
                           : []),
                         ...((isSuperAdminRole || isBIRole || isGerenteOperaciones) && allowedSections.includes("cupo_credito")

@@ -197,5 +197,21 @@ assert.strictEqual(validarPerfil({ ...bien, redes: { web: "javascript:alert(1)" 
 assert.strictEqual(tipoDeImagen(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10])), "image/png");
 assert.strictEqual(tipoDeImagen(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0])), "image/jpeg");
 assert.strictEqual(tipoDeImagen(Uint8Array.from(Buffer.from("<svg onload=alert(1)>"))), null);
+// Historial del panel: qué cambió entre dos versiones
+const { resumenCambios } = mk.exports;
+const v1 = validarPerfil(bien).datos;
+assert.match(resumenCambios(null, v1)[0], /primera vez: 1 razón social y 1 sucursal/);
+assert.deepStrictEqual(resumenCambios(v1, v1), []);
+const v2 = JSON.parse(JSON.stringify(v1));
+v2.razones[0].sucursales[0].telefono = "0241-0000000";
+v2.razones[0].sucursales.push({ ...suc, nombre: "Almacén" });
+v2.razones.push({ razon: "Otra C.A.", rif: "J-11111111-1", sucursales: [suc] });
+v2.redes.web = "https://ana.com";
+assert.deepStrictEqual(resumenCambios(v1, v2), [
+  "Agregó la razón social Otra C.A. (J-11111111-1) con 1 sucursal",
+  "Cambió el teléfono de la sucursal Principal de Ana C.A.",
+  "Agregó la sucursal Almacén de Ana C.A.",
+  "Agregó su Página web",
+]);
 
 console.log("tienda-web: todo bien");

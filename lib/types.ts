@@ -91,6 +91,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
       "semaforo_clientes", // Semáforo de clientes: cartera en verde/amarillo/rojo (lib/semaforo-clientes)
       "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
+      "perfiles_clientes", // Perfiles que los clientes escriben en Mi cuenta de la tienda web (lib/tienda-web/clientes/perfilesPanel.ts)
       "rotacion_inventario", // Rotación de inventario: semáforo por días sin venta y apoyo de marcas (lib/rotacion-inventario)
       "crear_cliente", // Crear clientes en Odoo con validaciones (lib/clientes-odoo)
       "metas_marca", // Metas de venta por marca y cumplimiento (Ventas > Metas por Marca)
@@ -185,6 +186,7 @@ export const rolePermissions: RolePermissions = {
       "top_clientes",
       "semaforo_clientes", // Semáforo de su cartera (lib/semaforo-clientes)
       "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
+      "perfiles_clientes", // Perfiles que los clientes escriben en Mi cuenta de la tienda web (lib/tienda-web/clientes/perfilesPanel.ts)
       "spiff",
       "planificacion_visitas",
       "banco_imagenes_seller",
@@ -226,7 +228,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "semaforo_clientes", "cupo_credito", "rotacion_inventario", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "semaforo_clientes", "cupo_credito", "perfiles_clientes", "rotacion_inventario", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,
@@ -302,6 +304,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_ventas", // Reporte de Ventas (de su sede, payload.cids)
       "semaforo_clientes", // Semáforo de clientes de su sede (lib/semaforo-clientes)
       "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
+      "perfiles_clientes", // Perfiles que los clientes escriben en Mi cuenta de la tienda web (lib/tienda-web/clientes/perfilesPanel.ts)
       "rotacion_inventario", // Rotación de inventario de su sede, solo lectura (lib/rotacion-inventario)
       "seller_map", // Mapa de Clientes (sub-item de Ventas)
       // Leads dropdown

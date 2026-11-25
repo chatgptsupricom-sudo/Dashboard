@@ -256,3 +256,44 @@ export function tipoDeImagen(b: Uint8Array): "image/png" | "image/jpeg" | "image
   if (b.length >= 12 && String.fromCharCode(...b.slice(0, 4)) === "RIFF" && String.fromCharCode(...b.slice(8, 12)) === "WEBP") return "image/webp";
   return null;
 }
+
+/**
+ * Qué cambió entre dos versiones del perfil, en frases cortas para el historial del panel
+ * («Agregó la razón social X (J-…)», «Cambió el teléfono de la sucursal Principal de X»…).
+ * antes = null: la primera vez que lo guardó.
+ */
+export function resumenCambios(antes: DatosPerfil | null, despues: DatosPerfil): string[] {
+  if (!antes) {
+    const suc = despues.razones.reduce((a, r) => a + r.sucursales.length, 0);
+    return [`Guardó su perfil por primera vez: ${despues.razones.length} ${despues.razones.length === 1 ? "razón social" : "razones sociales"} y ${suc} ${suc === 1 ? "sucursal" : "sucursales"}`];
+  }
+  const out: string[] = [];
+  if (antes.nombre !== despues.nombre) out.push(`Cambió el nombre del cliente: «${antes.nombre}» → «${despues.nombre}»`);
+  const porRif = (d: DatosPerfil) => new Map(d.razones.map((r) => [claveDocumento(r.rif), r]));
+  const a = porRif(antes);
+  const b = porRif(despues);
+  for (const [k, r] of b) if (!a.has(k)) out.push(`Agregó la razón social ${r.razon} (${r.rif}) con ${r.sucursales.length} ${r.sucursales.length === 1 ? "sucursal" : "sucursales"}`);
+  for (const [k, r] of a) if (!b.has(k)) out.push(`Quitó la razón social ${r.razon} (${r.rif})`);
+  const CAMPOS: [keyof SucursalPerfil, string][] = [["direccion", "la dirección"], ["contacto", "el contacto"], ["telefono", "el teléfono"]];
+  for (const [k, rb] of b) {
+    const ra = a.get(k);
+    if (!ra) continue;
+    if (ra.razon !== rb.razon) out.push(`Cambió la razón social «${ra.razon}» → «${rb.razon}» (${rb.rif})`);
+    const sa = new Map(ra.sucursales.map((s) => [s.nombre.toLowerCase(), s]));
+    const sb = new Map(rb.sucursales.map((s) => [s.nombre.toLowerCase(), s]));
+    for (const [n, s] of sb) {
+      const previa = sa.get(n);
+      if (!previa) { out.push(`Agregó la sucursal ${s.nombre} de ${rb.razon}`); continue; }
+      const cambios = CAMPOS.filter(([c]) => previa[c] !== s[c]).map(([, t]) => t);
+      if (cambios.length) out.push(`Cambió ${cambios.join(", ").replace(/, ([^,]*)$/, " y $1")} de la sucursal ${s.nombre} de ${rb.razon}`);
+    }
+    for (const [n, s] of sa) if (!sb.has(n)) out.push(`Quitó la sucursal ${s.nombre} de ${rb.razon}`);
+  }
+  for (const red of REDES) {
+    const va = antes.redes?.[red.id] || "";
+    const vb = despues.redes?.[red.id] || "";
+    if (va === vb) continue;
+    out.push(!va ? `Agregó su ${red.nombre}` : !vb ? `Quitó su ${red.nombre}` : `Cambió su ${red.nombre}`);
+  }
+  return out;
+}

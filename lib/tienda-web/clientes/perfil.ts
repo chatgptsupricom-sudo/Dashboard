@@ -14,7 +14,7 @@ import { fichasDe, type ClienteOdoo } from "./odoo";
 import { claveDocumento, LOGO_MAX_BYTES, rifValido, telefonoValido, tipoDeImagen, validarPerfil, type DatosPerfil } from "./tipos";
 
 let tablasListas: Promise<void> | null = null;
-function asegurarTablas(): Promise<void> {
+export function asegurarTablas(): Promise<void> {
   if (!tablasListas) {
     tablasListas = (async () => {
       await db.execute(`
