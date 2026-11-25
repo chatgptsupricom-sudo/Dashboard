@@ -21,10 +21,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125i">
-<link rel="stylesheet" href="tienda.css?v=20261125i">
-<link rel="stylesheet" href="cuenta.css?v=20261125i">
-<link rel="stylesheet" href="mi-cuenta.css?v=20261125i">
+<link rel="stylesheet" href="estilos.css?v=20261125j">
+<link rel="stylesheet" href="tienda.css?v=20261125j">
+<link rel="stylesheet" href="cuenta.css?v=20261125j">
+<link rel="stylesheet" href="mi-cuenta.css?v=20261125j">
 </head>
 <body data-pagina="mi-cuenta">
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -180,7 +180,17 @@
     <!-- Con sesión: menú lateral con la empresa y, a la derecha, resumen, pedidos y facturas -->
     <section class="panel-cliente" hidden>
         <div class="contenedor panel-marco">
-            <aside class="panel-lado" aria-label="Tu cuenta">
+            <!-- En el celular el menú se esconde a la izquierda y esta barra lo abre -->
+            <div class="panel-barra">
+                <button type="button" class="panel-menu" aria-expanded="false" aria-controls="panel-lado">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+                    <span class="panel-barra-texto"><small>Tu cuenta</small><strong class="panel-barra-seccion">Resumen</strong></span>
+                </button>
+                <span class="panel-avatar panel-avatar-chico" aria-hidden="true"></span>
+            </div>
+            <div class="panel-lado-fondo" aria-hidden="true"></div>
+            <aside id="panel-lado" class="panel-lado" aria-label="Tu cuenta">
+                <button type="button" class="panel-cerrar" aria-label="Cerrar el menú"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
                 <div class="panel-perfil">
                     <span class="panel-avatar" aria-hidden="true"></span>
                     <div class="panel-perfil-texto">
@@ -558,7 +568,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261125i"></script>
-<script src="vivo.js?v=20261125i" data-despues="app.js?v=20261125i,mi-cuenta.js?v=20261125i"></script>
+<script src="datos.js?v=20261125j"></script>
+<script src="vivo.js?v=20261125j" data-despues="app.js?v=20261125j,mi-cuenta.js?v=20261125j"></script>
 </body>
 </html>
