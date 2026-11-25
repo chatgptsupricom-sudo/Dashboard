@@ -336,6 +336,24 @@ assert.strictEqual(casiMov("d2").pago, null);
   assert.deepStrictEqual(leerFilasExcel([["Fecha", "Monto"], [46026, 10], [46177, 20]]).filas.map((f) => f.fecha), ["2026-01-04", "2026-06-04"]);
 }
 
+// Bancamiga: periodo y «Saldo Inicial» arriba del encabezado, totales abajo, «Nro.» y «Referencia»
+{
+  const l = leerFilasExcel([
+    ["Bancamiga Banco Universal"],
+    ["Movimientos del 01/04/2026-30/04/2026"],
+    ["Saldo Inicial: 21076.56"],
+    ["Nro.", "Fecha", "Referencia", "Concepto", "Débito", "Crédito", "Saldo"],
+    [1, 46119, "'13914869", "NC Credito Inmediato", 0, 150000, 171076.56],
+    [23, 46142, "'563042", "Envio de SMS", 8, 0, 717.59],
+    ["", "", "", "", "", "", ""],
+    ["Creditos Total: 798000", "", "", "Debito Total: 818358,97", "", "Saldo Final: 717,59000000004"],
+  ]);
+  assert.strictEqual(l.filas.length, 2);
+  assert.deepStrictEqual(l.filas.map((f) => f.referencia), ["13914869", "563042"]);
+  assert.strictEqual(l.desde, "2026-04-01");
+  assert.strictEqual(l.hasta, "2026-04-30");
+}
+
 // Cobro dividido del mismo cliente (principal + 4 %) con Memo que no es la referencia del banco
 const pc = (id, fecha, monto, ref, cliente) => ({ id, nombre: "P/" + id, fecha, monto, cliente, ref });
 const div = cruzarBanco(

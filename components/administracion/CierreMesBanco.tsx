@@ -105,9 +105,13 @@ export function CierreMesBanco({
   const escrito =
     saldoEscrito.trim() === "" ? null : Number(saldoEscrito.includes(",") ? saldoEscrito.replace(/\./g, "").replace(",", ".") : saldoEscrito);
   const valeEscrito = escrito !== null && Number.isFinite(escrito) ? escrito : null;
-  // Sin movimientos lo escrito manda (el saldo que encontro el panel puede no ser el del banco); con movimientos, el del estado.
-  const saldoBanco = c.cierre ? c.cierre.saldoBanco : sinMovimientos ? (valeEscrito ?? calculado) : (calculado ?? valeEscrito);
-  const editable = !c.cierre && (sinMovimientos || calculado === null);
+  // Sin movimientos, o con el final calculado del mes anterior + los movimientos (el estado no trae saldo), lo escrito
+  // manda: el que encontro el panel puede no ser el del banco. Con saldo en el estado de cuenta, el del estado.
+  const deAnterior = !!c.estado?.deAnterior;
+  const mandaEscrito = sinMovimientos || deAnterior;
+  const saldoBanco = c.cierre ? c.cierre.saldoBanco : mandaEscrito ? (valeEscrito ?? calculado) : (calculado ?? valeEscrito);
+  const editable = !c.cierre && (mandaEscrito || calculado === null);
+  const aMano = valeEscrito !== null && (calculado === null || Math.abs(valeEscrito - calculado) >= 0.005);
   const diferencia = saldoBanco === null ? null : Math.round((saldoBanco - c.saldoLibros) * 100) / 100;
   const preguntar = sinMovimientos && !c.cierre && tuvo === null;
 
@@ -125,7 +129,13 @@ export function CierreMesBanco({
         },
         {
           ok: !c.estado || c.estado.cuadra,
-          texto: !c.estado ? "El estado de cuenta no trae saldo: escríbelo abajo" : c.estado.cuadra ? "Los saldos del estado de cuenta cuadran" : "Los saldos del estado de cuenta no cuadran: le falta algún movimiento",
+          texto: !c.estado
+            ? "El estado de cuenta no trae saldo: escribe el saldo final del banco"
+            : deAnterior
+              ? `El estado de cuenta no trae saldo: el final se calcula con el del ${c.anterior?.fuente} + los movimientos del mes`
+              : c.estado.cuadra
+                ? "Los saldos del estado de cuenta cuadran"
+                : "Los saldos del estado de cuenta no cuadran: le falta algún movimiento",
         },
         { ok: c.lineasSinConciliar === 0, texto: c.lineasSinConciliar ? `Odoo tiene ${c.lineasSinConciliar} línea(s) del banco sin conciliar en el mes` : "Todas las líneas del banco del mes están conciliadas en Odoo" },
         { ok: diferencia === 0, texto: diferencia === 0 ? "El saldo del banco es el de Odoo" : "El saldo del banco no es el de Odoo" },
@@ -212,7 +222,7 @@ export function CierreMesBanco({
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-gray-500">Saldo inicial del banco</p>
                 <p className="font-semibold tabular-nums">{saldoInicial === null ? "—" : `${cifra(saldoInicial)} ${moneda}`}</p>
-                {sinMovimientos && c.anterior && <p className="text-xs text-gray-400">del {c.anterior.fuente}</p>}
+                {(sinMovimientos || deAnterior) && c.anterior && <p className="text-xs text-gray-400">del {c.anterior.fuente}</p>}
               </div>
               <div className="rounded-lg border p-3">
                 <p className="text-xs text-gray-500">Saldo final del banco</p>
@@ -227,9 +237,19 @@ export function CierreMesBanco({
                 ) : (
                   <p className="font-semibold tabular-nums">{saldoBanco === null ? "—" : `${cifra(saldoBanco)} ${moneda}`}</p>
                 )}
-                {editable && valeEscrito !== null && <p className="text-xs text-gray-400">escrito a mano</p>}
+                {editable && aMano && (
+                  <p className="text-xs text-amber-700">Escrito a mano{calculado !== null ? ` (el panel calculaba ${cifra(calculado)})` : ""}</p>
+                )}
                 {editable && valeEscrito === null && calculado !== null && (
-                  <p className="text-xs text-gray-400">{cifra(calculado)} del {c.anterior?.fuente}; si el banco dice otro, escríbelo</p>
+                  <p className="text-xs text-gray-400">
+                    {cifra(calculado)} {deAnterior ? `= saldo del ${c.anterior?.fuente} + movimientos del mes` : `del ${c.anterior?.fuente}`}; si el banco dice
+                    otro, escríbelo
+                  </p>
+                )}
+                {c.cierre?.saldoManual && (
+                  <p className="text-xs text-amber-700">
+                    Escrito a mano al cerrar{c.cierre.saldoSugerido !== null ? ` (el panel calculaba ${cifra(c.cierre.saldoSugerido)})` : ""}
+                  </p>
                 )}
               </div>
               <div className="rounded-lg border p-3">
