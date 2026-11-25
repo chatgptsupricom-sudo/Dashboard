@@ -196,14 +196,30 @@
     ]));
 
     // Una fila de la tabla de pedidos: toda la fila abre el detalle. Cada dato en su columna; en el teléfono
-    // las columnas se acomodan como una tarjeta (mi-cuenta.css).
+    // las columnas se acomodan como una tarjeta (mi-cuenta.css). Lleva las fotos de los primeros productos,
+    // cuántos son y, si está confirmado, cuánto se ha despachado.
     const celda = (clase, hijos) => crear("span", { class: `celda ${clase}`, role: "cell" }, hijos);
+    const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+    const mesDe = (f) => (f ? `${MESES_LARGOS[Number(f.slice(5, 7)) - 1]} ${f.slice(0, 4)}` : "");
+    const pilaFotos = (ids) => crear("span", { class: "fotos-pila", "aria-hidden": "true" },
+        (ids && ids.length ? ids : [0]).map((id) => (id ? crear("img", { src: P.foto(id, 128), alt: "", loading: "lazy" }) : crear("span", { class: "foto-vacia" }))));
     const filaPedido = (p) => {
+        const detalle = p.productos ? `${p.productos} ${p.productos === 1 ? "producto" : "productos"} · ${cantidad(p.unidades)} u.` : "";
+        const estado = [insignia(p.etapa, p.etapaNombre)];
+        if (p.etapa === "confirmado" && p.productos) {
+            estado.push(crear("span", { class: "avance" }, [
+                crear("span", { class: "avance-barra" }, [crear("span", { style: `width:${Math.max(4, p.avance)}%` })]),
+                crear("small", { text: `${p.avance}% despachado` }),
+            ]));
+        }
         const b = crear("button", { type: "button", class: "fila fila-pedido", role: "row", "aria-label": `Pedido ${p.numero} del ${fecha(p.fecha)}, ${p.sede.nombre}, ${p.etapaNombre}, ${dinero(p.total, p.moneda)}. Ver el detalle` }, [
-            celda("c-numero", [crear("strong", { text: p.numero }), ...(p.referencia ? [crear("small", { text: `Ref. ${p.referencia}` })] : [])]),
+            celda("c-numero", [pilaFotos(p.fotos), crear("span", { class: "c-numero-texto" }, [
+                crear("strong", { text: p.numero }),
+                crear("small", { text: [detalle, p.referencia ? `Ref. ${p.referencia}` : ""].filter(Boolean).join(" · ") }),
+            ])]),
             celda("c-fecha", [fecha(p.fecha)]),
             celda("c-sede", [p.sede.nombre]),
-            celda("c-estado", [insignia(p.etapa, p.etapaNombre)]),
+            celda("c-estado", estado),
             celda("c-monto", [dinero(p.total, p.moneda)]),
             crear("span", { class: "celda c-ir", "aria-hidden": "true" }, [P.icono("ir", "icono-ir")]),
         ]);
@@ -211,13 +227,25 @@
         return b;
     };
     const filaFactura = (f) => crear("div", { class: "fila fila-factura", role: "row" }, [
-        celda("c-numero", [crear("strong", { text: f.numero }), crear("small", { text: [f.sede.nombre, f.pedido ? `Pedido ${f.pedido}` : ""].filter(Boolean).join(" · ") })]),
+        celda("c-numero", [crear("span", { class: "c-numero-texto" }, [crear("strong", { text: f.numero }), crear("small", { text: [f.sede.nombre, f.pedido ? `Pedido ${f.pedido}` : ""].filter(Boolean).join(" · ") })])]),
         celda("c-fecha", [fecha(f.fecha)]),
         celda("c-vence", [f.estado === "nota" || !f.vence ? "—" : fecha(f.vence)]),
         celda("c-estado", [insignia(f.estado, f.estado === "vencida" && f.atraso ? `Vencida · ${f.atraso} ${f.atraso === 1 ? "día" : "días"}` : f.estadoNombre)]),
         celda("c-monto", [dinero(f.total)]),
         celda(`c-saldo${f.saldo > 0.009 ? " con-saldo" : ""}`, [f.saldo > 0.009 ? dinero(f.saldo) : "—"]),
     ]);
+
+    // Antigüedad de la deuda: una barra con un tramo por color y su leyenda.
+    const TRAMOS = [["porVencer", "Por vencer"], ["d1_30", "1 a 30 días"], ["d31_60", "31 a 60 días"], ["d61_90", "61 a 90 días"], ["d90", "Más de 90 días"]];
+    const barraTramos = (tramos, conLeyenda) => {
+        const total = TRAMOS.reduce((a, [k]) => a + Math.max(0, Number(tramos?.[k]) || 0), 0);
+        const barra = crear("div", { class: "tramos-barra", role: "img", "aria-label": TRAMOS.filter(([k]) => tramos?.[k] > 0).map(([k, n]) => `${n}: ${dinero(tramos[k])}`).join("; ") || "Sin deuda" },
+            TRAMOS.filter(([k]) => tramos?.[k] > 0).map(([k]) => crear("span", { class: `tramo-${k}`, style: `width:${(tramos[k] / total) * 100}%` })));
+        if (!conLeyenda) return barra;
+        return crear("div", { class: "tramos" }, [barra, crear("ul", { class: "tramos-leyenda" }, TRAMOS.map(([k, n]) => crear("li", { class: tramos?.[k] > 0 ? "" : "vacio" }, [
+            crear("span", { class: `tramo-punto tramo-${k}`, "aria-hidden": "true" }), crear("span", { text: n }), crear("strong", { text: dinero(tramos?.[k] || 0) }),
+        ])))]);
+    };
 
     const tarjetasCuenta = (estado, pedidosAbiertos) => {
         const tarjetas = [];
@@ -230,25 +258,65 @@
             ]));
         }
         for (const s of deudas) {
-            tarjetas.push(crear("div", { class: `tarjeta-resumen${s.vencido > 0.009 ? " tarjeta-alerta" : ""}` }, [
+            const t = crear("button", { type: "button", class: `tarjeta-resumen tarjeta-boton${s.vencido > 0.009 ? " tarjeta-alerta" : ""}` }, [
                 crear("p", { class: "tarjeta-titulo", text: `Debes en ${s.sede.nombre}` }),
                 crear("p", { class: "tarjeta-cifra", text: dinero(s.saldo) }),
+                barraTramos(s.tramos, false),
                 crear("p", { class: "tarjeta-nota", text: s.vencido > 0.009
                     ? `${dinero(s.vencido)} vencido · la más vieja, hace ${s.masVieja} ${s.masVieja === 1 ? "día" : "días"}`
                     : `${s.facturasAbiertas} ${s.facturasAbiertas === 1 ? "factura abierta" : "facturas abiertas"}, nada vencido` }),
-            ]));
+            ]);
+            t.addEventListener("click", () => irVista("facturas"));
+            tarjetas.push(t);
         }
         if (pedidosAbiertos !== undefined) {
-            const t = crear("button", { type: "button", class: "tarjeta-resumen tarjeta-boton" }, [
+            const t = crear("button", { type: "button", class: "tarjeta-resumen tarjeta-boton tarjeta-pedidos" }, [
                 crear("p", { class: "tarjeta-titulo", text: "Pedidos en curso" }),
                 crear("p", { class: "tarjeta-cifra", text: String(pedidosAbiertos) }),
                 crear("p", { class: "tarjeta-nota", text: pedidosAbiertos ? "Confirmados y todavía sin facturar completos" : "No tienes pedidos en curso" }),
             ]);
-            t.addEventListener("click", () => { $("#f-pedido-etapa").value = "abiertos"; irVista("pedidos"); });
+            t.addEventListener("click", () => { $("#f-pedido-etapa").value = "abiertos"; estadoLista.pedidos.pagina = 1; irVista("pedidos"); });
             tarjetas.push(t);
         }
         return tarjetas;
     };
+
+    // Estado de cuenta: una tarjeta por sede con el saldo, lo vencido, la antigüedad y lo próximo a vencer.
+    const estadoCuenta = (estado) => {
+        const deudas = (estado || []).filter((s) => Math.abs(s.saldo) >= 0.01);
+        if (!deudas.length) {
+            return [crear("div", { class: "cuenta-sede cuenta-al-dia" }, [
+                crear("div", { class: "cuenta-al-dia-icono", "aria-hidden": "true" }, [P.icono("listo")]),
+                crear("div", {}, [crear("p", { class: "cuenta-sede-cifra", text: "Estás al día" }), crear("p", { class: "tarjeta-nota", text: "No tienes facturas por pagar en ninguna sede." })]),
+            ])];
+        }
+        return deudas.map((s) => crear("section", { class: `cuenta-sede${s.vencido > 0.009 ? " con-vencido" : ""}`, "aria-label": `Estado de cuenta en ${s.sede.nombre}` }, [
+            crear("div", { class: "cuenta-sede-cabeza" }, [
+                crear("div", {}, [
+                    crear("p", { class: "tarjeta-titulo", text: `Sede ${s.sede.nombre}` }),
+                    crear("p", { class: "cuenta-sede-cifra", text: dinero(s.saldo) }),
+                    crear("p", { class: "tarjeta-nota", text: `${s.facturasAbiertas} ${s.facturasAbiertas === 1 ? "factura abierta" : "facturas abiertas"}` }),
+                ]),
+                s.vencido > 0.009
+                    ? crear("div", { class: "cuenta-vencido" }, [crear("small", { text: "Vencido" }), crear("strong", { text: dinero(s.vencido) }), crear("small", { text: `la más vieja, hace ${s.masVieja} ${s.masVieja === 1 ? "día" : "días"}` })])
+                    : crear("div", { class: "cuenta-vencido cuenta-sin-vencido" }, [crear("small", { text: "Vencido" }), crear("strong", { text: dinero(0) }), crear("small", { text: "nada vencido" })]),
+            ]),
+            crear("div", { class: "cuenta-sede-cuerpo" }, [
+                crear("div", {}, [crear("h3", { class: "cuenta-sub", text: "Antigüedad de la deuda" }), barraTramos(s.tramos, true)]),
+                crear("div", {}, [
+                    crear("h3", { class: "cuenta-sub", text: "Próximos vencimientos" }),
+                    s.proximos && s.proximos.length
+                        ? crear("ul", { class: "proximos" }, s.proximos.map((x) => crear("li", {}, [
+                            crear("span", { class: "proximo-fecha" }, [crear("strong", { text: fecha(x.vence).split(" ").slice(0, 2).join(" ") }), crear("small", { text: x.vence.slice(0, 4) })]),
+                            crear("span", { class: "proximo-numero", text: x.numero }),
+                            crear("strong", { class: "proximo-monto", text: dinero(x.saldo) }),
+                        ])))
+                        : crear("p", { class: "tarjeta-nota", text: "No hay facturas por vencer: lo abierto ya está vencido." }),
+                ]),
+            ]),
+        ]));
+    };
+    $(".imprimir-cuenta").addEventListener("click", () => window.print());
 
     // Resumen
     let datosYo = null;
@@ -274,14 +342,14 @@
 
     // Listas con filtros y páginas
     const estadoLista = { pedidos: { pagina: 1 }, facturas: { pagina: 1 } };
-    const paginas = (tipo, total, pagina, porPagina) => {
+    const paginas = (tipo, total, pagina, porPagina, alElegir) => {
         const cont = $(`[data-paginas="${tipo}"]`);
         const n = Math.ceil(total / porPagina);
         if (n <= 1) { cont.replaceChildren(); return; }
         const boton = (texto, p, actual = false) => {
             const b = crear("button", { type: "button", class: "pagina", text: texto, disabled: p < 1 || p > n || actual });
             if (actual) b.setAttribute("aria-current", "page");
-            b.addEventListener("click", () => { estadoLista[tipo].pagina = p; cargarLista(tipo, true); });
+            b.addEventListener("click", () => (alElegir ? alElegir(p) : (estadoLista[tipo].pagina = p, cargarLista(tipo, true))));
             return b;
         };
         const nums = [...new Set([1, pagina - 1, pagina, pagina + 1, n])].filter((p) => p >= 1 && p <= n).sort((a, b) => a - b);
@@ -289,6 +357,17 @@
         nums.forEach((p, i) => { if (i && p - nums[i - 1] > 1) partes.push(crear("span", { class: "pagina-salto", text: "…" })); partes.push(boton(String(p), p, p === pagina)); });
         partes.push(boton("Siguiente", pagina + 1));
         cont.replaceChildren(...partes);
+    };
+    // Filtros de estado de los pedidos: pastillas con cuántos hay en cada uno.
+    const ETAPAS_FILTRO = [["", "Todos", "todos"], ["abiertos", "En curso", "abiertos"], ["cotizacion", "Cotizaciones", "cotizacion"], ["facturado", "Facturados", "facturado"], ["anulado", "Anulados", "anulado"]];
+    const pintarChips = (porEtapa) => {
+        const actual = $("#f-pedido-etapa").value;
+        $(".chips-etapa").replaceChildren(...ETAPAS_FILTRO.map(([valor, nombre, clave]) => {
+            const n = porEtapa ? porEtapa[clave] : null;
+            const b = crear("button", { type: "button", class: "chip-etapa", "aria-pressed": String(valor === actual) }, [crear("span", { text: nombre }), ...(n !== null && n !== undefined ? [crear("span", { class: "chip-n", text: n.toLocaleString("es-VE") })] : [])]);
+            b.addEventListener("click", () => { $("#f-pedido-etapa").value = valor; estadoLista.pedidos.pagina = 1; cargarLista("pedidos"); });
+            return b;
+        }));
     };
     let pedidoLista = 0;
     const cargarLista = async (tipo, subir = false) => {
@@ -302,19 +381,30 @@
         const mio = ++pedidoLista;
         lista.setAttribute("aria-busy", "true");
         lista.replaceChildren(...esqueletoFilas(6));
-        if (tipo === "facturas") $(".facturas-cuenta").replaceChildren(...Array.from({ length: 2 }, () => crear("div", { class: "tarjeta-resumen esqueleto", "aria-hidden": "true" })));
+        if (tipo === "pedidos") pintarChips(null);
+        if (tipo === "facturas") $(".estado-cuenta").replaceChildren(crear("div", { class: "cuenta-sede esqueleto", "aria-hidden": "true" }));
         const r = await llamar(`${tipo}?${q}`);
         if (mio !== pedidoLista) return; // llegó otra búsqueda después
         lista.removeAttribute("aria-busy");
         if (!r.ok) { if (r.status !== 401) { lista.replaceChildren(crear("p", { class: "lista-vacia", text: r.datos.error || "No pudimos leer la lista." })); } return; }
         const d = r.datos;
         const filas = tipo === "pedidos" ? d.pedidos : d.facturas;
-        if (tipo === "facturas") $(".facturas-cuenta").replaceChildren(...tarjetasCuenta(d.estadoDeCuenta));
+        if (tipo === "facturas") $(".estado-cuenta").replaceChildren(...estadoCuenta(d.estadoDeCuenta));
+        if (tipo === "pedidos") pintarChips(d.porEtapa);
         conteo.textContent = tipo === "pedidos"
-            ? `${d.total.toLocaleString("es-VE")} ${d.total === 1 ? "pedido" : "pedidos"} con estos filtros. Toca uno para ver su detalle.`
-            : `${d.total.toLocaleString("es-VE")} ${d.total === 1 ? "documento" : "documentos"} con estos filtros. Montos en dólares.`;
-        lista.replaceChildren(...(filas.length
-            ? filas.map((x) => (tipo === "pedidos" ? filaPedido(x) : filaFactura(x)))
+            ? `${d.total.toLocaleString("es-VE")} ${d.total === 1 ? "pedido" : "pedidos"} con estos filtros. Toca uno para ver su detalle y repetirlo.`
+            : "Lo que debes en cada sede, cuánto tiene de vencido y tus facturas. Montos en dólares.";
+        const contenido = [];
+        let mesAnterior = "";
+        for (const x of filas) {
+            // Los pedidos van agrupados por mes.
+            if (tipo === "pedidos" && mesDe(x.fecha) !== mesAnterior) {
+                mesAnterior = mesDe(x.fecha);
+                contenido.push(crear("div", { class: "fila-mes", role: "row" }, [crear("span", { role: "cell", text: mesAnterior })]));
+            }
+            contenido.push(tipo === "pedidos" ? filaPedido(x) : filaFactura(x));
+        }
+        lista.replaceChildren(...(contenido.length ? contenido
             : [crear("p", { class: "lista-vacia", text: tipo === "pedidos" ? "No hay pedidos con estos filtros." : "No hay facturas con estos filtros." })]));
         paginas(tipo, d.total, d.pagina, d.porPagina);
         if (subir) vista.scrollIntoView({ behavior: P.QUIETO ? "auto" : "smooth", block: "start" });
@@ -331,11 +421,299 @@
         form.addEventListener("submit", (ev) => { ev.preventDefault(); estadoLista[tipo].pagina = 1; cargarLista(tipo); });
     }
 
-    // Pestañas (y el enlace: #pedidos, #facturas)
+    /* ---------------------------------------------------------------- Perfil */
+    const enlaceWhatsapp = (tel) => {
+        let d = String(tel || "").replace(/\D/g, "");
+        if (!d) return "";
+        if (d.startsWith("0")) d = `58${d.slice(1)}`;
+        return d.length >= 10 ? `https://wa.me/${d}` : "";
+    };
+    const filasDatos = (pares) => pares.filter(([, v]) => v).map(([k, v]) => crear("div", {}, [crear("dt", { text: k }), crear("dd", { text: v })]));
+    let perfilDatos = null;
+    const cargarPerfil = async () => {
+        $(".perfil-empresa .perfil-datos").replaceChildren(...esqueletoFilas(3));
+        $(".perfil-sedes").replaceChildren(crear("div", { class: "tarjeta-perfil esqueleto", "aria-hidden": "true" }));
+        const r = await llamar("perfil");
+        if (!r.ok) { if (r.status !== 401) avisar(r.datos.error || "No pudimos leer tu perfil."); return; }
+        const d = (perfilDatos = r.datos);
+        $(".perfil-empresa .perfil-datos").replaceChildren(...filasDatos([
+            ["Razón social", d.empresa.nombre], [/^[VJEGP]-?\d/i.test(d.empresa.documento || "") ? "RIF" : "RUC", d.empresa.documento],
+            ["Dirección fiscal", d.empresa.direccion], ["Teléfono", d.empresa.telefono], ["Correo de facturación", d.empresa.correo],
+        ]));
+        $(".perfil-acceso-datos").replaceChildren(...filasDatos([
+            ["Correo de acceso", d.acceso.correo], ["Cuenta creada", fecha(d.acceso.creado)],
+            ["Último ingreso", d.acceso.ultimoIngreso ? `${fecha(d.acceso.ultimoIngreso)} · ${d.acceso.ultimoIngreso.slice(11, 16)}` : ""],
+            ["Contraseña cambiada", fecha(d.acceso.claveCambiada)],
+        ]));
+        $(".perfil-sedes").replaceChildren(...(d.sedes.length ? d.sedes.map((s) => {
+            const v = s.vendedor;
+            const wa = v ? enlaceWhatsapp(v.telefono) : "";
+            return crear("article", { class: "tarjeta-perfil perfil-sede" }, [
+                crear("p", { class: "tarjeta-titulo", text: `Sede ${s.sede.nombre}` }),
+                v ? crear("div", { class: "vendedor" }, [
+                    crear("span", { class: "vendedor-avatar", "aria-hidden": "true", text: iniciales(v.nombre) }),
+                    crear("div", {}, [crear("strong", { text: v.nombre }), crear("small", { text: "Tu vendedor" })]),
+                ]) : crear("p", { class: "tarjeta-nota", text: "Todavía no tienes un vendedor asignado en esta sede." }),
+                v ? crear("div", { class: "vendedor-contacto" }, [
+                    ...(v.correo ? [crear("a", { class: "boton boton-claro", href: `mailto:${v.correo}`, text: "Correo" })] : []),
+                    ...(wa ? [crear("a", { class: "boton boton-tinta", href: wa, target: "_blank", rel: "noopener", text: "WhatsApp" })] : []),
+                ]) : crear("span"),
+                crear("dl", { class: "perfil-datos perfil-datos-compactos" }, filasDatos([
+                    ["Plazo de pago", s.plazo || "De contado"], ["Cupo de crédito", s.cupo > 0 ? dinero(s.cupo) : "Sin cupo asignado"],
+                ])),
+            ]);
+        }) : [crear("p", { class: "lista-vacia", text: "Todavía no hay compras a tu nombre en ninguna sede." })]));
+        $(".perfil-direcciones-caja").hidden = !d.direcciones.length;
+        $(".perfil-direcciones").replaceChildren(...d.direcciones.map((x) => crear("article", { class: "tarjeta-perfil perfil-direccion" }, [
+            crear("strong", { text: x.nombre }), crear("p", { class: "tarjeta-nota", text: x.direccion }), ...(x.telefono ? [crear("small", { text: x.telefono })] : []),
+        ])));
+        if (!$("#rma-telefono").value && d.empresa.telefono) $("#rma-telefono").value = d.empresa.telefono;
+    };
+    const formClaveNueva = $(".perfil-clave");
+    formClaveNueva.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const actual = formClaveNueva.actual.value;
+        const nueva = formClaveNueva.nueva.value;
+        const r0 = reglas(nueva);
+        const f = $(".cuenta-fallo", formClaveNueva);
+        f.classList.remove("cuenta-ok");
+        if (!actual) { fallo(formClaveNueva, "Escribe tu contraseña actual."); return; }
+        if (!r0.largo || !r0.mezcla) { fallo(formClaveNueva, "La contraseña nueva necesita al menos 8 caracteres, con letras y números."); return; }
+        ocupado(formClaveNueva, true, "Guardando…");
+        let recordar = true;
+        try { recordar = Boolean(localStorage.getItem(CLAVE)); } catch (e) { /* */ }
+        const r = await llamar("cambiar-clave", { metodo: "POST", cuerpo: { actual, nueva, recordar } });
+        ocupado(formClaveNueva, false, "Guardar contraseña");
+        if (r.ok && r.datos.token) {
+            guardarToken(r.datos.token, recordar);
+            formClaveNueva.reset();
+            fallo(formClaveNueva, "Listo: tu contraseña cambió y cerramos tu sesión en los otros equipos.");
+            f.classList.add("cuenta-ok");
+            return;
+        }
+        fallo(formClaveNueva, r.datos.error || "No pudimos cambiar tu contraseña.");
+    });
+
+    $(".perfil-salir-todos").addEventListener("click", async () => {
+        await llamar("salir", { metodo: "POST" });
+        borrarToken();
+        cargadas.clear();
+        mostrarAcceso("Cerraste tu sesión en todos los equipos.");
+        $(".cuenta-fallo", formEntrar).classList.add("cuenta-ok");
+    });
+
+    /* ---------------------------------------------------------------- Servicio técnico */
+    const asistente = $(".rma-asistente");
+    const rma = { factura: null, productos: [], elegidos: new Set(), pagina: 1, subidas: new Map() };
+    const GARANTIA = {
+        en_garantia: (g) => ["ok", g.vence ? `En garantía hasta ${fecha(g.vence)}` : "En garantía"],
+        vencida: (g) => ["vencida", g.vence ? `Garantía vencida el ${fecha(g.vence)}` : "Garantía vencida"],
+        vida_util: () => ["ok", "Garantía de por vida"],
+        indeterminada: () => ["neutra", "Garantía por confirmar"],
+    };
+    // La foto del producto en Odoo; si no la hay (o no es pública), un recuadro vacío.
+    const fotoProducto = (id) => {
+        if (!id) return crear("span", { class: "foto-vacia" });
+        const img = crear("img", { src: `${P.D.odoo}/web/image/product.product/${id}/image_128`, alt: "", loading: "lazy" });
+        img.addEventListener("error", () => img.replaceWith(crear("span", { class: "foto-vacia" })), { once: true });
+        return img;
+    };
+    const pasoRma = (n) => {
+        for (const p of $$(".rma-paso", asistente)) p.hidden = p.dataset.rma !== String(n);
+        $(".rma-listo", asistente).hidden = true;
+        $(".rma-barra .rma-pasos", asistente).hidden = false;
+        for (const li of $$("[data-paso-rma]", asistente)) {
+            const k = Number(li.dataset.pasoRma);
+            li.className = k < n ? "hecho" : k === n ? "actual" : "";
+            if (k === n) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+        }
+    };
+    const abrirAsistente = () => {
+        asistente.hidden = false;
+        rma.factura = null; rma.elegidos.clear(); rma.subidas.clear();
+        pasoRma(1);
+        cargarFacturasRma();
+        asistente.scrollIntoView({ behavior: P.QUIETO ? "auto" : "smooth", block: "start" });
+        $("#rma-q").focus({ preventScroll: true });
+    };
+    $(".rma-nuevo").addEventListener("click", abrirAsistente);
+    $(".rma-cancelar").addEventListener("click", () => { asistente.hidden = true; $(".rma-nuevo").focus(); });
+    $(".rma-otro").addEventListener("click", abrirAsistente);
+    for (const b of $$(".rma-atras", asistente)) b.addEventListener("click", () => pasoRma(Number(b.dataset.a)));
+
+    let esperaRma = 0;
+    $("#rma-q").addEventListener("input", () => { clearTimeout(esperaRma); esperaRma = setTimeout(() => { rma.pagina = 1; cargarFacturasRma(); }, 350); });
+    const cargarFacturasRma = async () => {
+        const cont = $(".rma-facturas");
+        cont.replaceChildren(...esqueletoFilas(4));
+        const q = new URLSearchParams({ pagina: String(rma.pagina) });
+        if ($("#rma-q").value.trim()) q.set("q", $("#rma-q").value.trim());
+        const r = await llamar(`rma/facturas?${q}`);
+        if (!r.ok) { if (r.status !== 401) cont.replaceChildren(crear("p", { class: "lista-vacia", text: r.datos.error || "No pudimos leer tus facturas." })); return; }
+        cont.replaceChildren(...(r.datos.facturas.length ? r.datos.facturas.map((f) => {
+            const b = crear("button", { type: "button", class: "fila fila-rma-factura", role: "listitem" }, [
+                celda("c-numero", [crear("span", { class: "c-numero-texto" }, [crear("strong", { text: f.numero }), crear("small", { text: [f.sede.nombre, f.pedido ? `Pedido ${f.pedido}` : ""].filter(Boolean).join(" · ") })])]),
+                celda("c-fecha", [fecha(f.fecha)]),
+                crear("span", { class: "celda c-ir", "aria-hidden": "true" }, [P.icono("ir", "icono-ir")]),
+            ]);
+            b.setAttribute("aria-label", `Factura ${f.numero} del ${fecha(f.fecha)}, ${f.sede.nombre}. Ver sus equipos`);
+            b.addEventListener("click", () => elegirFacturaRma(f));
+            return b;
+        }) : [crear("p", { class: "lista-vacia", text: "No encontramos facturas con esa búsqueda en los últimos 3 años." })]));
+        paginas("rma", r.datos.total, r.datos.pagina, r.datos.porPagina, (p) => { rma.pagina = p; cargarFacturasRma(); });
+    };
+
+    const elegirFacturaRma = async (f) => {
+        rma.factura = f; rma.elegidos.clear();
+        pasoRma(2);
+        $(".rma-factura-elegida").textContent = `Factura ${f.numero} del ${fecha(f.fecha)} · ${f.sede.nombre}. Elige el equipo (o los equipos) que fallan.`;
+        const cont = $(".rma-productos");
+        cont.replaceChildren(...esqueletoFilas(3));
+        pintarCuentaRma();
+        const r = await llamar(`rma/productos?factura=${f.id}`);
+        if (!r.ok) { if (r.status !== 401) cont.replaceChildren(crear("p", { class: "lista-vacia", text: r.datos.error || "No pudimos leer los equipos de esa factura." })); return; }
+        rma.productos = r.datos.productos;
+        cont.replaceChildren(...(rma.productos.length ? rma.productos.map((p) => {
+            const [tono, texto] = (GARANTIA[p.garantia.estado] || GARANTIA.indeterminada)(p.garantia);
+            const casilla = crear("input", { type: "checkbox", value: p.id });
+            casilla.addEventListener("change", () => {
+                if (casilla.checked) { if (rma.elegidos.size >= 10) { casilla.checked = false; return; } rma.elegidos.add(p.id); } else rma.elegidos.delete(p.id);
+                tarjeta.classList.toggle("elegido", casilla.checked);
+                pintarCuentaRma();
+            });
+            const tarjeta = crear("label", { class: "rma-producto" }, [
+                casilla,
+                fotoProducto(p.productoId),
+                crear("span", { class: "rma-producto-texto" }, [
+                    crear("strong", { text: p.nombre }),
+                    crear("small", { text: [p.marca, p.codigo].filter(Boolean).join(" · ") }),
+                    crear("small", { class: "rma-serial", text: p.serial ? `Serial ${p.serial}` : p.llevaSerial ? "Serial: lo escribes en el siguiente paso" : "Sin serial" }),
+                ]),
+                crear("span", { class: "rma-producto-estado" }, [
+                    crear("span", { class: `garantia garantia-${tono}`, text: texto }),
+                    ...(p.yaReportado ? [crear("span", { class: "ya-reportado", text: `Ya tiene el caso ${p.caso || ""}`.trim() })] : []),
+                ]),
+            ]);
+            return tarjeta;
+        }) : [crear("p", { class: "lista-vacia", text: "Esta factura no tiene equipos para reportar." })]));
+    };
+    const pintarCuentaRma = () => {
+        const n = rma.elegidos.size;
+        $(".rma-cuenta").textContent = n ? `${n} ${n === 1 ? "equipo elegido" : "equipos elegidos"}` : "Elige al menos un equipo";
+        $(".rma-siguiente").disabled = !n;
+    };
+    $(".rma-siguiente").addEventListener("click", () => {
+        const elegidos = rma.productos.filter((p) => rma.elegidos.has(p.id));
+        const cont = $(".rma-detalles");
+        cont.replaceChildren(...elegidos.map((p, i) => {
+            if (!rma.subidas.has(p.id)) rma.subidas.set(p.id, { token: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`).replace(/-/g, ""), archivos: [] });
+            const sub = rma.subidas.get(p.id);
+            const lista = crear("ul", { class: "rma-archivos" }, sub.archivos.map((a) => crear("li", { class: "subido", text: a })));
+            const entrada = crear("input", { type: "file", accept: "image/*,video/*", multiple: true, class: "solo-lectores", id: `rma-archivo-${i}` });
+            entrada.addEventListener("change", () => subirArchivos(p, entrada, lista));
+            return crear("fieldset", { class: "rma-detalle", "data-item": p.id }, [
+                crear("legend", {}, [crear("strong", { text: p.nombre }), crear("small", { text: p.serial ? `Serial ${p.serial}` : (p.codigo || "") })]),
+                ...(p.llevaSerial && !p.serial ? [crear("div", { class: "campo" }, [
+                    crear("label", { for: `rma-serial-${i}`, text: "Serial (está en la etiqueta del equipo)" }),
+                    crear("input", { id: `rma-serial-${i}`, name: "serial", maxlength: 100, spellcheck: false, autocomplete: "off" }),
+                ])] : []),
+                crear("div", { class: "campo" }, [
+                    crear("label", { for: `rma-falla-${i}`, text: "¿Qué le pasa?" }),
+                    crear("textarea", { id: `rma-falla-${i}`, name: "falla", rows: 3, maxlength: 5000, placeholder: "Por ejemplo: no enciende, imprime con rayas, se reinicia solo…" }),
+                ]),
+                crear("div", { class: "campo" }, [
+                    crear("span", { class: "rma-archivo-titulo", text: "Fotos o video de la falla (hasta 5)" }),
+                    crear("label", { class: "boton boton-claro rma-archivo-boton", for: `rma-archivo-${i}` }, ["Adjuntar archivos"]),
+                    entrada,
+                    lista,
+                ]),
+                ...(p.yaReportado ? [crear("label", { class: "recordar rma-confirmar" }, [crear("input", { type: "checkbox", name: "confirmar" }), ` Sé que este equipo ya tiene el caso ${p.caso || ""} y quiero reportarlo de nuevo`])] : []),
+            ]);
+        }));
+        pasoRma(3);
+        $("textarea", cont)?.focus();
+    });
+    const subirArchivos = async (p, entrada, lista) => {
+        const sub = rma.subidas.get(p.id);
+        const archivos = [...entrada.files].slice(0, Math.max(0, 5 - sub.archivos.length));
+        entrada.value = "";
+        if (!archivos.length) return;
+        const fila = crear("li", { class: "subiendo", text: `Subiendo ${archivos.length} ${archivos.length === 1 ? "archivo" : "archivos"}…` });
+        lista.append(fila);
+        const datos = new FormData();
+        datos.append("tracking_token", sub.token);
+        for (const a of archivos) datos.append("files", a);
+        try {
+            const r = await fetch(`${api}/clientes/rma/adjuntos`, { method: "POST", headers: { Authorization: `Bearer ${tokenEnMemoria}` }, body: datos, credentials: "omit" });
+            const j = await r.json().catch(() => ({}));
+            fila.remove();
+            for (const s of j.saved || []) { sub.archivos.push(s.filename); lista.append(crear("li", { class: "subido", text: s.filename })); }
+            for (const e of j.errors || []) lista.append(crear("li", { class: "fallido", text: `${e.filename}: ${e.reason}` }));
+            if (!r.ok && !(j.errors || []).length) lista.append(crear("li", { class: "fallido", text: j.error || "No pudimos subir los archivos." }));
+        } catch (e) {
+            fila.className = "fallido";
+            fila.textContent = "No pudimos subir los archivos. Revisa tu conexión.";
+        }
+    };
+    const formRma = $('.rma-paso[data-rma="3"]');
+    formRma.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        fallo(formRma, "");
+        const productos = [];
+        for (const caja of $$(".rma-detalle", formRma)) {
+            const p = rma.productos.find((x) => x.id === caja.dataset.item);
+            const falla = $("textarea", caja).value.trim();
+            const serial = $('input[name="serial"]', caja)?.value.trim() || "";
+            const sub = rma.subidas.get(p.id);
+            if (falla.length < 10) { fallo(formRma, `Cuéntanos con más detalle qué le pasa a ${p.nombre}.`); $("textarea", caja).focus(); return; }
+            if (p.llevaSerial && !p.serial && !serial) { fallo(formRma, `Escribe el serial de ${p.nombre}.`); $('input[name="serial"]', caja).focus(); return; }
+            if (!sub.archivos.length) { fallo(formRma, `Adjunta al menos una foto o un video de ${p.nombre}.`); $(".rma-archivo-boton", caja).focus(); return; }
+            const confirmar = $('input[name="confirmar"]', caja);
+            if (confirmar && !confirmar.checked) { fallo(formRma, `${p.nombre} ya tiene un caso: confirma que quieres reportarlo de nuevo.`); confirmar.focus(); return; }
+            productos.push({ item_id: p.id, serial_manual: serial, falla, upload_token: sub.token });
+        }
+        const telefono = $("#rma-telefono").value.trim();
+        if (telefono.replace(/\D/g, "").length < 7) { fallo(formRma, "Escribe un teléfono para coordinar la entrega del equipo."); $("#rma-telefono").focus(); return; }
+        ocupado(formRma, true, "Enviando…");
+        const r = await llamar("rma", { metodo: "POST", cuerpo: { factura: rma.factura.id, telefono, productos } });
+        ocupado(formRma, false, "Enviar reporte");
+        if (!r.ok) { if (r.status !== 401) fallo(formRma, r.datos.error || "No pudimos enviar tu reporte."); return; }
+        for (const p of $$(".rma-paso", asistente)) p.hidden = true;
+        $(".rma-barra .rma-pasos", asistente).hidden = true;
+        const listo = $(".rma-listo", asistente);
+        $(".rma-listo-titulo", listo).textContent = `Listo: abrimos el caso N.º ${r.datos.numero}`;
+        const seguir = $(".rma-seguir", listo);
+        seguir.hidden = !r.datos.seguimiento;
+        if (r.datos.seguimiento) seguir.href = r.datos.seguimiento;
+        listo.hidden = false;
+        listo.focus();
+        rma.subidas.clear();
+        cargarCasos();
+    });
+
+    const cargarCasos = async () => {
+        const cont = $(".rma-casos");
+        cont.replaceChildren(...esqueletoFilas(3));
+        const r = await llamar("rma/casos");
+        if (!r.ok) { if (r.status !== 401) cont.replaceChildren(crear("p", { class: "lista-vacia", text: r.datos.error || "No pudimos leer tus casos." })); return; }
+        const casos = r.datos.casos || [];
+        cont.replaceChildren(...(casos.length ? casos.map((x) => crear("div", { class: "fila fila-caso", role: "row" }, [
+            celda("c-numero", [crear("span", { class: "c-numero-texto" }, [crear("strong", { text: `Caso ${x.numero}` }), crear("small", { text: [fecha(x.fecha), x.factura ? `Factura ${x.factura}` : ""].filter(Boolean).join(" · ") })])]),
+            celda("c-equipos", [crear("span", { class: "c-numero-texto" }, [
+                crear("strong", { text: (x.productos[0] && x.productos[0].nombre) || "Equipo" }),
+                crear("small", { text: [x.productos[0] && x.productos[0].serial ? `Serial ${x.productos[0].serial}` : "", x.productos.length > 1 ? `y ${x.productos.length - 1} más` : ""].filter(Boolean).join(" · ") }),
+            ])]),
+            celda("c-sede", [x.sede.nombre]),
+            celda("c-estado", [crear("span", { class: `insignia insignia-rma-${x.tono}`, text: x.estadoTexto })]),
+            celda("c-ir", x.seguimiento ? [crear("a", { class: "enlace-chico enlace-acento", href: x.seguimiento, target: "_blank", rel: "noopener", text: "Seguir", "aria-label": `Seguir el caso ${x.numero}` })] : []),
+        ])) : [crear("p", { class: "lista-vacia", text: "Todavía no tienes casos de servicio técnico." })]));
+    };
+
+    // Pestañas (y el enlace: #pedidos, #facturas, #rma, #perfil)
     const pestanas = $$(".panel-nav [role=tab]");
     const cargadas = new Set();
     function irVista(nombre, { foco = false, historial = true } = {}) {
-        if (!["resumen", "pedidos", "facturas"].includes(nombre)) nombre = "resumen";
+        if (!["resumen", "pedidos", "facturas", "rma", "perfil"].includes(nombre)) nombre = "resumen";
         for (const t of pestanas) {
             const activa = t.dataset.vista === nombre;
             t.setAttribute("aria-selected", String(activa));
@@ -345,7 +723,10 @@
         }
         if (historial && location.hash !== `#${nombre}`) history.replaceState(null, "", nombre === "resumen" ? location.pathname + location.search : `#${nombre}`);
         if (nombre === "resumen" && !cargadas.has("resumen")) { cargadas.add("resumen"); cargarResumen(); }
-        if (nombre !== "resumen") { cargadas.add(nombre); cargarLista(nombre); }
+        if (nombre === "pedidos" || nombre === "facturas") { cargadas.add(nombre); cargarLista(nombre); }
+        if (nombre === "rma" && !cargadas.has("rma")) { cargadas.add("rma"); cargarCasos(); if (!cargadas.has("perfil")) { cargadas.add("perfil"); cargarPerfil(); } }
+        if (nombre === "perfil" && !cargadas.has("perfil")) { cargadas.add("perfil"); cargarPerfil(); }
+        window.scrollTo({ top: 0, behavior: "auto" });
     }
     for (const t of pestanas) {
         t.addEventListener("click", () => irVista(t.dataset.vista));

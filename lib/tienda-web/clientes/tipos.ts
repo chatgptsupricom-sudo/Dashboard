@@ -95,3 +95,30 @@ export function diasDeAtraso(vence: string | false | null | undefined, hoy: stri
 }
 
 export const redondear = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+/** Antigüedad de lo que se debe, como en un estado de cuenta: por vencer y tramos de días vencidos. */
+export type TramoDeuda = "porVencer" | "d1_30" | "d31_60" | "d61_90" | "d90";
+export const TRAMOS_DEUDA: { id: TramoDeuda; nombre: string }[] = [
+  { id: "porVencer", nombre: "Por vencer" },
+  { id: "d1_30", nombre: "1 a 30 días" },
+  { id: "d31_60", nombre: "31 a 60 días" },
+  { id: "d61_90", nombre: "61 a 90 días" },
+  { id: "d90", nombre: "Más de 90 días" },
+];
+/** El tramo de una factura según sus días de atraso (null o ≤ 0 = todavía no vence). */
+export function tramoDeuda(atraso: number | null | undefined): TramoDeuda {
+  const d = Number(atraso) || 0;
+  if (d <= 0) return "porVencer";
+  if (d <= 30) return "d1_30";
+  if (d <= 60) return "d31_60";
+  if (d <= 90) return "d61_90";
+  return "d90";
+}
+
+/** Cuánto se ha despachado de un pedido, de 0 a 100 (por unidades). */
+export function avanceDespacho(lineas: { cantidad: number; despachado: number }[]): number {
+  const total = lineas.reduce((a, l) => a + Math.max(0, Number(l.cantidad) || 0), 0);
+  if (!total) return 0;
+  const hecho = lineas.reduce((a, l) => a + Math.min(Math.max(0, Number(l.despachado) || 0), Math.max(0, Number(l.cantidad) || 0)), 0);
+  return Math.round((hecho / total) * 100);
+}

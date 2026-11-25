@@ -21,10 +21,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125h">
-<link rel="stylesheet" href="tienda.css?v=20261125h">
-<link rel="stylesheet" href="cuenta.css?v=20261125h">
-<link rel="stylesheet" href="mi-cuenta.css?v=20261125h">
+<link rel="stylesheet" href="estilos.css?v=20261125i">
+<link rel="stylesheet" href="tienda.css?v=20261125i">
+<link rel="stylesheet" href="cuenta.css?v=20261125i">
+<link rel="stylesheet" href="mi-cuenta.css?v=20261125i">
 </head>
 <body data-pagina="mi-cuenta">
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -196,7 +196,13 @@
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>Pedidos
                     </button>
                     <button type="button" role="tab" id="p-facturas" data-vista="facturas" aria-controls="vista-facturas" aria-selected="false" tabindex="-1">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h7"/></svg>Facturas
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h7"/></svg>Estado de cuenta
+                    </button>
+                    <button type="button" role="tab" id="p-rma" data-vista="rma" aria-controls="vista-rma" aria-selected="false" tabindex="-1">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/></svg>Servicio técnico
+                    </button>
+                    <button type="button" role="tab" id="p-perfil" data-vista="perfil" aria-controls="vista-perfil" aria-selected="false" tabindex="-1">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Perfil
                     </button>
                 </div>
                 <div class="panel-lado-pie">
@@ -248,7 +254,7 @@
                                 <label class="solo-lectores" for="f-pedido-sede">Sede</label>
                                 <select id="f-pedido-sede" name="sede" class="selector"><option value="">Todas las sedes</option></select>
                                 <label class="solo-lectores" for="f-pedido-etapa">Estado</label>
-                                <select id="f-pedido-etapa" name="etapa" class="selector">
+                                <select id="f-pedido-etapa" name="etapa" class="selector selector-oculto" tabindex="-1" aria-hidden="true">
                                     <option value="">Todos los estados</option>
                                     <option value="abiertos">En curso</option>
                                     <option value="cotizacion">Cotizaciones</option>
@@ -257,6 +263,7 @@
                                 </select>
                             </div>
                         </form>
+                        <div class="chips-etapa" role="group" aria-label="Estado del pedido"></div>
                         <div class="tabla tabla-pedidos" role="table" aria-label="Pedidos">
                             <div class="tabla-cabeza" role="row"><span role="columnheader">Pedido</span><span role="columnheader">Fecha</span><span role="columnheader">Sede</span><span role="columnheader">Estado</span><span role="columnheader" class="a-la-derecha">Total</span><span aria-hidden="true"></span></div>
                             <div class="tabla-cuerpo pedidos-lista" role="rowgroup"></div>
@@ -269,11 +276,12 @@
                 <div id="vista-facturas" class="panel-vista" role="tabpanel" aria-labelledby="p-facturas" hidden>
                     <header class="vista-cabeza">
                         <div>
-                            <h1 class="vista-titulo">Facturas</h1>
+                            <h1 class="vista-titulo">Estado de cuenta</h1>
                             <p class="vista-nota panel-conteo" role="status"></p>
                         </div>
+                        <button type="button" class="boton boton-claro imprimir-cuenta"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3h10v6M7 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/></svg>Imprimir</button>
                     </header>
-                    <div class="tarjetas-resumen facturas-cuenta"></div>
+                    <div class="estado-cuenta"></div>
                     <div class="tabla-caja">
                         <form class="tabla-barra panel-filtros" data-filtros="facturas" role="search">
                             <div class="tienda-buscar">
@@ -300,6 +308,137 @@
                         </div>
                         <div class="panel-paginas" data-paginas="facturas"></div>
                     </div>
+                </div>
+                <!-- Servicio técnico: sus casos y reportar una falla con los productos que compró -->
+                <div id="vista-rma" class="panel-vista" role="tabpanel" aria-labelledby="p-rma" hidden>
+                    <header class="vista-cabeza">
+                        <div>
+                            <h1 class="vista-titulo">Servicio técnico</h1>
+                            <p class="vista-nota">Reporta una falla con los equipos que compraste, sin buscar la factura ni escribir tu RIF, y sigue cada caso.</p>
+                        </div>
+                        <button type="button" class="boton boton-tinta rma-nuevo"><svg class="icono-mas" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Reportar una falla</button>
+                    </header>
+
+                    <!-- Reportar: 1 factura, 2 productos, 3 detalles -->
+                    <section class="rma-asistente tabla-caja" hidden aria-labelledby="rma-titulo">
+                        <div class="tabla-barra rma-barra">
+                            <h2 id="rma-titulo" class="tabla-titulo">Reportar una falla</h2>
+                            <ol class="rma-pasos" aria-label="Pasos">
+                                <li data-paso-rma="1"><span>1</span>Factura</li>
+                                <li data-paso-rma="2"><span>2</span>Equipos</li>
+                                <li data-paso-rma="3"><span>3</span>Detalles</li>
+                            </ol>
+                            <button type="button" class="enlace-chico rma-cancelar">Cancelar</button>
+                        </div>
+
+                        <div class="rma-paso" data-rma="1">
+                            <div class="rma-paso-cabeza">
+                                <p class="rma-ayuda">¿En qué factura vino el equipo? Si no te acuerdas, búscalo por el número del pedido.</p>
+                                <div class="tienda-buscar">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                                    <label class="solo-lectores" for="rma-q">Buscar factura</label>
+                                    <input id="rma-q" type="search" placeholder="Número de factura o de pedido" autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="rma-facturas" role="list" aria-label="Tus facturas"></div>
+                            <div class="panel-paginas" data-paginas="rma"></div>
+                        </div>
+
+                        <div class="rma-paso" data-rma="2" hidden>
+                            <div class="rma-paso-cabeza">
+                                <button type="button" class="acceso-volver rma-atras" data-a="1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Otra factura</button>
+                                <p class="rma-ayuda rma-factura-elegida"></p>
+                            </div>
+                            <div class="rma-productos" role="group" aria-label="Equipos de la factura"></div>
+                            <div class="rma-pie">
+                                <p class="rma-cuenta" role="status"></p>
+                                <button type="button" class="boton boton-tinta rma-siguiente" disabled>Continuar</button>
+                            </div>
+                        </div>
+
+                        <form class="rma-paso" data-rma="3" hidden novalidate>
+                            <div class="rma-paso-cabeza">
+                                <button type="button" class="acceso-volver rma-atras" data-a="2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Cambiar equipos</button>
+                                <p class="rma-ayuda">Cuéntanos qué le pasa a cada equipo y adjunta al menos una foto o un video de la falla.</p>
+                            </div>
+                            <div class="rma-detalles"></div>
+                            <div class="rma-contacto">
+                                <div class="campo">
+                                    <label for="rma-telefono">Teléfono para coordinar la entrega del equipo</label>
+                                    <input id="rma-telefono" name="telefono" type="tel" inputmode="tel" autocomplete="tel" maxlength="50" required>
+                                </div>
+                                <p class="rma-ayuda">Te avisamos por correo cada vez que el caso avance.</p>
+                            </div>
+                            <p class="cuenta-fallo" role="alert" hidden></p>
+                            <div class="rma-pie">
+                                <span></span>
+                                <button type="submit" class="boton boton-tinta boton-grande cuenta-boton"><span class="cuenta-boton-texto">Enviar reporte</span><span class="cuenta-girando" aria-hidden="true"></span></button>
+                            </div>
+                        </form>
+
+                        <div class="rma-listo" hidden tabindex="-1">
+                            <div class="cuenta-listo-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></div>
+                            <h3 class="rma-listo-titulo"></h3>
+                            <p class="rma-ayuda">Lleva el equipo a la sucursal o coordina el envío con tu vendedor. Te avisamos por correo cada vez que el caso avance.</p>
+                            <div class="acciones">
+                                <a class="boton boton-tinta rma-seguir" target="_blank" rel="noopener" hidden>Ver el seguimiento</a>
+                                <button type="button" class="boton boton-claro rma-otro">Reportar otro equipo</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="tabla-caja">
+                        <div class="tabla-barra"><h2 class="tabla-titulo">Tus casos</h2></div>
+                        <div class="tabla tabla-rma" role="table" aria-label="Casos de servicio técnico">
+                            <div class="tabla-cabeza" role="row"><span role="columnheader">Caso</span><span role="columnheader">Equipos</span><span role="columnheader">Sede</span><span role="columnheader">Estado</span><span aria-hidden="true"></span></div>
+                            <div class="tabla-cuerpo rma-casos" role="rowgroup"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Perfil: su empresa, sus sedes, direcciones y la seguridad de su acceso -->
+                <div id="vista-perfil" class="panel-vista" role="tabpanel" aria-labelledby="p-perfil" hidden>
+                    <header class="vista-cabeza">
+                        <div>
+                            <h1 class="vista-titulo">Perfil</h1>
+                            <p class="vista-nota">Los datos de tu empresa como los tenemos. Si algo cambió, escríbele a tu vendedor y lo actualiza.</p>
+                        </div>
+                    </header>
+                    <div class="perfil-rejilla">
+                        <section class="tarjeta-perfil perfil-empresa" aria-labelledby="t-perfil-empresa">
+                            <h2 id="t-perfil-empresa" class="perfil-titulo">Tu empresa</h2>
+                            <dl class="perfil-datos"></dl>
+                        </section>
+                        <section class="tarjeta-perfil perfil-acceso" aria-labelledby="t-perfil-acceso">
+                            <h2 id="t-perfil-acceso" class="perfil-titulo">Acceso y seguridad</h2>
+                            <dl class="perfil-datos perfil-acceso-datos"></dl>
+                            <form class="perfil-clave" novalidate>
+                                <h3 class="perfil-subtitulo">Cambiar contraseña</h3>
+                                <div class="campo">
+                                    <label for="pf-actual">Contraseña actual</label>
+                                    <div class="clave-caja"><input id="pf-actual" name="actual" type="password" autocomplete="current-password" maxlength="200" required><button type="button" class="clave-ver" aria-pressed="false" aria-label="Mostrar la contraseña">Mostrar</button></div>
+                                </div>
+                                <div class="campo">
+                                    <label for="pf-nueva">Contraseña nueva</label>
+                                    <div class="clave-caja"><input id="pf-nueva" name="nueva" type="password" autocomplete="new-password" maxlength="72" required><button type="button" class="clave-ver" aria-pressed="false" aria-label="Mostrar la contraseña">Mostrar</button></div>
+                                    <p class="campo-ayuda">Al menos 8 caracteres, con letras y números. Se cierra tu sesión en los otros equipos.</p>
+                                </div>
+                                <p class="cuenta-fallo" role="alert" hidden></p>
+                                <div class="perfil-acciones">
+                                    <button type="submit" class="boton boton-tinta cuenta-boton"><span class="cuenta-boton-texto">Guardar contraseña</span><span class="cuenta-girando" aria-hidden="true"></span></button>
+                                    <button type="button" class="enlace-chico perfil-salir-todos">Cerrar sesión en todos los equipos</button>
+                                </div>
+                            </form>
+                        </section>
+                    </div>
+                    <section aria-labelledby="t-perfil-sedes">
+                        <h2 id="t-perfil-sedes" class="perfil-titulo perfil-titulo-fuera">Tus sedes</h2>
+                        <div class="perfil-sedes"></div>
+                    </section>
+                    <section class="perfil-direcciones-caja" aria-labelledby="t-perfil-dir" hidden>
+                        <h2 id="t-perfil-dir" class="perfil-titulo perfil-titulo-fuera">Direcciones de entrega</h2>
+                        <div class="perfil-direcciones"></div>
+                    </section>
                 </div>
             </div>
         </div>
@@ -419,7 +558,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261125h"></script>
-<script src="vivo.js?v=20261125h" data-despues="app.js?v=20261125h,mi-cuenta.js?v=20261125h"></script>
+<script src="datos.js?v=20261125i"></script>
+<script src="vivo.js?v=20261125i" data-despues="app.js?v=20261125i,mi-cuenta.js?v=20261125i"></script>
 </body>
 </html>

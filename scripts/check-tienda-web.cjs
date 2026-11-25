@@ -146,4 +146,19 @@ assert.strictEqual(diasDeAtraso("2026-11-15", hoyF), 10);
 assert.strictEqual(diasDeAtraso("2026-12-05", hoyF), -10);
 assert.strictEqual(diasDeAtraso(false, hoyF), null);
 
+// Antigüedad de la deuda y avance del despacho
+const { tramoDeuda, avanceDespacho } = mk.exports;
+assert.strictEqual(tramoDeuda(null), "porVencer");
+assert.strictEqual(tramoDeuda(-5), "porVencer");
+assert.strictEqual(tramoDeuda(0), "porVencer");
+assert.strictEqual(tramoDeuda(1), "d1_30");
+assert.strictEqual(tramoDeuda(30), "d1_30");
+assert.strictEqual(tramoDeuda(31), "d31_60");
+assert.strictEqual(tramoDeuda(90), "d61_90");
+assert.strictEqual(tramoDeuda(91), "d90");
+assert.strictEqual(avanceDespacho([]), 0);
+assert.strictEqual(avanceDespacho([{ cantidad: 3, despachado: 1 }, { cantidad: 1, despachado: 1 }]), 50);
+assert.strictEqual(avanceDespacho([{ cantidad: 2, despachado: 5 }]), 100); // de más no pasa del 100
+assert.strictEqual(avanceDespacho([{ cantidad: 0, despachado: 0 }]), 0);
+
 console.log("tienda-web: todo bien");

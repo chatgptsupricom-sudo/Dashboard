@@ -1,4 +1,4 @@
-import { getConnection, query } from "@/lib/db";
+import { query } from "@/lib/db";
 import {
   buscarFacturaConSeriales,
   type ItemFactura,
@@ -14,18 +14,9 @@ import {
 } from "@/lib/servicio-tecnico/limites";
 import { esSucursalValida } from "@/lib/servicio-tecnico/sucursales";
 import { limpiarNumero } from "@/lib/servicio-tecnico/documento";
-import { crearProductos, productosPublicos } from "@/lib/rma/items";
-import { estadoInicial } from "@/lib/rma/flujo";
-import {
-  MAX_REINTENTOS,
-  asegurarColumnasPortal,
-  enlazarAdjuntos,
-  esChoqueReintentable,
-  generarTrackingToken,
-  siguienteNumeroCaso,
-} from "@/lib/servicio-tecnico/casos";
+import { productosPublicos } from "@/lib/rma/items";
 import { NextRequest, NextResponse } from "next/server";
-import { urlWebhookRma } from "@/lib/rma/webhook";
+import { crearCasoPortal } from "@/lib/servicio-tecnico/crearCaso";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +90,6 @@ export async function POST(request: NextRequest) {
   const bloqueoCreados = consultarLimite(request, "ticket-creado", LIMITE_CREADOS);
   if (bloqueoCreados) return bloqueoCreados;
 
-  let conn: any;
   try {
     // Igual que en adjuntos: un cuerpo que no es JSON es culpa del que llama,
     // no un fallo del servidor.
@@ -348,212 +338,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Los campos de producto del caso son los del primero (paso 1 de #331).
-    // La falla del caso, en cambio, junta la de todos: es lo que el técnico
-    // lee hoy en el panel, y ahí tiene que ver el envío completo.
-    const { matched, serialFinal } = elegidos[0];
-    const fallaCaso =
-      elegidos.length === 1
-        ? elegidos[0].pedido.falla
-        : elegidos
-            .map(
-              (e, i) =>
-                `${i + 1}. ${e.matched.nombre}${e.serialFinal ? ` (${e.serialFinal})` : ""}: ${e.pedido.falla}`,
-            )
-            .join("\n\n");
-
-    // Paso 3: abrir conexion y asegurar schema.
-    conn = await getConnection();
-    await asegurarColumnasPortal(conn);
-
-    // Paso 4: intentar INSERT con reintentos (race condition del case_number).
-    let caseId: number | null = null;
-    let caseNumber: string | null = null;
-    let trackingToken: string | null = null;
-    let lastError: any = null;
-    // El equipo todavía no llegó: "por llegar" hasta que Seguridad lo ingrese.
-    const estado = await estadoInicial(false);
-
-    for (let attempt = 1; attempt <= MAX_REINTENTOS; attempt++) {
-      try {
-        // Generar case_number y tracking_token frescos en cada intento.
-        caseNumber = await siguienteNumeroCaso(conn);
-        trackingToken = generarTrackingToken();
-
-        // created_by: nombre del cliente + "(portal)". Asi el tecnico ve de un
-        // vistazo quien lo creo. El campo es NOT NULL y VARCHAR(200), asi que
-        // nos cabe.
-        const createdBy = `${resultado.cliente.nombre} (portal)`;
-
-        const [insertResult] = (await conn.execute(
-          `INSERT INTO rma_cases (
-            case_number, product_code, hardware, brand, model,
-            invoice_number, client_name, client_phone, serial_quantity,
-            reported_fault, status, notes, company_id, created_by,
-            origen, tracking_token, odoo_partner_id, odoo_product_id, serial,
-            garantia_estado, garantia_meses, garantia_vence, garantia_marca
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            caseNumber,
-            matched.codigo || null,
-            // hardware/brand/model siguen la convencion del modulo interno
-            // (ver app/api/rma/products): hardware es la categoria, model es
-            // el nombre del producto. La version anterior metia el nombre en
-            // `hardware` y dejaba marca y modelo en NULL, y el caso salia
-            // incompleto en el panel del tecnico.
-            matched.categoria || null,
-            matched.marca || null,
-            matched.nombre || null,
-            // El numero canonico de Odoo, no lo que escribio el cliente.
-            resultado.factura.numero,
-            resultado.cliente.nombre,
-            clientPhone || null,
-            // serial_quantity es el campo viejo (texto libre) que usa el
-            // modulo interno para buscar. El serial real va aparte.
-            serialFinal,
-            fallaCaso,
-            estado,
-            // La compania sale de la factura. Antes venia del body con 9 por
-            // defecto, asi que un reporte de una factura de Caracas quedaba
-            // guardado como Valencia. La columna es NOT NULL con default 9, asi
-            // que si Odoo no la trae caemos en ese mismo default en vez de
-            // reventar el INSERT.
-            resultado.factura.compania_id ?? 9,
-            createdBy,
-            trackingToken,
-            resultado.partner_id,
-            matched.producto_id || null,
-            serialFinal,
-            // La garantía se congela acá: es la del día en que el cliente
-            // reportó, no la que se calcularía al abrir el caso.
-            matched.garantia?.estado || null,
-            matched.garantia?.meses_cubiertos ?? null,
-            matched.garantia?.fecha_vencimiento
-              ? matched.garantia.fecha_vencimiento.slice(0, 10)
-              : null,
-            matched.garantia?.marca_resuelta || null,
-          ],
-        )) as [{ insertId: number }, any];
-
-        caseId = insertResult?.insertId;
-
-        if (!caseId) {
-          throw new Error("El INSERT no devolvió insertId");
-        }
-
-        // Historial: el modulo interno espera que haya una fila en rma_history
-        // al crear el caso, si no aparece sin historial en el panel.
-        await conn.execute(
-          `INSERT INTO rma_history (case_id, from_status, to_status, changed_by, notes)
-           VALUES (?, NULL, ?, ?, 'Caso creado desde portal publico')`,
-          [caseId, estado, createdBy],
-        );
-
-        // Los productos del envío (issue #331), en el orden en que el cliente
-        // los eligió.
-        const idsProductos = await crearProductos(
-          caseId,
-          elegidos.map((e, i) => ({
-            orden: i + 1,
-            product_code: e.matched.codigo || null,
-            hardware: e.matched.categoria || null,
-            brand: e.matched.marca || null,
-            model: e.matched.nombre || null,
-            serial: e.serialFinal,
-            odoo_product_id: e.matched.producto_id || null,
-            reported_fault: e.pedido.falla,
-            garantia_estado: e.matched.garantia?.estado || null,
-            garantia_meses: e.matched.garantia?.meses_cubiertos ?? null,
-            garantia_vence: e.matched.garantia?.fecha_vencimiento
-              ? e.matched.garantia.fecha_vencimiento.slice(0, 10)
-              : null,
-            garantia_marca: e.matched.garantia?.marca_resuelta || null,
-          })),
-          conn,
-          estado,
-        );
-
-        // Enlazar los adjuntos que ya se subieron con el token temporal de
-        // cada producto.
-        await enlazarAdjuntos(
-          conn,
-          caseId,
-          trackingToken,
-          elegidos.map((e) => e.pedido.uploadToken),
-          idsProductos,
-        );
-
-        break; // exito, salir del loop
-      } catch (e: any) {
-        lastError = e;
-        if (esChoqueReintentable(e) && attempt < MAX_REINTENTOS) {
-          // Backoff lineal corto (50, 100, 150 ms) — la mayoria de las veces
-          // el segundo intento ya pasa.
-          await new Promise((r) => setTimeout(r, attempt * 50));
-          continue;
-        }
-        // No es duplicado, o se acabaron los reintentos: propagar.
-        throw e;
-      }
-    }
-
-    if (!caseId || !caseNumber || !trackingToken) {
-      // En teoria nunca llegamos aca, pero por seguridad.
-      throw lastError || new Error("No se pudo generar el ticket");
-    }
-
-    // Notificar por socket y disparar webhook de n8n (fire-and-forget).
-    // No bloqueamos ni la respuesta ni la liberacion de la conexion: si fallan,
-    // el ticket ya quedo guardado.
-    if (typeof global !== "undefined" && (global as any).io) {
-      try {
-        (global as any).io.emit("rma_ticket_nuevo", {
-          case_id: caseId,
-          case_number: caseNumber,
-          client_name: resultado.cliente.nombre,
-          product:
-            elegidos.length > 1 ? `${matched.nombre} (+${elegidos.length - 1})` : matched.nombre,
-          productos: elegidos.length,
-          invoice_number: invoiceNumber,
-          origen: "portal",
-          created_at: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.error("[portal-ticket] socket emit error:", e);
-      }
-    }
-
-    if (urlWebhookRma()) {
-      // No bloqueamos la respuesta. Si falla, el ticket ya se guardó.
-      fetch(urlWebhookRma()!, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          evento: "rma_ticket_nuevo",
-          origen: "portal",
-          ticket: {
-            case_id: caseId,
-            case_number: caseNumber,
-            tracking_token: trackingToken,
-            client_name: resultado.cliente.nombre,
-            client_phone: clientPhone,
-            invoice_number: invoiceNumber,
-            product_code: matched.codigo,
-            product_name: matched.nombre,
-            serial: matched.serial || null,
-            reported_fault: fallaCaso,
-            productos: elegidos.map((e) => ({
-              product_code: e.matched.codigo,
-              product_name: e.matched.nombre,
-              serial: e.serialFinal,
-              reported_fault: e.pedido.falla,
-            })),
-          },
-        }),
-      }).catch((err) => {
-        console.error("[portal-ticket] n8n webhook error:", err.message);
-      });
-    }
+    // Pasos 3 y 4 (caso, historial, productos, adjuntos, socket y webhook): lib/servicio-tecnico/crearCaso.ts,
+    // la misma función que usa «Mi cuenta» de la tienda web.
+    const { caseId, caseNumber, trackingToken } = await crearCasoPortal({
+      resultado,
+      elegidos: elegidos.map((e) => ({
+        matched: e.matched,
+        falla: e.pedido.falla,
+        uploadToken: e.pedido.uploadToken,
+        serialFinal: e.serialFinal,
+      })),
+      telefono: clientPhone || null,
+      facturaEscrita: invoiceNumber,
+    });
 
     // Ahora sí: el ticket existe, se consume la cuota de creación.
     registrarUso(request, "ticket-creado", LIMITE_CREADOS);
@@ -574,21 +371,8 @@ export async function POST(request: NextRequest) {
       { error: "No pudimos procesar tu reporte. Intenta de nuevo." },
       { status: 500 },
     );
-  } finally {
-    if (conn) {
-      try {
-        // release(), NO close(). En una conexión de pool de mysql2, close()
-        // ni siquiera existe en la conexión base: lanza un TypeError que este
-        // catch se tragaba, y la conexión nunca volvía al pool. Con
-        // connectionLimit 40, waitForConnections y queueLimit 0, a los 40
-        // reportes el pool quedaba vacío y CUALQUIER consulta del panel
-        // —no solo las del portal— se quedaba encolada para siempre.
-        conn.release();
-      } catch (e: any) {
-        console.error("[portal-ticket] release:", e?.message);
-      }
-    }
   }
+  // La conexión dedicada (y su release) ahora vive en crearCasoPortal.
 }
 
 // GET /api/servicio-tecnico/ticket?numero=...&factura=...
