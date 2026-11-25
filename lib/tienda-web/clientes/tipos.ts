@@ -126,7 +126,50 @@ export function avanceDespacho(lineas: { cantidad: number; despachado: number }[
 /* ------------------------------------------------------------------ Perfil editable */
 // Lo que el cliente escribe de su empresa en «Mi cuenta» › Perfil (tabla tienda_perfiles). No cambia Odoo:
 // lo ve su vendedor para actualizarlo allá.
-export interface SucursalPerfil { nombre: string; direccion: string; contacto: string; telefono: string }
+/** `lat`/`lng`: dónde está en el mapa (opcional; lo marca el cliente con el buscador, su ubicación o el pin). */
+export interface SucursalPerfil { nombre: string; direccion: string; contacto: string; telefono: string; lat?: number; lng?: number }
+
+/** Coordenadas válidas redondeadas a 6 decimales (~10 cm), o null. Venezuela y Panamá, con holgura. */
+export function coordenadas(lat: unknown, lng: unknown): { lat: number; lng: number } | null {
+  const a = Number(lat);
+  const o = Number(lng);
+  if (lat === null || lat === undefined || lat === "" || lng === null || lng === undefined || lng === "") return null;
+  if (!Number.isFinite(a) || !Number.isFinite(o) || a < -5 || a > 20 || o < -90 || o > -55) return null;
+  return { lat: Math.round(a * 1e6) / 1e6, lng: Math.round(o * 1e6) / 1e6 };
+}
+
+/** La red social de un enlace por su dominio (para mover un enlace pegado en otro campo al suyo). null = no es de una red. */
+export function redDeEnlace(v: unknown): Exclude<RedSocial, "web"> | null {
+  const t = String(v ?? "").trim();
+  if (!/[./]/.test(t)) return null;
+  let host = "";
+  try { host = new URL(/^https?:\/\//i.test(t) ? t : `https://${t}`).hostname.toLowerCase().replace(/^(www\.|m\.)/, ""); } catch { return null; }
+  for (const r of REDES) if (r.hosts.some((h) => host === h || host.endsWith(`.${h}`))) return r.id as Exclude<RedSocial, "web">;
+  return null;
+}
+
+/**
+ * Las redes sociales enlazadas en el HTML de una página (el pie de casi toda web las tiene). Solo perfiles: se
+ * descartan los botones de compartir, publicaciones sueltas y la propia página de la red. Una por red, la primera.
+ */
+export function redesEnHtml(html: string): Partial<Record<RedSocial, string>> {
+  const out: Partial<Record<RedSocial, string>> = {};
+  const hrefs = String(html || "").match(/href\s*=\s*["']([^"'<>\s]{8,300})["']/gi) || [];
+  const NO_PERFIL = /\/(sharer|share|intent|dialog|plugins|p|reel|reels|tv|stories|watch|hashtag|explore|status|posts|photo|video|events|groups|login|signup|home)(\/|\.php|$|\?)/i;
+  for (const h of hrefs) {
+    const url = h.replace(/^href\s*=\s*["']|["']$/gi, "").replace(/&amp;/g, "&");
+    const red = redDeEnlace(url);
+    if (!red || out[red]) continue;
+    let u: URL;
+    try { u = new URL(url); } catch { continue; }
+    if (NO_PERFIL.test(u.pathname) || u.pathname.split("/").filter(Boolean).length === 0) continue;
+    if (red !== "facebook" || !/profile\.php/.test(u.pathname)) u.search = "";
+    u.hash = "";
+    const limpio = enlaceRed(red, u.toString());
+    if (limpio) out[red] = limpio;
+  }
+  return out;
+}
 export interface RazonPerfil { razon: string; rif: string; sucursales: SucursalPerfil[] }
 export type RedSocial = "instagram" | "facebook" | "tiktok" | "x" | "linkedin" | "web";
 export interface DatosPerfil { nombre: string; razones: RazonPerfil[]; redes: Partial<Record<RedSocial, string>> }
@@ -235,7 +278,9 @@ export function validarPerfil(c: any): ResultadoPerfil {
       if (contacto.length < 2) return mal(`${q}.contacto`, `Escribe el nombre de contacto de ${cual}`);
       const telefono = telefonoValido(s.telefono);
       if (!telefono) return mal(`${q}.telefono`, `Revisa el teléfono de ${cual}: necesita al menos 7 números`);
-      sucursales.push({ nombre: nombreS, direccion, contacto, telefono });
+      // La ubicación nunca traba el guardado: si viene mal, se ignora.
+      const punto = coordenadas(s.lat, s.lng);
+      sucursales.push({ nombre: nombreS, direccion, contacto, telefono, ...(punto || {}) });
     }
     razones.push({ razon, rif, sucursales });
   }
@@ -285,6 +330,7 @@ export function resumenCambios(antes: DatosPerfil | null, despues: DatosPerfil):
       const previa = sa.get(n);
       if (!previa) { out.push(`Agregó la sucursal ${s.nombre} de ${rb.razon}`); continue; }
       const cambios = CAMPOS.filter(([c]) => previa[c] !== s[c]).map(([, t]) => t);
+      if (previa.lat !== s.lat || previa.lng !== s.lng) cambios.push(s.lat === undefined ? "quitó la ubicación en el mapa" : "la ubicación en el mapa");
       if (cambios.length) out.push(`Cambió ${cambios.join(", ").replace(/, ([^,]*)$/, " y $1")} de la sucursal ${s.nombre} de ${rb.razon}`);
     }
     for (const [n, s] of sa) if (!sb.has(n)) out.push(`Quitó la sucursal ${s.nombre} de ${rb.razon}`);

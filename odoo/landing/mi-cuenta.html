@@ -21,10 +21,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125l">
-<link rel="stylesheet" href="tienda.css?v=20261125l">
-<link rel="stylesheet" href="cuenta.css?v=20261125l">
-<link rel="stylesheet" href="mi-cuenta.css?v=20261125l">
+<link rel="stylesheet" href="estilos.css?v=20261125n">
+<link rel="stylesheet" href="tienda.css?v=20261125n">
+<link rel="stylesheet" href="cuenta.css?v=20261125n">
+<link rel="stylesheet" href="mi-cuenta.css?v=20261125n">
 </head>
 <body data-pagina="mi-cuenta">
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -407,25 +407,31 @@
                 </div>
 
                 <!-- Perfil: lo que el cliente escribe de su empresa (nombre, logo, redes, razones sociales con sus
-                     sucursales), su vendedor en cada sede y la seguridad de su acceso -->
+                     sucursales en el mapa), su vendedor en cada sede y la seguridad de su acceso. Pestañas y edición por bloque. -->
                 <div id="vista-perfil" class="panel-vista" role="tabpanel" aria-labelledby="p-perfil" hidden>
                     <header class="vista-cabeza">
                         <div>
                             <h1 class="vista-titulo">Perfil</h1>
-                            <p class="vista-nota">Así conocemos a tu empresa. Mantén al día tus razones sociales y sucursales: tu vendedor las usa para tus pedidos, facturas y despachos.</p>
+                            <p class="vista-nota">Así conocemos a tu empresa. Con tus sucursales al día, tu vendedor arma tus pedidos, facturas y despachos sin preguntarte de nuevo.</p>
                         </div>
-                        <button type="button" class="boton boton-tinta perfil-editar" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>Editar perfil</button>
                     </header>
                     <section class="perfil-hero" aria-label="Tu empresa"></section>
-                    <form class="perfil-editor" hidden novalidate aria-label="Editar el perfil"></form>
-                    <section class="perfil-razones-caja" aria-labelledby="t-perfil-razones">
-                        <h2 id="t-perfil-razones" class="perfil-titulo perfil-titulo-fuera">Razones sociales y sucursales</h2>
+                    <div class="perfil-pestanas" role="tablist" aria-label="Partes del perfil">
+                        <button type="button" role="tab" id="pt-empresa" data-pt="empresa" aria-controls="pp-empresa" aria-selected="true">Mi empresa</button>
+                        <button type="button" role="tab" id="pt-sucursales" data-pt="sucursales" aria-controls="pp-sucursales" aria-selected="false" tabindex="-1">Razones sociales y sucursales <span class="pt-n"></span></button>
+                        <button type="button" role="tab" id="pt-vendedores" data-pt="vendedores" aria-controls="pp-vendedores" aria-selected="false" tabindex="-1">Mis vendedores</button>
+                        <button type="button" role="tab" id="pt-seguridad" data-pt="seguridad" aria-controls="pp-seguridad" aria-selected="false" tabindex="-1">Acceso y seguridad</button>
+                    </div>
+                    <section id="pp-empresa" class="perfil-panel" role="tabpanel" aria-labelledby="pt-empresa">
+                        <div class="perfil-empresa"></div>
+                    </section>
+                    <section id="pp-sucursales" class="perfil-panel" role="tabpanel" aria-labelledby="pt-sucursales" hidden>
                         <div class="perfil-razones"></div>
                     </section>
-                    <section aria-labelledby="t-perfil-sedes">
-                        <h2 id="t-perfil-sedes" class="perfil-titulo perfil-titulo-fuera">Tu vendedor en cada sede</h2>
+                    <section id="pp-vendedores" class="perfil-panel" role="tabpanel" aria-labelledby="pt-vendedores" hidden>
                         <div class="perfil-sedes"></div>
                     </section>
+                    <section id="pp-seguridad" class="perfil-panel" role="tabpanel" aria-labelledby="pt-seguridad" hidden>
                     <div class="perfil-rejilla">
                         <section class="tarjeta-perfil perfil-acceso" aria-labelledby="t-perfil-acceso">
                             <h2 id="t-perfil-acceso" class="perfil-titulo">Acceso y seguridad</h2>
@@ -449,6 +455,9 @@
                             </form>
                         </section>
                     </div>
+                    </section>
+                    <!-- Editar una razón social o una sucursal (con su mapa), y confirmar al quitar -->
+                    <dialog class="perfil-dialogo" aria-labelledby="pd-titulo"></dialog>
                 </div>
             </div>
         </div>
@@ -568,7 +577,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261125l"></script>
-<script src="vivo.js?v=20261125l" data-despues="app.js?v=20261125l,mi-cuenta.js?v=20261125l"></script>
+<script src="datos.js?v=20261125n"></script>
+<script src="vivo.js?v=20261125n" data-despues="app.js?v=20261125n,mi-cuenta.js?v=20261125n"></script>
 </body>
 </html>

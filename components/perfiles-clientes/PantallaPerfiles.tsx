@@ -211,7 +211,11 @@ function Detalle({ clave, sede, onCerrar }: { clave: string | null; sede: string
                         etiqueta={`Copiar los datos de ${r.razon}`}
                         texto={[
                           `${r.razon} — ${r.rif}`,
-                          ...r.sucursales.map((s) => `• ${s.nombre}: ${s.direccion}. Contacto: ${s.contacto}, ${s.telefono}`),
+                          ...r.sucursales.map(
+                            (s) =>
+                              `• ${s.nombre}: ${s.direccion}. Contacto: ${s.contacto}, ${s.telefono}` +
+                              (typeof s.lat === "number" ? `. Mapa: https://www.google.com/maps?q=${s.lat},${s.lng}` : ""),
+                          ),
                         ].join("\n")}
                       />
                     </div>
@@ -225,6 +229,16 @@ function Detalle({ clave, sede, onCerrar }: { clave: string | null; sede: string
                         <p className="flex gap-1.5 text-muted-foreground">
                           <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {s.direccion}
                         </p>
+                        {typeof s.lat === "number" && (
+                          <a
+                            href={`https://www.google.com/maps?q=${s.lat},${s.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-5 inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
+                          >
+                            Ver en el mapa <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
                         <p className="flex items-center gap-1.5 text-muted-foreground">
                           <User className="h-3.5 w-3.5" /> {s.contacto}
                         </p>

@@ -96,6 +96,8 @@ export interface PerfilEditable extends DatosPerfil {
   actualizadoPor: string;
   /** Claves de RIF que ya están en Odoo, para marcar cada razón social como registrada. */
   registrados: string[];
+  /** Sus razones sociales en Odoo (RIF y nombre): al escribir uno de esos RIF, la pantalla llena el nombre sola. */
+  conocidas: { rif: string; razon: string }[];
 }
 
 export async function perfilEditable(c: ClienteOdoo): Promise<PerfilEditable> {
@@ -109,14 +111,16 @@ export async function perfilEditable(c: ClienteOdoo): Promise<PerfilEditable> {
     fichasDe(c),
   ]);
   const registrados = [...new Set(fichas.map((f) => claveDocumento(f.documento)).filter((d) => d.length >= 6))];
+  const conocidas = [...new Map(fichas.filter((f) => claveDocumento(f.documento).length >= 6)
+    .map((f) => [claveDocumento(f.documento), { rif: rifValido(f.documento) || f.documento, razon: f.nombre }])).values()];
   const f = (filas as any[])?.[0];
-  if (!f) return { ...propuesta(c, fichas), guardado: false, version: 0, logo: null, actualizadoEl: "", actualizadoPor: "", registrados };
+  if (!f) return { ...propuesta(c, fichas), guardado: false, version: 0, logo: null, actualizadoEl: "", actualizadoPor: "", registrados, conocidas };
   let datos: DatosPerfil;
   try { datos = JSON.parse(f.datos); } catch { datos = propuesta(c, fichas); }
   const logo = f.logo && f.logo_tipo ? `data:${f.logo_tipo};base64,${Buffer.from(f.logo).toString("base64")}` : null;
   return {
     nombre: f.nombre || datos.nombre, razones: datos.razones || [], redes: datos.redes || {},
-    guardado: true, version: Number(f.version) || 1, logo, actualizadoEl: f.el || "", actualizadoPor: f.actualizado_por || "", registrados,
+    guardado: true, version: Number(f.version) || 1, logo, actualizadoEl: f.el || "", actualizadoPor: f.actualizado_por || "", registrados, conocidas,
   };
 }
 

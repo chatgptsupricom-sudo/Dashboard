@@ -213,5 +213,35 @@ assert.deepStrictEqual(resumenCambios(v1, v2), [
   "Agregó la sucursal Almacén de Ana C.A.",
   "Agregó su Página web",
 ]);
+// Ubicación, enlaces pegados en otro campo y redes encontradas en una página
+const { coordenadas, redDeEnlace, redesEnHtml } = mk.exports;
+assert.deepStrictEqual(coordenadas("10.1620305", "-68.0076543"), { lat: 10.162031, lng: -68.007654 });
+assert.strictEqual(coordenadas(48.85, 2.35), null); // París: fuera de Venezuela y Panamá
+assert.strictEqual(coordenadas("", ""), null);
+const conPunto = validarPerfil({ ...bien, razones: [{ ...bien.razones[0], sucursales: [{ ...suc, lat: 10.16, lng: -68.0 }] }] });
+assert.strictEqual(conPunto.datos.razones[0].sucursales[0].lat, 10.16);
+const puntoMalo = validarPerfil({ ...bien, razones: [{ ...bien.razones[0], sucursales: [{ ...suc, lat: "x", lng: 5 }] }] });
+assert.ok(puntoMalo.ok); // una ubicación mala no traba el guardado: se ignora
+assert.strictEqual(puntoMalo.datos.razones[0].sucursales[0].lat, undefined);
+const v3 = JSON.parse(JSON.stringify(v1));
+v3.razones[0].sucursales[0].lat = 10.1; v3.razones[0].sucursales[0].lng = -68;
+assert.deepStrictEqual(resumenCambios(v1, v3), ["Cambió la ubicación en el mapa de la sucursal Principal de Ana C.A."]);
+assert.strictEqual(redDeEnlace("https://www.instagram.com/tienda"), "instagram");
+assert.strictEqual(redDeEnlace("fb.com/tienda"), "facebook");
+assert.strictEqual(redDeEnlace("@tienda"), null);
+assert.strictEqual(redDeEnlace("https://tienda.com"), null);
+assert.deepStrictEqual(redesEnHtml(`
+  <a href="https://www.facebook.com/sharer/sharer.php?u=x">Compartir</a>
+  <a href="https://www.instagram.com/p/ABC123/">Una foto</a>
+  <a href="https://www.instagram.com/mitienda/?hl=es">IG</a>
+  <a href='https://facebook.com/MiTienda'>FB</a>
+  <a href="https://twitter.com/intent/tweet?text=x">tuit</a>
+  <a href="https://www.tiktok.com/@mitienda">TikTok</a>
+  <a href="https://instagram.com/otra">otra</a>
+`), {
+  instagram: "https://instagram.com/mitienda",
+  facebook: "https://facebook.com/MiTienda",
+  tiktok: "https://tiktok.com/@mitienda",
+});
 
 console.log("tienda-web: todo bien");
