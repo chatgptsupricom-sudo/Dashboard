@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuthStore } from "@/lib/stores/auth.store";
+import { cidsEnPantalla } from "@/lib/adminleads/sucursal";
 import { rolePermissions, UserRole } from "@/lib/types";
 import { esRolBI } from "@/lib/auth/inteligenciaNegocio";
 import { esRolMarketingElectro } from "@/lib/auth/marketingElectro";
@@ -285,7 +286,7 @@ export function Sidebar({
   if (!user) return null;
 
   const userRole = user.role;
-  const userCids = (user as any).cids;
+  const userCids = cidsEnPantalla(user as any);
   // En la tabla `roles` el nombre puede venir con otras mayúsculas que el enum
   // ("Recursos Humanos" vs "recursos humanos"): sin esto el menú salía vacío.
   const permissions =

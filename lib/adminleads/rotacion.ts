@@ -4,6 +4,7 @@ import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
 import { IDS_SEDES, listasPrincipales } from "@/lib/calidad-odoo/odoo";
 import { ultimosIngresos } from "@/lib/inteligencia-negocio/reportes";
 import { veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
+import { sedeElegida } from "@/lib/adminleads/sucursal";
 import { terminosSinIC } from "@/lib/intercompania";
 
 /**
@@ -340,6 +341,11 @@ export function resolverCompanies(payload: any, sede?: string | null): number[] 
     if (sede === "9" || sede === "10") return [Number(sede)];
     if (sede === "venezuela") return [9, 10];
     return rol === "superadmin" ? [7, 9, 10] : [9, 10];
+  }
+  // AdminLeads de Panamá con las tres sedes elegidas (lib/adminleads/sucursal.ts).
+  if (sedeElegida(payload) === "todas") {
+    if (sede === "7" || sede === "9" || sede === "10") return [Number(sede)];
+    return [7, 9, 10];
   }
   const cid = parseInt(payload?.cids, 10);
   if (!Number.isFinite(cid) || cid <= 0) return null;

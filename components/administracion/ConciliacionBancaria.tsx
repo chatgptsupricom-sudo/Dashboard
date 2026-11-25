@@ -494,7 +494,8 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   const abierto = (m: { fecha: string }) => !cerrados.has(m.fecha.slice(0, 7));
   const comprobantes = datos?.comprobantes || [];
   const sinMovimiento = datos?.pagosSinMovimiento || [];
-  const moneda = cuentaElegida?.moneda || "";
+  // Un diario sin moneda propia es de la moneda de la sede, USD en las tres (REGIONSBANK, Bancamiga $...).
+  const moneda = cuentaElegida?.moneda || "USD";
 
   /** Los listos del período, de a uno; para al primer error. */
   const conciliarTodos = async () => {
@@ -699,7 +700,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
             {cuentas.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.nombre}
-                {c.moneda ? ` (${c.moneda})` : ""}
+                {` (${c.moneda || "USD"})`}
               </option>
             ))}
           </select>
@@ -745,7 +746,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
 
       {subidas.length > 0 && (
         <Card
-          className="fixed bottom-4 left-4 z-50 w-[min(440px,calc(100vw-2rem))] shadow-lg"
+          className="fixed bottom-4 right-4 z-[110] w-[min(440px,calc(100vw-2rem))] shadow-lg"
           role="status"
           onMouseEnter={() => setSobreAviso(true)}
           onMouseLeave={() => setSobreAviso(false)}
@@ -1190,7 +1191,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                                     rel="noreferrer"
                                     className={`text-xs inline-flex items-center gap-1 hover:underline ${m.odoo && !m.odoo.conciliada ? "text-amber-700" : "text-emerald-700"}`}
                                     title={
-                                      (m.odoo ? `Aprobado por ${m.odoo.por} el ${dia(m.odoo.el.slice(0, 10))}` : "Ya estaba conciliado en Odoo") +
+                                      (m.odoo?.dePanel ? `Aprobado por ${m.odoo.por} el ${dia(m.odoo.el.slice(0, 10))}` : "Ya estaba en Odoo") +
                                       " · abrir en Odoo"
                                     }
                                   >
@@ -1199,7 +1200,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
                                 ) : null}
-                                {m.odoo && abierto(m) && (
+                                {m.odoo?.dePanel && abierto(m) && (
                                   <Button
                                     size="sm"
                                     variant="ghost"

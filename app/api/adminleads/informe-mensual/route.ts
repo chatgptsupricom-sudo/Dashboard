@@ -13,7 +13,7 @@
 import { canalNormalizadoSql, CANALES_META } from "@/lib/canales";
 import { getCampaignMetrics } from "@/lib/campanas-meta";
 import { query } from "@/lib/db";
-import { payloadLeads } from "@/lib/adminleads/sucursal";
+import { cidsLeads, payloadLeads, sedeLeadsParam } from "@/lib/adminleads/sucursal";
 import {
   buildIgSnapshot,
   fetchIgAccountInsights,
@@ -113,7 +113,7 @@ const ES_VENTA =
  * parametros en el orden en que aparecen.
  */
 function criteriosLeads(
-  userCids: number,
+  userCids: number | "todas" | null,
   sede: string | null,
   desde: string,
   hasta: string,
@@ -144,7 +144,7 @@ function criteriosLeads(
       `${alias}.seller_id IN (SELECT id FROM sellers WHERE cids = ?)`,
     );
     filtroParams.push(parseInt(sede));
-  } else if (userCids !== 7) {
+  } else if (userCids !== 7 && userCids !== "todas") {
     // `seller_id IN (...)` es NULL para leads sin vendedor asignado, y NULL no
     // es TRUE: sin el OR explicito esos leads desaparecian del informe.
     filtros.push(
@@ -168,7 +168,7 @@ function criteriosLeads(
  * salgan en el orden real del embudo.
  */
 async function getPipelineActivo(
-  userCids: number,
+  userCids: number | "todas" | null,
   sede: string | null,
   desde: string,
   hasta: string,
@@ -199,7 +199,7 @@ async function getPipelineActivo(
 }
 
 async function getCrmStats(
-  userCids: number,
+  userCids: number | "todas" | null,
   sede: string | null,
   desde: string,
   hasta: string,
@@ -245,7 +245,7 @@ async function getCrmStats(
 }
 
 async function getLeadsPorVendedor(
-  userCids: number,
+  userCids: number | "todas" | null,
   sede: string | null,
   desde: string,
   hasta: string,
@@ -293,7 +293,7 @@ async function getLeadsPorVendedor(
 }
 
 async function getTopClientes(
-  userCids: number,
+  userCids: number | "todas" | null,
   sede: string | null,
   desde: string,
   hasta: string,
@@ -511,10 +511,10 @@ export async function GET(request: NextRequest) {
   auth.payload = payloadLeads(request, auth.payload);
 
   try {
-    const userCids = (auth.payload!.cids as number) ?? null;
+    const userCids = cidsLeads(auth.payload);
 
     const { searchParams } = new URL(request.url);
-    const sede = searchParams.get("sede");
+    const sede = sedeLeadsParam(auth.payload, searchParams.get("sede"));
 
     const hoy = new Date();
     const inicioMes = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1));
@@ -920,7 +920,7 @@ export async function POST(request: NextRequest) {
   auth.payload = payloadLeads(request, auth.payload);
 
   try {
-    const userCids = (auth.payload!.cids as number) ?? null;
+    const userCids = cidsLeads(auth.payload);
 
     const body = await request.json().catch(() => ({}));
     const periodo: string = body.periodo || new Date().toISOString().slice(0, 7);

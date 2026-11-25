@@ -147,7 +147,7 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
-import { mismaOperacion, payloadLeads } from "@/lib/adminleads/sucursal";
+import { mismaOperacion, payloadLeads, sedeElegida } from "@/lib/adminleads/sucursal";
 import { avisarReasignacion } from "@/lib/adminleads/reasignacion";
 
 declare global {
@@ -201,7 +201,11 @@ export async function PATCH(request: NextRequest) {
     // sigue sin restriccion de sucursal.
     if (
       userRole !== "superadmin" &&
-      !mismaOperacion(userCids, currentLead.new_seller_cids)
+      // Con las tres sedes, el lead no cambia de operación (Panamá aparte).
+      !mismaOperacion(
+        sedeElegida(payload) === "todas" ? (currentLead.old_seller_cids ?? currentLead.new_seller_cids) : userCids,
+        currentLead.new_seller_cids,
+      )
     )
       return NextResponse.json(
         { error: "No autorizado: el vendedor no pertenece a tu operación" },

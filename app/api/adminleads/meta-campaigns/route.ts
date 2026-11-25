@@ -2,7 +2,7 @@ import { getCampaignMetrics } from "@/lib/campanas-meta";
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
-import { payloadLeads } from "@/lib/adminleads/sucursal";
+import { cidsLeads, payloadLeads, sedeLeadsParam } from "@/lib/adminleads/sucursal";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
@@ -10,10 +10,10 @@ export async function GET(request: NextRequest) {
   auth.payload = payloadLeads(request, auth.payload);
 
   try {
-    const userCids = auth.payload!.cids as number;
+    const userCids = cidsLeads(auth.payload);
 
     const { searchParams } = new URL(request.url);
-    const sede = searchParams.get("sede");
+    const sede = sedeLeadsParam(auth.payload, searchParams.get("sede"));
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     const fechaInicio = dateRegex.test(searchParams.get("fecha_inicio") || "")
       ? searchParams.get("fecha_inicio")!

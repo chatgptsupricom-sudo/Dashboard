@@ -1,7 +1,7 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
-import { payloadLeads } from "@/lib/adminleads/sucursal";
+import { condSedeElegida, payloadLeads } from "@/lib/adminleads/sucursal";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
@@ -11,7 +11,10 @@ export async function GET(request: NextRequest) {
   try {
     const userCids = auth.payload!.cids as number;
 
-    const whereClause = userCids === 7 ? "WHERE s.cids = 7" : "WHERE (s.cids != 7 OR s.cids IS NULL)";
+    const elegida = condSedeElegida(auth.payload, "s.cids");
+    const whereClause = elegida
+      ? `WHERE ${elegida}`
+      : userCids === 7 ? "WHERE s.cids = 7" : "WHERE (s.cids != 7 OR s.cids IS NULL)";
 
     const sql = `
       SELECT

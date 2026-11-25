@@ -115,13 +115,14 @@ const pct = (parte: number, total: number) =>
  * se cae al alcance del propio usuario (Panamá ve Panamá, el resto ve el resto,
  * incluidos los leads sin vendedor asignado).
  */
-function scopeSede(userCids: number | null, sede: number | null) {
+function scopeSede(userCids: number | "todas" | null, sede: number | null) {
   if (sede !== null) {
     return { sql: "l.seller_id IN (SELECT id FROM sellers WHERE cids = ?)", params: [sede] };
   }
   if (userCids === 7) {
     return { sql: "l.seller_id IN (SELECT id FROM sellers WHERE cids = 7)", params: [] };
   }
+  if (userCids === "todas") return { sql: "1=1", params: [] };
   // NULL IN (...) no es TRUE: sin el OR se perderían los leads sin vendedor.
   return {
     sql: "(l.seller_id IS NULL OR l.seller_id IN (SELECT id FROM sellers WHERE cids != 7))",
@@ -135,7 +136,7 @@ export async function calcularVentasCampanas({
   desde,
   hasta,
 }: {
-  userCids: number | null;
+  userCids: number | "todas" | null;
   sede: number | null;
   desde: string;
   hasta: string;
