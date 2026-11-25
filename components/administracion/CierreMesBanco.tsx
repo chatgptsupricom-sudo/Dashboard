@@ -140,7 +140,8 @@ export function CierreMesBanco({
         { ok: c.lineasSinConciliar === 0, texto: c.lineasSinConciliar ? `Odoo tiene ${c.lineasSinConciliar} línea(s) del banco sin conciliar en el mes` : "Todas las líneas del banco del mes están conciliadas en Odoo" },
         { ok: diferencia === 0, texto: diferencia === 0 ? "El saldo del banco es el de Odoo" : "El saldo del banco no es el de Odoo" },
       ];
-  const listo = !c.cierre && !preguntar && tuvo !== true && pasos.every((p) => p.ok);
+  // «¿Tuvo movimientos? Sí» solo cuenta mientras el mes sigue sin movimientos: subido el estado de cuenta ya no frena el cierre.
+  const listo = !c.cierre && !preguntar && !(sinMovimientos && tuvo === true) && pasos.every((p) => p.ok);
   const saldoInicial = sinMovimientos ? c.anterior?.saldo ?? null : c.estado?.inicial ?? null;
   // El estado arranca en otro saldo que el que dejo el mes anterior: falta un movimiento entre los dos.
   const saltoInicial =
