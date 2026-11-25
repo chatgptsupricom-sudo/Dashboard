@@ -170,6 +170,9 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
     const titulos = (celdas[h] || []).map((c) => sinAcentos(String(c ?? "")));
     const col = (clave: string) => titulos.findIndex((t) => t && COLUMNAS[clave].test(t));
     const c = Object.fromEntries(Object.keys(COLUMNAS).map((k) => [k, col(k)]));
+    // «Referencia» antes que «Nro.» (Bancamiga trae las dos y «Nro.» es el numero de fila).
+    const ref = titulos.findIndex((t) => t && /referencia|^ref\b/.test(t));
+    if (ref >= 0) c.referencia = ref;
     if (c.monto < 0 && (c.credito < 0 || c.debito < 0)) c.monto = c.montoOtro;
     if (c.fecha < 0 || (c.monto < 0 && (c.credito < 0 || c.debito < 0))) continue;
     const filas: FilaEstado[] = [];
@@ -178,9 +181,31 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
     const valoresFecha = celdas.slice(h + 1).map((f) => f?.[c.fecha]);
     const orden = ordenDeFechas(valoresFecha);
     const invertir = serialesInvertidos(valoresFecha);
+    // Lineas de saldo inicial/final y de totales sin fecha (Bancamiga: «Saldo Inicial: 21.076,56» arriba y «Creditos
+    // Total: 798000 / Debito Total: 818358,97» abajo; la de totales se leia como un movimiento de 717,59 con la fecha de
+    // la fila de arriba). No son movimientos, pero dicen que el estado cubre desde el inicio o hasta el fin del mes.
+    let saldoInicialSinFecha = false;
+    let totalesSinFecha = false;
+    // Lo de arriba del encabezado: «Saldo Inicial: 21076.56» y el periodo «Movimientos del 01/04/2026-30/04/2026».
+    for (const fila of celdas.slice(0, h)) {
+      const texto = sinAcentos((fila || []).map((x) => String(x ?? "")).join(" "));
+      if (/saldo (inicial|anterior)/.test(texto)) saldoInicialSinFecha = true;
+      const p = /(?:del|desde)\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})\s*(?:-|al|hasta|a)\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})/.exec(texto);
+      const d1 = p && fechaDeCelda(p[1], orden);
+      const d2 = p && fechaDeCelda(p[2], orden);
+      if (d1 && d2 && d1 <= d2) dias.push(d1, d2);
+    }
     for (const fila of celdas.slice(h + 1)) {
       const celda = (i: number) => (i >= 0 ? fila?.[i] : undefined);
-      fecha = fechaDeCelda(celda(c.fecha), orden, invertir) ?? (String(celda(c.fecha) ?? "").trim() ? null : fecha);
+      const texto = sinAcentos((fila || []).map((x) => String(x ?? "")).join(" "));
+      const fechaFila = fechaDeCelda(celda(c.fecha), orden, invertir);
+      if (/saldo (inicial|anterior)/.test(texto) || /(creditos?|debitos?) total|total (de )?(creditos?|debitos?)|saldo final/.test(texto)) {
+        if (fechaFila) dias.push(fechaFila);
+        else if (/saldo (inicial|anterior)/.test(texto)) saldoInicialSinFecha = true;
+        else totalesSinFecha = true;
+        continue;
+      }
+      fecha = fechaFila ?? (String(celda(c.fecha) ?? "").trim() ? null : fecha);
       if (!fecha) continue;
       dias.push(fecha);
       const descripcion = String(celda(c.descripcion) ?? "").replace(/\s+/g, " ").trim();
@@ -192,13 +217,19 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
       if (monto === null || monto === 0) continue;
       filas.push({
         fecha,
-        referencia: String(celda(c.referencia) ?? "").trim().slice(0, 60),
+        referencia: String(celda(c.referencia) ?? "").trim().replace(/^'+/, "").slice(0, 60),
         descripcion: descripcion.slice(0, 255),
         monto,
         saldo: montoDeCelda(celda(c.saldo)),
       });
     }
     if (!filas.length) return null;
+    const fechas = filas.map((f) => f.fecha).sort();
+    if (saldoInicialSinFecha) dias.push(`${fechas[0].slice(0, 7)}-01`);
+    if (totalesSinFecha) {
+      const ult = fechas[fechas.length - 1];
+      dias.push(new Date(Date.UTC(+ult.slice(0, 4), +ult.slice(5, 7), 0)).toISOString().slice(0, 10));
+    }
     return armarEstado(filas, dias);
   }
   return null;

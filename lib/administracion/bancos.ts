@@ -337,20 +337,28 @@ export const esExcel = (nombre: string) => EXCEL.test(nombre);
 const INSTRUCCIONES_ESTADO =
   "Te dan una captura o PDF de un estado de cuenta bancario (movimientos de la cuenta). Devuelve TODAS las filas de " +
   "movimientos, sin inventar ni saltar ninguna, en el orden en que aparecen de arriba a abajo. Las filas de saldo " +
-  "inicial o final no son movimientos. fecha: 'YYYY-MM-DD' (en Venezuela y Panama las fechas son dia/mes/año). " +
+  "inicial o final, de totales ('Total Debitos', 'Creditos Total', 'Resumen', 'Saldo Final del Periodo') no son " +
+  "movimientos. fecha: 'YYYY-MM-DD' (en Venezuela y Panama las fechas son dia/mes/año). " +
   "referencia: el numero de referencia o documento tal cual; si no hay columna de referencia, ''. " +
   "descripcion: el texto completo de la descripcion o concepto. monto: el monto con signo, + si entra a la cuenta " +
   "(credito, abono, deposito) y - si sale (debito, cargo, comision); si solo hay una columna sin signo, ponlo " +
   "positivo. Sin separador de miles: 1.394.295,35 es 1394295.35 y 136,108.70 es 136108.70. saldo: el saldo de esa " +
   "fila y tiene_saldo = true; si no hay columna de saldo, saldo = 0 y tiene_saldo = false. " +
   "Pueden venir varias imagenes: son pedazos seguidos de la misma lista, con un poco de solape; una fila que sale " +
-  "en dos pedazos va una sola vez. Si no es un estado de cuenta, devuelve la lista vacia.";
+  "en dos pedazos va una sola vez. periodo_desde y periodo_hasta: las fechas 'YYYY-MM-DD' del periodo que cubre el " +
+  "estado si lo dice (ej. 'Movimientos del 01/04/2026-30/04/2026', 'Desde ... Hasta ...'); si no lo dice, ''. " +
+  "saldo_inicial: el 'Saldo Inicial' o 'Saldo Anterior' del estado y tiene_saldo_inicial = true; si no esta, 0 y false. " +
+  "Si no es un estado de cuenta, devuelve la lista vacia.";
 
 const ESQUEMA_ESTADO = {
   type: "object",
   additionalProperties: false,
-  required: ["movimientos"],
+  required: ["movimientos", "periodo_desde", "periodo_hasta", "saldo_inicial", "tiene_saldo_inicial"],
   properties: {
+    periodo_desde: { type: "string" },
+    periodo_hasta: { type: "string" },
+    saldo_inicial: { type: "number" },
+    tiene_saldo_inicial: { type: "boolean" },
     movimientos: {
       type: "array",
       items: {
@@ -391,6 +399,10 @@ async function leerEstado(datos: Buffer, nombre: string, mime: string): Promise<
     const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(f?.fecha)) ? String(f.fecha) : null;
     const monto = Number(f?.monto);
     if (!fecha || !monto) continue;
+    // Por si la IA igual devuelve una fila de saldo o de totales.
+    if (/saldo (inicial|anterior|final)|(creditos?|debitos?) total|total (de )?(creditos?|debitos?)/i.test(
+      `${f.referencia || ""} ${f.descripcion || ""}`.normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+    )) continue;
     const fila: FilaEstado = {
       fecha,
       referencia: String(f.referencia || "").trim().slice(0, 60),
@@ -405,7 +417,16 @@ async function leerEstado(datos: Buffer, nombre: string, mime: string): Promise<
     filas.push(fila);
   }
   if (!filas.length) throw new ArchivoIlegible("No se leyó ningún movimiento: ¿es un estado de cuenta?");
-  return armarEstado(filas);
+  // El periodo que dice el estado cuenta como cubierto aunque los primeros o ultimos dias no tengan movimientos
+  // (Bancamiga abril: «del 01/04 al 30/04», el primer movimiento es del 07/04). Con saldo inicial y sin periodo,
+  // el estado arranca el dia 1 del mes de su primer movimiento.
+  const iso = (v: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : null);
+  const desde = iso(l?.periodo_desde);
+  const hasta = iso(l?.periodo_hasta);
+  const dias: string[] = [];
+  if (desde && hasta && desde <= hasta) dias.push(desde, hasta);
+  else if (l?.tiene_saldo_inicial) dias.push(`${filas.map((f) => f.fecha).sort()[0].slice(0, 7)}-01`);
+  return armarEstado(filas, dias);
 }
 
 /**
