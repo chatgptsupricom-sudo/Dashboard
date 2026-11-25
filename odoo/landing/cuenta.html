@@ -20,9 +20,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125b">
-<link rel="stylesheet" href="tienda.css?v=20261125b">
-<link rel="stylesheet" href="cuenta.css?v=20261125b">
+<link rel="stylesheet" href="estilos.css?v=20261125f">
+<link rel="stylesheet" href="tienda.css?v=20261125f">
+<link rel="stylesheet" href="cuenta.css?v=20261125f">
 </head>
 <body data-pagina="cuenta">
 <a class="saltar" href="#c-nombre">Saltar al formulario</a>
@@ -41,7 +41,7 @@
                 <a href="./#comprar" data-ir="./#comprar">Cómo comprar</a>
                 <a href="./#marcas" data-ir="./#marcas">Marcas</a>
                 <button type="button" class="menu-tema">Cambiar a modo oscuro</button>
-                <a class="boton boton-claro" data-odoo="/web/login">Entrar</a>
+                <a class="boton boton-claro" href="mi-cuenta.html" data-ir="mi-cuenta.html" data-cuenta-entrar>Entrar</a>
             </nav>
             <a class="boton boton-tinta cabecera-cta" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
             <div class="sede-selector">
@@ -92,7 +92,7 @@
                     <h1 class="cuenta-titulo">Compra al mayor con tu propia cuenta</h1>
                     <p class="cuenta-nota">Déjanos los datos de tu empresa. El equipo de ventas de tu sede los verifica y te activa la cuenta.</p>
                     <ul class="cuenta-beneficios">
-                        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg><span><strong>Tus precios de distribuidor</strong>Los ves en la tienda al entrar con tu cuenta.</span></li>
+                        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg><span><strong>Tus pedidos y facturas en línea</strong>En qué va cada pedido y lo que debes, por sede.</span></li>
                         <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span><strong>Un vendedor para ti</strong>Te atiende, confirma tus pedidos y te avisa lo que llega.</span></li>
                         <li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="17" rx="2.5"/><path d="M9 2.75h6v3H9zM8.75 11h6.5M8.75 14.5h6.5M8.75 18h3.5"/></svg><span><strong>Cotizas y repites más rápido</strong>Con tu lista de códigos, sin escribir todo de nuevo.</span></li>
                         <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg><span><strong>Despacho a tu medida</strong>Retiro en la sucursal, nuestra ruta, encomienda o tu transporte.</span></li>
@@ -217,7 +217,7 @@
         <nav aria-label="Tienda">
             <h3>Tienda</h3>
             <a href="tienda.html" data-ir="tienda.html">Catálogo</a>
-            <a data-odoo="/web/login">Mi cuenta</a>
+            <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Mi cuenta</a>
             <a href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
         </nav>
         <nav aria-label="Ayuda">
@@ -303,7 +303,7 @@
     <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
 </div>
 
-<script src="datos.js?v=20261125b"></script>
-<script src="vivo.js?v=20261125b" data-despues="app.js?v=20261125b,cuenta.js?v=20261125b"></script>
+<script src="datos.js?v=20261125f"></script>
+<script src="vivo.js?v=20261125f" data-despues="app.js?v=20261125f,cuenta.js?v=20261125f"></script>
 </body>
 </html>

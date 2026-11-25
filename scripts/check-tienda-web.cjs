@@ -102,4 +102,48 @@ const pa = validarSolicitud({ ...base, sede: "panama", documento: "155612345-2-2
 assert.ok(pa.ok);
 assert.strictEqual(pa.datos.documento, "155612345-2-2021");
 
+// «Mi cuenta» (lib/tienda-web/clientes/tipos.ts)
+const fuenteCli = fs.readFileSync(path.join(__dirname, "..", "lib/tienda-web/clientes/tipos.ts"), "utf8");
+const jsCli = ts.transpileModule(fuenteCli, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+const mk = { exports: {} };
+new Function("require", "module", "exports", jsCli)(require, mk, mk.exports);
+const { normalizarCorreo, esCorreoInterno, problemaContrasena, codigoValido, claveDocumento, nucleoDocumento, etapaPedido, estadoFactura, diasDeAtraso } = mk.exports;
+
+assert.strictEqual(normalizarCorreo("  Ana@Empresa.COM "), "ana@empresa.com");
+assert.strictEqual(normalizarCorreo("ana@empresa"), null);
+assert.ok(esCorreoInterno("ventas@supricom.com.ve"));
+assert.ok(esCorreoInterno("contabilidad@supricom.com"));
+assert.ok(!esCorreoInterno("compras@tiendasupricomx.com"));
+assert.strictEqual(problemaContrasena("abc12345"), null);
+assert.ok(problemaContrasena("corta1"));
+assert.ok(problemaContrasena("soloLetrasAqui"));
+assert.ok(problemaContrasena("12345678"));
+assert.ok(codigoValido("012345"));
+assert.ok(!codigoValido("12345"));
+assert.ok(!codigoValido("12a456"));
+assert.strictEqual(claveDocumento("J-31737690-0"), claveDocumento("j317376900"));
+assert.strictEqual(nucleoDocumento("J-31737690-0"), "31737690");
+assert.strictEqual(nucleoDocumento("155612345-2-2021"), "155612345");
+assert.strictEqual(nucleoDocumento("J-123"), null);
+
+// Etapa del pedido
+assert.strictEqual(etapaPedido({ state: "draft" }), "cotizacion");
+assert.strictEqual(etapaPedido({ state: "sent" }), "cotizacion");
+assert.strictEqual(etapaPedido({ state: "sale", delivery_status: "partial", invoice_status: "to invoice" }), "confirmado");
+assert.strictEqual(etapaPedido({ state: "sale", delivery_status: "full", invoice_status: "to invoice" }), "despachado");
+assert.strictEqual(etapaPedido({ state: "sale", delivery_status: "full", invoice_status: "invoiced" }), "facturado");
+assert.strictEqual(etapaPedido({ state: "cancel", invoice_status: "invoiced" }), "anulado");
+
+// Estado de la factura
+const hoyF = "2026-11-25";
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "paid", amount_residual: 0 }, hoyF), "pagada");
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "not_paid", amount_residual: 100, invoice_date_due: "2026-11-30" }, hoyF), "pendiente");
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "partial", amount_residual: 40, invoice_date_due: "2026-12-30" }, hoyF), "parcial");
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "partial", amount_residual: 40, invoice_date_due: "2026-11-24" }, hoyF), "vencida");
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "not_paid", amount_residual: 100, invoice_date_due: "2026-11-25" }, hoyF), "pendiente"); // vence hoy: todavía no
+assert.strictEqual(estadoFactura({ move_type: "out_refund", amount_residual: -20 }, hoyF), "nota");
+assert.strictEqual(diasDeAtraso("2026-11-15", hoyF), 10);
+assert.strictEqual(diasDeAtraso("2026-12-05", hoyF), -10);
+assert.strictEqual(diasDeAtraso(false, hoyF), null);
+
 console.log("tienda-web: todo bien");
