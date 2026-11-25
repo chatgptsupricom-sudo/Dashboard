@@ -368,7 +368,19 @@
             b.addEventListener("click", () => { $("#f-pedido-etapa").value = valor; estadoLista.pedidos.pagina = 1; cargarLista("pedidos"); });
             return b;
         }));
+        // La pestaña elegida, a la vista; y el desvanecido en el borde que tiene más pestañas.
+        const elegida = $(".chip-etapa[aria-pressed=true]", fila);
+        if (elegida && fila.scrollWidth > fila.clientWidth) fila.scrollLeft = Math.max(0, elegida.offsetLeft - 24);
+        bordesChips();
     };
+    const fila = $(".chips-etapa");
+    const bordesChips = () => {
+        const sobra = fila.scrollWidth - fila.clientWidth;
+        fila.classList.toggle("mas-izquierda", sobra > 1 && fila.scrollLeft > 1);
+        fila.classList.toggle("mas-derecha", sobra > 1 && fila.scrollLeft < sobra - 1);
+    };
+    fila.addEventListener("scroll", bordesChips, { passive: true });
+    window.addEventListener("resize", bordesChips);
     let pedidoLista = 0;
     const cargarLista = async (tipo, subir = false) => {
         const form = $(`[data-filtros="${tipo}"]`);

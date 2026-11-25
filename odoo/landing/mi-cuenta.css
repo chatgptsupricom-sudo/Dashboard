@@ -292,6 +292,8 @@ body.detalle-abierto .detalle-pedido { transform: none; visibility: visible; tra
     .c-saldo { grid-area: saldo; text-align: left; font-size: 13px; }
     .c-saldo.con-saldo::before { content: "Saldo "; color: var(--gris); font-weight: 600; }
     .c-saldo:not(.con-saldo) { display: none; }
+    #vista-pedidos .chips-etapa { gap: 0; padding: 0 6px; }
+    #vista-pedidos .chip-etapa { padding: 0 10px; }
     .c-estado { justify-items: end; }
     .avance { width: 140px; text-align: right; }
     .fila-mes { padding: 12px 16px 6px; }
@@ -315,21 +317,36 @@ body.detalle-abierto .detalle-pedido { transform: none; visibility: visible; tra
 
 /* ------------------------------------------------------------------ Pedidos: pastillas, fotos y avance */
 .selector-oculto { display: none !important; }
-.chips-etapa { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
+/* Filtro por estado: pestañas subrayadas dentro de la tarjeta de la tabla, en una sola fila. Si no caben
+   (celular), la fila se desliza de lado y se desvanece en el borde que tiene más. */
+.chips-etapa {
+    display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--linea);
+    overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-padding-inline: 24px;
+}
+.chips-etapa::-webkit-scrollbar { display: none; }
 .chips-etapa:empty { display: none; }
+.chips-etapa.mas-derecha { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+.chips-etapa.mas-izquierda { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
+.chips-etapa.mas-izquierda.mas-derecha { -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
 .chip-etapa {
-    display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 8px 0 16px; border-radius: 999px;
-    border: 1px solid var(--linea); background: var(--superficie); color: var(--tinta); font: 700 14px Manrope, system-ui, sans-serif; cursor: pointer;
-    transition: background .2s, color .2s, border-color .2s;
+    position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; min-height: 50px; padding: 0 12px;
+    border: 0; background: none; color: var(--gris); font: 700 14px Manrope, system-ui, sans-serif; white-space: nowrap; cursor: pointer;
+    transition: color .2s;
 }
-.chip-etapa:not(:has(.chip-n)) { padding-right: 16px; }
-.chip-etapa:hover { border-color: var(--tinta); }
-.chip-etapa[aria-pressed="true"] { background: var(--tinta); color: var(--fondo); border-color: var(--tinta); }
+.chip-etapa::after {
+    content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0;
+    background: var(--tinta); transform: scaleX(0); transition: transform .3s var(--curva);
+}
+.chip-etapa:hover { color: var(--tinta); }
+.chip-etapa[aria-pressed="true"] { color: var(--tinta); }
+.chip-etapa[aria-pressed="true"]::after { transform: scaleX(1); }
+.chip-etapa:focus-visible { outline-offset: -4px; border-radius: 10px; }
 .chip-n {
-    min-width: 26px; height: 26px; padding: 0 8px; display: grid; place-items: center; border-radius: 999px;
-    background: var(--superficie-2); color: var(--gris); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums;
+    min-width: 22px; height: 22px; padding: 0 7px; display: grid; place-items: center; border-radius: 999px;
+    background: var(--superficie-2); color: var(--gris); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
+    transition: background .2s, color .2s;
 }
-.chip-etapa[aria-pressed="true"] .chip-n { background: color-mix(in srgb, var(--fondo) 18%, transparent); color: var(--fondo); }
+.chip-etapa[aria-pressed="true"] .chip-n { background: var(--tinta); color: var(--fondo); }
 
 .fotos-pila { display: flex; flex: 0 0 auto; width: 96px; padding-left: 12px; }
 .fotos-pila > * {
@@ -542,9 +559,7 @@ button.fila:hover .fotos-pila > * { transform: none; }
     .rma-detalles { padding: 12px; }
     .cuenta-sede-cabeza, .cuenta-sede-cuerpo { padding: 18px; }
     .cuenta-vencido { justify-items: start; text-align: left; width: 100%; }
-    .chips-etapa { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -4px; padding: 0 4px 2px; }
-    .chips-etapa::-webkit-scrollbar { display: none; }
-    .chip-etapa { flex: 0 0 auto; }
+    #vista-pedidos .chip-etapa { min-height: 46px; }
 }
 
 /* ------------------------------------------------------------------ Impresión del estado de cuenta */
