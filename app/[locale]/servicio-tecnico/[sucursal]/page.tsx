@@ -28,33 +28,25 @@ export default async function ServicioTecnicoLanding({
             <h1 className="pt-display mt-4">{t("title")}</h1>
             <p className="pt-lede">{t("subtitle")}</p>
 
-            <Link href={`${base}/nuevo`} className="pt-primary">
-              {t("report.cta")}
-              <ArrowRight className="h-5 w-5" aria-hidden />
-            </Link>
-
-            <div>
-              <Link href={`${base}/consultar`} className="pt-secondary">
-                <span>{t("check.lead")}</span>
-                <ArrowRight className="h-4 w-4" aria-hidden />
+            {/* Las cuatro opciones con la misma tarjeta: reportar por
+                garantía, consultar, servicio con costo (comprado aquí, fuera
+                de garantía) y equipos que no se compraron en Supricom. */}
+            <div className="pt-opciones">
+              <Link href={`${base}/nuevo`} className="pt-primary">
+                {t("report.cta")}
+                <ArrowRight className="h-5 w-5" aria-hidden />
               </Link>
-            </div>
-
-            {/* Comprado aquí pero fuera de garantía (o falla que la garantía
-                no cubre): mismo formulario con factura, con costo. */}
-            <div>
-              <Link href={`${base}/servicio-con-costo`} className="pt-secondary pt-secondary--otro">
-                <span>{t("conCosto.enlaceLanding")}</span>
-                <ArrowRight className="h-4 w-4" aria-hidden />
+              <Link href={`${base}/consultar`} className="pt-primary">
+                {t("check.lead")}
+                <ArrowRight className="h-5 w-5" aria-hidden />
               </Link>
-            </div>
-
-            {/* Equipos que no se compraron en Supricom: no tienen factura
-                que buscar, van por su propio formulario. */}
-            <div>
-              <Link href={`${base}/externo`} className="pt-secondary pt-secondary--otro">
-                <span>{t("externo.enlaceLanding")}</span>
-                <ArrowRight className="h-4 w-4" aria-hidden />
+              <Link href={`${base}/servicio-con-costo`} className="pt-primary">
+                {t("conCosto.enlaceLanding")}
+                <ArrowRight className="h-5 w-5" aria-hidden />
+              </Link>
+              <Link href={`${base}/externo`} className="pt-primary">
+                {t("externo.enlaceLanding")}
+                <ArrowRight className="h-5 w-5" aria-hidden />
               </Link>
             </div>
 
