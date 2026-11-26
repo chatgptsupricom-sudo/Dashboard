@@ -12,11 +12,11 @@ export type EstadoGarantiaUI =
  *
  * El tono importa tanto como el dato:
  *
- * - Vencida NO va en rojo ni con cara de error. El cliente no hizo nada mal, y
- *   sobre todo: estar fuera de garantía NO impide reportar. Un equipo vencido
- *   igual se repara cobrando; si el portal lo presenta como un rechazo, se
- *   pierde esa venta de servicio y el cliente termina llamando por teléfono,
- *   que es justo lo que este portal viene a evitar.
+ * - Vencida NO va en rojo ni con cara de error. El cliente no hizo nada mal.
+ *   Fuera de garantía no se reporta por garantía, pero sí se pide como
+ *   servicio con costo (/servicio-con-costo): si el portal lo presenta como un
+ *   rechazo, se pierde esa venta de servicio y el cliente termina llamando por
+ *   teléfono, que es justo lo que este portal viene a evitar.
  *
  * - Indeterminada no promete nada. Es mucho mejor decir "lo confirmamos al
  *   revisar tu caso" que arriesgar una respuesta equivocada: prometer una

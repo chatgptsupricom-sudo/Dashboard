@@ -579,7 +579,10 @@
       "compras_titulo_cliente": "Purchases by this customer",
       "compras_vacio_solo_cliente": "No purchases by that customer (Odoo and Smartbit).",
       "unidades": "Units"
-    }
+    },
+    "badge_con_costo": "Paid service",
+    "con_costo_aviso": "The customer requested this out-of-warranty service from the portal: it is paid and has no credit note. Send the quote before any work.",
+    "nc_no_con_costo": "That case is a paid (out-of-warranty) service: no credit note applies."
   },
   "stoplight": {
     "page_title": "Stoplight Reports",
@@ -935,7 +938,7 @@
       "vida_util": "Covered for life",
       "vida_util_detalle": "This product has a lifetime warranty.",
       "vencida": "Outside the warranty period",
-      "vencida_detalle": "You can still report it: we'll take a look and send you a quote before doing any work.",
+      "vencida_detalle": "You can request paid technical service: we check it and send you a quote before doing any work.",
       "indeterminada": "To be confirmed",
       "indeterminada_detalle": "We'll confirm it when we review your case and let you know."
     },
@@ -1207,6 +1210,27 @@
       "consultarTipo": "Service type",
       "consultarTipoValor": "Third-party equipment (paid service)",
       "equipoNdeM": "Device {n} of {total}"
+    },
+    "conCosto": {
+      "eyebrow": "Technical Service · Paid service",
+      "titulo": "Technical service for your out-of-warranty equipment",
+      "subtitulo": "If you bought your equipment at Supricom and its warranty expired, or the fault isn't covered, we can still repair it.",
+      "costoTitulo": "This service has a cost",
+      "costoTexto": "The equipment is not covered by the warranty. We diagnose it, send you a quote and do no work without your approval.",
+      "productHelp": "Select the products you want us to check and, if you bought several identical units, the serial of each one.",
+      "hayVencidos": "Out-of-warranty products can't be reported under warranty, but you can ask us to check them as a paid service.",
+      "productoVencido": "This product is out of warranty and can't be reported under warranty.",
+      "solicitarCta": "Request paid technical service",
+      "aceptaLabel": "I understand the service is not covered by the warranty and has a cost that will be quoted after the diagnosis.",
+      "aceptaRequerido": "Confirm that you understand the service has a cost.",
+      "submit": "Send my request",
+      "enlaceLanding": "Has your equipment's warranty expired? Request paid service",
+      "enlaceDesdeGarantia": "Is your equipment out of warranty?",
+      "enlaceDesdeGarantiaCta": "Request paid technical service",
+      "enlaceAGarantia": "Is your equipment under warranty?",
+      "enlaceAGarantiaCta": "Report it under warranty",
+      "confirmacionCosto": "Since the service is not covered by the warranty, we first diagnose the equipment and send you a quote. We do no work without your approval.",
+      "consultarTipoValor": "Out of warranty (paid service)"
     }
   },
   "vendedores": {

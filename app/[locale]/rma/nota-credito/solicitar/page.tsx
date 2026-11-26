@@ -90,6 +90,10 @@ function SolicitarNotaCredito() {
         setError(t("nc_no_externo"));
         return;
       }
+      if (Number(data.case.servicio_con_costo) === 1) {
+        setError(t("nc_no_con_costo"));
+        return;
+      }
       const items: any[] = data.items || [];
       setCaso(data.case);
       setProductos(items);
