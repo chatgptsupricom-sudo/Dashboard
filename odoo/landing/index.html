@@ -20,7 +20,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125h">
+<link rel="stylesheet" href="estilos.css?v=20261126a">
 </head>
 <body>
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -94,12 +94,12 @@
         </div>
         <div class="contenedor portada-texto">
             <h1 class="portada-titulo">Tecnología al mayor para tu negocio</h1>
-            <p class="portada-nota">Cotiza hoy, sin cuenta y sin pagar en la web: tu vendedor te responde con los precios.</p>
+            <p class="portada-nota" data-con-sesion="Ves los precios de tu lista en la tienda. Cotiza sin pagar en la web: tu vendedor confirma la entrega.">Cotiza hoy, sin pagar en la web. Con tu cuenta de distribuidor ves tus precios; sin cuenta, tu vendedor te los envía.</p>
             <div class="acciones">
                 <a class="boton boton-tinta boton-grande" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
                 <a class="boton boton-claro boton-grande" href="#carrito" data-abrir-lista>Cotizar con mi lista de códigos</a>
             </div>
-            <p class="portada-entrar">¿Ya eres cliente? <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Entra a tu cuenta: pedidos y facturas<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
+            <p class="portada-entrar" data-sin-sesion>¿Ya eres cliente? <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Entra a tu cuenta: pedidos y facturas<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
         </div>
     </section>
 
@@ -264,7 +264,7 @@
             <div class="acordeon">
                 <details>
                     <summary>¿Por qué no veo los precios?</summary>
-                    <p>Somos mayoristas: los precios son los de tu lista de distribuidor y te los envía tu vendedor con la cotización. Puedes pedirla aquí, con o sin cuenta.</p>
+                    <p>Somos mayoristas: los precios son los de tu lista de distribuidor y los ves al entrar con tu cuenta. Sin cuenta, tu vendedor te los envía con la cotización. Puedes cotizar aquí, con o sin cuenta.</p>
                 </details>
                 <details>
                     <summary>¿Cómo pido mi cuenta?</summary>
@@ -387,7 +387,7 @@
         </a>
         <p id="enviar-ayuda" class="solo-lectores">Agrega al menos un producto para enviar.</p>
         <p class="ticket-largo" hidden>Tu lista es larga para un correo: al enviar la copiamos y solo tienes que pegarla.</p>
-        <p class="ticket-nota">Sin precios ni pago aquí: tu vendedor te responde con la cotización.</p>
+        <p class="ticket-nota" data-con-sesion="Sin pago aquí: tu vendedor confirma precios y entrega con la cotización.">Sin precios ni pago aquí: tu vendedor te responde con la cotización.</p>
     </div>
 </aside>
 
@@ -402,6 +402,6 @@
 </div>
 
 <script src="datos.js?v=20261125h"></script>
-<script src="vivo.js?v=20261125h" data-despues="app.js?v=20261125l"></script>
+<script src="vivo.js?v=20261125h" data-despues="app.js?v=20261126a"></script>
 </body>
 </html>

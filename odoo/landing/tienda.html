@@ -20,7 +20,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="estilos.css?v=20261125h">
+<link rel="stylesheet" href="estilos.css?v=20261126a">
 <link rel="stylesheet" href="tienda.css?v=20261125h">
 </head>
 <body data-pagina="tienda">
@@ -88,9 +88,9 @@
             <div class="tienda-cabeza">
                 <div class="tienda-cabeza-texto">
                     <h1 class="tienda-titulo">Todo lo que tenemos en <span class="tienda-sede" data-sede-nombre>tu sede</span></h1>
-                    <p class="tienda-nota"><strong class="tienda-total"></strong> productos en existencia. Cotiza sin cuenta: tu vendedor te responde con los precios.</p>
+                    <p class="tienda-nota"><strong class="tienda-total"></strong> productos en existencia. <span data-con-sesion="Ves los precios de tu lista: cotiza y tu vendedor confirma la entrega.">Cotiza sin cuenta; entra con tu cuenta y ves tus precios.</span></p>
                     <p class="tienda-vivo" hidden><span class="punto" aria-hidden="true"></span>Existencia al día con nuestro inventario</p>
-                    <p class="portada-entrar">¿Ya eres cliente? <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Entra a tu cuenta: pedidos y facturas<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
+                    <p class="portada-entrar" data-sin-sesion>¿Ya eres cliente? <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Entra a tu cuenta: pedidos y facturas<svg class="icono-ir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
                 </div>
                 <div class="tienda-abanico" aria-hidden="true"></div>
             </div>
@@ -177,10 +177,10 @@
                 <!-- Un solo aviso sobre los precios y la cuenta, en vez de repetirlo en cada tarjeta -->
                 <div class="aviso-precios">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
-                    <p><strong>¿Ya eres cliente?</strong> En tu cuenta ves tus pedidos y facturas. Los precios te los envía tu vendedor con la cotización.</p>
+                    <p data-con-sesion="Estás viendo los precios de tu lista de distribuidor. En tu cuenta tienes tus pedidos, facturas y estado de cuenta."><strong>¿Ya eres cliente?</strong> Entra con tu cuenta y ves tus precios, tus pedidos y tus facturas. Sin cuenta, tu vendedor te envía los precios con la cotización.</p>
                     <div class="aviso-precios-acciones">
                         <a class="boton boton-tinta" href="mi-cuenta.html" data-ir="mi-cuenta.html">Mi cuenta</a>
-                        <a class="enlace-chico enlace-acento" href="cuenta.html" data-ir="cuenta.html">Pedir mi cuenta</a>
+                        <a class="enlace-chico enlace-acento" href="cuenta.html" data-ir="cuenta.html" data-sin-sesion>Pedir mi cuenta</a>
                     </div>
                 </div>
                 <div class="resultados-cabeza">
@@ -317,7 +317,7 @@
         </a>
         <p id="enviar-ayuda" class="solo-lectores">Agrega al menos un producto para enviar.</p>
         <p class="ticket-largo" hidden>Tu lista es larga para un correo: al enviar la copiamos y solo tienes que pegarla.</p>
-        <p class="ticket-nota">Sin precios ni pago aquí: tu vendedor te responde con la cotización.</p>
+        <p class="ticket-nota" data-con-sesion="Sin pago aquí: tu vendedor confirma precios y entrega con la cotización.">Sin precios ni pago aquí: tu vendedor te responde con la cotización.</p>
     </div>
 </aside>
 
@@ -330,6 +330,6 @@
 </div>
 
 <script src="datos.js?v=20261125h"></script>
-<script src="vivo.js?v=20261125h" data-despues="app.js?v=20261125l,tienda.js?v=20261125h"></script>
+<script src="vivo.js?v=20261125h" data-despues="app.js?v=20261126a,tienda.js?v=20261126a"></script>
 </body>
 </html>

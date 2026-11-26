@@ -232,6 +232,7 @@
                 crear("h3", { class: "prod-nombre", text: p.nombre }),
                 crear("p", { class: "prod-codigo", text: p.codigo }),
                 crear("p", { class: "prod-cat", text: nombreCategoria[p.cat] || "" }),
+                crear("p", { class: "prod-precio", "data-precio": p.id }),
             ]),
             crear("div", { class: "prod-pie" }, pie),
         ];
