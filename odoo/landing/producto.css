@@ -65,6 +65,12 @@
     border-radius: var(--r-2); background: var(--superficie); border: 1px solid var(--banda-linea); transition: background .35s;
 }
 .producto-precio-titulo { font-size: 16px; font-weight: 800; }
+/* Compartir: WhatsApp y copiar enlace (o el menú de compartir del teléfono) */
+.producto-compartir { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.producto-compartir .boton { width: auto; min-height: 40px; padding-inline: 16px; font-size: 14px; }
+.producto-compartir-wa::before { content: ""; width: 9px; height: 9px; margin-right: 8px; border-radius: 50%; background: #25D366; }
+.producto-compartir-estado { font-size: 13px; color: var(--gris); }
+.producto-compartir-estado:empty { display: none; }
 .producto-precio.con-precio .producto-precio-titulo { font-size: 26px; letter-spacing: -.02em; }
 .producto-precio-texto a { color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .producto-precio-texto { margin-top: 2px; color: var(--gris); font-size: 14px; line-height: 1.45; max-width: 42ch; }
