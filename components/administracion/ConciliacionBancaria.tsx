@@ -28,6 +28,7 @@ import { RegistrarCobroOdoo } from "@/components/administracion/RegistrarCobroOd
 import { AprobarMovimiento } from "@/components/administracion/AprobarMovimiento";
 import { LineasViejasOdoo } from "@/components/administracion/LineasViejasOdoo";
 import { CierreMesBanco } from "@/components/administracion/CierreMesBanco";
+import { ResumenConciliaciones } from "@/components/administracion/ResumenConciliaciones";
 import {
   ArrowLeft,
   Banknote,
@@ -88,7 +89,7 @@ const TITULO_LISTA: Record<Lista, string> = {
   sinComprobante: "Entradas del banco sin comprobante",
   odoo: "En Odoo y no en el banco",
 };
-type Pestana = "conciliar" | "comprobantes" | "viejas";
+type Pestana = "resumen" | "conciliar" | "comprobantes" | "viejas";
 
 const IMAGENES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 const EXCEL = /\.(xlsx?|csv|html?)$/i;
@@ -654,6 +655,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
         ["conciliar", `Conciliar (${movimientos.length})`],
         ["comprobantes", `Comprobantes de clientes (${comprobantes.length})`],
         ["viejas", "Líneas viejas de Odoo"],
+        ["resumen", "Resumen"],
       ];
 
   return (
@@ -927,6 +929,18 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                   </button>
                 ))}
               </div>
+            )}
+
+            {/* ---------- Resumen: cada cuenta de la sede, mes por mes ---------- */}
+            {!cxc && pestana === "resumen" && (
+              <ResumenConciliaciones
+                sede={sedeUsada}
+                abrir={(c, m) => {
+                  setCuenta(c);
+                  if (opciones.some((o) => o.value === m)) setMes(m);
+                  setPestana("conciliar");
+                }}
+              />
             )}
 
             {/* ---------- Conciliar: el estado de cuenta contra Odoo ---------- */}
