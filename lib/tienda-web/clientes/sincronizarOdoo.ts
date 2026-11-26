@@ -18,7 +18,7 @@ import crypto from "crypto";
 import { db } from "@/lib/db";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { asegurarTablas } from "./perfil";
-import { planearSincronizacion, type EnlaceOdoo, type PadreOdoo } from "./sincronizarTipos";
+import { pasoAOdooActivo, planearSincronizacion, type EnlaceOdoo, type Operacion, type PadreOdoo } from "./sincronizarTipos";
 import { claveDocumento, COMPANIAS_TIENDA, type DatosPerfil } from "./tipos";
 
 const CTX = (company?: number) => ({ allowed_company_ids: company ? [company, ...COMPANIAS_TIENDA.filter((c) => c !== company)] : COMPANIAS_TIENDA, lang: "es_VE" });
@@ -61,19 +61,18 @@ export async function guardarFichasPermitidas(clave: string, partners: number[])
 
 export interface ResumenOdoo { creadas: number; actualizadas: number; archivadas: number; sinOdoo: string[]; errores: string[] }
 
-async function sincronizarAhora(clave: string): Promise<ResumenOdoo> {
+/** ¿Está prendido el paso a Odoo para este perfil? (`TIENDA_PERFIL_ODOO`, ver `pasoAOdooActivo`). */
+export const pasoActivo = (clave: string) => pasoAOdooActivo(process.env.TIENDA_PERFIL_ODOO, clave);
+
+/** Lo que hay en la base y en Odoo para un perfil, y el plan de direcciones. null = no hay perfil. */
+async function leerParaSincronizar(clave: string) {
   await asegurarTablasOdoo();
   const [filas]: any = await db.query("SELECT datos, logo, logo_tipo, partners_odoo, actualizado_por FROM tienda_perfiles WHERE clave = ?", [clave]);
   const fila = filas?.[0];
-  const resumen: ResumenOdoo = { creadas: 0, actualizadas: 0, archivadas: 0, sinOdoo: [], errores: [] };
-  if (!fila) return resumen;
+  if (!fila) return null;
   const datos: DatosPerfil = JSON.parse(fila.datos);
   const permitidas: number[] = (() => { try { return JSON.parse(fila.partners_odoo || "[]"); } catch { return []; } })();
-  const quien = String(fila.actualizado_por || "el cliente");
-  const marcar = async (estado: string, error: string | null) => {
-    await db.query("UPDATE tienda_perfiles SET odoo_estado = ?, odoo_error = ?, odoo_sincronizado = ?, odoo_resumen = ? WHERE clave = ?", [estado, error, ahora(), JSON.stringify(resumen), clave]);
-  };
-  if (!permitidas.length) { resumen.sinOdoo = datos.razones.map((r) => r.razon); await marcar("sin_fichas", null); return resumen; }
+  if (!permitidas.length) return { fila, datos, permitidas, padresTodos: [] as (PadreOdoo & { website: string })[], firmasEmpresa: new Map<string, string>(), ops: [] as Operacion[], sinOdoo: datos.razones.map((r) => r.razon) };
 
   // Fichas de empresa del cliente (solo las permitidas) y sus direcciones de entrega, también las archivadas.
   const fichas = (await callOdooRPCEstricto<any[]>("res.partner", "read", [permitidas, ["id", "vat", "company_id", "country_id", "website", "is_company"]], { context: { ...CTX(), active_test: false } })) || [];
@@ -93,7 +92,52 @@ async function sincronizarAhora(clave: string): Promise<ResumenOdoo> {
     .map((e: any) => [`${e.sucursal_id}|${e.company_id}`, String(e.firma)]));
 
   const { ops, sinOdoo } = planearSincronizacion(datos, padresTodos, enlaces);
+  return { fila, datos, permitidas, padresTodos, firmasEmpresa, ops, sinOdoo };
+}
+
+/** Página web y logo que se escribirían en cada ficha (sin el PNG: solo si cambian). */
+function cambiosDeEmpresa(l: NonNullable<Awaited<ReturnType<typeof leerParaSincronizar>>>) {
+  const clavesRazones = new Set(l.datos.razones.map((r) => claveDocumento(r.rif)));
+  const web = l.datos.redes?.web || "";
+  const firmaLogo = l.fila.logo && l.fila.logo_tipo ? crypto.createHash("sha1").update(Buffer.from(l.fila.logo)).digest("hex") : "";
+  return l.padresTodos.filter((p) => clavesRazones.has(p.clave)).map((p) => ({
+    padre: p,
+    web: web && p.website.replace(/\/$/, "") !== web.replace(/\/$/, "") ? web : "",
+    logo: Boolean(firmaLogo) && l.firmasEmpresa.get(`_logo|${p.company}`) !== firmaLogo,
+    firmaLogo,
+  })).filter((x) => x.web || x.logo);
+}
+
+/**
+ * Lo que se haría en Odoo con este perfil, sin escribir nada (para revisar antes de prender el paso). Lee Odoo.
+ */
+export async function vistaPreviaOdoo(clave: string) {
+  const l = await leerParaSincronizar(clave);
+  if (!l) return null;
+  const empresa = cambiosDeEmpresa(l);
+  return {
+    activo: pasoActivo(clave),
+    fichas: l.padresTodos.map((p) => ({ id: p.id, company: p.company, direcciones: p.hijos.filter((h) => h.active).length })),
+    operaciones: l.ops.map((o) => ({ tipo: o.tipo, company: o.company, partnerId: "partnerId" in o ? o.partnerId : null, texto: o.texto, vals: "vals" in o ? o.vals : null })),
+    empresa: empresa.map((e) => ({ company: e.padre.company, partnerId: e.padre.id, web: e.web, logo: e.logo })),
+    sinOdoo: l.sinOdoo,
+  };
+}
+
+async function sincronizarAhora(clave: string): Promise<ResumenOdoo> {
+  const resumen: ResumenOdoo = { creadas: 0, actualizadas: 0, archivadas: 0, sinOdoo: [], errores: [] };
+  const marcar = async (estado: string, error: string | null) => {
+    await db.query("UPDATE tienda_perfiles SET odoo_estado = ?, odoo_error = ?, odoo_sincronizado = ?, odoo_resumen = ? WHERE clave = ?", [estado, error, ahora(), JSON.stringify(resumen), clave]);
+  };
+  await asegurarTablasOdoo();
+  // Apagado (o este cliente no está en la prueba): no se toca Odoo; pasa cuando se prenda, en el cron.
+  if (!pasoActivo(clave)) { await marcar("apagado", null); return resumen; }
+  const l = await leerParaSincronizar(clave);
+  if (!l) return resumen;
+  const { fila, datos, ops, sinOdoo } = l;
+  const quien = String(fila.actualizado_por || "el cliente");
   resumen.sinOdoo = sinOdoo;
+  if (!l.permitidas.length) { await marcar("sin_fichas", null); return resumen; }
   const notas = new Map<number, string[]>();
   const anotar = (padre: number | null, texto: string) => { if (padre) notas.set(padre, [...(notas.get(padre) || []), texto]); };
   const guardarEnlace = (sid: string, company: number, partner: number, firma: string) => db.query(
@@ -125,35 +169,29 @@ async function sincronizarAhora(clave: string): Promise<ResumenOdoo> {
     }
   }
 
-  // Página web y logo de las fichas de sus razones sociales que están en Odoo.
-  const clavesRazones = new Set(datos.razones.map((r) => claveDocumento(r.rif)));
-  const padresRazones = padresTodos.filter((p) => clavesRazones.has(p.clave));
-  const web = datos.redes?.web || "";
+  // Página web y logo de las fichas de sus razones sociales que están en Odoo (solo si cambiaron).
+  const empresa = cambiosDeEmpresa(l);
   let png: string | null = null;
-  let firmaLogo = "";
-  if (fila.logo && fila.logo_tipo) {
-    firmaLogo = crypto.createHash("sha1").update(Buffer.from(fila.logo)).digest("hex");
-    if (padresRazones.some((p) => firmasEmpresa.get(`_logo|${p.company}`) !== firmaLogo)) {
-      try {
-        const sharp = (await import("sharp")).default;
-        png = (await sharp(Buffer.from(fila.logo)).png().toBuffer()).toString("base64");
-      } catch (e: any) {
-        resumen.errores.push(`no se pudo convertir el logo: ${String(e?.message || e).slice(0, 120)}`);
-      }
+  if (empresa.some((e) => e.logo)) {
+    try {
+      const sharp = (await import("sharp")).default;
+      png = (await sharp(Buffer.from(fila.logo)).png().toBuffer()).toString("base64");
+    } catch (e: any) {
+      resumen.errores.push(`no se pudo convertir el logo: ${String(e?.message || e).slice(0, 120)}`);
     }
   }
-  for (const p of padresRazones) {
+  for (const e of empresa) {
     try {
       const vals: Record<string, any> = {};
-      if (web && p.website.replace(/\/$/, "") !== web.replace(/\/$/, "")) vals.website = web;
-      const conLogo = png && firmasEmpresa.get(`_logo|${p.company}`) !== firmaLogo;
+      if (e.web) vals.website = e.web;
+      const conLogo = e.logo && png;
       if (conLogo) vals.image_1920 = png;
       if (!Object.keys(vals).length) continue;
-      await callOdooRPCEstricto("res.partner", "write", [[p.id], vals], { context: CTX(p.company) });
-      if (conLogo) await guardarEnlace("_logo", p.company, p.id, firmaLogo);
-      anotar(p.id, [vals.website ? "se actualizó la página web" : "", conLogo ? "se actualizó el logo" : ""].filter(Boolean).join(" y "));
-    } catch (e: any) {
-      resumen.errores.push(`página web / logo: ${String(e?.message || e).slice(0, 200)}`);
+      await callOdooRPCEstricto("res.partner", "write", [[e.padre.id], vals], { context: CTX(e.padre.company) });
+      if (conLogo) await guardarEnlace("_logo", e.padre.company, e.padre.id, e.firmaLogo);
+      anotar(e.padre.id, [vals.website ? "se actualizó la página web" : "", conLogo ? "se actualizó el logo" : ""].filter(Boolean).join(" y "));
+    } catch (err: any) {
+      resumen.errores.push(`página web / logo: ${String(err?.message || err).slice(0, 200)}`);
     }
   }
 
@@ -193,11 +231,12 @@ export function sincronizarPerfilEnOdoo(clave: string): Promise<ResumenOdoo> {
 export async function reintentarPendientes(): Promise<{ revisados: number; ok: number; error: number }> {
   await asegurarTablasOdoo();
   const [filas]: any = await db.query(
-    "SELECT clave FROM tienda_perfiles WHERE partners_odoo IS NOT NULL AND (odoo_estado IS NULL OR odoo_estado IN ('error', 'pendiente')) ORDER BY actualizado_el DESC LIMIT 50",
+    "SELECT clave FROM tienda_perfiles WHERE partners_odoo IS NOT NULL AND (odoo_estado IS NULL OR odoo_estado IN ('error', 'pendiente', 'apagado')) ORDER BY actualizado_el DESC LIMIT 50",
   );
   let ok = 0;
   let error = 0;
-  for (const f of filas || []) {
+  // Los apagados solo se intentan si el interruptor ya los deja pasar (si no, quedan igual sin leer Odoo).
+  for (const f of (filas || []).filter((x: any) => pasoActivo(String(x.clave)))) {
     const r = await sincronizarPerfilEnOdoo(String(f.clave));
     if (r.errores.length) error++; else ok++;
   }

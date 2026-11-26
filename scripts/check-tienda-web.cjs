@@ -251,7 +251,18 @@ assert.deepStrictEqual(redesEnHtml(`
   const jsSync = ts.transpileModule(fuenteSync, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
   const ms = { exports: {} };
   new Function("require", "module", "exports", "claveDocumento", jsSync)(require, ms, ms.exports, mk.exports.claveDocumento);
-  const { planearSincronizacion, valsDireccion, firmaVals, direccionComparable } = ms.exports;
+  const { planearSincronizacion, valsDireccion, firmaVals, direccionComparable, pasoAOdooActivo } = ms.exports;
+
+  // Interruptor TIENDA_PERFIL_ODOO: apagado por defecto, un RIF de prueba, o todos
+  assert.strictEqual(pasoAOdooActivo(undefined, "d:J123456789"), false);
+  assert.strictEqual(pasoAOdooActivo("", "d:J123456789"), false);
+  assert.strictEqual(pasoAOdooActivo("no", "d:J123456789"), false);
+  assert.strictEqual(pasoAOdooActivo("todos", "d:J123456789"), true);
+  assert.strictEqual(pasoAOdooActivo("todos", "p:4512"), true);
+  assert.strictEqual(pasoAOdooActivo("J-12345678-9", "d:J123456789"), true); // el de prueba, escrito con guiones
+  assert.strictEqual(pasoAOdooActivo("J-11111111-1, j123456789", "d:J123456789"), true);
+  assert.strictEqual(pasoAOdooActivo("J-12345678-9", "d:J999999999"), false); // los demás no
+  assert.strictEqual(pasoAOdooActivo("J-12345678-9", "p:4512"), false);
   const { idSucursalValido } = mk.exports;
 
   assert.ok(idSucursalValido("a1b2c3d4e5f6"));
