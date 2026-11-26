@@ -254,7 +254,9 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   const [verImagen, setVerImagen] = useState<{ id: number; referencia: string; cliente: string } | null>(null);
   const [paginaComprobantes, setPaginaComprobantes] = useState(0);
   const [paginaMovs, setPaginaMovs] = useState(0);
-  const [pestana, setPestana] = useState<Pestana>(cxc ? "comprobantes" : "conciliar");
+  const [pestana, setPestana] = useState<Pestana>(cxc ? "comprobantes" : "resumen");
+  const enResumen = pestana === "resumen";
+  const solicitudPeriodo = useRef(0);
   const [grupo, setGrupo] = useState<Grupo | null>(null);
   // Movimientos marcados para conciliarlos todos contra la misma cuenta contable (ej. gastos bancarios).
   const [marcados, setMarcados] = useState<Set<string>>(new Set());
@@ -288,23 +290,28 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   }, [sedeUsada, fija?.companyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cargar = useCallback(async () => {
-    if (!cuenta) return;
+    if (!cuenta || enResumen) return;
+    const solicitud = ++solicitudPeriodo.current;
     // No borra el error: despues de aprobar se recarga, y el motivo por el que Odoo no lo acepto se perdia
     // (nov-2026, Victor aprobaba y «no pasaba nada»). Se borra al cambiar de cuenta o periodo (efecto de abajo).
     setCargando(true);
     try {
       const json = await (await fetch(`/api/administracion/bancos?cuenta=${cuenta}&desde=${periodo.desde}&hasta=${periodo.hasta}`)).json();
+      if (solicitud !== solicitudPeriodo.current) return;
       if (json.success) setDatos(json);
       else setError(json.error || "No se pudo cargar");
     } catch {
+      if (solicitud !== solicitudPeriodo.current) return;
       setError("No se pudo cargar");
     }
     setCargando(false);
-  }, [cuenta, periodo.desde, periodo.hasta]);
+  }, [cuenta, periodo.desde, periodo.hasta, enResumen]);
 
   useEffect(() => {
     setError(null);
+    setDatos(null);
     cargar();
+    return () => { solicitudPeriodo.current++; };
   }, [cargar]);
 
   useEffect(() => {
@@ -652,10 +659,10 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
   const pestanas: [Pestana, string][] = cxc
     ? []
     : [
-        ["conciliar", `Conciliar (${movimientos.length})`],
-        ["comprobantes", `Comprobantes de clientes (${comprobantes.length})`],
-        ["viejas", "Líneas viejas de Odoo"],
         ["resumen", "Resumen"],
+        ["conciliar", datos && !enResumen ? `Conciliar (${movimientos.length})` : "Conciliar"],
+        ["comprobantes", datos && !enResumen ? `Comprobantes de clientes (${comprobantes.length})` : "Comprobantes de clientes"],
+        ["viejas", "Líneas viejas de Odoo"],
       ];
 
   return (
@@ -692,56 +699,61 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                 ))}
               </select>
             ))}
-          <select
-            value={cuenta ?? ""}
-            onChange={(e) => setCuenta(Number(e.target.value) || null)}
-            className="border rounded-lg px-3 py-2 text-sm bg-white max-w-[16rem]"
-            aria-label="Cuenta"
-          >
-            {!cuentas.length && <option value="">Sin cuentas</option>}
-            {cuentas.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre}
-                {` (${c.moneda || "USD"})`}
-              </option>
-            ))}
-          </select>
-          <select
-            value={mes}
-            onChange={(e) => setMes(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm bg-white capitalize"
-            aria-label="Período"
-          >
-            {opciones.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-            <option value={RANGO}>Rango de fechas…</option>
-          </select>
-          {mes === RANGO && (
-            <span className="flex items-center gap-1 text-sm">
-              <input
-                type="date"
-                value={rango.desde}
-                max={rango.hasta}
-                onChange={(e) => e.target.value && setRango((r) => ({ ...r, desde: e.target.value }))}
-                className="border rounded-lg px-2 py-2 bg-white"
-                aria-label="Desde"
-              />
-              <span className="text-gray-500">al</span>
-              <input
-                type="date"
-                value={rango.hasta}
-                min={rango.desde}
-                onChange={(e) => e.target.value && setRango((r) => ({ ...r, hasta: e.target.value }))}
-                className="border rounded-lg px-2 py-2 bg-white"
-                aria-label="Hasta"
-              />
-            </span>
-          )}
-          {datos && !cxc && (
-            <BotonExcel archivo={`conciliacion-${cuentaElegida?.nombre || "banco"}-${periodo.desde}_${periodo.hasta}`} hojas={hojasExcel} />
+          {!enResumen && (
+            <>
+              <select
+                value={cuenta ?? ""}
+                onChange={(e) => setCuenta(Number(e.target.value) || null)}
+                className="border rounded-lg px-3 py-2 text-sm bg-white max-w-[16rem]"
+                aria-label="Cuenta"
+              >
+                {!cuentas.length && <option value="">Sin cuentas</option>}
+                {cuentas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}
+                    {` (${c.moneda || "USD"})`}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={mes}
+                onChange={(e) => setMes(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm bg-white capitalize"
+                aria-label="Período"
+              >
+                {mes !== RANGO && !opciones.some((o) => o.value === mes) && <option value={mes}>{mes}</option>}
+                {opciones.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+                <option value={RANGO}>Rango de fechas…</option>
+              </select>
+              {mes === RANGO && (
+                <span className="flex items-center gap-1 text-sm">
+                  <input
+                    type="date"
+                    value={rango.desde}
+                    max={rango.hasta}
+                    onChange={(e) => e.target.value && setRango((r) => ({ ...r, desde: e.target.value }))}
+                    className="border rounded-lg px-2 py-2 bg-white"
+                    aria-label="Desde"
+                  />
+                  <span className="text-gray-500">al</span>
+                  <input
+                    type="date"
+                    value={rango.hasta}
+                    min={rango.desde}
+                    onChange={(e) => e.target.value && setRango((r) => ({ ...r, hasta: e.target.value }))}
+                    className="border rounded-lg px-2 py-2 bg-white"
+                    aria-label="Hasta"
+                  />
+                </span>
+              )}
+              {datos && !cxc && (
+                <BotonExcel archivo={`conciliacion-${cuentaElegida?.nombre || "banco"}-${periodo.desde}_${periodo.hasta}`} hojas={hojasExcel} />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -789,7 +801,36 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
       <input ref={entradas.carpeta} type="file" multiple className="hidden" {...ELEGIR_CARPETA} onChange={(e) => subir(e.target.files, "comprobante")} />
       {error && <Aviso tono="rojo">{error}</Aviso>}
 
-      {cargando && !datos ? (
+      {pestanas.length > 0 && (
+        <div className="inline-flex flex-wrap rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Sección">
+          {pestanas.map(([clave, texto]) => (
+            <button
+              key={clave}
+              type="button"
+              role="tab"
+              aria-selected={pestana === clave}
+              onClick={() => setPestana(clave)}
+              className={`px-4 py-2 text-sm rounded-md ${pestana === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"}`}
+            >
+              {texto}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {enResumen ? (
+        (!fija || fija.companyId !== null) && (
+          <ResumenConciliaciones
+            key={sedeUsada}
+            sede={sedeUsada}
+            abrir={(c, m) => {
+              setCuenta(c);
+              setMes(m);
+              setPestana("conciliar");
+            }}
+          />
+        )
+      ) : cargando && !datos ? (
         <div className="flex justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
         </div>
@@ -914,51 +955,10 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
               />
             )}
 
-            {pestanas.length > 0 && (
-              <div className="inline-flex flex-wrap rounded-lg border bg-gray-50 p-0.5" role="tablist" aria-label="Sección">
-                {pestanas.map(([clave, texto]) => (
-                  <button
-                    key={clave}
-                    type="button"
-                    role="tab"
-                    aria-selected={pestana === clave}
-                    onClick={() => setPestana(clave)}
-                    className={`px-4 py-2 text-sm rounded-md ${pestana === clave ? "bg-white shadow-sm font-medium" : "text-gray-600"}`}
-                  >
-                    {texto}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* ---------- Resumen: cada cuenta de la sede, mes por mes ---------- */}
-            {!cxc && pestana === "resumen" && (
-              <ResumenConciliaciones
-                sede={sedeUsada}
-                abrir={(c, m) => {
-                  setCuenta(c);
-                  if (opciones.some((o) => o.value === m)) setMes(m);
-                  setPestana("conciliar");
-                }}
-              />
-            )}
-
             {/* ---------- Conciliar: el estado de cuenta contra Odoo ---------- */}
-            {!cxc && pestana === "conciliar" &&
-              (datos.archivos.length === 0 ? (
-                <Card className="border-dashed border-2">
-                  <CardContent className="py-12 flex flex-col items-center text-center gap-3">
-                    <FileSpreadsheet className="h-10 w-10 text-emerald-600" />
-                    <p className="text-lg font-semibold">Este período todavía no tiene estado de cuenta</p>
-                    <p className="text-sm text-gray-500 max-w-xl">
-                      Sube el Excel o CSV que baja el banco por internet (con Fecha, Referencia, Descripción y Monto, o Débito y Crédito; mejor si
-                      trae Saldo). También sirve una captura o PDF, pero esos los lee la IA y conviene revisarlos. Puede cubrir un mes entero: lo
-                      repetido no se duplica.
-                    </p>
-                    {botonSubirEstado("default")}
-                  </CardContent>
-                </Card>
-              ) : null)}
+            {!cxc && pestana === "conciliar" && mes === RANGO && datos.archivos.length === 0 && (
+              <p className="text-sm text-gray-500">Selecciona un mes para indicar si la cuenta tuvo movimientos y cargar su estado de cuenta.</p>
+            )}
             {!cxc && pestana === "conciliar" && datos.archivos.length > 0 && (
                 <div className="space-y-4">
                   <Card>
@@ -975,7 +975,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                             </span>
                           )}
                         </p>
-                        {botonSubirEstado("outline")}
+                        {mes !== RANGO && movimientos.length > 0 && !cerrados.has(mes) && botonSubirEstado("outline")}
                       </div>
                       <div className="h-2 rounded-full bg-gray-100 overflow-hidden" aria-hidden>
                         <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
@@ -997,6 +997,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
                       </div>
                       {mes !== RANGO && cuenta && (
                         <CierreMesBanco
+                          key={`${cuenta}-${mes}`}
                           incrustado
                           cuenta={cuenta}
                           mes={mes}
@@ -1287,6 +1288,7 @@ export default function ConciliacionBancaria({ modo = "admin" }: { modo?: "admin
             {/* Sin estado de cuenta en el periodo: el cierre va aparte (con estado de cuenta va dentro de la tarjeta de avance). */}
             {!cxc && pestana === "conciliar" && datos.archivos.length === 0 && mes !== RANGO && cuenta && (
               <CierreMesBanco
+                key={`${cuenta}-${mes}`}
                 cuenta={cuenta}
                 mes={mes}
                 moneda={moneda}
