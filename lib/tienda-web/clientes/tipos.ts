@@ -38,8 +38,14 @@ export const codigoValido = (v: unknown) => /^\d{6}$/.test(String(v ?? "").trim(
 /** RIF/RUC para comparar fichas: sin guiones, puntos ni espacios, en mayúsculas. */
 export const claveDocumento = (v: unknown) => String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
-/** El tramo de números más largo de un RIF/RUC tal como está en Odoo («J-31737690-0» → «31737690»), para buscarlo. */
+/**
+ * Lo que se busca en Odoo para encontrar un RIF/RUC escrito de cualquier forma. RIF de Venezuela: el cuerpo sin la
+ * letra ni el dígito verificador («J-31737690-0» y «J317376900» → «31737690»; con todo junto, el tramo de números
+ * incluiría el verificador y no se encontraría el escrito con guiones). RUC de Panamá: el tramo de números más largo.
+ */
 export function nucleoDocumento(v: unknown): string | null {
+  const ve = String(v ?? "").toUpperCase().replace(/[\s.]/g, "").match(/^[VJEGP]-?(\d{5,8})-?\d?$/);
+  if (ve) return ve[1].length >= 6 ? ve[1] : null;
   const tramos = String(v ?? "").match(/\d+/g) || [];
   const largo = tramos.reduce((a, b) => (b.length > a.length ? b : a), "");
   return largo.length >= 6 ? largo : null;

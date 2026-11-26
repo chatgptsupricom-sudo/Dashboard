@@ -13,7 +13,8 @@
  */
 import { claveDocumento, type DatosPerfil, type SucursalPerfil } from "./tipos";
 
-export interface HijoOdoo { id: number; name: string; street: string; active: boolean }
+/** Dirección de entrega en Odoo. `street`: completa (calle, ciudad, estado, país, como la propone el perfil); `calle`: solo la calle. */
+export interface HijoOdoo { id: number; name: string; street: string; calle?: string; active: boolean }
 /**
  * `street`: la dirección completa de la propia ficha (calle, ciudad, estado, país, como la propone el perfil); `calle`: solo la calle;
  * `lat`/`lng`: su ubicación. Una sucursal con esa dirección no se duplica como dirección de entrega.
@@ -91,7 +92,7 @@ export function planearSincronizacion(datos: DatosPerfil, padres: PadreOdoo[], e
           }
           continue;
         }
-        const igual = p.hijos.find((h) => h.active && !usados.has(h.id) && direccionComparable(h.street) && direccionComparable(h.street) === direccionComparable(s.direccion));
+        const igual = p.hijos.find((h) => h.active && !usados.has(h.id) && esDireccionDeLaFicha(h, s.direccion));
         if (igual) {
           usados.add(igual.id);
           ops.push({ tipo: "adoptar", sucursalId: s.id, partnerId: igual.id, padre: p.id, company: p.company, vals, firma, texto: `se actualizó la dirección de entrega «${vals.name}»` });
