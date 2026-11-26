@@ -114,6 +114,7 @@ const VACIO: Record<VistaNC, string> = {
   procesar: "No hay notas de crédito aprobadas por hacer.",
   procesadas: "Todavía no hay notas de crédito procesadas.",
   rma: "No hay solicitudes de RMA.",
+  almacen: "Todavía no hay notas de crédito hechas para recibir en Almacén.",
   flujo: "No hay notas de crédito en esta etapa.",
   odoo: "No hay notas de crédito este mes.",
   responsables: "",
@@ -274,6 +275,8 @@ export function NotasCredito() {
           return notas.filter((s) => s.estado === "procesada" && tiene(s.company_id, "procesa")).map((s) => filaSol(s));
         case "rma":
           return notas.filter((s) => s.origen === "rma" && tiene(s.company_id, "rma")).map(conOdoo);
+        case "almacen":
+          return notas.filter((s) => s.estado === "procesada" && tiene(s.company_id, "almacen")).map((s) => filaSol(s));
         case "flujo": {
           const ve = (sede: number) => veTodoLaSede(pasos[sede], superadmin);
           const filas: Fila[] = notas.filter((s) => ve(s.company_id) && (!etapa || etapasDe(s).includes(etapa))).map(conOdoo);

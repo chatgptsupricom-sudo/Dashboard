@@ -10,6 +10,7 @@ import {
   flujoCompleto,
   NOMBRE_SEDE,
   PASOS,
+  pasosVacios,
   SEDES,
   type PasoNC,
   type UsuarioPanel,
@@ -20,7 +21,13 @@ import { useEffect, useMemo, useState } from "react";
 type Pasos = Record<PasoNC, string[]>;
 type Datos = { aprobadores: Record<number, Pasos>; usuarios: UsuarioPanel[] };
 
-const vacio = (): Pasos => ({ rma: [], preaprueba: [], aprueba: [], procesa: [] });
+const vacio = (): Pasos => pasosVacios();
+/** Pasos que pueden quedar sin nadie, y qué pasa entonces. */
+const SIN_NADIE: Partial<Record<PasoNC, string>> = {
+  rma: "Nadie: los avisos van solo a quien hizo la solicitud.",
+  almacen: "Nadie: a Almacén no le llega el aviso de la nota hecha.",
+  copia_almacen: "Nadie en copia.",
+};
 const iguales = (a: Pasos, b: Pasos) => PASOS.every((p) => [...a[p]].sort().join() === [...b[p]].sort().join());
 
 /** Uno o varios usuarios del panel (users_config) para un paso. */
@@ -28,12 +35,13 @@ function SelectorUsuarios({
   elegidos,
   usuarios,
   onCambio,
-  opcional = false,
+  opcional,
 }: {
   elegidos: string[];
   usuarios: UsuarioPanel[];
   onCambio: (correos: string[]) => void;
-  opcional?: boolean;
+  /** Texto cuando el paso queda sin nadie (paso opcional). */
+  opcional?: string;
 }) {
   const [abierto, setAbierto] = useState(false);
   const porCorreo = useMemo(() => new Map(usuarios.map((u) => [u.email, u])), [usuarios]);
@@ -60,7 +68,7 @@ function SelectorUsuarios({
         })}
         {!elegidos.length &&
           (opcional ? (
-            <span className="text-xs text-slate-400">Nadie: los avisos van solo a quien hizo la solicitud.</span>
+            <span className="text-xs text-slate-400">{opcional}</span>
           ) : (
             <span className="text-xs text-rose-600">Nadie: el flujo de esta sede no está activo.</span>
           ))}
@@ -181,13 +189,13 @@ export function Responsables() {
                 </Badge>
               )}
             </div>
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {PASOS.map((p) => (
                 <div key={p} className="space-y-1.5">
                   <p className="text-sm font-semibold text-slate-800">{ETIQUETA_PASO[p]}</p>
                   <p className="text-xs text-slate-500">{DESCRIPCION_PASO[p]}</p>
                   <SelectorUsuarios
-                    opcional={p === "rma"}
+                    opcional={SIN_NADIE[p]}
                     elegidos={actual[p]}
                     usuarios={datos.usuarios}
                     onCambio={(correos) => setBorrador((b) => ({ ...b, [sede]: { ...actual, [p]: correos } }))}

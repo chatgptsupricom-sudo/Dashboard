@@ -71,16 +71,28 @@ export function etapaCliente(estado: EstadoNC): EtapaCliente {
  * cómo terminan sus solicitudes y ve las notas de su sede. Las solicitudes
  * las puede hacer cualquiera con rol RMA.
  */
-export type PasoNC = "rma" | "preaprueba" | "aprueba" | "procesa";
-export const PASOS: PasoNC[] = ["rma", "preaprueba", "aprueba", "procesa"];
+export type PasoNC = "rma" | "preaprueba" | "aprueba" | "procesa" | "almacen" | "copia_almacen";
+export const PASOS: PasoNC[] = ["rma", "preaprueba", "aprueba", "procesa", "almacen", "copia_almacen"];
 /** Los que deciden: sin alguien en cada uno, la sede no tiene el flujo activo. */
 export const PASOS_DECISION: PasoNC[] = ["preaprueba", "aprueba", "procesa"];
+/**
+ * Pasos que solo reciben un correo: no dan entrada a /notas-credito ni cuentan
+ * como paso de la sesión (pasosDe los deja fuera).
+ */
+export const PASOS_SOLO_CORREO: PasoNC[] = ["copia_almacen"];
+
+/** Un registro de responsables vacío, con todos los pasos. */
+export function pasosVacios(): Record<PasoNC, string[]> {
+  return Object.fromEntries(PASOS.map((p) => [p, []])) as unknown as Record<PasoNC, string[]>;
+}
 
 export const ETIQUETA_PASO: Record<PasoNC, string> = {
   rma: "RMA (solicita)",
   preaprueba: "Preaprueba",
   aprueba: "Aprueba",
   procesa: "Hace la nota de crédito",
+  almacen: "Almacén",
+  copia_almacen: "En copia del aviso a Almacén",
 };
 
 export const DESCRIPCION_PASO: Record<PasoNC, string> = {
@@ -88,6 +100,9 @@ export const DESCRIPCION_PASO: Record<PasoNC, string> = {
   preaprueba: "Filtra las solicitudes de RMA y crea las notas de crédito que no vienen de RMA (nacen preaprobadas).",
   aprueba: "Aprueba o rechaza. Es el único que puede aprobar una nota de crédito.",
   procesa: "Recibe la orden de crédito aprobada y la hace, en el panel o en Odoo.",
+  almacen:
+    "Cuando la nota de crédito queda hecha en Odoo, le llega un correo con los productos y la ve en el panel (pestaña «Para Almacén»). Opcional.",
+  copia_almacen: "Van en copia del correo a Almacén. Solo reciben el correo: no les da entrada a las notas de crédito. Opcional.",
 };
 
 export const SEDES = [9, 10, 7];
@@ -225,6 +240,7 @@ export type SolicitudNC = {
 /**
  * Pestañas de /notas-credito. Cada paso ve lo suyo:
  *   rma          las solicitudes de RMA de su sede
+ *   almacen      las que ya tienen la NC hecha en Odoo, con sus productos (Almacén)
  *   preaprobar   las de RMA que esperan su preaprobación
  *   mis_creadas  las que creó, preaprobó o rechazó (para seguirlas)
  *   aprobar      las que esperan su aprobación
@@ -241,6 +257,7 @@ export type VistaNC =
   | "procesar"
   | "procesadas"
   | "rma"
+  | "almacen"
   | "flujo"
   | "odoo"
   | "responsables";
@@ -252,6 +269,7 @@ export const ETIQUETA_VISTA: Record<VistaNC, string> = {
   procesar: "Por hacer la NC",
   procesadas: "Procesadas",
   rma: "Solicitudes de RMA",
+  almacen: "Para Almacén",
   flujo: "Todo el flujo",
   odoo: "NC de Odoo",
   responsables: "Responsables",
@@ -293,6 +311,7 @@ export function vistasDe(pasos: Record<number, PasoNC[]>, superadmin: boolean): 
   if (todos.has("aprueba")) v.push("aprobar");
   if (todos.has("procesa")) v.push("procesar", "procesadas");
   if (todos.has("rma") && !superadmin && !todos.has("aprueba")) v.push("rma");
+  if (todos.has("almacen")) v.push("almacen");
   if (superadmin || todos.has("aprueba")) v.push("flujo");
   if (superadmin || todos.has("aprueba") || todos.has("procesa")) v.push("odoo");
   if (superadmin) v.push("responsables");

@@ -1,5 +1,5 @@
 import { db, query } from "@/lib/db";
-import { flujoCompleto, PASOS, type PasoNC, type UsuarioPanel } from "@/lib/notas-credito/tipos";
+import { flujoCompleto, PASOS, PASOS_SOLO_CORREO, pasosVacios, type PasoNC, type UsuarioPanel } from "@/lib/notas-credito/tipos";
 
 /**
  * Tablas del flujo de notas de crédito. Se crean solas (DDL de referencia en
@@ -9,7 +9,8 @@ import { flujoCompleto, PASOS, type PasoNC, type UsuarioPanel } from "@/lib/nota
  *   nc_solicitud_lineas  los productos de la factura de una NC directa
  *                    (cantidad, precio con impuestos y seriales).
  *   nc_eventos       el historial de cada una (quién hizo qué y cuándo).
- *   nc_aprobadores   responsables de cada paso por sede, por correo.
+ *   nc_aprobadores   responsables de cada paso por sede, por correo (también
+ *                    Almacén y quienes van en copia de su aviso).
  */
 
 let tablasListas = false;
@@ -138,7 +139,7 @@ export const esSuperadmin = (rol: unknown) => String(rol ?? "").toLowerCase().tr
  * Responsables con los que arranca una sede mientras el SuperAdmin no guarde
  * otros en la pantalla (sus logins de Odoo, que son los del panel).
  */
-const INICIALES: Record<number, Record<PasoNC, string[]>> = {
+const INICIALES: Record<number, Partial<Record<PasoNC, string[]>>> = {
   9: {
     rma: [],
     preaprueba: ["rangel.hernandez@supricom.com.ve"],
@@ -161,17 +162,13 @@ export async function aprobadores(): Promise<Aprobadores> {
   for (const f of r.rows as any[]) {
     const sede = Number(f.company_id);
     if (!PASOS.includes(f.paso)) continue;
-    guardados[sede] ??= { rma: [], preaprueba: [], aprueba: [], procesa: [] };
+    guardados[sede] ??= pasosVacios();
     guardados[sede][f.paso as PasoNC].push(normCorreo(f.email));
   }
   const valor: Aprobadores = {};
   for (const sede of new Set([...Object.keys(INICIALES), ...Object.keys(guardados)].map(Number))) {
-    valor[sede] = guardados[sede] ?? {
-      rma: [...(INICIALES[sede]?.rma ?? [])],
-      preaprueba: [...(INICIALES[sede]?.preaprueba ?? [])],
-      aprueba: [...(INICIALES[sede]?.aprueba ?? [])],
-      procesa: [...(INICIALES[sede]?.procesa ?? [])],
-    };
+    valor[sede] =
+      guardados[sede] ?? (Object.fromEntries(PASOS.map((p) => [p, [...(INICIALES[sede]?.[p] ?? [])]])) as Record<PasoNC, string[]>);
   }
   cache = { valor, hasta: Date.now() + 30_000 };
   return valor;
@@ -273,7 +270,7 @@ export async function asegurarAprobadoresGuardados(companyId: number): Promise<v
   const r = await query(`SELECT COUNT(*) AS n FROM nc_aprobadores WHERE company_id = ?`, [companyId]);
   if (Number((r.rows as any[])[0]?.n)) return;
   for (const p of PASOS) {
-    for (const email of iniciales[p]) {
+    for (const email of iniciales[p] ?? []) {
       await query(
         `INSERT IGNORE INTO nc_aprobadores (company_id, paso, email, updated_by) VALUES (?, ?, ?, 'iniciales')`,
         [companyId, p, email],
@@ -283,13 +280,16 @@ export async function asegurarAprobadoresGuardados(companyId: number): Promise<v
   cache = null;
 }
 
-/** Pasos que tiene un correo en cada sede: { 9: ["preaprueba"] }. */
+/**
+ * Pasos que tiene un correo en cada sede: { 9: ["preaprueba"] }. Sin los que
+ * solo reciben un correo (copia_almacen): esos no dan entrada a la pantalla.
+ */
 export async function pasosDe(email: unknown): Promise<Record<number, PasoNC[]>> {
   const correo = normCorreo(email);
   const out: Record<number, PasoNC[]> = {};
   if (!correo) return out;
   for (const [sede, pasos] of Object.entries(await aprobadores())) {
-    const suyos = PASOS.filter((p) => pasos[p].includes(correo));
+    const suyos = PASOS.filter((p) => !PASOS_SOLO_CORREO.includes(p) && (pasos[p] ?? []).includes(correo));
     if (suyos.length) out[Number(sede)] = suyos;
   }
   return out;

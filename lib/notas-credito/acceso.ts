@@ -57,6 +57,7 @@ export function veAnteriores(acceso: AccesoNC, companyId: number): boolean {
  *   preaprueba  las que esperan preaprobación y las que creó, preaprobó o rechazó
  *   procesa     las aprobadas y las procesadas
  *   rma         las de RMA de su sede
+ *   almacen     las que ya tienen la NC hecha en Odoo (para recibir la mercancía)
  * El SuperAdmin y quien aprueba ven todo.
  */
 export function puedeVerSolicitud(
@@ -78,5 +79,6 @@ export function puedeVerSolicitud(
   }
   if (pasos.includes("procesa") && (sol.estado === "aprobada" || sol.estado === "procesada")) return true;
   if (pasos.includes("rma") && sol.origen === "rma") return true;
+  if (pasos.includes("almacen") && sol.estado === "procesada") return true;
   return false;
 }

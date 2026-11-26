@@ -11,9 +11,12 @@ import type { SolicitudNC } from "@/lib/notas-credito/tipos";
  *   procesar    → quien hace la NC (Victor) · copia: quien la pidió y RMA de la sede · aprobada
  *   rechazada   → quien la pidió y RMA de la sede (copia a quien preaprueba, si la rechazó quien aprueba)
  *   procesada   → quien la pidió y RMA de la sede                  · la NC quedó publicada en Odoo
+ *   almacen     → Almacén de la sede · copia: "copia_almacen"      · la NC quedó publicada en Odoo,
+ *                 con los productos (y seriales) que se acreditan
  *
  * "RMA de la sede" es el paso opcional "rma" de nc_aprobadores, solo en las
- * notas que vienen de RMA.
+ * notas que vienen de RMA. Almacén y su copia son los pasos opcionales
+ * "almacen" y "copia_almacen" (sin nadie en "almacen", n8n no manda ese correo).
  *
  * El panel NO manda direcciones ni textos: solo el aviso y el id de la
  * solicitud. n8n lee la solicitud (nc_solicitudes) y los responsables
@@ -24,7 +27,7 @@ import type { SolicitudNC } from "@/lib/notas-credito/tipos";
  *
  * Fire-and-forget: si n8n falla, la solicitud igual avanza en el panel.
  */
-export type AvisoNC = "preaprobar" | "aprobar" | "procesar" | "rechazada" | "procesada";
+export type AvisoNC = "preaprobar" | "aprobar" | "procesar" | "rechazada" | "procesada" | "almacen";
 
 export function avisarNC(aviso: AvisoNC, sol: SolicitudNC, _origenPeticion?: string): void {
   procesar(aviso, sol).catch((e) => {
