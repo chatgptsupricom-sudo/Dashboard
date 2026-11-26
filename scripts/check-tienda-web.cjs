@@ -313,6 +313,13 @@ assert.deepStrictEqual(redesEnHtml(`
   datos2.razones[0].sucursales = [{ ...s1, telefono: "0414-0000000" }];
   plan = planearSincronizacion(datos2, padres2, enlaces);
   assert.deepStrictEqual(plan.ops.map((o) => [o.tipo, o.partnerId]), [["actualizar", 601], ["actualizar", 602], ["archivar", 501]]);
+  // La «Principal» que vino de Odoo es la dirección de la propia ficha: no se duplica; solo se ubica la ficha en el mapa
+  const fichaConDir = [{ id: 300, company: 10, clave: "J123456789", pais: 238, hijos: [], street: "Av. Bolívar Norte, Valencia", lat: 0, lng: 0 }];
+  const soloPrincipal = { ...datos, razones: [{ ...datos.razones[0], sucursales: [s1] }] };
+  plan = planearSincronizacion(soloPrincipal, fichaConDir, []);
+  assert.deepStrictEqual(plan.ops.map((o) => [o.tipo, o.partnerId, o.lat]), [["ubicar_ficha", 300, 10.2]]);
+  assert.deepStrictEqual(planearSincronizacion(soloPrincipal, [{ ...fichaConDir[0], lat: 10.2, lng: -68 }], []).ops, []); // ya ubicada
+  assert.deepStrictEqual(planearSincronizacion({ ...soloPrincipal, razones: [{ ...soloPrincipal.razones[0], sucursales: [{ ...s1, lat: undefined, lng: undefined }] }] }, fichaConDir, []).ops, []);
   // Una sucursal sin dirección todavía no se manda a Odoo
   const datos3 = JSON.parse(JSON.stringify(datos));
   datos3.razones[0].sucursales = [{ ...s2, id: "s4s4s4s4", direccion: "" }];

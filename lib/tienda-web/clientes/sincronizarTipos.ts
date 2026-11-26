@@ -14,7 +14,8 @@
 import { claveDocumento, type DatosPerfil, type SucursalPerfil } from "./tipos";
 
 export interface HijoOdoo { id: number; name: string; street: string; active: boolean }
-export interface PadreOdoo { id: number; company: number; clave: string; pais: number | null; hijos: HijoOdoo[] }
+/** `street`/`lat`/`lng`: la dirección y la ubicación de la propia ficha (la sucursal con esa dirección no se duplica). */
+export interface PadreOdoo { id: number; company: number; clave: string; pais: number | null; hijos: HijoOdoo[]; street?: string; lat?: number; lng?: number }
 export interface EnlaceOdoo { sucursalId: string; company: number; partnerId: number; firma: string }
 
 export type ValsDireccion = {
@@ -24,7 +25,9 @@ export type Operacion =
   | { tipo: "crear"; sucursalId: string; padre: number; company: number; pais: number | null; vals: ValsDireccion; firma: string; texto: string }
   | { tipo: "adoptar"; sucursalId: string; partnerId: number; padre: number; company: number; vals: ValsDireccion; firma: string; texto: string }
   | { tipo: "actualizar"; sucursalId: string; partnerId: number; padre: number; company: number; vals: ValsDireccion; firma: string; texto: string }
-  | { tipo: "archivar"; sucursalId: string; partnerId: number; padre: number | null; company: number; texto: string };
+  | { tipo: "archivar"; sucursalId: string; partnerId: number; padre: number | null; company: number; texto: string }
+  /** La sucursal es la dirección de la propia ficha: no se crea otra, solo se le pone la ubicación a la ficha. */
+  | { tipo: "ubicar_ficha"; sucursalId: string; partnerId: number; padre: number; company: number; lat: number; lng: number; texto: string };
 
 /** Dirección para comparar: sin mayúsculas, acentos, signos ni espacios de más. */
 export const direccionComparable = (t: unknown) =>
@@ -69,6 +72,13 @@ export function planearSincronizacion(datos: DatosPerfil, padres: PadreOdoo[], e
           // El vendedor la archivó o la borró en Odoo: se respeta, no se revive.
           if (!hijo || !hijo.active) continue;
           if (e.firma !== firma) ops.push({ tipo: "actualizar", sucursalId: s.id, partnerId: e.partnerId, padre: p.id, company: p.company, vals, firma, texto: `se actualizó la dirección de entrega «${vals.name}»` });
+          continue;
+        }
+        // Es la dirección de la propia ficha (la «Principal» que vino de Odoo): no se duplica como dirección de entrega.
+        if (direccionComparable(p.street) && direccionComparable(p.street) === direccionComparable(s.direccion)) {
+          if (typeof s.lat === "number" && typeof s.lng === "number" && (p.lat !== s.lat || p.lng !== s.lng)) {
+            ops.push({ tipo: "ubicar_ficha", sucursalId: s.id, partnerId: p.id, padre: p.id, company: p.company, lat: s.lat, lng: s.lng, texto: `se puso en el mapa la dirección de la ficha («${s.nombre}»)` });
+          }
           continue;
         }
         const igual = p.hijos.find((h) => h.active && !usados.has(h.id) && direccionComparable(h.street) && direccionComparable(h.street) === direccionComparable(s.direccion));

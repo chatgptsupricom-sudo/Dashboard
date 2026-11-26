@@ -133,6 +133,7 @@ const TIPO_OP: Record<string, [string, string]> = {
   adoptar: ["bg-blue-100 text-blue-800", "Usar la que ya existe"],
   actualizar: ["bg-blue-100 text-blue-800", "Actualizar"],
   archivar: ["bg-amber-100 text-amber-800", "Archivar"],
+  ubicar_ficha: ["bg-blue-100 text-blue-800", "Ubicar la ficha"],
 };
 interface VistaPrevia {
   activo: boolean;

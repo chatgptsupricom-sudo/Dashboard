@@ -75,10 +75,10 @@ async function leerParaSincronizar(clave: string) {
   if (!permitidas.length) return { fila, datos, permitidas, padresTodos: [] as (PadreOdoo & { website: string })[], firmasEmpresa: new Map<string, string>(), ops: [] as Operacion[], sinOdoo: datos.razones.map((r) => r.razon) };
 
   // Fichas de empresa del cliente (solo las permitidas) y sus direcciones de entrega, también las archivadas.
-  const fichas = (await callOdooRPCEstricto<any[]>("res.partner", "read", [permitidas, ["id", "vat", "company_id", "country_id", "website", "is_company"]], { context: { ...CTX(), active_test: false } })) || [];
+  const fichas = (await callOdooRPCEstricto<any[]>("res.partner", "read", [permitidas, ["id", "vat", "company_id", "country_id", "website", "is_company", "street", "partner_latitude", "partner_longitude"]], { context: { ...CTX(), active_test: false } })) || [];
   const padresTodos: (PadreOdoo & { website: string })[] = fichas
     .filter((f) => f.is_company && COMPANIAS_TIENDA.includes(Number(f.company_id?.[0])))
-    .map((f) => ({ id: f.id, company: Number(f.company_id[0]), clave: claveDocumento(f.vat), pais: f.country_id ? Number(f.country_id[0]) : null, hijos: [], website: String(f.website || "") }));
+    .map((f) => ({ id: f.id, company: Number(f.company_id[0]), clave: claveDocumento(f.vat), pais: f.country_id ? Number(f.country_id[0]) : null, hijos: [], website: String(f.website || ""), street: String(f.street || ""), lat: Number(f.partner_latitude) || 0, lng: Number(f.partner_longitude) || 0 }));
   if (padresTodos.length) {
     const hijos = (await callOdooRPCEstricto<any[]>("res.partner", "search_read", [[["parent_id", "in", padresTodos.map((p) => p.id)], ["type", "=", "delivery"]]], {
       fields: ["id", "name", "street", "active", "parent_id"], limit: 2000, context: { ...CTX(), active_test: false },
@@ -157,6 +157,9 @@ async function sincronizarAhora(clave: string): Promise<ResumenOdoo> {
       } else if (op.tipo === "adoptar" || op.tipo === "actualizar") {
         await callOdooRPCEstricto("res.partner", "write", [[op.partnerId], op.vals], { context: CTX(op.company) });
         await guardarEnlace(op.sucursalId, op.company, op.partnerId, op.firma);
+        resumen.actualizadas++;
+      } else if (op.tipo === "ubicar_ficha") {
+        await callOdooRPCEstricto("res.partner", "write", [[op.partnerId], { partner_latitude: op.lat, partner_longitude: op.lng }], { context: CTX(op.company) });
         resumen.actualizadas++;
       } else {
         await callOdooRPCEstricto("res.partner", "write", [[op.partnerId], { active: false }], { context: CTX(op.company) });
