@@ -902,6 +902,7 @@
         $(".pt-n").textContent = String(total);
         const unica = editable.razones.length <= 1;
         $(".perfil-razones").replaceChildren(
+            crear("p", { class: "perfil-nota-odoo" }, [iconoFijo("listo"), crear("span", { text: "Lo que guardas aquí pasa solo a tu ficha en SUPRICOM: tu vendedor ya lo tiene para tus pedidos y despachos." })]),
             ...editable.razones.map((r, i) => {
                 const registrada = reg.has(claveRif(r.rif));
                 return crear("article", { class: "tarjeta-perfil perfil-razon" }, [
@@ -1153,7 +1154,8 @@
             if (!f.revisar()) return;
             const datos = datosDe(editable);
             const jj = nueva ? datos.razones[i].sucursales.length : j;
-            datos.razones[i].sucursales[jj] = f.leer();
+            // Se conserva su id: con él el servidor actualiza la misma dirección en Odoo en vez de crear otra.
+            datos.razones[i].sucursales[jj] = { ...(!nueva && s.id ? { id: s.id } : {}), ...f.leer() };
             ocupado(form, true, "Guardando…");
             const res = await guardar(datos);
             ocupado(form, false, nueva ? "Agregar sucursal" : "Guardar");

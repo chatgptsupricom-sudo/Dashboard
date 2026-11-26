@@ -886,3 +886,5 @@ button.fila:hover .fotos-pila > * { transform: none; }
 .form-pie .cuenta-boton { width: auto; min-width: 140px; }
 @media (max-width: 640px) { .form-pie .cuenta-boton { flex: 1; } }
 .perfil-rif .garantia { font: 800 12px Manrope, system-ui, sans-serif; }
+.perfil-nota-odoo { display: flex; align-items: center; gap: 8px; color: var(--gris); font-size: 14px; }
+.perfil-nota-odoo .icono-linea { color: var(--ok); }

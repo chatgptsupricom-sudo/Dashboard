@@ -127,7 +127,9 @@ export function avanceDespacho(lineas: { cantidad: number; despachado: number }[
 // Lo que el cliente escribe de su empresa en «Mi cuenta» › Perfil (tabla tienda_perfiles). No cambia Odoo:
 // lo ve su vendedor para actualizarlo allá.
 /** `lat`/`lng`: dónde está en el mapa (opcional; lo marca el cliente con el buscador, su ubicación o el pin). */
-export interface SucursalPerfil { nombre: string; direccion: string; contacto: string; telefono: string; lat?: number; lng?: number }
+/** `id`: propio de la sucursal (lo pone el servidor al guardarla) para enlazarla con su dirección de entrega en Odoo. */
+export interface SucursalPerfil { id?: string; nombre: string; direccion: string; contacto: string; telefono: string; lat?: number; lng?: number }
+export const idSucursalValido = (v: unknown) => typeof v === "string" && /^[a-z0-9]{8,32}$/.test(v);
 
 /** Coordenadas válidas redondeadas a 6 decimales (~10 cm), o null. Venezuela y Panamá, con holgura. */
 export function coordenadas(lat: unknown, lng: unknown): { lat: number; lng: number } | null {
@@ -252,6 +254,7 @@ export function validarPerfil(c: any): ResultadoPerfil {
   if (razonesIn.length > MAX_RAZONES) return mal("razones", `Puedes tener hasta ${MAX_RAZONES} razones sociales`);
   const razones: RazonPerfil[] = [];
   const vistos = new Set<string>();
+  const idsVistos = new Set<string>();
   for (let i = 0; i < razonesIn.length; i++) {
     const r = razonesIn[i] || {};
     const p = `razones.${i}`;
@@ -280,7 +283,9 @@ export function validarPerfil(c: any): ResultadoPerfil {
       if (!telefono) return mal(`${q}.telefono`, `Revisa el teléfono de ${cual}: necesita al menos 7 números`);
       // La ubicación nunca traba el guardado: si viene mal, se ignora.
       const punto = coordenadas(s.lat, s.lng);
-      sucursales.push({ nombre: nombreS, direccion, contacto, telefono, ...(punto || {}) });
+      const id = idSucursalValido(s.id) && !idsVistos.has(s.id) ? (s.id as string) : undefined;
+      if (id) idsVistos.add(id);
+      sucursales.push({ ...(id ? { id } : {}), nombre: nombreS, direccion, contacto, telefono, ...(punto || {}) });
     }
     razones.push({ razon, rif, sucursales });
   }

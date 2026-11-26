@@ -81,6 +81,136 @@ function Registro({ registrada }: { registrada: boolean }) {
   );
 }
 
+/** Cómo quedó el paso automático del perfil a Odoo. */
+function EstadoOdoo({ odoo, detalle = false }: { odoo: PerfilPanel["odoo"]; detalle?: boolean }) {
+  const estilos: Record<string, [string, string]> = {
+    ok: ["border-emerald-200 bg-emerald-50 text-emerald-700", "En Odoo"],
+    error: ["border-red-200 bg-red-50 text-red-700", "No pasó a Odoo"],
+    pendiente: ["border-blue-200 bg-blue-50 text-blue-700", "Pasando a Odoo"],
+    sin_fichas: ["border-slate-200 bg-slate-50 text-slate-600", "Sin ficha en Odoo"],
+    apagado: ["border-slate-200 bg-slate-50 text-slate-600", "Paso a Odoo apagado"],
+  };
+  const [clase, texto] = estilos[odoo.estado] || estilos.pendiente;
+  const insignia = (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${clase}`}>
+      {odoo.estado === "ok" ? <Check className="h-3 w-3" /> : odoo.estado === "pendiente" ? <RefreshCw className="h-3 w-3" /> : null}
+      {texto}
+    </span>
+  );
+  if (!detalle) return insignia;
+  return (
+    <div className="space-y-1 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        {insignia}
+        {odoo.sincronizado && <span className="text-xs text-muted-foreground">Última vez: {fechaHora(odoo.sincronizado)}</span>}
+      </div>
+      {odoo.estado === "ok" && (odoo.creadas + odoo.actualizadas + odoo.archivadas > 0) && (
+        <p className="text-xs text-muted-foreground">
+          Direcciones de entrega: {odoo.creadas} creadas, {odoo.actualizadas} actualizadas, {odoo.archivadas} archivadas. Cada cambio queda anotado en el
+          historial de la ficha en Odoo.
+        </p>
+      )}
+      {odoo.estado === "error" && <p className="text-xs text-red-700">{odoo.error} Se reintenta solo cada hora.</p>}
+      {odoo.estado === "apagado" && (
+        <p className="text-xs text-muted-foreground">
+          Lo guardado no pasó a Odoo porque el paso automático está apagado para este cliente (variable TIENDA_PERFIL_ODOO). Pasa solo, en la
+          siguiente hora, cuando se prenda.
+        </p>
+      )}
+      {odoo.sinOdoo.length > 0 && (
+        <p className="text-xs text-amber-800">
+          No se crean solas en Odoo (su RIF no está en una ficha de este cliente): {odoo.sinOdoo.join(", ")}. Créalas en Odoo y sus sucursales pasan en el
+          próximo guardado o en la próxima hora.
+        </p>
+      )}
+    </div>
+  );
+}
+
+const NOMBRE_SEDE: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
+const TIPO_OP: Record<string, [string, string]> = {
+  crear: ["bg-emerald-100 text-emerald-800", "Crear"],
+  adoptar: ["bg-blue-100 text-blue-800", "Usar la que ya existe"],
+  actualizar: ["bg-blue-100 text-blue-800", "Actualizar"],
+  archivar: ["bg-amber-100 text-amber-800", "Archivar"],
+  ubicar_ficha: ["bg-blue-100 text-blue-800", "Ubicar la ficha"],
+};
+interface VistaPrevia {
+  activo: boolean;
+  fichas: { id: number; company: number; direcciones: number }[];
+  operaciones: { tipo: string; company: number; partnerId: number | null; texto: string; vals: { street: string; phone: string; partner_latitude: number; partner_longitude: number } | null }[];
+  empresa: { company: number; partnerId: number; web: string; logo: boolean }[];
+  sinOdoo: string[];
+}
+
+/** Solo SuperAdmin: lo que el paso automático haría en Odoo con este perfil, sin escribir nada. */
+function VistaPreviaOdoo({ clave }: { clave: string }) {
+  const [v, setV] = useState<VistaPrevia | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [oculto, setOculto] = useState(false);
+  useEffect(() => {
+    setV(null);
+    setError(null);
+    fetch(`/api/perfiles-clientes/odoo?clave=${encodeURIComponent(clave)}`, { cache: "no-store" })
+      .then(async (r) => {
+        if (r.status === 401 || r.status === 403) { setOculto(true); return; }
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || "No pudimos leer Odoo");
+        setV(j);
+      })
+      .catch((e) => setError(e.message));
+  }, [clave]);
+  if (oculto) return null;
+  return (
+    <section className="space-y-2 rounded-lg border border-dashed p-3">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Qué haría en Odoo (vista previa)</h3>
+      {error && <p className="text-xs text-red-700">{error}</p>}
+      {!v && !error && <p className="text-xs text-muted-foreground">Leyendo Odoo…</p>}
+      {v && (
+        <div className="space-y-2 text-sm">
+          <p className={`text-xs font-medium ${v.activo ? "text-emerald-700" : "text-slate-600"}`}>
+            {v.activo
+              ? "El paso automático está prendido para este cliente: esto se hace al guardar o en la siguiente hora."
+              : "El paso automático está apagado para este cliente: no se escribe nada en Odoo. Esto es lo que haría al prenderlo."}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Fichas del cliente en Odoo:{" "}
+            {v.fichas.length
+              ? v.fichas.map((f) => `${NOMBRE_SEDE[f.company] || f.company} #${f.id} (${f.direcciones} direcciones de entrega)`).join(" · ")
+              : "ninguna"}
+          </p>
+          {v.operaciones.length || v.empresa.length ? (
+            <ul className="space-y-1.5">
+              {v.operaciones.map((o, i) => (
+                <li key={i} className="rounded-md bg-slate-50 px-2.5 py-1.5">
+                  <span className={`mr-2 rounded px-1.5 py-0.5 text-[11px] font-semibold ${TIPO_OP[o.tipo]?.[0] || ""}`}>{TIPO_OP[o.tipo]?.[1] || o.tipo}</span>
+                  <span className="text-xs text-muted-foreground">{NOMBRE_SEDE[o.company] || o.company}{o.partnerId ? ` · #${o.partnerId}` : ""} — </span>
+                  <span className="text-xs">{o.texto.replace(/^se /, "")}</span>
+                  {o.vals && (
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {o.vals.street} · {o.vals.phone}
+                      {o.vals.partner_latitude ? ` · ${o.vals.partner_latitude}, ${o.vals.partner_longitude}` : ""}
+                    </p>
+                  )}
+                </li>
+              ))}
+              {v.empresa.map((e) => (
+                <li key={`e-${e.partnerId}`} className="rounded-md bg-slate-50 px-2.5 py-1.5 text-xs">
+                  <span className="mr-2 rounded bg-blue-100 px-1.5 py-0.5 text-[11px] font-semibold text-blue-800">Actualizar ficha</span>
+                  {NOMBRE_SEDE[e.company] || e.company} #{e.partnerId} — {[e.web ? `página web ${e.web}` : "", e.logo ? "logo" : ""].filter(Boolean).join(" y ")}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">Nada que hacer: Odoo ya tiene lo que guardó el cliente.</p>
+          )}
+          {v.sinOdoo.length > 0 && <p className="text-xs text-amber-800">No se crean (no están en Odoo): {v.sinOdoo.join(", ")}.</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function BotonCopiar({ texto, etiqueta }: { texto: string; etiqueta: string }) {
   const [listo, setListo] = useState(false);
   return (
@@ -153,12 +283,14 @@ function Detalle({ clave, sede, onCerrar }: { clave: string | null; sede: string
             {perfil.porConfirmar > 0 && (
               <Aviso>
                 {perfil.porConfirmar === 1 ? "Una razón social no está" : `${perfil.porConfirmar} razones sociales no están`} en Odoo con ese RIF.
-                Revísala con el cliente y, si corresponde, créala o corrige el RIF en Odoo.
+                Sus sucursales no pasan a Odoo hasta que exista: revísala con el cliente y, si corresponde, créala o corrige el RIF en Odoo.
               </Aviso>
             )}
 
             <section className="space-y-2">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">En Odoo</h3>
+              <EstadoOdoo odoo={perfil.odoo} detalle />
+              <VistaPreviaOdoo clave={perfil.clave} />
               {perfil.enOdoo.length ? (
                 <ul className="flex flex-wrap gap-2">
                   {perfil.enOdoo.map((o) => (
@@ -340,7 +472,7 @@ export default function PantallaPerfiles() {
             Lo que cada cliente escribió de su empresa en «Mi cuenta» de la tienda web: razones sociales con su RIF, sucursales con
             dirección y contacto, redes y logo.{" "}
             {alcance === "vendedor" ? "Ves los clientes que tienes asignados en Odoo." : alcance === "sede" ? "Ves los clientes de tu sede." : ""}{" "}
-            No cambia Odoo: úsalo para mantener al día sus fichas.
+            Lo que el cliente guarda pasa solo a Odoo como direcciones de entrega de su ficha (con su ubicación), junto con su página web y su logo.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -428,6 +560,7 @@ export default function PantallaPerfiles() {
                       </span>
                     ))}
                     {!p.enOdoo.length && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">Sin ficha en Odoo</span>}
+                    <EstadoOdoo odoo={p.odoo} />
                     {p.porConfirmar > 0 && (
                       <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                         {p.porConfirmar} por revisar

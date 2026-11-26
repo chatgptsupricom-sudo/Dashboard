@@ -360,6 +360,29 @@ app.prepare().then(() => {
   console.log("> Cron programado: historial de crédito de clientes, cada hora (America/Caracas)");
 
   // ==========================================
+  // PERFILES DE LA TIENDA WEB → ODOO (lib/tienda-web/clientes/sincronizarOdoo.ts)
+  // ==========================================
+
+  // Cada hora (a los 20 min): reintenta pasar a Odoo los perfiles de «Mi cuenta» que
+  // quedaron con error o sin sincronizar. Lo normal es que pasen solos al guardarlos.
+  cron.schedule(
+    "20 * * * *",
+    async () => {
+      try {
+        const response = await fetch(`http://localhost:${PORT}/api/cron/tienda-perfiles-odoo`, {
+          headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        });
+        const data = await response.json();
+        if (!response.ok) console.error("Fallo la sincronización de perfiles de la tienda con Odoo:", data);
+      } catch (error) {
+        console.error("Error de red en la sincronización de perfiles de la tienda:", error.message);
+      }
+    },
+    { scheduled: true, timezone: "America/Caracas" },
+  );
+  console.log("> Cron programado: perfiles de la tienda web a Odoo, cada hora (America/Caracas)");
+
+  // ==========================================
   // FOTO DE CIERRE DE LA EFECTIVIDAD DE COBRANZA (lib/cxc/cierreEfectividad.ts)
   // ==========================================
 
