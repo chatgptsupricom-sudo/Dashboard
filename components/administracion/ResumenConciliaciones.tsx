@@ -23,9 +23,9 @@ const ESTADO: Record<EstadoResumen, { nombre: string; corto: string; celda: stri
   sin_estado: { nombre: "Sin estado de cuenta", corto: "Sin estado", celda: "bg-gray-50 text-gray-500 border-dashed border-gray-300", punto: "bg-gray-300", icono: FileX },
   en_curso: { nombre: "Mes en curso", corto: "En curso", celda: "bg-white text-gray-500 border-gray-200", punto: "bg-white border border-gray-300", icono: Clock },
 };
-function etiquetaMes(celda: CeldaResumen, corta = false) {
-  if (celda.cerradoSinEstado) return "Mes sin movimiento";
-  return corta ? ESTADO[celda.estado].corto : ESTADO[celda.estado].nombre;
+function etiquetaMes(celda: CeldaResumen) {
+  if (celda.cerradoSinEstado) return "Cerrado · Mes sin movimiento";
+  return ESTADO[celda.estado].nombre;
 }
 
 const ORDEN_TARJETAS: EstadoResumen[] = ["cerrado", "listo", "pendiente", "sin_estado"];
@@ -107,8 +107,9 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
       >
         <span className="flex items-center gap-1 font-medium">
           <Icono className="h-3.5 w-3.5" />
-          {c.estado === "pendiente" ? `Falta ${c.faltan.length}` : etiquetaMes(c, true)}
+          {c.estado === "pendiente" ? `Falta ${c.faltan.length}` : e.corto}
         </span>
+        {c.cerradoSinEstado && <span className="text-[11px] text-emerald-50">Mes sin movimiento</span>}
         {c.movimientos > 0 && (
           <span className={`tabular-nums text-[11px] ${c.estado === "cerrado" ? "text-emerald-50" : "opacity-80"}`}>
             {c.conciliados}/{c.movimientos}
