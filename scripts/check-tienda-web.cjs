@@ -152,6 +152,20 @@ assert.strictEqual(diasDeAtraso(false, hoyF), null);
 
 // Antigüedad de la deuda y avance del despacho
 const { tramoDeuda, avanceDespacho } = mk.exports;
+// Cotización directa: sede válida, clave por envío, códigos repetidos se suman, cantidades enteras con tope
+{
+  const { validarCotizacion } = mk.exports;
+  const ok = validarCotizacion({ sede: "valencia", clave: "abc12345-x", nota: "  para el viernes  ", lineas: [
+    { codigo: " ab-12 ", cantidad: 2 }, { codigo: "AB-12", cantidad: 3.7 }, { codigo: "zz", cantidad: 0 }, { codigo: "", cantidad: 5 }, { codigo: "Big", cantidad: 1e9 },
+  ] });
+  assert.ok(ok.ok);
+  assert.deepStrictEqual(ok.datos.lineas, [{ codigo: "AB-12", cantidad: 5 }, { codigo: "BIG", cantidad: 99999 }]);
+  assert.strictEqual(ok.datos.nota, "para el viernes");
+  assert.ok(!validarCotizacion({ sede: "maracaibo", clave: "abc12345", lineas: [{ codigo: "A", cantidad: 1 }] }).ok);
+  assert.ok(!validarCotizacion({ sede: "caracas", clave: "x", lineas: [{ codigo: "A", cantidad: 1 }] }).ok);
+  assert.ok(!validarCotizacion({ sede: "caracas", clave: "abc12345", lineas: [] }).ok);
+  assert.ok(!validarCotizacion({ sede: "panama", clave: "abc12345", lineas: Array.from({ length: 201 }, (_, i) => ({ codigo: `C${i}`, cantidad: 1 })) }).ok);
+}
 // Precios de su lista: precio fijo > 0, vigente hoy, desde 1 unidad; la variante manda sobre el producto
 {
   const { preciosDeLista } = mk.exports;

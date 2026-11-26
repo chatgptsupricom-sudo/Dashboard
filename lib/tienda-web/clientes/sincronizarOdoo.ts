@@ -203,7 +203,8 @@ async function sincronizarAhora(clave: string): Promise<ResumenOdoo> {
 
   // Nota en el chatter de cada ficha tocada (si la nota falla, el cambio ya está hecho: no es error).
   for (const [padre, textos] of notas) {
-    const cuerpo = `<p><b>Mi cuenta (tienda web)</b> — ${quien.replace(/[<>&]/g, "")}:</p><ul>${textos.map((t) => `<li>${t.replace(/[<>&]/g, "")}</li>`).join("")}</ul>`;
+    // Texto plano: Odoo 17 escapa el HTML que llega por la API (como las demás notas del panel).
+    const cuerpo = `Mi cuenta (tienda web), ${quien.replace(/[<>]/g, "")}: ${textos.map((t) => t.replace(/[<>]/g, "")).join(" · ")}.`;
     await callOdooRPCEstricto("res.partner", "message_post", [[padre]], { body: cuerpo, message_type: "comment", subtype_xmlid: "mail.mt_note", context: CTX() }).catch(() => {});
   }
   await marcar(resumen.errores.length ? "error" : "ok", resumen.errores.length ? resumen.errores.join(" · ").slice(0, 2000) : null);

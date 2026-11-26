@@ -622,6 +622,32 @@ body.carrito-abierto .carrito { transform: none; visibility: visible; transition
 .ticket-totales .enlace-chico + .enlace-chico { margin-left: 0; }
 .pedido-resumen { color: var(--gris); font-size: 13px; }
 .pedido-resumen:empty { display: none; }
+/* Cotización directa a Odoo (con sesión): el botón principal; WhatsApp/correo queda como segunda opción */
+.pedido-directo { display: grid; gap: 10px; }
+.pedido-directo[hidden] { display: none; }
+.pedido-directo-boton { gap: 10px; width: 100%; background: var(--acento); color: #fff; }
+.pedido-directo-boton:hover:not(:disabled) { background: var(--tinta); color: var(--fondo); }
+.pedido-directo-boton:disabled { opacity: .55; cursor: not-allowed; }
+.pedido-directo-boton svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.pedido-directo-estado { font-size: 13px; color: var(--gris); }
+.pedido-directo-estado:empty { display: none; }
+.pedido-directo-estado.error { color: #B42318; }
+.pedido-nota summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--gris); }
+.pedido-nota-campo { width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--linea); border-radius: 12px; background: var(--fondo); color: var(--tinta); font: inherit; font-size: 14px; resize: vertical; }
+.carrito-pie .pedido-enviar.pedido-enviar-secundario { min-height: 44px; padding-block: 10px; background: transparent; color: var(--tinta); border: 1px solid var(--linea); font-size: 14px; }
+.carrito-pie .pedido-enviar.pedido-enviar-secundario:hover { background: var(--fondo); color: var(--tinta); }
+.carrito-pie .pedido-enviar.pedido-enviar-secundario.por-whatsapp svg { color: #1DA851; }
+.pedido-listo { display: grid; justify-items: center; gap: 10px; padding: 36px 24px; text-align: center; outline: none; }
+.pedido-listo[hidden] { display: none; }
+.pedido-listo h3 { font-size: 20px; letter-spacing: -.01em; }
+.pedido-listo p { color: var(--gris); font-size: 14px; line-height: 1.5; max-width: 36ch; }
+.pedido-listo .pedido-listo-numero { font: 700 22px "JetBrains Mono", monospace; color: var(--tinta); }
+.pedido-listo .pedido-listo-aviso { color: var(--aviso); font-size: 13px; }
+.pedido-listo-icono { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.pedido-listo-icono svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.pedido-listo-acciones { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 6px; }
+.carrito.cotizacion-enviada .carrito-pie, .carrito.cotizacion-enviada .carrito-cuerpo { display: none; }
+.carrito.cotizacion-enviada .pedido-listo { flex: 1; align-content: center; }
 .pedido-enviar { gap: 10px; width: 100%; background: var(--tinta); color: var(--fondo); }
 .enviar-texto { text-align: center; }
 .pedido-enviar:hover { background: var(--azul); color: #fff; }
