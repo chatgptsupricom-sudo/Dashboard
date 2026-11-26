@@ -28,7 +28,13 @@ Aparte de esta vista previa hay una página de inicio hecha desde cero, de una s
 
 ## En EasyPanel, como entorno de prueba
 
-`odoo/Dockerfile.vista-previa` arma un nginx con `landing/`, esta carpeta y las imágenes del módulo (`odoo/vista-previa.nginx.conf`: `/` lleva a `/landing/`, esta vista previa queda en `/vista-previa/` y todo sale con `X-Robots-Tag: noindex` para que Google no indexe la copia).
+`odoo/Dockerfile.vista-previa` arma un nginx con `landing/`, esta carpeta, las imágenes del módulo y `robots.txt` (`odoo/vista-previa.nginx.conf`: `/` lleva a `/landing/` y esta vista previa queda en `/vista-previa/`).
+
+**Compartir y Google.** El nginx también:
+- sirve `/p/<id>?sede=` (el enlace del botón «Compartir» de la ficha) y `/sitemap.xml` pidiéndolos al panel (`panel.supricom.com.ve`, `lib/tienda-web/seo.ts`): WhatsApp y Facebook muestran la foto y el nombre del producto;
+- cambia `__ORIGEN__` del HTML y de `robots.txt` por `https://<dominio>` (las etiquetas para compartir piden la dirección completa);
+- manda `X-Robots-Tag: noindex` solo en `*.easypanel.host` y localhost: la copia de prueba no se indexa y el dominio propio de la tienda sí. **Si la copia de prueba usa un subdominio propio** (p. ej. `tienda-prueba.supricom.com.ve`), agregarlo al `map $host $robots_tienda` del nginx para que Google no la indexe.
+- En el panel, `TIENDA_WEB_URL` = `https://<dominio>/landing` (la dirección canónica de las fichas y del sitemap).
 
 1. En el proyecto de EasyPanel: **+ Servicio › App**, por ejemplo `tienda-prueba`.
 2. **Fuente › GitHub**: repo `chatgptsupricom-sudo/Dashboard`, la rama donde esté esta carpeta y **ruta de compilación `/odoo`**.

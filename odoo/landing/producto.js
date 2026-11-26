@@ -71,6 +71,52 @@
     $(".producto-precio").dataset.precioFicha = String(p.id);
     if (P.pintarPrecios) P.pintarPrecios();
 
+    /* ---------------------------------------------------------------- Google y compartir
+       Google lee estos datos del producto (JSON-LD) y la dirección canónica. Sin precio: la tienda es pública.
+       Al compartir va el enlace corto `<tienda>/p/<id>`: el nginx de la tienda lo pasa al panel, que les da a
+       WhatsApp y Facebook la foto y el nombre del producto (lib/tienda-web/seo.ts) y a la persona la trae aquí. */
+    const sedeId = (P.sede && P.sede.id) || "";
+    const canonica = `${location.origin}${location.pathname}?id=${p.id}${sedeId ? `&sede=${sedeId}` : ""}`;
+    const enlaceCanonico = document.createElement("link");
+    enlaceCanonico.rel = "canonical";
+    enlaceCanonico.href = canonica;
+    document.head.append(enlaceCanonico);
+    const descripcionMeta = document.querySelector('meta[name="description"]');
+    if (descripcionMeta) descripcionMeta.content = `${nombreCompleto}, código ${p.codigo}. ${agotado ? "Cotízalo" : "Disponible"} en SUPRICOM ${S.nombre}, mayorista de tecnología.`;
+    const datosGoogle = document.createElement("script");
+    datosGoogle.type = "application/ld+json";
+    datosGoogle.textContent = JSON.stringify({
+        "@context": "https://schema.org", "@type": "Product", name: nombreCompleto, sku: p.codigo, mpn: p.codigo,
+        brand: p.marca ? { "@type": "Brand", name: p.marca } : undefined,
+        category: nombreCategoria[p.cat] || undefined, image: foto(p.id, 1024), url: canonica,
+        description: `${nombreCompleto}. Código ${p.codigo}. Mayorista de tecnología SUPRICOM, sede ${S.nombre}.`,
+    });
+    document.head.append(datosGoogle);
+
+    const enlaceCompartir = `${location.origin}/p/${p.id}${sedeId ? `?sede=${sedeId}` : ""}`;
+    const textoCompartir = `${nombreCompleto} (${p.codigo}) en SUPRICOM`;
+    const estadoCompartir = crear("span", { class: "producto-compartir-estado", role: "status" });
+    const botonesCompartir = [
+        crear("a", { class: "boton boton-claro producto-compartir-wa", href: `https://wa.me/?text=${encodeURIComponent(`${textoCompartir}: ${enlaceCompartir}`)}`, target: "_blank", rel: "noopener", text: "Compartir por WhatsApp" }),
+    ];
+    const botonCopiarEnlace = crear("button", { type: "button", class: "boton boton-claro producto-compartir-copiar", text: navigator.share ? "Compartir" : "Copiar enlace" });
+    botonCopiarEnlace.addEventListener("click", async () => {
+        if (navigator.share) {
+            try { await navigator.share({ title: nombreCompleto, text: textoCompartir, url: enlaceCompartir }); } catch (e) { /* lo canceló */ }
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(enlaceCompartir);
+            estadoCompartir.textContent = "Enlace copiado";
+        } catch (e) {
+            estadoCompartir.textContent = enlaceCompartir;
+        }
+        setTimeout(() => { estadoCompartir.textContent = ""; }, 2500);
+    });
+    botonesCompartir.push(botonCopiarEnlace);
+    const comprar = $(".producto-comprar");
+    if (comprar) comprar.after(crear("div", { class: "producto-compartir" }, [...botonesCompartir, estadoCompartir]));
+
     // Copiar el código: es lo que más se pega en una lista de pedido.
     const copiar = $(".producto-copiar");
     let relojCopia = 0;

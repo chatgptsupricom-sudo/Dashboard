@@ -1,0 +1,8 @@
+# Tienda web de SUPRICOM. «Mi cuenta» es privada; el resto se puede indexar (la copia de prueba de EasyPanel
+# manda «noindex» por cabecera, ver vista-previa.nginx.conf).
+User-agent: *
+Disallow: /landing/mi-cuenta.html
+Disallow: /vista-previa/
+Allow: /
+
+Sitemap: __ORIGEN__/sitemap.xml
