@@ -206,8 +206,10 @@ export async function buscarFacturaConSeriales(
       encontrada.estado === "ok" ? numeroImportado(encontrada.cruda.ref) : null;
     if (encontrada.estado === "no_encontrada" || importada) {
       const sede = cid ?? (encontrada.estado === "ok" ? encontrada.factura.compania_id : null);
+      // Con la migrada, resolverFactura ya comprobó el RIF contra su cliente
+      // de Odoo: no hace falta que Smartbit tenga el mismo.
       const deSmartbit = sede
-        ? await facturaDeSmartbit(importada ?? numeroCrudo, rif, sede)
+        ? await facturaDeSmartbit(importada ?? numeroCrudo, rif, sede, Boolean(importada))
         : null;
       if (deSmartbit) return deSmartbit;
     }
@@ -352,25 +354,41 @@ function numeroImportado(ref: unknown): string | null {
  * La factura del histórico de Smartbit (`ventas_smartbit_facturas` +
  * `ventas_smartbit`, ver lib/rma/buscarCompras.ts) con la misma forma que la
  * de Odoo, para que el formulario y la creación del ticket no distingan. El
- * RIF se compara contra el de Smartbit con el mismo criterio que en Odoo. Los
- * productos se buscan en Odoo por código para tener id, marca, categoría y si
- * llevan serial; los que no están quedan con producto_id 0. null = no está en
- * Smartbit (o no tiene productos): sigue el resultado de Odoo.
+ * RIF se compara contra el de Smartbit con el mismo criterio que en Odoo y,
+ * si no coincide, contra el de Odoo: Smartbit tiene clientes con un RIF que no
+ * es el suyo (CORPORACION DIGIPRO C.A está con "3294098268" en sus 145
+ * facturas de Valencia y en Odoo es J504978680), así que vale también un
+ * contacto de Odoo con ese RIF y el mismo nombre que la factura de Smartbit
+ * (`clienteSegunOdoo`). `duenoVerificado` = el RIF ya se comprobó contra la
+ * factura migrada de Odoo. Los productos se buscan en Odoo por código para
+ * tener id, marca, categoría y si llevan serial; los que no están quedan con
+ * producto_id 0. null = no está en Smartbit (o no tiene productos): sigue el
+ * resultado de Odoo.
  */
 async function facturaDeSmartbit(
   numeroCrudo: string,
   rif: string | undefined,
   sede: number,
+  duenoVerificado = false,
 ): Promise<FacturaConItems | { estado: "ambiguo"; coincidencias: FacturaResumen[] } | null> {
   // Import dinámico: buscarCompras importa OdooNoDisponibleError de aquí.
   const { facturasSmartbit } = await import("@/lib/rma/buscarCompras");
   const buscado = normalizarDocumento(rif);
-  const facturas = (await facturasSmartbit(normalizarNumero(numeroCrudo), sede)).filter(
-    (f) =>
-      !f.devolucion &&
-      f.productos.length > 0 &&
-      (!buscado || documentoCoincide(buscado, normalizarDocumento(f.rif))),
+  const candidatas = (await facturasSmartbit(normalizarNumero(numeroCrudo), sede)).filter(
+    (f) => !f.devolucion && f.productos.length > 0,
   );
+  let facturas =
+    !buscado || duenoVerificado
+      ? candidatas
+      : candidatas.filter((f) => documentoCoincide(buscado, normalizarDocumento(f.rif)));
+  let partnerSegunOdoo: number | null = null;
+  if (!facturas.length && buscado && candidatas.length) {
+    const porNombre = await clienteSegunOdoo(buscado, sede);
+    facturas = candidatas.filter((f) => porNombre.has(claveNombreCliente(f.cliente)));
+    if (facturas.length === 1) {
+      partnerSegunOdoo = porNombre.get(claveNombreCliente(facturas[0].cliente)) ?? null;
+    }
+  }
   if (!facturas.length) return null;
 
   const resumenSb = (f: (typeof facturas)[number]): FacturaResumen => ({
@@ -394,7 +412,7 @@ async function facturaDeSmartbit(
   ];
   const [productos, partnerId] = await Promise.all([
     productosPorCodigo(codigos),
-    partnerDeSmartbit(f.numero, f.rif, sede),
+    partnerSegunOdoo ?? partnerDeSmartbit(f.numero, f.rif, sede),
   ]);
   const cliente = await leerCliente(partnerId);
 
@@ -495,9 +513,15 @@ async function partnerDeSmartbit(numero: string, rif: string, sede: number): Pro
   const deMigrada = m2oId(migrada[0]?.partner_id);
   if (deMigrada) return deMigrada;
 
-  const documento = normalizarDocumento(rif);
+  const coinciden = await partnersConDocumento(normalizarDocumento(rif), sede);
+  const elegido = coinciden.find((p) => p.is_company) ?? coinciden[0];
+  return elegido ? (m2oId(elegido.commercial_partner_id) ?? elegido.id) : null;
+}
+
+/** Contactos de Odoo de la sede (o sin compañía) con ese documento. */
+async function partnersConDocumento(documento: string, sede: number): Promise<any[]> {
   const digitos = documento.replace(/^[A-Z]+/, "");
-  if (digitos.length < 6) return null;
+  if (digitos.length < 6) return [];
   const partners = await rpc<any[]>(
     "res.partner",
     "search_read",
@@ -507,13 +531,50 @@ async function partnerDeSmartbit(numero: string, rif: string, sede: number): Pro
         ["company_id", "in", [sede, false]],
       ],
     ],
-    { fields: ["id", "vat", "is_company", "commercial_partner_id"], limit: 20 },
+    { fields: ["id", "name", "vat", "is_company", "commercial_partner_id"], limit: 20 },
   );
-  const coinciden = partners.filter((p) =>
-    documentoCoincide(documento, normalizarDocumento(p.vat)),
-  );
-  const elegido = coinciden.find((p) => p.is_company) ?? coinciden[0];
-  return elegido ? (m2oId(elegido.commercial_partner_id) ?? elegido.id) : null;
+  return partners.filter((p) => documentoCoincide(documento, normalizarDocumento(p.vat)));
+}
+
+/**
+ * Nombre de cliente para comparar Smartbit con Odoo: sin acentos, mayúsculas,
+ * sin signos ni espacios y sin la forma societaria del final ("CORPORACIÓN
+ * DIGIPRO, C.A" = "CORPORACION DIGIPRO C.A " = "Corporacion Digipro").
+ */
+function claveNombreCliente(nombre: unknown): string {
+  if (typeof nombre !== "string") return "";
+  const palabras = nombre
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[.,]/g, "")
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+  while (palabras.length > 1 && FORMAS_SOCIETARIAS.has(palabras[palabras.length - 1])) {
+    palabras.pop();
+  }
+  return palabras.join("");
+}
+
+const FORMAS_SOCIETARIAS = new Set(["CA", "SA", "SRL", "RL", "CPA", "SAS", "LLC", "INC", "FP"]);
+
+/**
+ * Los clientes de Odoo con el RIF que escribió el cliente, por nombre (los dos
+ * nombres de cada contacto: el suyo y el de su empresa) → partner comercial.
+ * Un nombre de menos de 4 letras no cuenta: sería demasiado fácil que
+ * coincidiera con otro.
+ */
+async function clienteSegunOdoo(documento: string, sede: number): Promise<Map<string, number>> {
+  const porNombre = new Map<string, number>();
+  const partners = await partnersConDocumento(documento, sede);
+  for (const p of [...partners].sort((a, b) => Number(b.is_company) - Number(a.is_company))) {
+    const id = m2oId(p.commercial_partner_id) ?? p.id;
+    for (const nombre of [m2oNombre(p.commercial_partner_id), p.name]) {
+      const clave = claveNombreCliente(nombre);
+      if (clave.length >= 4 && !porNombre.has(clave)) porNombre.set(clave, id);
+    }
+  }
+  return porNombre;
 }
 
 /**
