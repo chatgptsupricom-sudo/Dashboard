@@ -289,6 +289,9 @@ export default function RmaCasoDetailPage() {
   // Equipo que no se compró en Supricom (portal, sin factura): sin garantía
   // nuestra y sin nota de crédito posible; el servicio se presupuesta.
   const esExterno = Number(caseData.producto_externo) === 1;
+  // Producto comprado en Supricom que el cliente pidió reparar pagando (fuera
+  // de garantía, desde el portal): se presupuesta y tampoco lleva nota de crédito.
+  const conCosto = Number(caseData.servicio_con_costo) === 1;
   // Sede sin Seguridad (Caracas): RMA registra recepción y entrega con la
   // firma del cliente, en vez de "Marcar como entregado" y las firmas de las
   // actas de Seguridad.
@@ -317,6 +320,11 @@ export default function RmaCasoDetailPage() {
                 {esExterno && (
                   <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[11px]">
                     {t("badge_externo")}
+                  </Badge>
+                )}
+                {conCosto && (
+                  <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[11px]">
+                    {t("badge_con_costo")}
                   </Badge>
                 )}
                 {NOMBRES_SUCURSAL[caseData.company_id] && (
@@ -359,7 +367,7 @@ export default function RmaCasoDetailPage() {
                       {ESTADOS_ELEGIBLES.map((key) => [key, statusLabels[key]] as const)
                         .filter(([key]) => key !== caseData.status)
                         // Un equipo que Supricom no vendió no tiene nada que acreditar.
-                        .filter(([key]) => !(esExterno && key === "nota_credito"))
+                        .filter(([key]) => !((esExterno || conCosto) && key === "nota_credito"))
                         // Solo se pide de un equipo que sigue en revisión.
                         .filter(([key]) => key !== "nota_credito" || ESTADOS_SOLICITAN_NC.includes(caseData.status))
                         .map(([key, label]) => (
@@ -438,7 +446,7 @@ export default function RmaCasoDetailPage() {
               items={items}
               adjuntos={caseData.adjuntos || []}
               onCambio={fetchCase}
-              sinNotaCredito={esExterno}
+              sinNotaCredito={esExterno || conCosto}
               sinEntregaManual={sinSeguridad}
             />
           )}
@@ -717,6 +725,11 @@ export default function RmaCasoDetailPage() {
                   <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_serial")}</Label>
                   <p className="text-sm text-slate-700 mt-1 font-mono">{caseData.serial || "—"}</p>
                 </div>
+                )}
+                {conCosto && (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                    {t("con_costo_aviso")}
+                  </p>
                 )}
                 <div>
                   <Label className="text-xs font-medium text-slate-400 uppercase">{t("portal_contact_phone")}</Label>

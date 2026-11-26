@@ -85,6 +85,10 @@ export async function asegurarColumnasPortal(conn: Conexion) {
     `ALTER TABLE rma_cases ADD COLUMN producto_externo TINYINT(1) NOT NULL DEFAULT 0`,
     `ALTER TABLE rma_cases ADD COLUMN client_document VARCHAR(30) DEFAULT NULL`,
     `ALTER TABLE rma_cases ADD COLUMN contacto_email VARCHAR(200) DEFAULT NULL`,
+    // Producto comprado en Supricom que el cliente pide reparar pagando
+    // (fuera de garantía u otra causa que la garantía no cubre).
+    // sql/rma_cases_servicio_con_costo.sql.
+    `ALTER TABLE rma_cases ADD COLUMN servicio_con_costo TINYINT(1) NOT NULL DEFAULT 0`,
     // Ya la agrega lib/rma/rutasEnvio.ts; se repite porque el portal de
     // equipos externos la llena al crear el caso.
     `ALTER TABLE rma_cases ADD COLUMN client_email VARCHAR(200) DEFAULT NULL`,
