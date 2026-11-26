@@ -9,8 +9,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 const mesCorto = (mes: string) =>
   new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7) - 1, 1)).toLocaleDateString("es-VE", { month: "short", timeZone: "UTC" }).replace(".", "");
-const mesLargo = (mes: string) =>
-  new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7) - 1, 1)).toLocaleDateString("es-VE", { month: "long", year: "numeric", timeZone: "UTC" });
+const mesLargo = (mes: string) => {
+  const t = new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7) - 1, 1)).toLocaleDateString("es-VE", { month: "long", year: "numeric", timeZone: "UTC" });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
 const cifra = (n: number) => n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Color, icono y nombre de cada estado: los mismos en tarjetas, celdas y leyenda. */
@@ -221,7 +223,7 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="font-medium">
-                    {detalle.nombre} · <span className="capitalize">{mesLargo(elegida!.mes)}</span>
+                    {detalle.nombre} · {mesLargo(elegida!.mes)}
                   </p>
                   <p className="text-sm text-gray-500">
                     {ESTADO[celdaElegida.estado].nombre}
@@ -285,7 +287,7 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
                     <Icono className={`h-4 w-4 shrink-0 ${celda.estado === "listo" ? "text-sky-600" : "text-amber-600"}`} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">
-                        {cuenta.nombre} · <span className="capitalize">{mesLargo(mes)}</span>
+                        {cuenta.nombre} · {mesLargo(mes)}
                       </p>
                       <p className="text-xs text-gray-500">
                         {celda.estado === "listo" ? "Todo cuadra: solo falta pulsar «Cerrar el mes»" : `Falta ${celda.faltan.join(" · ")}`}
