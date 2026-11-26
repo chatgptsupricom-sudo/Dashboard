@@ -274,9 +274,11 @@ assert.deepStrictEqual(redesEnHtml(`
   }
 
   // Interruptor TIENDA_PERFIL_ODOO: apagado por defecto, un RIF de prueba, o todos
-  assert.strictEqual(pasoAOdooActivo(undefined, "d:J123456789"), false);
-  assert.strictEqual(pasoAOdooActivo("", "d:J123456789"), false);
+  // Prendido por defecto: sin la variable pasa todo; «no» lo apaga
+  assert.strictEqual(pasoAOdooActivo(undefined, "d:J123456789"), true);
+  assert.strictEqual(pasoAOdooActivo("", "p:4512"), true);
   assert.strictEqual(pasoAOdooActivo("no", "d:J123456789"), false);
+  assert.strictEqual(pasoAOdooActivo("apagado", "p:4512"), false);
   assert.strictEqual(pasoAOdooActivo("todos", "d:J123456789"), true);
   assert.strictEqual(pasoAOdooActivo("todos", "p:4512"), true);
   assert.strictEqual(pasoAOdooActivo("J-12345678-9", "d:J123456789"), true); // el de prueba, escrito con guiones

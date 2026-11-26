@@ -114,16 +114,16 @@ export function planearSincronizacion(datos: DatosPerfil, padres: PadreOdoo[], e
 }
 
 /**
- * Interruptor del paso a Odoo, variable de entorno `TIENDA_PERFIL_ODOO`:
- * - vacía o «no»: apagado (lo que se guarda queda «apagado» y pasa cuando se prenda, en el cron de la hora).
- * - «todos» (o «si»): todos los clientes.
+ * Interruptor del paso a Odoo, variable de entorno `TIENDA_PERFIL_ODOO`. **Prendido por defecto.**
+ * - sin la variable, vacía o «todos» (o «si»): todos los clientes.
+ * - «no»: apagado (lo que se guarda queda «apagado» y pasa cuando se vuelva a prender, en el cron de la hora).
  * - uno o más RIF separados por coma: solo esos clientes (para probar con uno de confianza).
- * `clave` es la del perfil: `d:<RIF sin guiones>` o `p:<id>` (los sin RIF solo pasan con «todos»).
+ * `clave` es la del perfil: `d:<RIF sin guiones>` o `p:<id>` (los sin RIF solo pasan con todos).
  */
 export function pasoAOdooActivo(valor: string | undefined, clave: string): boolean {
   const v = String(valor ?? "").trim();
-  if (!v || /^(no|off|0|false)$/i.test(v)) return false;
-  if (/^(todos|si|sí|on|1|true)$/i.test(v)) return true;
+  if (!v || /^(todos|si|sí|on|1|true)$/i.test(v)) return true;
+  if (/^(no|off|0|false|apagado)$/i.test(v)) return false;
   if (!clave.startsWith("d:")) return false;
   const rif = clave.slice(2);
   return v.split(/[,;\s]+/).map((x) => claveDocumento(x)).filter((x) => x.length >= 6).includes(rif);
