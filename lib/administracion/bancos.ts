@@ -2743,6 +2743,7 @@ export async function reabrirMes(cuenta: CuentaBanco, mes: string, motivo: strin
 export type EstadoResumen = "cerrado" | "listo" | "pendiente" | "sin_estado" | "en_curso";
 export type CeldaResumen = {
   estado: EstadoResumen;
+  cerradoSinEstado?: boolean;
   movimientos: number;
   conciliados: number;
   diasSinEstado: number;
@@ -2798,7 +2799,13 @@ export async function resumenConciliaciones(cuentas: CuentaBanco[], refrescar = 
   const [cierres, conteos, estados] = ids.length
     ? await Promise.all([
         query(
-          `SELECT journal_id, mes, saldo_banco, saldo_libros, cerrado_por, cerrado_at FROM banco_cierres
+          `SELECT c.journal_id, c.mes, c.saldo_banco, c.saldo_libros, c.cerrado_por, c.cerrado_at,
+                  NOT EXISTS (
+                    SELECT 1 FROM banco_estados e
+                    WHERE e.journal_id = c.journal_id AND e.desde <= LAST_DAY(CONCAT(c.mes, '-01'))
+                      AND e.hasta >= CONCAT(c.mes, '-01')
+                  ) AS sin_estado
+             FROM banco_cierres c
             WHERE journal_id IN (${lista}) AND reabierto_at IS NULL`,
           ids,
         ),
@@ -2890,6 +2897,7 @@ export async function resumenConciliaciones(cuentas: CuentaBanco[], refrescar = 
               m,
               {
                 ...vacia("cerrado", []),
+                cerradoSinEstado: Number(ci.sin_estado) === 1,
                 movimientos: movsMes.get(k) || 0,
                 conciliados: movsMes.get(k) || 0,
                 saldoBanco: banco,

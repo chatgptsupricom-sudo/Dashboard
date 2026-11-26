@@ -23,6 +23,11 @@ const ESTADO: Record<EstadoResumen, { nombre: string; corto: string; celda: stri
   sin_estado: { nombre: "Sin estado de cuenta", corto: "Sin estado", celda: "bg-gray-50 text-gray-500 border-dashed border-gray-300", punto: "bg-gray-300", icono: FileX },
   en_curso: { nombre: "Mes en curso", corto: "En curso", celda: "bg-white text-gray-500 border-gray-200", punto: "bg-white border border-gray-300", icono: Clock },
 };
+function etiquetaMes(celda: CeldaResumen, corta = false) {
+  if (celda.cerradoSinEstado) return "Mes sin movimiento";
+  return corta ? ESTADO[celda.estado].corto : ESTADO[celda.estado].nombre;
+}
+
 const ORDEN_TARJETAS: EstadoResumen[] = ["cerrado", "listo", "pendiente", "sin_estado"];
 
 /**
@@ -57,14 +62,14 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
     cargar();
   }, [cargar]);
 
-  const conEstados = useMemo(() => (datos?.cuentas || []).filter((c) => !c.sinEstados), [datos]);
+  const cuentas = datos?.cuentas || [];
   const sinEstados = useMemo(() => (datos?.cuentas || []).filter((c) => c.sinEstados), [datos]);
   // Meses que ya terminaron: el mes en curso no cuenta para el avance.
-  const terminadas = conEstados.flatMap((c) => Object.values(c.meses)).filter((x) => x.estado !== "en_curso");
+  const terminadas = cuentas.flatMap((c) => Object.values(c.meses)).filter((x) => x.estado !== "en_curso");
   const contar = (e: EstadoResumen) => terminadas.filter((x) => x.estado === e).length;
   const avance = terminadas.length ? Math.round((contar("cerrado") / terminadas.length) * 100) : 0;
   // Lo que falta, del mes más viejo al más nuevo: lo listo primero (solo falta pulsar «Cerrar el mes»).
-  const porHacer = conEstados
+  const porHacer = cuentas
     .flatMap((c) =>
       (datos?.meses || [])
         .filter((m) => c.meses[m].estado === "listo" || c.meses[m].estado === "pendiente")
@@ -94,7 +99,7 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
       <button
         type="button"
         onClick={() => setElegida(activa ? null : { cuenta, mes })}
-        title={`${mesLargo(mes)}: ${e.nombre}${c.faltan.length ? ` — falta ${c.faltan.join("; ")}` : ""}`}
+        title={`${mesLargo(mes)}: ${etiquetaMes(c)}${c.faltan.length ? ` — falta ${c.faltan.join("; ")}` : ""}`}
         aria-pressed={activa}
         className={`w-full h-14 rounded-lg border px-2 flex flex-col items-center justify-center gap-0.5 text-xs transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${e.celda} ${
           activa ? "ring-2 ring-offset-1 ring-blue-500" : ""
@@ -102,7 +107,7 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
       >
         <span className="flex items-center gap-1 font-medium">
           <Icono className="h-3.5 w-3.5" />
-          {c.estado === "pendiente" ? `Falta ${c.faltan.length}` : e.corto}
+          {c.estado === "pendiente" ? `Falta ${c.faltan.length}` : etiquetaMes(c, true)}
         </span>
         {c.movimientos > 0 && (
           <span className={`tabular-nums text-[11px] ${c.estado === "cerrado" ? "text-emerald-50" : "opacity-80"}`}>
@@ -127,7 +132,7 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
                 {avance}% <span className="text-base font-normal text-gray-500">de los meses cerrados</span>
               </p>
               <p className="text-xs text-gray-400 mt-1">
-                {contar("cerrado")} de {terminadas.length} meses terminados en {conEstados.length} cuenta{conEstados.length === 1 ? "" : "s"} · calculado{" "}
+                {contar("cerrado")} de {terminadas.length} meses terminados en {cuentas.length} cuenta{cuentas.length === 1 ? "" : "s"} · calculado{" "}
                 {new Date(datos.calculadoEl).toLocaleString("es-VE", { timeStyle: "short", dateStyle: "short" })}
               </p>
             </div>
@@ -177,8 +182,8 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
               <span className="text-gray-400">· n/m = movimientos conciliados</span>
             </div>
           </div>
-          {conEstados.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Ninguna cuenta de la sede tiene estado de cuenta cargado todavía.</p>
+          {cuentas.length === 0 ? (
+            <p className="text-sm text-gray-500 py-6 text-center">No hay cuentas bancarias en esta sede.</p>
           ) : (
             <div className="overflow-x-auto -mx-5 px-5">
               <table className="w-full border-separate border-spacing-x-1.5 border-spacing-y-1.5">
@@ -193,7 +198,7 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
                   </tr>
                 </thead>
                 <tbody>
-                  {conEstados.map((c) => {
+                  {cuentas.map((c) => {
                     const cerrados = Object.values(c.meses).filter((x) => x.estado === "cerrado").length;
                     const term = Object.values(c.meses).filter((x) => x.estado !== "en_curso").length;
                     return (
@@ -226,7 +231,7 @@ export function ResumenConciliaciones({ sede, abrir }: { sede: number; abrir: (c
                     {detalle.nombre} · {mesLargo(elegida!.mes)}
                   </p>
                   <p className="text-sm text-gray-500">
-                    {ESTADO[celdaElegida.estado].nombre}
+                    {etiquetaMes(celdaElegida)}
                     {celdaElegida.cerradoPor && ` por ${celdaElegida.cerradoPor} el ${new Date(celdaElegida.cerradoEl!).toLocaleDateString("es-VE")}`}
                   </p>
                 </div>
