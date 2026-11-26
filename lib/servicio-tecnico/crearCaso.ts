@@ -41,9 +41,16 @@ export async function crearCasoPortal(args: {
   facturaEscrita: string;
   /** Texto del historial al crear el caso. */
   nota?: string;
+  /**
+   * Servicio con costo: producto comprado aquí que el cliente pide reparar pagando (fuera de garantía
+   * o falla que la garantía no cubre). Queda en rma_cases.servicio_con_costo.
+   */
+  conCosto?: boolean;
 }): Promise<CasoCreado> {
   const { resultado, elegidos, telefono, facturaEscrita } = args;
-  const nota = args.nota || "Caso creado desde portal publico";
+  const conCosto = !!args.conCosto;
+  const nota =
+    (args.nota || "Caso creado desde portal publico") + (conCosto ? " (servicio con costo)" : "");
   // Los campos de producto del caso son los del primero (paso 1 de #331). La falla del caso, en cambio,
   // junta la de todos: es lo que el técnico lee hoy en el panel, y ahí tiene que ver el envío completo.
   const { matched, serialFinal } = elegidos[0];
@@ -75,8 +82,8 @@ export async function crearCasoPortal(args: {
             invoice_number, client_name, client_phone, serial_quantity,
             reported_fault, status, notes, company_id, created_by,
             origen, tracking_token, odoo_partner_id, odoo_product_id, serial,
-            garantia_estado, garantia_meses, garantia_vence, garantia_marca
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?)`,
+            garantia_estado, garantia_meses, garantia_vence, garantia_marca${conCosto ? ", servicio_con_costo" : ""}
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?${conCosto ? ", 1" : ""})`,
           [
             caseNumber,
             matched.codigo || null,
@@ -163,6 +170,7 @@ export async function crearCasoPortal(args: {
         productos: elegidos.length,
         invoice_number: facturaEscrita,
         origen: "portal",
+        servicio_con_costo: conCosto,
         created_at: new Date().toISOString(),
       });
     } catch (e) {
@@ -176,6 +184,7 @@ export async function crearCasoPortal(args: {
       body: JSON.stringify({
         evento: "rma_ticket_nuevo",
         origen: "portal",
+        servicio_con_costo: conCosto,
         ticket: {
           case_id: caseId,
           case_number: caseNumber,

@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-// Calendario de la asistencia: sábados de inventario (se trabajan 8:00-4:30) y feriados.
+// Calendario de la asistencia: sábados de inventario (se trabajan 8:00-5:00) y feriados.
 //   GET                                   -> { dias }
 //   POST {fecha, sede (0 = todas), tipo: "inventario" | "feriado", nota}
 //   DELETE ?id=

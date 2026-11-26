@@ -90,6 +90,7 @@ export const rolePermissions: RolePermissions = {
       "reporte_diario", // Reporte Diario de Ventas
       "reporte_ventas", // Reporte de Ventas (desglose Smartbitt + clientes inactivos)
       "semaforo_clientes", // Semáforo de clientes: cartera en verde/amarillo/rojo (lib/semaforo-clientes)
+      "mercancia_valencia", // Mercancía que Caracas le compró a Valencia y cuánto sigue allá (lib/ventas/mercanciaValencia.ts)
       "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
       "perfiles_clientes", // Perfiles que los clientes escriben en Mi cuenta de la tienda web (lib/tienda-web/clientes/perfilesPanel.ts)
       "rotacion_inventario", // Rotación de inventario: semáforo por días sin venta y apoyo de marcas (lib/rotacion-inventario)
@@ -228,7 +229,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "semaforo_clientes", "cupo_credito", "perfiles_clientes", "rotacion_inventario", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta"],
+    sections: ["politicas", "solicitudes_personal", "dashboard", "cuota", "MapaClientes", "inventory", "actividad", "spiff", "planificacion_visitas", "reportes_comerciales", "reporte_diario", "reporte_ventas", "semaforo_clientes", "cupo_credito", "perfiles_clientes", "rotacion_inventario", "opiniones", "cuentas_por_cobrar", "stoplight_reports", "estado_cuenta", "mercancia_valencia"],
   },
   [UserRole.ASISTENTE_VENTAS]: {
     canViewAllSections: false,

@@ -290,8 +290,9 @@ export async function resumenDe(c: ClienteOdoo) {
 }
 
 /* ------------------------------------------------------------------ Perfil */
-const direccion = (p: any) => [p.street, p.street2, p.city, p.state_id?.[1]?.replace(/\s*\([A-Z]{2}\)$/, ""), p.country_id?.[1]]
-  .map((x) => String(x || "").trim()).filter(Boolean).join(", ");
+/** La dirección de una ficha como la ve el cliente: calle, calle 2, ciudad, estado y país (la usa también el paso a Odoo). */
+export const direccion = (p: any) => [p.street, p.street2, p.city, p.state_id?.[1]?.replace(/\s*\([A-Z]{2}\)$/, ""), p.country_id?.[1]]
+  .map((x) => String(x || "").replace(/\s+/g, " ").trim()).filter(Boolean).join(", ");
 
 /**
  * Los datos de su empresa (solo lectura: para cambiarlos se le escribe al vendedor), y por cada sede donde

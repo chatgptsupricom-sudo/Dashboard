@@ -6,12 +6,14 @@ import { useState } from "react";
 import { Calendario } from "./Calendario";
 import { CargarExcel } from "./CargarExcel";
 import { Empleados } from "./Empleados";
+import { HorasExtra } from "./HorasExtra";
 import { Reporte } from "./Reporte";
 
-type Vista = "reporte" | "cargar" | "calendario" | "empleados";
+type Vista = "reporte" | "extra" | "cargar" | "calendario" | "empleados";
 
 const VISTAS: [Vista, string][] = [
   ["reporte", "Reporte"],
+  ["extra", "Horas extra"],
   ["cargar", "Cargar Excel"],
   ["calendario", "Sábados de inventario y feriados"],
   ["empleados", "Empleados"],
@@ -66,6 +68,7 @@ export default function PantallaAsistencia() {
       </div>
 
       {vista === "reporte" && <Reporte key={`${sede}-${version}`} sede={sede} />}
+      {vista === "extra" && <HorasExtra key={`${sede}-${version}`} sede={sede} />}
       {vista === "cargar" && <CargarExcel sede={sede} onCargado={refrescar} />}
       {vista === "calendario" && <Calendario sede={sede} onCambio={refrescar} />}
       {vista === "empleados" && <Empleados sede={sede} onCambio={refrescar} />}

@@ -15,7 +15,7 @@
 import { db } from "@/lib/db";
 import { callOdooRPCEstricto } from "@/lib/odoo";
 import { esVendedorPanel, ROLES_PERFILES_CLIENTES } from "./accesoPanel";
-import { asegurarTablas } from "./perfil";
+import { asegurarTablasOdoo } from "./sincronizarOdoo";
 import { claveDocumento, COMPANIAS_TIENDA, nucleoDocumento, resumenCambios, SEDE_DE_COMPANIA, type DatosPerfil } from "./tipos";
 
 export { ROLES_PERFILES_CLIENTES };
@@ -92,13 +92,16 @@ export interface PerfilPanel {
   /** Dónde está en Odoo: una entrada por ficha (sede, vendedor). */
   enOdoo: { sede: string; cid: number; vendedor: string; vendedorId: number | null; partnerId: number }[];
   porConfirmar: number;
+  /** Cómo quedó el paso automático a Odoo (lib/tienda-web/clientes/sincronizarOdoo.ts). */
+  odoo: { estado: string; error: string; sincronizado: string; creadas: number; actualizadas: number; archivadas: number; sinOdoo: string[] };
 }
 
 async function leerFilas(clave?: string) {
-  await asegurarTablas();
+  await asegurarTablasOdoo();
   const [filas]: any = await db.execute(
     `SELECT clave, nombre, datos, logo_tipo IS NOT NULL AS tiene_logo, version, actualizado_por,
-            DATE_FORMAT(actualizado_el, '%Y-%m-%d %H:%i') AS el
+            DATE_FORMAT(actualizado_el, '%Y-%m-%d %H:%i') AS el, odoo_estado, odoo_error, odoo_resumen,
+            DATE_FORMAT(odoo_sincronizado, '%Y-%m-%d %H:%i') AS odoo_el
        FROM tienda_perfiles ${clave ? "WHERE clave = ?" : ""} ORDER BY actualizado_el DESC LIMIT 2000`,
     clave ? [clave] : [],
   );
@@ -124,6 +127,15 @@ function armar(filas: any[], fichas: FichaOdoo[], porId: Map<number, FichaOdoo>)
       sucursales: razones.reduce((a, r) => a + r.sucursales.length, 0),
       actualizadoEl: f.el || "", actualizadoPor: f.actualizado_por || "", version: Number(f.version) || 1,
       enOdoo, porConfirmar: razones.filter((r) => !r.registrada).length,
+      odoo: (() => {
+        let r: any = {};
+        try { r = JSON.parse(f.odoo_resumen || "{}"); } catch { /* sin resumen */ }
+        return {
+          estado: String(f.odoo_estado || "pendiente"), error: String(f.odoo_error || ""), sincronizado: String(f.odoo_el || ""),
+          creadas: Number(r.creadas) || 0, actualizadas: Number(r.actualizadas) || 0, archivadas: Number(r.archivadas) || 0,
+          sinOdoo: Array.isArray(r.sinOdoo) ? r.sinOdoo.map(String) : [],
+        };
+      })(),
     };
   });
 }
