@@ -92,6 +92,35 @@ assert.deepStrictEqual(cuota.diaria, { valor: 100, unidades: 2 });
 assert.deepStrictEqual(m.exports.cuotaRojo({ referencias: 1, unidades: 90, valor: 0 }).mensual, { valor: 0, unidades: 30 });
 assert.deepStrictEqual(m.exports.cuotaRojo({ referencias: 0, unidades: 0, valor: 0 }).diaria, { valor: 0, unidades: 0 });
 
+// Plan del rojo: la foto del día que arrancó, lo vendido con tope y por mes del plan
+const { periodoPlanRojo, lineaPlanRojo, resumirPlanRojo, sumarResumenes, porcentaje } = m.exports;
+const per = periodoPlanRojo("2026-11-01", "2026-12-05");
+assert.deepStrictEqual(
+  { fin: per.fin, diaPlan: per.diaPlan, mesPlan: per.mesPlan, inicioMes: per.inicioMes, finMes: per.finMes, diasCompletos: per.diasCompletos, diasCompletosMes: per.diasCompletosMes },
+  { fin: "2027-01-29", diaPlan: 35, mesPlan: 2, inicioMes: "2026-12-01", finMes: "2026-12-30", diasCompletos: 34, diasCompletosMes: 4 },
+);
+assert.strictEqual(periodoPlanRojo("2026-11-01", "2027-01-29").mesPlan, 3);
+assert.strictEqual(periodoPlanRojo("2026-11-01", "2027-01-29").finMes, "2027-01-29");
+const base = { productoId: 1, codigo: "A", nombre: "A", marca: "CANON", categoria: "X", unidades: 10, costo: 5 };
+const vtas = { "2026-10-30": 4, "2026-11-10": 6, "2026-12-02": 7, "2026-12-03": -1 };
+const lin = lineaPlanRojo(base, vtas, "2026-11-01", "2026-12-01", "2026-12-05");
+assert.strictEqual(lin.vendidas, 10); // 6 + 7 - 1 = 12, tope 10; lo del 30-oct no cuenta
+assert.strictEqual(lin.vendidasMes, 4); // antes del mes 6, el mes completa el tope
+assert.strictEqual(lin.valorVendido, 50);
+assert.strictEqual(lin.valorVendidoMes, 20);
+const lin2 = lineaPlanRojo({ ...base, productoId: 2, unidades: 90, costo: 10 }, { "2026-11-05": -3 }, "2026-11-01", "2026-12-01", "2026-12-05");
+assert.strictEqual(lin2.vendidas, 0); // una NC no deja vendido negativo
+const res = resumirPlanRojo([lin, lin2], per.diasCompletos, per.diasCompletosMes);
+assert.strictEqual(res.valor, 950);
+assert.strictEqual(res.cuotaMensual.valor, 316.67);
+assert.strictEqual(res.esperado.valor, Math.round((950 / 90) * 34 * 100) / 100);
+assert.strictEqual(res.vendido.valor, 50);
+assert.strictEqual(res.queda.valor, 900);
+assert.strictEqual(res.agotados, 1);
+assert.strictEqual(sumarResumenes([res, res]).vendidoMes.valor, 40);
+assert.strictEqual(porcentaje(50, 200), 25);
+assert.strictEqual(porcentaje(5, 0), null);
+
 // Marcas sin dueño: no se les pide apoyo
 assert.strictEqual(tieneMarca("NO ASIGNADO"), false);
 assert.strictEqual(tieneMarca("SIN MARCA"), false);

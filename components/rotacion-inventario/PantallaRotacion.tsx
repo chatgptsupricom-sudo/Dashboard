@@ -10,6 +10,7 @@ import { Avance, BarraColores, InsigniaColor, InsigniaEstado, Luz, num, pedir, u
 import FichaDialog from "@/components/rotacion-inventario/FichaDialog";
 import Solicitudes from "@/components/rotacion-inventario/Solicitudes";
 import Contactos from "@/components/rotacion-inventario/Contactos";
+import AvanceRojo, { agruparPlanes } from "@/components/rotacion-inventario/AvanceRojo";
 import {
   COLOR,
   COLORES,
@@ -22,10 +23,14 @@ import {
   etiquetaMes,
   folio,
   nombreSede,
+  porcentaje,
   resumir,
+  sumarResumenes,
   type Color,
   type FichaProducto,
   type GrupoSemaforo,
+  type PlanRojo,
+  type ResumenPlanRojo,
   type RespuestaRotacion,
 } from "@/lib/rotacion-inventario/tipos";
 
@@ -119,6 +124,8 @@ export default function PantallaRotacion() {
 
   const total = useMemo(() => resumir(filas, () => "Total")[0], [filas]);
   const grupos = useMemo(() => resumir(filas, claveDe(agrupar)), [filas, agrupar]);
+  const planesRojo = useMemo(() => datos?.planesRojo ?? [], [datos]);
+  const cuotasGrupo = useMemo(() => agruparPlanes(planesRojo, agrupar), [planesRojo, agrupar]);
 
   const visibles = useMemo(
     () =>
@@ -348,8 +355,9 @@ export default function PantallaRotacion() {
                 </button>
               );
             })}
-            <TarjetaCuotaRojo rojo={total.porColor.rojo} />
+            <TarjetaCuotaRojo rojo={total.porColor.rojo} planes={planesRojo} />
           </div>
+          <AvanceRojo planes={planesRojo} fichas={datos.fichas} multiSede={multiSede} />
           <Card>
             <CardContent className="p-4 space-y-2">
               <div className="flex justify-between text-sm">
@@ -381,7 +389,12 @@ export default function PantallaRotacion() {
                     ))}
                 </div>
               </div>
-              <TablaGrupos grupos={verTodos ? grupos : grupos.slice(0, 30)} titulo={agrupar} abrir={abrirGrupo} />
+              <TablaGrupos
+                grupos={verTodos ? grupos : grupos.slice(0, 30)}
+                titulo={agrupar}
+                abrir={abrirGrupo}
+                cuotas={planesRojo.length ? cuotasGrupo : null}
+              />
               {grupos.length > 30 && (
                 <div className="p-3 border-t text-center">
                   <Button variant="ghost" size="sm" onClick={() => setVerTodos((v) => !v)}>
@@ -467,8 +480,11 @@ export default function PantallaRotacion() {
 }
 
 /** Lo que está en rojo repartido en el plan de 90 días: la cuota a vender cada mes, semana y día. */
-function TarjetaCuotaRojo({ rojo }: { rojo: GrupoSemaforo["total"] }) {
-  const cuota = cuotaRojo(rojo);
+function TarjetaCuotaRojo({ rojo, planes }: { rojo: GrupoSemaforo["total"]; planes: PlanRojo[] }) {
+  // Con plan, la cuota es fija: lo que estaba en rojo el día que arrancó ÷ 3. Sin plan, lo de hoy.
+  const base = planes.length ? sumarResumenes(planes.map((p) => p.resumen)) : null;
+  const cuota = cuotaRojo(base ? { referencias: base.referencias, unidades: base.unidades, valor: base.valor } : rojo);
+  const inicio = planes.length && planes.every((p) => p.inicio === planes[0].inicio) ? planes[0].inicio : null;
   return (
     <div className="rounded-xl border border-red-200 bg-white p-4">
       <p className="text-xs font-medium flex items-center gap-2 text-red-700">
@@ -479,7 +495,10 @@ function TarjetaCuotaRojo({ rojo }: { rojo: GrupoSemaforo["total"] }) {
         <span className="text-sm font-medium text-gray-500"> / mes</span>
       </p>
       <p className="text-[11px] text-gray-500 mt-1">
-        {num(cuota.mensual.unidades)} unidades al mes · lo que está en rojo ÷ {MESES_PLAN}
+        {num(cuota.mensual.unidades)} unidades al mes ·{" "}
+        {base
+          ? `lo que estaba en rojo ${inicio ? `el ${inicio.split("-").reverse().join("/")}` : "al arrancar el plan"} ÷ ${MESES_PLAN}`
+          : `lo que está en rojo ÷ ${MESES_PLAN}`}
       </p>
       <p className="text-[11px] text-gray-500">
         Semana: {usd(cuota.semanal.valor)} · {num(cuota.semanal.unidades)} u. — Día: {usd(cuota.diaria.valor)} ·{" "}
@@ -489,7 +508,18 @@ function TarjetaCuotaRojo({ rojo }: { rojo: GrupoSemaforo["total"] }) {
   );
 }
 
-function TablaGrupos({ grupos, titulo, abrir }: { grupos: GrupoSemaforo[]; titulo: Agrupar; abrir: (clave: string) => void }) {
+function TablaGrupos({
+  grupos,
+  titulo,
+  abrir,
+  cuotas,
+}: {
+  grupos: GrupoSemaforo[];
+  titulo: Agrupar;
+  abrir: (clave: string) => void;
+  /** Cuota y vendido del plan del rojo por grupo; null = sin plan, la cuota sale de lo que está en rojo hoy. */
+  cuotas: Map<string, ResumenPlanRojo> | null;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -527,7 +557,19 @@ function TablaGrupos({ grupos, titulo, abrir }: { grupos: GrupoSemaforo[]; titul
                 </td>
               ))}
               <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-red-700">
-                {g.porColor.rojo.referencias ? (
+                {cuotas ? (
+                  cuotas.get(g.clave) ? (
+                    <>
+                      {usd(cuotas.get(g.clave)!.cuotaMensual.valor)}
+                      <span className="block text-[10px] text-slate-500">
+                        vendido {usd(cuotas.get(g.clave)!.vendidoMes.valor)} (
+                        {porcentaje(cuotas.get(g.clave)!.vendidoMes.valor, cuotas.get(g.clave)!.cuotaMensual.valor)?.toFixed(0) ?? "—"}%)
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )
+                ) : g.porColor.rojo.referencias ? (
                   <>
                     {usd(cuotaRojo(g.porColor.rojo).mensual.valor)}
                     <span className="block text-[10px] text-slate-400">{num(cuotaRojo(g.porColor.rojo).mensual.unidades)} u.</span>
@@ -563,9 +605,15 @@ function Reglas() {
         </p>
         <p>
           <b>Semáforo.</b> Verde de 0 a {LIMITE_VERDE} días, amarillo de {LIMITE_VERDE + 1} a {LIMITE_AMARILLO}, rojo más de{" "}
-          {LIMITE_AMARILLO}. Una sola venta lo vuelve a verde: el avance del plan dice si de verdad está rotando. La cuota para
-          salir del rojo es lo que está en rojo (valor a costo y unidades) ÷ {MESES_PLAN} meses: lo que hay que vender cada mes
-          para salir de él en {HORIZONTE_DIAS} días (semana = ÷ {HORIZONTE_DIAS} × 7; día = ÷ {HORIZONTE_DIAS}).
+          {LIMITE_AMARILLO}. Una sola venta lo vuelve a verde: el avance del plan dice si de verdad está rotando.
+        </p>
+        <p>
+          <b>Cuota para salir del rojo.</b> El primer día que el panel abre la sede guarda lo que está en rojo (unidades disponibles
+          y costo de ese día): es el plan de {HORIZONTE_DIAS} días, en {MESES_PLAN} meses de 30. La cuota de cada mes es ese valor ÷{" "}
+          {MESES_PLAN} (semana = ÷ {HORIZONTE_DIAS} × 7; día = ÷ {HORIZONTE_DIAS}) y no cambia mientras dure el plan. Lo vendido son
+          las ventas netas de esos productos desde que arrancó, con tope en las unidades que había (lo que llega después no cuenta),
+          al costo de ese día. «Esperado a hoy» = el valor ÷ {HORIZONTE_DIAS} × los días ya terminados. Lo que pasa a rojo en el
+          medio entra en el plan siguiente, que arranca solo a los {HORIZONTE_DIAS} días con lo que esté en rojo ese día.
         </p>
         <p>
           <b>Plan de {HORIZONTE_DIAS} días.</b> Arranca el día que el panel ve el producto con stock (o cuando Compras lo reinicia,

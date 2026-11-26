@@ -261,6 +261,8 @@ export interface RespuestaRotacion {
   sedes: number[];
   meses: string[];
   fichas: FichaProducto[];
+  /** Plan para salir del rojo de cada sede (lo que estaba en rojo al arrancar y lo vendido). */
+  planesRojo: PlanRojo[];
   puedeEditar: boolean;
   puedeGestionarSolicitudes: boolean;
   eligeSede: boolean;
@@ -306,6 +308,138 @@ export function cuotaRojo(rojo: Celda): CuotaRojo {
     unidades: rojo.unidades > 0 ? Math.ceil((rojo.unidades / HORIZONTE_DIAS) * dias - 1e-9) : 0,
   });
   return { mensual: tramo(30), semanal: tramo(7), diaria: tramo(1) };
+}
+
+// ---------------------------------------------------------------------------
+// Plan para salir del rojo: la mercancía que estaba en rojo el día que arrancó
+// ---------------------------------------------------------------------------
+
+/**
+ * Días del plan del rojo de una sede. Dura 90 días (el de inicio es el 1) en
+ * tres meses de 30 días; la cuota de cada mes es lo que estaba en rojo ÷ 3.
+ */
+export function periodoPlanRojo(inicio: string, hoy: string) {
+  const fin = finDePlan(inicio);
+  const diaPlan = Math.min(HORIZONTE_DIAS, Math.max(1, diasEntre(inicio, hoy) + 1));
+  const mesPlan = Math.min(MESES_PLAN, Math.floor((diaPlan - 1) / 30) + 1);
+  const inicioMes = sumarDias(inicio, 30 * (mesPlan - 1));
+  const finMes = mesPlan === MESES_PLAN ? fin : sumarDias(inicioMes, 29);
+  // Días ya terminados (como en el plan de cada producto, hoy todavía no se espera).
+  const diasCompletos = Math.min(HORIZONTE_DIAS, Math.max(0, diasEntre(inicio, hoy)));
+  const diasCompletosMes = Math.min(30, Math.max(0, diasEntre(inicioMes, hoy)));
+  return { fin, diaPlan, mesPlan, inicioMes, finMes, diasCompletos, diasCompletosMes };
+}
+
+export interface LineaPlanRojoBase {
+  productoId: number;
+  codigo: string;
+  nombre: string;
+  marca: string;
+  categoria: string;
+  /** Unidades disponibles y costo del día que arrancó el plan. */
+  unidades: number;
+  costo: number;
+}
+
+export interface LineaPlanRojo extends LineaPlanRojoBase {
+  valor: number;
+  /** Vendidas desde que arrancó el plan, con tope en lo que había (las NC restan). */
+  vendidas: number;
+  vendidasMes: number;
+  valorVendido: number;
+  valorVendidoMes: number;
+}
+
+/**
+ * Lo vendido de un producto del plan: ventas netas desde el inicio con tope en
+ * las unidades que había en rojo (lo que llegó después no cuenta), valorado al
+ * costo de ese día, igual que la cuota. Lo del mes del plan es la parte de ese
+ * total que cayó en el mes en curso.
+ */
+export function lineaPlanRojo(base: LineaPlanRojoBase, ventas: VentasDia | undefined, inicio: string, inicioMes: string, hoy: string): LineaPlanRojo {
+  const tope = (n: number) => Math.min(base.unidades, Math.max(0, n));
+  const vendidas = tope(vendidasEntre(ventas, inicio, hoy));
+  const antesDelMes = inicioMes > inicio ? tope(vendidasEntre(ventas, inicio, sumarDias(inicioMes, -1))) : 0;
+  const vendidasMes = Math.max(0, r2(vendidas - antesDelMes));
+  return {
+    ...base,
+    valor: r2(base.unidades * base.costo),
+    vendidas: r2(vendidas),
+    vendidasMes,
+    valorVendido: r2(vendidas * base.costo),
+    valorVendidoMes: r2(vendidasMes * base.costo),
+  };
+}
+
+export interface ResumenPlanRojo {
+  referencias: number;
+  unidades: number;
+  valor: number;
+  cuotaMensual: { valor: number; unidades: number };
+  /** Lo que tendría que ir vendido a hoy: valor ÷ 90 × días terminados. */
+  esperado: { valor: number; unidades: number };
+  /** Lo que tendría que ir vendido en el mes del plan a hoy. */
+  esperadoMes: { valor: number; unidades: number };
+  vendido: { valor: number; unidades: number };
+  vendidoMes: { valor: number; unidades: number };
+  queda: { valor: number; unidades: number };
+  /** Productos del plan que ya se vendieron completos. */
+  agotados: number;
+}
+
+export function resumirPlanRojo(lineas: LineaPlanRojo[], diasCompletos: number, diasCompletosMes: number): ResumenPlanRojo {
+  const suma = (f: (l: LineaPlanRojo) => number) => r2(lineas.reduce((a, l) => a + f(l), 0));
+  const unidades = suma((l) => l.unidades);
+  const valor = suma((l) => l.valor);
+  const vendido = { valor: suma((l) => l.valorVendido), unidades: suma((l) => l.vendidas) };
+  const parte = (dias: number) => ({ valor: r2((valor / HORIZONTE_DIAS) * dias), unidades: r2((unidades / HORIZONTE_DIAS) * dias) });
+  return {
+    referencias: lineas.length,
+    unidades,
+    valor,
+    cuotaMensual: parte(30),
+    esperado: parte(diasCompletos),
+    esperadoMes: parte(diasCompletosMes),
+    vendido,
+    vendidoMes: { valor: suma((l) => l.valorVendidoMes), unidades: suma((l) => l.vendidasMes) },
+    queda: { valor: r2(valor - vendido.valor), unidades: r2(unidades - vendido.unidades) },
+    agotados: lineas.filter((l) => l.unidades > 0 && l.vendidas >= l.unidades).length,
+  };
+}
+
+/** Suma resúmenes de varias sedes o grupos. */
+export function sumarResumenes(rs: ResumenPlanRojo[]): ResumenPlanRojo {
+  const s = (f: (r: ResumenPlanRojo) => number) => r2(rs.reduce((a, r) => a + f(r), 0));
+  const par = (f: (r: ResumenPlanRojo) => { valor: number; unidades: number }) => ({ valor: s((r) => f(r).valor), unidades: s((r) => f(r).unidades) });
+  return {
+    referencias: s((r) => r.referencias),
+    unidades: s((r) => r.unidades),
+    valor: s((r) => r.valor),
+    cuotaMensual: par((r) => r.cuotaMensual),
+    esperado: par((r) => r.esperado),
+    esperadoMes: par((r) => r.esperadoMes),
+    vendido: par((r) => r.vendido),
+    vendidoMes: par((r) => r.vendidoMes),
+    queda: par((r) => r.queda),
+    agotados: s((r) => r.agotados),
+  };
+}
+
+/** % de lo vendido contra una meta; null si la meta es 0. */
+export const porcentaje = (vendido: number, meta: number): number | null => (meta > 0 ? Math.round((vendido / meta) * 1000) / 10 : null);
+
+export interface PlanRojo {
+  companyId: number;
+  inicio: string;
+  fin: string;
+  diaPlan: number;
+  mesPlan: number;
+  inicioMes: string;
+  finMes: string;
+  diasCompletos: number;
+  diasCompletosMes: number;
+  lineas: LineaPlanRojo[];
+  resumen: ResumenPlanRojo;
 }
 
 export function resumir(fichas: FichaProducto[], claveDe: (f: FichaProducto) => string): GrupoSemaforo[] {
