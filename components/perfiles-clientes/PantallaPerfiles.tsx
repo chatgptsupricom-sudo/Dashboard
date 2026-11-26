@@ -113,8 +113,8 @@ function EstadoOdoo({ odoo, detalle = false }: { odoo: PerfilPanel["odoo"]; deta
       {odoo.estado === "error" && <p className="text-xs text-red-700">{odoo.error} Se reintenta solo cada hora.</p>}
       {odoo.estado === "apagado" && (
         <p className="text-xs text-muted-foreground">
-          Lo guardado no pasó a Odoo porque el paso automático está apagado para este cliente (variable TIENDA_PERFIL_ODOO). Pasa solo, en la
-          siguiente hora, cuando se prenda.
+          Lo guardado no pasó a Odoo porque el paso automático está apagado para este cliente (variable TIENDA_PERFIL_ODOO = no o
+          una lista de RIF de prueba). Pasa solo, en la siguiente hora, cuando se vuelva a prender.
         </p>
       )}
       {odoo.sinOdoo.length > 0 && (

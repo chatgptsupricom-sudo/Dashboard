@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/perfiles-clientes/odoo?clave=<perfil> — solo SuperAdmin: lo que el paso automático haría en Odoo con
  * ese perfil (crear / adoptar / actualizar / archivar direcciones de entrega, página web y logo), sin escribir nada.
- * Sirve para revisar antes de prender `TIENDA_PERFIL_ODOO` (lib/tienda-web/clientes/sincronizarOdoo.ts).
+ * Sirve para revisar qué haría el paso a Odoo con un perfil (lib/tienda-web/clientes/sincronizarOdoo.ts).
  */
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, []);
