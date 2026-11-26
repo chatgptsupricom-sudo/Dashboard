@@ -99,6 +99,7 @@ import {
   Wrench,
   X,
   Repeat,
+  Warehouse,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
@@ -390,6 +391,8 @@ export function Sidebar({
     { id: "planificacion_visitas", label: "Planificación de visitas", icon: MapPin, slug: "/planificacion" },
     { id: "reporte_diario", label: t("reporte_diario"), icon: ClipboardList, slug: "/reporte-diario" },
     { id: "reporte_ventas", label: t("reporte_ventas"), icon: BarChart3, slug: "/reporte-ventas" },
+    // Lo que Caracas le compró a Valencia y cuánto sigue allá sin despachar (lib/ventas/mercanciaValencia.ts).
+    { id: "mercancia_valencia", label: "Mercancía comprada a Valencia", icon: Warehouse, slug: "/mercancia-valencia", cidsOnly: 10 },
     // Semáforo de clientes: cartera en verde/amarillo/rojo contra su historial (lib/semaforo-clientes).
     { id: "semaforo_clientes", label: "Semáforo de clientes", icon: TrafficCone, slug: "/semaforo-clientes", absoluteHref: true },
     // Perfiles que los clientes escriben en «Mi cuenta» de la tienda web (lib/tienda-web/clientes/perfilesPanel.ts).
@@ -629,7 +632,7 @@ export function Sidebar({
   // Sorteo de clientes y Opiniones (encuesta a clientes) van en Marketing, y
   // Reportes Comerciales en Ventas: sueltos alargaban la lista del superAdmin.
   const marketingSuperAdminIds = ["catalogo_disenos", "material_pop", "sorteo_caracas", "opiniones"];
-  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes", "cupo_credito", "perfiles_clientes", "crear_cliente"];
+  const ventasSuperAdminIds = ["reportes_comerciales", "semaforo_clientes", "cupo_credito", "perfiles_clientes", "crear_cliente", "mercancia_valencia"];
 
   const isSellerPausado =
     (userRole?.toLowerCase().trim() === "seller" ||
@@ -1534,6 +1537,13 @@ export function Sidebar({
                               label: "Cupo de crédito",
                               href: `/${locale}/cupo-credito`,
                               permission: "cupo_credito",
+                            }]
+                          : []),
+                        ...(isSuperAdminRole && allowedSections.includes("mercancia_valencia")
+                          ? [{
+                              label: "Mercancía comprada a Valencia",
+                              href: `${basePath}/mercancia-valencia`,
+                              permission: "mercancia_valencia",
                             }]
                           : []),
                         ...((isSuperAdminRole || isBIRole) && allowedSections.includes("crear_cliente")

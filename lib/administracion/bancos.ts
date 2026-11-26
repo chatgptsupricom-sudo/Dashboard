@@ -2276,23 +2276,10 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
   }));
   const manuales = new Map<string, number>(amarres.rows.map((r: any) => [r.huella, Number(r.pago_odoo_id)]));
   const cubierto = (dia: string) => estados.rows.some((e: any) => dia >= e.desde && dia <= e.hasta);
-  const cruce = cruzarBanco(movimientos, pagos, comprobantes, manuales, cubierto);
-
-  const enSemana = (dia: string) => dia >= inicio && dia <= fin;
-  const deLaSemana = await Promise.all(
-    cruce.movimientos
-      .filter((m) => enSemana(m.fecha))
-      .map(async (m) => ({
-        ...m,
-        odoo: conciliadoEnOdoo.get(m.id) ?? null,
-        /** Cuenta que se propone si no tiene cobro/pago (comision, IGTF). */
-        sugerida: m.pago ? null : await sugeridaPara(cuenta, m).catch(() => null),
-      })),
-  );
   // Movimientos que ya tienen su linea en el extracto de Odoo sin que la creara el panel (Caracas concilia a mano en
   // Odoo: REGIONSBANK oct-2026, 118 lineas, todas conciliadas): el movimiento ya esta alla. Se emparejan por fecha y
   // monto con la regla de «Lineas viejas» (`emparejarViejas`) y salen como conciliados (o «falta conciliar alla»).
-  const sinLinea = deLaSemana.filter((m) => !m.odoo);
+  const sinLinea = movimientos.filter((m) => !conciliadoEnOdoo.has(m.id));
   if (sinLinea.length) {
     // Todas menos las del panel que son de un movimiento que sigue en el estado de cuenta (las huerfanas, de un archivo
     // que se quito, tambien cuentan: ver lineasLigadas).
@@ -2301,7 +2288,7 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
       (await callOdooRPCEstricto<any[]>(
         "account.bank.statement.line",
         "search_read",
-        [[["journal_id", "=", cuenta.id], ["date", ">=", sumarDias(inicio, -3)], ["date", "<=", sumarDias(fin, 3)]]],
+        [[["journal_id", "=", cuenta.id], ["date", ">=", sumarDias(desde, -3)], ["date", "<=", sumarDias(hasta, 3)]]],
         { fields: ["date", "amount", "payment_ref", "is_reconciled", "move_id", "unique_import_id"], context: { allowed_company_ids: [cuenta.sede] } },
       )) || []
     ).filter((l) => !ligadas.has(l.id));
@@ -2314,7 +2301,7 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
     for (const m of sinLinea) {
       const l = lineaDeMov.get(m.id);
       if (!l) continue;
-      m.odoo = {
+      conciliadoEnOdoo.set(m.id, {
         stLineId: l.id,
         asientoId: Array.isArray(l.move_id) ? Number(l.move_id[0]) : 0,
         asiento: Array.isArray(l.move_id) ? String(l.move_id[1]) : "",
@@ -2324,9 +2311,23 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
         el: "",
         // Una del panel se puede revertir desde aqui (deshacerLineaVieja con dePanel).
         dePanel: String(l.unique_import_id || "").startsWith("panel-"),
-      };
+      });
     }
   }
+  const yaConciliados = new Set([...conciliadoEnOdoo].filter(([, linea]) => linea.conciliada).map(([id]) => id));
+  const cruce = cruzarBanco(movimientos, pagos, comprobantes, manuales, cubierto, yaConciliados);
+
+  const enSemana = (dia: string) => dia >= inicio && dia <= fin;
+  const deLaSemana = await Promise.all(
+    cruce.movimientos
+      .filter((m) => enSemana(m.fecha))
+      .map(async (m) => ({
+        ...m,
+        odoo: conciliadoEnOdoo.get(m.id) ?? null,
+        /** Cuenta que se propone si no tiene cobro/pago (comision, IGTF). */
+        sugerida: m.pago ? null : await sugeridaPara(cuenta, m).catch(() => null),
+      })),
+  );
   const pagosTomados = new Set(cruce.movimientos.flatMap((m) => [m.pago, ...m.otrosPagos]).filter((p) => p).map((p) => p!.id));
   for (const id of cruce.pagosConfirmadosApi) pagosTomados.add(id);
   return {
@@ -2743,6 +2744,7 @@ export async function reabrirMes(cuenta: CuentaBanco, mes: string, motivo: strin
 export type EstadoResumen = "cerrado" | "listo" | "pendiente" | "sin_estado" | "en_curso";
 export type CeldaResumen = {
   estado: EstadoResumen;
+  cerradoSinEstado?: boolean;
   movimientos: number;
   conciliados: number;
   diasSinEstado: number;
@@ -2798,7 +2800,13 @@ export async function resumenConciliaciones(cuentas: CuentaBanco[], refrescar = 
   const [cierres, conteos, estados] = ids.length
     ? await Promise.all([
         query(
-          `SELECT journal_id, mes, saldo_banco, saldo_libros, cerrado_por, cerrado_at FROM banco_cierres
+          `SELECT c.journal_id, c.mes, c.saldo_banco, c.saldo_libros, c.cerrado_por, c.cerrado_at,
+                  NOT EXISTS (
+                    SELECT 1 FROM banco_estados e
+                    WHERE e.journal_id = c.journal_id AND e.desde <= LAST_DAY(CONCAT(c.mes, '-01'))
+                      AND e.hasta >= CONCAT(c.mes, '-01')
+                  ) AS sin_estado
+             FROM banco_cierres c
             WHERE journal_id IN (${lista}) AND reabierto_at IS NULL`,
           ids,
         ),
@@ -2890,6 +2898,7 @@ export async function resumenConciliaciones(cuentas: CuentaBanco[], refrescar = 
               m,
               {
                 ...vacia("cerrado", []),
+                cerradoSinEstado: Number(ci.sin_estado) === 1,
                 movimientos: movsMes.get(k) || 0,
                 conciliados: movsMes.get(k) || 0,
                 saldoBanco: banco,

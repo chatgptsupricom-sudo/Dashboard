@@ -72,6 +72,7 @@ export const SECCIONES: Record<string, Seccion> = {
   top_clientes: { area: "Ventas", nombre: "Top clientes", detalle: "sus clientes que más compran" },
   metodo_retiro: { area: "Ventas", nombre: "Método de retiro", detalle: "indicar cómo se lleva el cliente cada pedido (sucursal, ruta, encomienda o transporte)" },
   rma_seller: { area: "Ventas", nombre: "RMA de mis clientes", detalle: "seguir los equipos de sus clientes en servicio técnico" },
+  mercancia_valencia: { area: "Ventas", nombre: "Mercancía comprada a Valencia", detalle: "ver lo que Valencia le facturó a Caracas y cuánto sigue en Valencia sin despachar" },
   semaforo_clientes: { area: "Ventas", nombre: "Semáforo de clientes", detalle: "qué clientes compran menos que de costumbre (verde, amarillo o rojo)" },
   spiff: { area: "Ventas", nombre: "Spiff", detalle: "incentivos por marca" },
   planificacion_visitas: { area: "Ventas", nombre: "Planificación de visitas", detalle: "planificar y registrar las visitas a clientes" },
