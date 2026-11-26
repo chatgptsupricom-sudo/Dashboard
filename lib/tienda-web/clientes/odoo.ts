@@ -68,7 +68,7 @@ const sede = (company: any) => SEDE_DE_COMPANIA[company?.[0]] || { id: "", nombr
 const moneda = (c: any) => (c?.[1] ? String(c[1]) : "USD");
 
 /* ------------------------------------------------------------------ Pedidos */
-const CAMPOS_PEDIDO = ["id", "name", "date_order", "state", "invoice_status", "amount_untaxed", "amount_total", "currency_id", "company_id", "user_id", "client_order_ref"];
+const CAMPOS_PEDIDO = ["id", "name", "date_order", "state", "invoice_status", "amount_untaxed", "amount_total", "currency_id", "company_id", "user_id", "client_order_ref", "validity_date"];
 
 async function leerPedidos(dominio: any[], kwargs: Record<string, any>): Promise<any[]> {
   // delivery_status lo agrega sale_stock; si la base no lo tiene, se sigue sin él (no habrá «Despachado»).
@@ -183,6 +183,11 @@ export async function pedidoDe(c: ClienteOdoo, id: number) {
   const ESTADO_DESPACHO: Record<string, string> = { draft: "Preparando", waiting: "Esperando mercancía", confirmed: "Esperando mercancía", assigned: "Listo para salir", done: "Despachado", cancel: "Anulado" };
   return {
     ...pedidoCorto(p),
+    // Cotización: «enRevision» = borrador (su vendedor la revisa); «aceptable» = su vendedor se la envió con los
+    // precios finales y la puede aceptar desde Mi cuenta (lib/tienda-web/clientes/seguimiento.ts).
+    enRevision: p.state === "draft",
+    aceptable: p.state === "sent",
+    validaHasta: p.validity_date ? String(p.validity_date).slice(0, 10) : "",
     lineas: (lineas || []).map((l) => ({
       productoId: l.product_template_id?.[0] || null,
       codigo: codigos.get(l.product_id?.[0]) || "",

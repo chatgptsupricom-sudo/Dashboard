@@ -152,6 +152,23 @@ assert.strictEqual(diasDeAtraso(false, hoyF), null);
 
 // Antigüedad de la deuda y avance del despacho
 const { tramoDeuda, avanceDespacho } = mk.exports;
+// Seguimiento de cotizaciones: en qué va y qué aviso toca (solo hacia adelante; anulada una vez; nada al final)
+{
+  const { hitoPedido, avisoPendiente } = mk.exports;
+  assert.strictEqual(hitoPedido({ state: "draft" }), "recibida");
+  assert.strictEqual(hitoPedido({ state: "sent" }), "lista");
+  assert.strictEqual(hitoPedido({ state: "sale", delivery_status: "partial", invoice_status: "to invoice" }), "confirmada");
+  assert.strictEqual(hitoPedido({ state: "sale", delivery_status: "full", invoice_status: "to invoice" }), "despachada");
+  assert.strictEqual(hitoPedido({ state: "sale", delivery_status: "full", invoice_status: "invoiced" }), "facturada");
+  assert.strictEqual(hitoPedido({ state: "cancel" }), "anulada");
+  assert.strictEqual(avisoPendiente(null, "recibida"), null);
+  assert.strictEqual(avisoPendiente("recibida", "lista"), "lista");
+  assert.strictEqual(avisoPendiente("lista", "facturada"), "facturada"); // saltó pasos: solo el último
+  assert.strictEqual(avisoPendiente("confirmada", "lista"), null); // la devolvieron a cotización: no se repite
+  assert.strictEqual(avisoPendiente("lista", "anulada"), "anulada");
+  assert.strictEqual(avisoPendiente("anulada", "anulada"), null);
+  assert.strictEqual(avisoPendiente("facturada", "anulada"), null);
+}
 // Cotización directa: sede válida, clave por envío, códigos repetidos se suman, cantidades enteras con tope
 {
   const { validarCotizacion } = mk.exports;

@@ -422,3 +422,33 @@ export function validarCotizacion(c: any): { ok: true; datos: DatosCotizacion } 
   const nota = String(c?.nota ?? "").replace(/\r\n/g, "\n").trim().slice(0, 1000);
   return { ok: true, datos: { sede, lineas: [...porCodigo].map(([codigo, cantidad]) => ({ codigo, cantidad })), nota, clave } };
 }
+
+/* ------------------------------------------------------------------ Seguimiento de las cotizaciones de la tienda */
+/**
+ * En qué va una cotización que el cliente envió desde la tienda, para avisarle por correo cuando cambia:
+ * recibida (borrador: el vendedor la revisa) → lista (el vendedor se la envió con los precios finales: la puede
+ * aceptar) → confirmada → despachada (todo entregado) → facturada; o anulada.
+ */
+export const HITOS_PEDIDO = ["recibida", "lista", "confirmada", "despachada", "facturada"] as const;
+export type HitoPedido = (typeof HITOS_PEDIDO)[number] | "anulada";
+
+export function hitoPedido(p: { state?: string; delivery_status?: string | false; invoice_status?: string }): HitoPedido {
+  if (p.state === "cancel") return "anulada";
+  if (p.state === "draft") return "recibida";
+  if (p.state === "sent") return "lista";
+  if (p.invoice_status === "invoiced") return "facturada";
+  if (p.delivery_status === "full") return "despachada";
+  return "confirmada";
+}
+
+/**
+ * El aviso que toca mandar, o null. Solo hacia adelante (si saltó varios pasos entre dos revisiones, solo el
+ * último); «anulada» una sola vez; nada después de facturada o anulada.
+ */
+export function avisoPendiente(ultimo: string | null | undefined, actual: HitoPedido): HitoPedido | null {
+  const previo = (ultimo || "recibida") as HitoPedido;
+  if (previo === "anulada" || previo === "facturada") return null;
+  if (actual === "anulada") return "anulada";
+  const rango = (h: HitoPedido) => HITOS_PEDIDO.indexOf(h as (typeof HITOS_PEDIDO)[number]);
+  return rango(actual) > rango(previo) ? actual : null;
+}

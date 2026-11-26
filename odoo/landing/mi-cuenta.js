@@ -1697,7 +1697,7 @@
         const totales = crear("dl", { class: "detalle-totales" }, [
             ["Subtotal", dinero(p.subtotal, p.moneda)], ["Impuestos", dinero(p.total - p.subtotal, p.moneda)], ["Total", dinero(p.total, p.moneda)],
         ].map(([k, v], i, a) => crear("div", i === a.length - 1 ? { class: "total" } : {}, [crear("dt", { text: k }), crear("dd", { text: v })])));
-        const bloques = [pasos, datos, crear("h3", { class: "detalle-sub", text: `Productos (${p.lineas.length})` }), lineas, totales];
+        const bloques = [pasos, ...cajaCotizacion(p), datos, crear("h3", { class: "detalle-sub", text: `Productos (${p.lineas.length})` }), lineas, totales];
         if (p.despachos.length) {
             bloques.push(crear("h3", { class: "detalle-sub", text: "Despachos" }), crear("ul", { class: "detalle-docs" }, p.despachos.map((d) => crear("li", {}, [crear("span", { text: d.numero }), crear("span", { text: `${d.estado}${d.fecha ? ` · ${fecha(d.fecha)}` : ""}` })]))));
         }
@@ -1707,6 +1707,52 @@
         $(".detalle-cuerpo").replaceChildren(...bloques);
         const repetibles = p.lineas.filter((l) => l.codigo);
         $(".detalle-repetir").disabled = !repetibles.length;
+    }
+    // Cotización: si su vendedor ya se la envió con los precios finales, la acepta aquí (se confirma como pedido en
+    // Odoo, app/api/tienda-web/clientes/pedidos/<id>/aceptar); si está en borrador, su vendedor todavía la revisa.
+    function cajaCotizacion(p) {
+        if (p.etapa !== "cotizacion") return [];
+        if (p.enRevision) {
+            return [crear("div", { class: "detalle-cotizacion revisando" }, [
+                crear("strong", { text: "Tu vendedor la está revisando" }),
+                crear("p", { text: "Te avisamos por correo cuando te la envíe con los precios finales y la existencia. Ahí la aceptas aquí con un clic." }),
+            ])];
+        }
+        if (!p.aceptable) return [];
+        const caja = crear("div", { class: "detalle-cotizacion lista" });
+        const estado = crear("p", { class: "detalle-cotizacion-estado", role: "status" });
+        const pintarCaja = (confirmando) => {
+            const texto = crear("div", {}, [
+                crear("strong", { text: confirmando ? `¿Confirmas el pedido por ${dinero(p.total, p.moneda)}?` : "Tu vendedor te envió esta cotización" }),
+                crear("p", { text: confirmando
+                    ? "Se confirma como pedido y tu vendedor lo prepara. Se paga como siempre, según tu forma de pago."
+                    : `Con los precios finales${p.validaHasta ? `, válida hasta el ${fecha(p.validaHasta)}` : ""}. Si estás de acuerdo, acéptala y se confirma como pedido.` }),
+            ]);
+            const acciones = confirmando
+                ? [boton("boton boton-claro", ["Cancelar"], () => pintarCaja(false)), boton("boton boton-tinta detalle-aceptar-si", ["Sí, confirmar pedido"], confirmar)]
+                : [boton("boton boton-tinta detalle-aceptar", ["Aceptar cotización"], () => pintarCaja(true))];
+            caja.replaceChildren(texto, crear("div", { class: "detalle-cotizacion-acciones" }, acciones), estado);
+            const foco = $(confirmando ? ".detalle-aceptar-si" : ".detalle-aceptar", caja);
+            if (foco && confirmando) foco.focus();
+        };
+        async function confirmar() {
+            for (const b of $$("button", caja)) b.disabled = true;
+            estado.textContent = "Confirmando tu pedido…";
+            const r = await llamar(`pedidos/${p.id}/aceptar`, { metodo: "POST" });
+            if (r.status === 401) return;
+            if (!r.ok) {
+                estado.textContent = r.datos.error || "No pudimos confirmarla. Intenta de nuevo.";
+                estado.classList.add("error");
+                for (const b of $$("button", caja)) b.disabled = false;
+                return;
+            }
+            cargadas.delete("pedidos");
+            cargadas.delete("resumen");
+            avisoListo(`Pedido ${r.datos.numero} confirmado`);
+            abrirDetalle(p.id, focoDetalle);
+        }
+        pintarCaja(false);
+        return [caja];
     }
     $(".detalle-repetir").addEventListener("click", () => {
         if (!pedidoAbierto) return;
