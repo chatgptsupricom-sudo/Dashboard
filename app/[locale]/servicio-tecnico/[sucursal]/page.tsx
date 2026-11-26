@@ -40,6 +40,15 @@ export default async function ServicioTecnicoLanding({
               </Link>
             </div>
 
+            {/* Comprado aquí pero fuera de garantía (o falla que la garantía
+                no cubre): mismo formulario con factura, con costo. */}
+            <div>
+              <Link href={`${base}/servicio-con-costo`} className="pt-secondary pt-secondary--otro">
+                <span>{t("conCosto.enlaceLanding")}</span>
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            </div>
+
             {/* Equipos que no se compraron en Supricom: no tienen factura
                 que buscar, van por su propio formulario. */}
             <div>

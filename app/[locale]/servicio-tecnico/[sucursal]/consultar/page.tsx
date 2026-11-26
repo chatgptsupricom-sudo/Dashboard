@@ -15,6 +15,8 @@ type TicketData = {
   // Equipo que no se compró en Supricom (sin factura ni garantía). Falta en
   // respuestas de un servidor anterior a esta opción.
   externo?: boolean;
+  // Producto comprado aquí que se repara pagando (fuera de garantía).
+  con_costo?: boolean;
   serial: string | null;
   client_phone_masked: string | null;
   created_at: string;
@@ -345,6 +347,12 @@ export default function ConsultarPage() {
                     <dd>{t("externo.consultarTipoValor")}</dd>
                   </div>
                 )}
+                {ticket.con_costo && (
+                  <div className="pt-summary__row">
+                    <dt>{t("externo.consultarTipo")}</dt>
+                    <dd>{t("conCosto.consultarTipoValor")}</dd>
+                  </div>
+                )}
                 {(ticket.productos?.length ?? 0) <= 1 && ticket.serial && (
                   <div className="pt-summary__row">
                     <dt>Serial</dt>
@@ -431,7 +439,7 @@ export default function ConsultarPage() {
                 {t("consultar_link_volver")}
               </Link>
               <Link
-                href={`/${locale}/servicio-tecnico/${sucursal}/${ticket.externo ? "externo" : "nuevo"}`}
+                href={`/${locale}/servicio-tecnico/${sucursal}/${ticket.externo ? "externo" : ticket.con_costo ? "servicio-con-costo" : "nuevo"}`}
                 className="pt-cta"
                 style={{ flex: 1 }}
               >

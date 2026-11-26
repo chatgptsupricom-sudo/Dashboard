@@ -153,6 +153,9 @@ function KpiCard({ label, metrica, datos, color, icon, filtro, soloSupricom, enl
                       {Number(c.producto_externo) === 1 && (
                         <span className="ml-1.5 text-[10px] font-semibold uppercase text-amber-700">{t("badge_externo")}</span>
                       )}
+                      {Number(c.servicio_con_costo) === 1 && (
+                        <span className="ml-1.5 text-[10px] font-semibold uppercase text-amber-700">{t("badge_con_costo")}</span>
+                      )}
                     </span>
                     <Badge className={`${colorEstado[c.status] || ""} border text-[10px]`}>
                       {etiquetaEstado[c.status] || c.status}

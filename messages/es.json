@@ -562,7 +562,10 @@
       "compras_titulo_cliente": "Compras de este cliente",
       "compras_vacio_solo_cliente": "No hay compras de ese cliente (Odoo y Smartbit).",
       "unidades": "Unidades"
-    }
+    },
+    "badge_con_costo": "Servicio con costo",
+    "con_costo_aviso": "El cliente pidió este servicio fuera de garantía, desde el portal: se cobra y no lleva nota de crédito. Hay que enviarle el presupuesto antes de trabajar.",
+    "nc_no_con_costo": "Ese caso es un servicio con costo (fuera de garantía): no lleva nota de crédito."
   },
   "stoplight": {
     "page_title": "Stoplight Reports",
@@ -918,7 +921,7 @@
       "vida_util": "Cubierto de por vida",
       "vida_util_detalle": "Este producto tiene garantía de vida útil.",
       "vencida": "Fuera del período de garantía",
-      "vencida_detalle": "Igual puedes reportarlo: lo revisamos y te pasamos un presupuesto antes de hacer cualquier trabajo.",
+      "vencida_detalle": "Puedes solicitar el servicio técnico con costo: lo revisamos y te enviamos el presupuesto antes de hacer cualquier trabajo.",
       "indeterminada": "Por confirmar",
       "indeterminada_detalle": "Lo confirmamos al revisar tu caso y te avisamos."
     },
@@ -1190,6 +1193,27 @@
       "consultarTipo": "Tipo de servicio",
       "consultarTipoValor": "Equipo externo (servicio con costo)",
       "equipoNdeM": "Equipo {n} de {total}"
+    },
+    "conCosto": {
+      "eyebrow": "Servicio Técnico · Servicio con costo",
+      "titulo": "Servicio técnico para tu equipo fuera de garantía",
+      "subtitulo": "Si compraste tu equipo en Supricom y se le venció la garantía, o la falla no la cubre, también lo reparamos.",
+      "costoTitulo": "Este servicio tiene un costo",
+      "costoTexto": "El equipo no está cubierto por la garantía. Lo diagnosticamos, te enviamos el presupuesto y no hacemos ningún trabajo sin tu aprobación.",
+      "productHelp": "Marca los productos que quieres que revisemos y, si compraste varias unidades iguales, el serial de cada una.",
+      "hayVencidos": "Los productos fuera de garantía no se reportan por garantía, pero puedes pedir que los revisemos con costo.",
+      "productoVencido": "Este producto está fuera de garantía y no se puede reportar por garantía.",
+      "solicitarCta": "Solicitar servicio técnico con costo",
+      "aceptaLabel": "Entiendo que el servicio no está cubierto por la garantía y que tiene un costo que me informarán después del diagnóstico.",
+      "aceptaRequerido": "Confirma que entiendes que el servicio tiene un costo.",
+      "submit": "Enviar mi solicitud",
+      "enlaceLanding": "¿Se le venció la garantía a tu equipo? Solicita servicio con costo",
+      "enlaceDesdeGarantia": "¿Tu equipo ya no tiene garantía?",
+      "enlaceDesdeGarantiaCta": "Solicita servicio técnico con costo",
+      "enlaceAGarantia": "¿Tu equipo está en garantía?",
+      "enlaceAGarantiaCta": "Repórtalo por garantía",
+      "confirmacionCosto": "Como el servicio no está cubierto por la garantía, primero diagnosticamos el equipo y te enviamos el presupuesto. No hacemos ningún trabajo sin tu aprobación.",
+      "consultarTipoValor": "Fuera de garantía (servicio con costo)"
     }
   },
   "vendedores": {
@@ -3592,7 +3616,7 @@
       "por_llegar": "Por llegar",
       "descargando": "Descargando",
       "cerrado": "Cerrados",
-      "todos": "Todos",
+      "todos": "Todos",
       "descartados": "Descartados"
     },
     "etapa": {

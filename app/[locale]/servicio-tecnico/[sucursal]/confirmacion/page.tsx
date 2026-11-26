@@ -186,6 +186,11 @@ export default function ConfirmacionPage() {
               {t("externo.confirmacionCosto")}
             </p>
           )}
+          {resumen.conCosto && (
+            <p className="mt-3 text-sm text-[color:var(--portal-ink)]">
+              {t("conCosto.confirmacionCosto")}
+            </p>
+          )}
           <p className="mt-4 text-xs text-[color:var(--portal-muted)]">
             {t("contacto_whatsapp")}
           </p>
