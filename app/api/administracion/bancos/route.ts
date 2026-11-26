@@ -15,6 +15,7 @@ import {
   otrasCuentasDeLaSede,
   MesCerrado,
   reabrirMes,
+  resumenConciliaciones,
   conciliarEnOdoo,
   cuentasBancarias,
   cuentasContables,
@@ -77,6 +78,7 @@ async function cuentaPedida(payload: any, id: unknown): Promise<CuentaBanco | Ne
 // GET /api/administracion/bancos?cuenta=<diario>&cierre=YYYY-MM — saldo del banco vs libros de Odoo y cierre del mes.
 // GET /api/administracion/bancos?cuenta=<diario>&libros=YYYY-MM — que forma el saldo en libros de Odoo del mes.
 // GET /api/administracion/bancos?cuenta=<diario>&diarios=1 — los otros bancos y cajas de la sede (transferencia interna).
+// GET /api/administracion/bancos?resumen=1[&sede=9][&refrescar=1] — cada cuenta de la sede, mes por mes: cerrada o que falta.
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_BANCOS);
   if (auth.error) return auth.error;
@@ -88,7 +90,14 @@ export async function GET(request: NextRequest) {
       if (!sedes) return respuestaSedeNoPermitida();
       return NextResponse.json({ success: true, cuentas: await cuentasBancarias(sedes) });
     }
-    if (cxc && (p.get("contables") || p.get("viejas") || p.get("cierre") || p.get("libros") || p.get("diarios"))) return soloAdministracion();
+    if (cxc && (p.get("contables") || p.get("viejas") || p.get("cierre") || p.get("libros") || p.get("diarios") || p.get("resumen"))) {
+      return soloAdministracion();
+    }
+    if (p.get("resumen")) {
+      const sedes = sedesDe(auth.payload, p.get("sede"));
+      if (!sedes) return respuestaSedeNoPermitida();
+      return NextResponse.json({ success: true, resumen: await resumenConciliaciones(await cuentasBancarias(sedes), p.get("refrescar") === "1") });
+    }
     if (p.get("libros")) {
       const mes = String(p.get("libros"));
       if (!MES.test(mes)) return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
