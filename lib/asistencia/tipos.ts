@@ -3,7 +3,7 @@
  *
  * RRHH sube el Excel que exporta el biométrico de cada sede; las marcas se
  * guardan (sin repetir) y el reporte se calcula con el horario de la empresa:
- * lunes a viernes de 8:00 a. m. a 4:30 p. m., y los sábados que haya
+ * lunes a viernes de 8:00 a. m. a 5:00 p. m., y los sábados que haya
  * inventario con el mismo horario (los marca RRHH en el calendario, igual que
  * los feriados). Todo lo de aquí es puro: lo usan la API y la pantalla.
  */
@@ -12,7 +12,7 @@ export const ROLES_ASISTENCIA = ["recursos humanos"];
 
 export const SEDES_ASISTENCIA: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 
-export const HORARIO = { entrada: "08:00", salida: "16:30" };
+export const HORARIO = { entrada: "08:00", salida: "17:00" };
 /** Minutos después de la entrada que todavía no cuentan como retardo. */
 export const TOLERANCIA_MIN = 0;
 /**
@@ -20,6 +20,12 @@ export const TOLERANCIA_MIN = 0;
  * seguidas): no se toma la segunda como salida.
  */
 export const MIN_ENTRE_MARCAS = 60;
+/**
+ * Horas extra: lo trabajado después de la salida en un día laborable, o todo
+ * lo trabajado (entrada a salida) en un día de descanso o feriado. Menos de
+ * esto en un día no cuenta (se quedó unos minutos de más).
+ */
+export const MIN_HORA_EXTRA = 30;
 /** Una sola marca antes de esta hora es la entrada; después, la salida. */
 export const MEDIODIA = "12:00";
 /** Días máximos de un reporte. */
@@ -53,11 +59,13 @@ export type Dia = {
   salida: string | null;
   estado: EstadoDia;
   retardoMin: number;
-  /** Minutos que se fue antes de las 4:30 (0 si no hay salida). */
+  /** Minutos que se fue antes de las 5:00 (0 si no hay salida). */
   salidaAnticipadaMin: number;
   /** Laborable con entrada pero sin marca de salida. */
   sinSalida: boolean;
   horas: number | null;
+  /** Minutos de horas extra del día (0 si no llega a MIN_HORA_EXTRA o falta una marca). */
+  extraMin: number;
 };
 
 export type ResumenEmpleado = {
@@ -73,6 +81,9 @@ export type ResumenEmpleado = {
   salidasAnticipadas: number;
   sinMarca: number;
   horas: number;
+  /** Minutos de horas extra y días en que las hizo. */
+  minutosExtra: number;
+  diasExtra: number;
   dias: Dia[];
 };
 
@@ -153,6 +164,7 @@ export function evaluarDia(fecha: string, marcasDelDia: string[], laborable: boo
     salidaAnticipadaMin: 0,
     sinSalida: false,
     horas: null,
+    extraMin: 0,
   };
   if (!marcas.length) return base;
 
@@ -167,6 +179,7 @@ export function evaluarDia(fecha: string, marcasDelDia: string[], laborable: boo
   } else {
     base.salida = ultima;
   }
+  base.extraMin = minutosExtra(base.entrada, base.salida, laborable);
   if (!laborable) return base;
 
   if (base.entrada) {
@@ -180,6 +193,18 @@ export function evaluarDia(fecha: string, marcasDelDia: string[], laborable: boo
   if (base.salida) base.salidaAnticipadaMin = Math.max(0, minutos(HORARIO.salida) - minutos(base.salida));
   else base.sinSalida = true;
   return base;
+}
+
+/**
+ * Horas extra de un día con entrada y salida: en un laborable, desde la hora
+ * de salida (o desde la entrada si llegó después) hasta que marcó; en uno no
+ * laborable, todo. Lo que no llega a MIN_HORA_EXTRA no cuenta.
+ */
+export function minutosExtra(entrada: string | null, salida: string | null, laborable: boolean): number {
+  if (!entrada || !salida) return 0;
+  const desde = laborable ? Math.max(minutos(HORARIO.salida), minutos(entrada)) : minutos(entrada);
+  const extra = minutos(salida) - desde;
+  return extra >= MIN_HORA_EXTRA ? extra : 0;
 }
 
 /**
@@ -241,6 +266,8 @@ export function calcularReporte({
       salidasAnticipadas: lab.filter((d) => d.salidaAnticipadaMin > 0).length,
       sinMarca: lab.filter((d) => d.sinSalida || d.estado === "sin_entrada").length,
       horas: Math.round(dias.reduce((s, d) => s + (d.horas ?? 0), 0) * 100) / 100,
+      minutosExtra: dias.reduce((s, d) => s + d.extraMin, 0),
+      diasExtra: dias.filter((d) => d.extraMin > 0).length,
       dias,
     };
   });

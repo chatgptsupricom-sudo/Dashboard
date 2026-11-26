@@ -18,4 +18,6 @@ export type ResumenReporte = {
   productos?: { nombre: string; serial: string }[];
   /** Equipo que no se compró en Supricom: sin factura, servicio con costo. */
   externo?: boolean;
+  /** Producto comprado aquí que se repara pagando (fuera de garantía). */
+  conCosto?: boolean;
 };

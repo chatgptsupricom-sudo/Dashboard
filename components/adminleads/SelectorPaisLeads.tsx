@@ -3,7 +3,7 @@
 // Selector de sede para los AdminLeads que ven más de un país (veAmbosPaises):
 // guarda la cookie que leen las APIs (payloadLeads / payloadSesion) y recarga.
 // El de Panamá elige Panamá, Valencia, Caracas o las tres, en todo /adminleads;
-// los de ADMINLEADS_CON_PANAMA, Venezuela o Panamá, solo en Leads.
+// los de Venezuela (Valencia o Caracas), Venezuela o Panamá, solo en Leads.
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/stores/auth.store";

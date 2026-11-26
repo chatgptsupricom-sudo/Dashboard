@@ -36,8 +36,8 @@ export function mismaOperacion(userCids: unknown, targetCids: unknown): boolean 
 }
 
 /**
- * AdminLeads de Venezuela que ademas ven Panama (por correo de login,
- * nov-2026). Eligen el pais con el selector, que guarda la cookie
+ * Todo AdminLeads de Venezuela (Valencia o Caracas) ve ademas Panama
+ * (nov-2026; antes era por correo de login). Eligen el pais con el selector, que guarda la cookie
  * COOKIE_PAIS_LEADS ("VE" | "PA"; sin cookie = Venezuela); con "PA" el modulo
  * de Leads los trata como AdminLeads de Panama.
  *
@@ -50,7 +50,6 @@ export function mismaOperacion(userCids: unknown, targetCids: unknown): boolean 
  * Leads junta Valencia y Caracas y "las tres" no es ningun `cids`
  * (sedeElegida / condSedeElegida).
  */
-export const ADMINLEADS_CON_PANAMA = ["marketing@supricom.com"];
 export const COOKIE_PAIS_LEADS = "leads_pais";
 
 type PayloadPais = { role?: unknown; email?: unknown; cids?: unknown } | null | undefined;
@@ -71,10 +70,8 @@ export function esAdminLeadsPanama(payload: PayloadPais): boolean {
 }
 
 export function veAmbosPaises(payload: PayloadPais): boolean {
-  return (
-    esAdminLeadsPanama(payload) ||
-    (esAdminLeads(payload) && ADMINLEADS_CON_PANAMA.includes(String(payload?.email ?? "").toLowerCase().trim()))
-  );
+  const cids = Number(payload?.cids);
+  return esAdminLeads(payload) && (cids === PANAMA || cids === 9 || cids === 10);
 }
 
 type ConCookies = { cookies: { get(nombre: string): { value: string } | undefined } };
