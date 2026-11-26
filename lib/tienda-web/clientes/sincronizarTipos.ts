@@ -14,8 +14,18 @@
 import { claveDocumento, type DatosPerfil, type SucursalPerfil } from "./tipos";
 
 export interface HijoOdoo { id: number; name: string; street: string; active: boolean }
-/** `street`/`lat`/`lng`: la dirección y la ubicación de la propia ficha (la sucursal con esa dirección no se duplica). */
-export interface PadreOdoo { id: number; company: number; clave: string; pais: number | null; hijos: HijoOdoo[]; street?: string; lat?: number; lng?: number }
+/**
+ * `street`: la dirección completa de la propia ficha (calle, ciudad, estado, país, como la propone el perfil); `calle`: solo la calle;
+ * `lat`/`lng`: su ubicación. Una sucursal con esa dirección no se duplica como dirección de entrega.
+ */
+export interface PadreOdoo { id: number; company: number; clave: string; pais: number | null; hijos: HijoOdoo[]; street?: string; calle?: string; lat?: number; lng?: number }
+
+/** ¿La sucursal es la dirección de la propia ficha? (con o sin ciudad/estado/país, sin importar saltos de línea ni signos) */
+export function esDireccionDeLaFicha(p: Pick<PadreOdoo, "street" | "calle">, direccion: string): boolean {
+  const d = direccionComparable(direccion);
+  if (!d) return false;
+  return [p.street, p.calle].some((x) => direccionComparable(x) && direccionComparable(x) === d);
+}
 export interface EnlaceOdoo { sucursalId: string; company: number; partnerId: number; firma: string }
 
 export type ValsDireccion = {
@@ -75,7 +85,7 @@ export function planearSincronizacion(datos: DatosPerfil, padres: PadreOdoo[], e
           continue;
         }
         // Es la dirección de la propia ficha (la «Principal» que vino de Odoo): no se duplica como dirección de entrega.
-        if (direccionComparable(p.street) && direccionComparable(p.street) === direccionComparable(s.direccion)) {
+        if (esDireccionDeLaFicha(p, s.direccion)) {
           if (typeof s.lat === "number" && typeof s.lng === "number" && (p.lat !== s.lat || p.lng !== s.lng)) {
             ops.push({ tipo: "ubicar_ficha", sucursalId: s.id, partnerId: p.id, padre: p.id, company: p.company, lat: s.lat, lng: s.lng, texto: `se puso en el mapa la dirección de la ficha («${s.nombre}»)` });
           }

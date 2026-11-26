@@ -251,7 +251,12 @@ assert.deepStrictEqual(redesEnHtml(`
   const jsSync = ts.transpileModule(fuenteSync, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
   const ms = { exports: {} };
   new Function("require", "module", "exports", "claveDocumento", jsSync)(require, ms, ms.exports, mk.exports.claveDocumento);
-  const { planearSincronizacion, valsDireccion, firmaVals, direccionComparable, pasoAOdooActivo } = ms.exports;
+  const { planearSincronizacion, valsDireccion, firmaVals, direccionComparable, pasoAOdooActivo, esDireccionDeLaFicha } = ms.exports;
+  // La dirección de la ficha se reconoce completa (como la propone el perfil) o solo la calle, con saltos de línea
+  const fichaReal = { street: "AV ABRAHAM LINCOLN CON CALLE UNION CC CITY MARKET, Distrito Capital, Distrito Capital, Venezuela", calle: "AV ABRAHAM LINCOLN CON CALLE UNION CC\nCITY MARKET" };
+  assert.ok(esDireccionDeLaFicha(fichaReal, "AV ABRAHAM LINCOLN CON CALLE UNION CC CITY MARKET, Distrito Capital, Distrito Capital, Venezuela"));
+  assert.ok(esDireccionDeLaFicha(fichaReal, "Av. Abraham Lincoln con calle Unión CC City Market"));
+  assert.ok(!esDireccionDeLaFicha(fichaReal, "Av. Andrés Galarraga local 06, Chacao"));
 
   // Interruptor TIENDA_PERFIL_ODOO: apagado por defecto, un RIF de prueba, o todos
   assert.strictEqual(pasoAOdooActivo(undefined, "d:J123456789"), false);

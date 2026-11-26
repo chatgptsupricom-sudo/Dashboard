@@ -12,6 +12,7 @@
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { fichasDe, type ClienteOdoo } from "./odoo";
+import { direccionComparable } from "./sincronizarTipos";
 import { claveDocumento, LOGO_MAX_BYTES, rifValido, telefonoValido, tipoDeImagen, validarPerfil, type DatosPerfil } from "./tipos";
 
 let tablasListas: Promise<void> | null = null;
@@ -69,14 +70,14 @@ function propuesta(c: ClienteOdoo, fichas: Fichas): DatosPerfil {
     if (!porRif.has(clave)) porRif.set(clave, { razon: f.nombre, rif, sucursales: [] });
     const r = porRif.get(clave)!;
     const tel = telefonoValido(f.telefono) || "";
-    const vistas = new Set(r.sucursales.map((s) => s.direccion.toLowerCase()));
-    if (f.direccion && !vistas.has(f.direccion.toLowerCase())) {
+    const vistas = new Set(r.sucursales.map((s) => direccionComparable(s.direccion)));
+    if (f.direccion && !vistas.has(direccionComparable(f.direccion))) {
       r.sucursales.push({ nombre: r.sucursales.length ? `Sucursal ${r.sucursales.length + 1}` : "Principal", direccion: f.direccion, contacto, telefono: tel });
-      vistas.add(f.direccion.toLowerCase());
+      vistas.add(direccionComparable(f.direccion));
     }
     for (const d of f.entregas) {
-      if (vistas.has(d.direccion.toLowerCase())) continue;
-      vistas.add(d.direccion.toLowerCase());
+      if (vistas.has(direccionComparable(d.direccion))) continue;
+      vistas.add(direccionComparable(d.direccion));
       r.sucursales.push({
         nombre: d.nombre && d.nombre !== f.nombre ? d.nombre.slice(0, 80) : `Sucursal ${r.sucursales.length + 1}`,
         direccion: d.direccion, contacto, telefono: telefonoValido(d.telefono) || tel,
