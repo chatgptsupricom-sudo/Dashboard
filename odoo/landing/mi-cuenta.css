@@ -196,6 +196,15 @@ body.detalle-abierto .detalle-pedido { transform: none; visibility: visible; tra
 .etapas li.actual { color: var(--tinta); }
 .etapas li.actual .etapa-punto { border-color: var(--acento); box-shadow: 0 0 0 5px color-mix(in srgb, var(--acento) 20%, transparent); background: var(--superficie); }
 .detalle-anulado { display: flex; }
+/* Cotización en el detalle: en revisión (borrador) o lista para aceptar (su vendedor se la envió) */
+.detalle-cotizacion { display: grid; gap: 12px; margin: 4px 0 2px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--linea); background: var(--fondo); }
+.detalle-cotizacion strong { display: block; font-size: 15px; }
+.detalle-cotizacion p { margin-top: 2px; color: var(--gris); font-size: 13.5px; line-height: 1.5; }
+.detalle-cotizacion.lista { border-color: color-mix(in srgb, var(--acento) 45%, var(--linea)); background: color-mix(in srgb, var(--acento) 7%, var(--superficie)); }
+.detalle-cotizacion-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.detalle-cotizacion-acciones .boton { width: auto; }
+.detalle-cotizacion-estado:empty { display: none; }
+.detalle-cotizacion-estado.error { color: #B42318; }
 .detalle-datos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; padding: 14px 0; border-block: 1px solid var(--linea); }
 .detalle-datos dt { color: var(--gris); font-size: 12px; font-weight: 700; }
 .detalle-datos dd { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }

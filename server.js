@@ -382,6 +382,26 @@ app.prepare().then(() => {
   );
   console.log("> Cron programado: perfiles de la tienda web a Odoo, cada hora (America/Caracas)");
 
+  // Cada 10 min: en qué van las cotizaciones enviadas desde la tienda web; al cliente le llega un correo
+  // cuando su vendedor se la envía, cuando se confirma, se despacha, se factura o se anula
+  // (lib/tienda-web/clientes/seguimiento.ts).
+  cron.schedule(
+    "*/10 * * * *",
+    async () => {
+      try {
+        const response = await fetch(`http://localhost:${PORT}/api/cron/tienda-cotizaciones`, {
+          headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        });
+        const data = await response.json();
+        if (!response.ok) console.error("Fallo el seguimiento de cotizaciones de la tienda:", data);
+      } catch (error) {
+        console.error("Error de red en el seguimiento de cotizaciones de la tienda:", error.message);
+      }
+    },
+    { scheduled: true, timezone: "America/Caracas" },
+  );
+  console.log("> Cron programado: seguimiento de cotizaciones de la tienda web, cada 10 min (America/Caracas)");
+
   // ==========================================
   // FOTO DE CIERRE DE LA EFECTIVIDAD DE COBRANZA (lib/cxc/cierreEfectividad.ts)
   // ==========================================

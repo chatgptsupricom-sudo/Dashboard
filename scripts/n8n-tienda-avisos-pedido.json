@@ -1,0 +1,171 @@
+{
+  "name": "Tienda web - Avisos de pedidos",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tienda-pedido",
+        "options": {}
+      },
+      "name": "Webhook Pedido",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "577748a4-84d3-436d-929d-7bccbfc22378"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Valida lo que manda el panel (lib/tienda-web/clientes/seguimiento.ts): { evento: 'tienda_pedido', aviso_id }.\n// Solo eso: el correo y lo demás se leen de la MySQL en el nodo siguiente (el webhook es publico).\nconst body = $json.body || {};\nconst id = parseInt(body.aviso_id, 10);\nif (body.evento !== 'tienda_pedido' || !(id > 0)) return null;\nreturn { json: { id } };\n"
+      },
+      "name": "Validar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT id, correo, numero, aviso, sede, vendedor, total, moneda, enlace\n  FROM tienda_pedido_avisos\n WHERE id = {{ $json.id }}\n   AND enviado_at IS NULL\n   AND creado_at > NOW() - INTERVAL 1 DAY",
+        "options": {}
+      },
+      "name": "Leer aviso",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "REEMPLAZAR",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Arma el correo de seguimiento de una cotización de la tienda web con la fila de \"Leer aviso\"\n// (tienda_pedido_avisos). Nada viene del webhook (es público): el panel guardó todo\n// (lib/tienda-web/clientes/seguimiento.ts). Sin fila = ya se mandó o tiene más de un día.\nconst a = $json;\nif (!a || !a.id) return null;\nconst para = String(a.correo || '').trim();\nif (!/^[^\\s@<>,;\"']+@[^\\s@<>,;\"']+\\.[a-z]{2,}$/i.test(para)) return null;\n\nconst esc = (v) => String(v == null ? '' : v).replace(/[&<>\"']/g, (x) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[x]));\nconst numero = String(a.numero || '');\nconst vendedor = String(a.vendedor || '').trim() || 'Tu vendedor';\nconst monto = a.total != null && Number(a.total) > 0\n  ? (String(a.moneda || 'USD') === 'USD' ? '$' : String(a.moneda) + ' ') + Number(a.total).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })\n  : '';\nconst enlace = /^https:\\/\\/[^\\s\"'<>]+$/.test(String(a.enlace || '')) ? String(a.enlace) : '';\n\nconst TEXTOS = {\n  lista: {\n    asunto: 'Tu cotización ' + numero + ' está lista',\n    titulo: 'Tu cotización está lista',\n    cuerpo: vendedor + ' te envió la cotización ' + numero + ' con los precios finales' + (monto ? ' (total ' + monto + ')' : '') + '. Si estás de acuerdo, acéptala en Mi cuenta con un clic y se confirma como pedido.',\n    boton: 'Ver y aceptar',\n  },\n  confirmada: {\n    asunto: 'Tu pedido ' + numero + ' está confirmado',\n    titulo: 'Pedido confirmado',\n    cuerpo: 'Tu pedido ' + numero + (monto ? ' por ' + monto : '') + ' está confirmado. ' + vendedor + ' lo prepara y te avisamos cuando salga.',\n    boton: 'Ver mi pedido',\n  },\n  despachada: {\n    asunto: 'Tu pedido ' + numero + ' salió',\n    titulo: 'Tu pedido va en camino',\n    cuerpo: 'El pedido ' + numero + ' ya salió del almacén. En Mi cuenta ves el despacho y sus productos.',\n    boton: 'Ver el despacho',\n  },\n  facturada: {\n    asunto: 'Tu pedido ' + numero + ' fue facturado',\n    titulo: 'Pedido facturado',\n    cuerpo: 'El pedido ' + numero + ' ya tiene su factura. La ves en Mi cuenta, en el pedido y en tu estado de cuenta.',\n    boton: 'Ver la factura',\n  },\n  anulada: {\n    asunto: 'Tu cotización ' + numero + ' fue anulada',\n    titulo: 'Cotización anulada',\n    cuerpo: 'La cotización ' + numero + ' se anuló. Si no lo esperabas, escríbele a ' + (vendedor === 'Tu vendedor' ? 'tu vendedor' : vendedor) + '.',\n    boton: 'Ver en Mi cuenta',\n  },\n};\nconst t = TEXTOS[a.aviso];\nif (!t) return null;\n\nconst html = '<!doctype html><html><body style=\"margin:0;background:#F4F5F2;font-family:Arial,Helvetica,sans-serif;color:#0B0D12\">'\n  + '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#F4F5F2;padding:24px 12px\"><tr><td align=\"center\">'\n  + '<table role=\"presentation\" width=\"520\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:520px;width:100%;background:#FFFFFF;border:1px solid #E0E2DB;border-radius:16px\">'\n  + '<tr><td style=\"padding:32px 32px 8px\"><p style=\"margin:0;font-size:20px;font-weight:bold;letter-spacing:-.01em\">SUPRICOM</p>'\n  + '<p style=\"margin:18px 0 0;font-size:13px;font-weight:bold;letter-spacing:.06em;color:#1D4ED8\">' + esc(numero) + (a.sede ? ' · SEDE ' + esc(String(a.sede).toUpperCase()) : '') + '</p>'\n  + '<h1 style=\"margin:6px 0 8px;font-size:22px;line-height:1.3\">' + esc(t.titulo) + '</h1>'\n  + '<p style=\"margin:0;font-size:15px;line-height:1.55;color:#565C68\">' + esc(t.cuerpo) + '</p></td></tr>'\n  + (enlace ? '<tr><td style=\"padding:22px 32px 8px\"><a href=\"' + esc(enlace) + '\" style=\"display:inline-block;padding:13px 22px;border-radius:999px;background:#0B0D12;color:#FFFFFF;font-size:15px;font-weight:bold;text-decoration:none\">' + esc(t.boton) + '</a></td></tr>' : '')\n  + '<tr><td style=\"padding:18px 32px 28px\"><p style=\"margin:0;font-size:12px;line-height:1.5;color:#565C68\">Te escribimos porque enviaste esta cotización desde la tienda de SUPRICOM. Para cualquier cambio, responde a tu vendedor.</p></td></tr>'\n  + '</table></td></tr></table></body></html>';\nconst texto = ['SUPRICOM · ' + t.titulo, '', t.cuerpo, '', enlace ? t.boton + ': ' + enlace : ''].join('\\n');\n\nconst b64 = (s) => Buffer.from(s, 'utf8').toString('base64');\nconst partir = (s) => s.replace(/.{1,76}/g, (l) => l + '\\r\\n');\nconst limite = 'pedido-' + a.id + '-' + Date.now().toString(36);\nconst mime = [\n  'From: =?UTF-8?B?' + b64('Tienda web SUPRICOM') + '?= <dmedina@supricom.com.ve>',\n  'To: ' + para,\n  'Subject: =?UTF-8?B?' + b64(t.asunto) + '?=',\n  'MIME-Version: 1.0',\n  'Content-Type: multipart/alternative; boundary=\"' + limite + '\"',\n  '',\n  '--' + limite,\n  'Content-Type: text/plain; charset=\"UTF-8\"',\n  'Content-Transfer-Encoding: base64',\n  '',\n  partir(b64(texto)),\n  '--' + limite,\n  'Content-Type: text/html; charset=\"UTF-8\"',\n  'Content-Transfer-Encoding: base64',\n  '',\n  partir(b64(html)),\n  '--' + limite + '--',\n  '',\n].join('\\r\\n');\nconst raw = Buffer.from(mime, 'utf8').toString('base64').replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');\n\nreturn { json: { aviso_id: Number(a.id), para, asunto: t.asunto, raw } };\n"
+      },
+      "name": "Armar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ raw: $json.raw }) }}",
+        "options": {}
+      },
+      "name": "Enviar correo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Cuenta del panel"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE tienda_pedido_avisos SET enviado_at = NOW() WHERE id = {{ $('Armar correo').item.json.aviso_id }}",
+        "options": {}
+      },
+      "name": "Marcar enviado",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        1100,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "REEMPLAZAR",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Pedido": {
+      "main": [
+        [
+          {
+            "node": "Validar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar": {
+      "main": [
+        [
+          {
+            "node": "Leer aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer aviso": {
+      "main": [
+        [
+          {
+            "node": "Armar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar correo": {
+      "main": [
+        [
+          {
+            "node": "Enviar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar correo": {
+      "main": [
+        [
+          {
+            "node": "Marcar enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

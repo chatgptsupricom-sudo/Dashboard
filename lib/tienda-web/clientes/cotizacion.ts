@@ -21,21 +21,29 @@ const ctx = (cid: number) => ({ allowed_company_ids: [cid, ...COMPANIAS_TIENDA.f
 const plano = (t: string) => t.replace(/[<>]/g, "").replace(/\s*\n\s*/g, " / ").trim();
 
 let tablaLista: Promise<void> | null = null;
-function asegurarTabla(): Promise<void> {
+/** `ultimo_aviso`: el último aviso de seguimiento que se le mandó al cliente (./seguimiento.ts). */
+export function asegurarTabla(): Promise<void> {
   if (!tablaLista) {
-    tablaLista = db.execute(`
-      CREATE TABLE IF NOT EXISTS tienda_cotizaciones (
-        clave VARCHAR(64) PRIMARY KEY,
-        correo VARCHAR(160) NOT NULL,
-        company_id INT NOT NULL,
-        partner_id INT NULL,
-        sale_order_id INT NULL,
-        numero VARCHAR(40) NULL,
-        lineas INT NOT NULL DEFAULT 0,
-        creado_el TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        KEY idx_correo (correo, creado_el)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `).then(() => undefined).catch((e) => { tablaLista = null; throw e; });
+    tablaLista = (async () => {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS tienda_cotizaciones (
+          clave VARCHAR(64) PRIMARY KEY,
+          correo VARCHAR(160) NOT NULL,
+          company_id INT NOT NULL,
+          partner_id INT NULL,
+          sale_order_id INT NULL,
+          numero VARCHAR(40) NULL,
+          lineas INT NOT NULL DEFAULT 0,
+          ultimo_aviso VARCHAR(20) NULL,
+          creado_el TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          KEY idx_correo (correo, creado_el),
+          KEY idx_orden (sale_order_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      // La tabla nació sin el seguimiento (nov-2026): se agrega solo.
+      const [cols]: any = await db.query("SHOW COLUMNS FROM tienda_cotizaciones");
+      if (!(cols || []).some((c: any) => c.Field === "ultimo_aviso")) await db.query("ALTER TABLE tienda_cotizaciones ADD COLUMN ultimo_aviso VARCHAR(20) NULL");
+    })().catch((e) => { tablaLista = null; throw e; });
   }
   return tablaLista;
 }
