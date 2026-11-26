@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { db, query } from "@/lib/db";
 import { callOdooRPCComo, callOdooRPCEstricto } from "@/lib/odoo";
 import { SEDES_VALIDAS } from "@/lib/auth/sedeRol";
+import { CORTE_ODOO } from "@/lib/smartbit";
 import {
   ampliar,
   ArchivoIlegible,
@@ -2734,4 +2735,180 @@ export async function reabrirMes(cuenta: CuentaBanco, mes: string, motivo: strin
     [email, motivo.slice(0, 500), cuenta.id, mes],
   );
   return res.affectedRows > 0;
+}
+
+// ---------- Resumen de conciliaciones ----------
+
+/** Como va un mes de una cuenta en el resumen. */
+export type EstadoResumen = "cerrado" | "listo" | "pendiente" | "sin_estado" | "en_curso";
+export type CeldaResumen = {
+  estado: EstadoResumen;
+  movimientos: number;
+  conciliados: number;
+  diasSinEstado: number;
+  lineasSinConciliar: number;
+  saldoBanco: number | null;
+  saldoLibros: number | null;
+  diferencia: number | null;
+  cerradoPor: string | null;
+  cerradoEl: string | null;
+  /** Lo que falta para cerrar el mes, en palabras. */
+  faltan: string[];
+};
+export type ResumenConciliaciones = {
+  meses: string[];
+  cuentas: { id: number; nombre: string; moneda: string; sinEstados: boolean; meses: Record<string, CeldaResumen> }[];
+  calculadoEl: string;
+};
+
+const cacheResumen = new Map<string, { hasta: number; datos: ResumenConciliaciones }>();
+
+/** Corre `fn` sobre cada elemento con `n` a la vez (Odoo no aguanta todas las cuentas y meses juntos). */
+async function deA<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+  const res: R[] = new Array(items.length);
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(n, items.length) }, async () => {
+      while (i < items.length) {
+        const k = i++;
+        res[k] = await fn(items[k]);
+      }
+    }),
+  );
+  return res;
+}
+
+/**
+ * Resumen de las conciliaciones de las cuentas de una sede, mes por mes desde el corte a Odoo: cerrado, listo para
+ * cerrar o que falta (estado de cuenta, movimientos sin conciliar, lineas sin conciliar en Odoo, diferencia con los
+ * libros). Para llevar el control sin entrar cuenta por cuenta. Los numeros de un mes abierto salen del mismo calculo
+ * de la pestaña Conciliar y del cierre (`conciliacionPeriodo` + `cuadreMes`); un mes cerrado, de su cierre. Una cuenta
+ * sin ningun estado de cuenta cargado no se calcula mes por mes. 10 min en memoria (`refrescar` lo salta).
+ */
+export async function resumenConciliaciones(cuentas: CuentaBanco[], refrescar = false): Promise<ResumenConciliaciones> {
+  const clave = cuentas.map((c) => c.id).join(",");
+  const guardado = cacheResumen.get(clave);
+  if (!refrescar && guardado && guardado.hasta > Date.now()) return guardado.datos;
+  await ensureTablas();
+  const hoy = hoyCaracas();
+  const meses: string[] = [];
+  for (let m = CORTE_ODOO.slice(0, 7); m <= hoy.slice(0, 7); m = sumarDias(`${m}-01`, 32).slice(0, 7)) meses.push(m);
+  const ids = cuentas.map((c) => c.id);
+  const lista = ids.map(() => "?").join(",");
+  const [cierres, conteos, estados] = ids.length
+    ? await Promise.all([
+        query(
+          `SELECT journal_id, mes, saldo_banco, saldo_libros, cerrado_por, cerrado_at FROM banco_cierres
+            WHERE journal_id IN (${lista}) AND reabierto_at IS NULL`,
+          ids,
+        ),
+        query(
+          `SELECT journal_id, DATE_FORMAT(fecha, '%Y-%m') AS mes, COUNT(DISTINCT huella) AS n FROM banco_movimientos
+            WHERE journal_id IN (${lista}) AND fecha >= ? GROUP BY journal_id, mes`,
+          [...ids, `${meses[0]}-01`],
+        ),
+        query(`SELECT DISTINCT journal_id FROM banco_estados WHERE journal_id IN (${lista})`, ids),
+      ])
+    : [{ rows: [] as any[] }, { rows: [] as any[] }, { rows: [] as any[] }];
+  const cierre = new Map<string, any>(cierres.rows.map((r: any) => [`${r.journal_id}|${r.mes}`, r]));
+  const movsMes = new Map<string, number>(conteos.rows.map((r: any) => [`${r.journal_id}|${r.mes}`, Number(r.n)]));
+  const conEstados = new Set<number>(estados.rows.map((r: any) => Number(r.journal_id)));
+
+  const vacia = (estado: EstadoResumen, faltan: string[]): CeldaResumen => ({
+    estado,
+    movimientos: 0,
+    conciliados: 0,
+    diasSinEstado: 0,
+    lineasSinConciliar: 0,
+    saldoBanco: null,
+    saldoLibros: null,
+    diferencia: null,
+    cerradoPor: null,
+    cerradoEl: null,
+    faltan,
+  });
+  // Las celdas que hay que calcular con Odoo: meses abiertos con movimientos en cuentas que tienen estado de cuenta.
+  const tareas = cuentas.flatMap((c) =>
+    conEstados.has(c.id) ? meses.filter((m) => !cierre.has(`${c.id}|${m}`) && movsMes.get(`${c.id}|${m}`)).map((m) => ({ c, m })) : [],
+  );
+  const calculadas = new Map<string, CeldaResumen>();
+  await deA(tareas, 3, async ({ c, m }) => {
+    const k = `${c.id}|${m}`;
+    try {
+      const [conc, cuadre] = await Promise.all([conciliacionPeriodo(c, `${m}-01`, finDeMes(m)), cuadreMes(c, m)]);
+      // Lo mismo que cuenta la pestaña Conciliar como conciliado (`yaConciliado`).
+      const conciliados = conc.movimientos.filter((x) => !!x.odoo || !!x.pago?.conciliado).length;
+      const saldoBanco = cuadre.estado?.final ?? null;
+      const diferencia = saldoBanco === null ? null : Math.round((saldoBanco - cuadre.saldoLibros) * 100) / 100;
+      const faltan: string[] = [];
+      const pendientes = conc.movimientos.length - conciliados;
+      if (pendientes) faltan.push(`${pendientes} movimiento${pendientes === 1 ? "" : "s"} sin conciliar`);
+      if (cuadre.diasSinEstado.length) faltan.push(`estado de cuenta de ${cuadre.diasSinEstado.length} día(s) o confirmar que no hubo movimientos`);
+      if (cuadre.lineasSinConciliar) faltan.push(`${cuadre.lineasSinConciliar} línea(s) sin conciliar en Odoo`);
+      if (cuadre.estado && !cuadre.estado.cuadra) faltan.push("los saldos del estado de cuenta no cuadran");
+      if (diferencia !== null && diferencia !== 0) {
+        faltan.push(`diferencia con Odoo de ${diferencia.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+      }
+      if (saldoBanco === null) faltan.push("el saldo final del banco");
+      // Listo = solo falta pulsar «Cerrar el mes» (los dias sin estado de cuenta se confirman ahi mismo).
+      const soloDias = faltan.length === 1 && cuadre.diasSinEstado.length > 0;
+      calculadas.set(k, {
+        estado: !cuadre.terminado ? "en_curso" : !faltan.length || soloDias ? "listo" : "pendiente",
+        movimientos: conc.movimientos.length,
+        conciliados,
+        diasSinEstado: cuadre.diasSinEstado.length,
+        lineasSinConciliar: cuadre.lineasSinConciliar,
+        saldoBanco,
+        saldoLibros: cuadre.saldoLibros,
+        diferencia,
+        cerradoPor: null,
+        cerradoEl: null,
+        faltan,
+      });
+    } catch (e: any) {
+      console.error("[bancos] resumen", c.nombre, m, e?.message);
+      calculadas.set(k, vacia("pendiente", ["no se pudo leer de Odoo: ábrelo en Conciliar"]));
+    }
+  });
+
+  const datos: ResumenConciliaciones = {
+    meses,
+    calculadoEl: new Date().toISOString(),
+    cuentas: cuentas.map((c) => ({
+      id: c.id,
+      nombre: c.nombre,
+      moneda: c.moneda || "USD",
+      sinEstados: !conEstados.has(c.id),
+      meses: Object.fromEntries(
+        meses.map((m): [string, CeldaResumen] => {
+          const k = `${c.id}|${m}`;
+          const ci = cierre.get(k);
+          if (ci) {
+            const banco = Number(ci.saldo_banco);
+            const libros = Number(ci.saldo_libros);
+            return [
+              m,
+              {
+                ...vacia("cerrado", []),
+                movimientos: movsMes.get(k) || 0,
+                conciliados: movsMes.get(k) || 0,
+                saldoBanco: banco,
+                saldoLibros: libros,
+                diferencia: Math.round((banco - libros) * 100) / 100,
+                cerradoPor: String(ci.cerrado_por),
+                cerradoEl: new Date(ci.cerrado_at).toISOString(),
+              },
+            ];
+          }
+          const hecha = calculadas.get(k);
+          if (hecha) return [m, hecha];
+          // Sin movimientos cargados: falta el estado de cuenta, o el mes no tuvo movimientos (se cierra desde Conciliar).
+          const enCurso = finDeMes(m) >= hoy;
+          return [m, vacia(enCurso ? "en_curso" : "sin_estado", enCurso ? [] : ["el estado de cuenta, o cerrarlo sin movimientos"])];
+        }),
+      ),
+    })),
+  };
+  cacheResumen.set(clave, { hasta: Date.now() + 10 * 60_000, datos });
+  return datos;
 }
