@@ -520,8 +520,10 @@ export function cruzarBanco(
   comprobantes: ComprobanteBanco[],
   manuales: Map<string, number>,
   cubierto: (dia: string) => boolean,
+  yaConciliados: ReadonlySet<string> = new Set(),
 ) {
   const todos = [...movimientos].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const pendientes = todos.filter((m) => !yaConciliados.has(m.id));
   const entradas = todos.filter((m) => m.monto > 0);
   const porId = new Map(pagos.map((p) => [p.id, p]));
   const usados = new Set<number>();
@@ -531,9 +533,14 @@ export function cruzarBanco(
     usados.add(pago.id);
     pagoDe.set(m.id, { pago, estado });
   };
-  for (const m of todos) tomar(m, porId.get(manuales.get(m.id) ?? -1), "manual");
+  for (const m of todos) {
+    const id = manuales.get(m.id);
+    const pago = id === undefined ? undefined : porId.get(id);
+    if (!yaConciliados.has(m.id) || pago?.conciliado) tomar(m, pago, "manual");
+  }
   const cercano = (m: Movimiento, ok: (c: Coincide) => boolean) =>
     pagos
+      .filter((p) => !yaConciliados.has(m.id) || p.conciliado)
       .filter((p) => !usados.has(p.id) && p.monto > 0 === m.monto > 0 && dias(p.fecha, m.fecha) <= DIAS_VENTANA && ok(coincidencia(m, p)))
       .sort((a, b) => dias(a.fecha, m.fecha) - dias(b.fecha, m.fecha))[0];
   const pasos: [(c: Coincide) => boolean, EstadoMovimiento][] = [
@@ -547,7 +554,7 @@ export function cruzarBanco(
     for (const m of todos) tomar(m, cercano(m, ok), estado);
   };
   pasos.slice(0, 2).forEach(correr);
-  for (const m of todos) {
+  for (const m of pendientes) {
     if (pagoDe.has(m.id) || !normalRef(m.referencia)) continue;
     const grupo = pagos
       .filter(
@@ -567,7 +574,7 @@ export function cruzarBanco(
   pasos.slice(2).forEach(correr);
   // La referencia del banco con un registro de hace mas de DIAS_VENTANA (hasta DIAS_REF_LEJOS): CxC lo registro un mes
   // despues (Valencia, P00171: banco 15/04 160.000 ref 3596376793, Odoo 15/05). Mismo monto o casi (0,1 %), un solo candidato.
-  for (const m of todos) {
+  for (const m of pendientes) {
     if (pagoDe.has(m.id) || !normalRef(m.referencia) || esComision(m)) continue;
     const candidatos = pagos.filter(
       (p) =>
@@ -587,7 +594,7 @@ export function cruzarBanco(
     pagos.filter(
       (p) => !usados.has(p.id) && p.monto > 0 === m.monto > 0 && p.cliente && Math.abs(p.monto) < Math.abs(m.monto) && dias(p.fecha, m.fecha) <= DIAS_DIVIDIDO,
     );
-  const sinPagoDividido = todos.filter((m) => !pagoDe.has(m.id) && !esComision(m));
+  const sinPagoDividido = pendientes.filter((m) => !pagoDe.has(m.id) && !esComision(m));
   for (const m of sinPagoDividido) {
     if (pagoDe.has(m.id)) continue;
     const libres = libresDividido(m);
@@ -609,7 +616,7 @@ export function cruzarBanco(
   // referencia (CEPRO ALARM: banco 04/05 ref 89, Odoo PBANES/2026/00105 12/05 Memo 877). Se propone para revisar
   // solo si no hay duda: un unico cobro/pago libre de ese monto exacto en ±15 dias y ningun otro movimiento sin
   // amarrar del mismo monto que lo pueda querer. Las comisiones no (montos chicos que se repiten).
-  const sinPago = todos.filter((m) => !pagoDe.has(m.id) && !esComision(m));
+  const sinPago = pendientes.filter((m) => !pagoDe.has(m.id) && !esComision(m));
   for (const m of sinPago) {
     const candidatos = pagos.filter((p) => !usados.has(p.id) && mismoMonto(p.monto, m.monto) && dias(p.fecha, m.fecha) <= DIAS_VENTANA);
     if (candidatos.length !== 1) continue;
@@ -624,7 +631,7 @@ export function cruzarBanco(
   // cobro/pago libre en +-DIAS_FECHA dias a menos de MAX(2, 0,01 %) y ningun otro movimiento sin amarrar que lo quiera
   // (o varios identicos, ver abajo).
   const cerca = (a: number, b: number) => a > 0 === b > 0 && Math.abs(Math.abs(a) - Math.abs(b)) <= Math.max(2, Math.abs(b) * 0.0001);
-  const aunSinPago = todos.filter((m) => !pagoDe.has(m.id) && !esComision(m));
+  const aunSinPago = pendientes.filter((m) => !pagoDe.has(m.id) && !esComision(m));
   // Varios candidatos identicos (mismo monto y dia: TRANSF/00047 y 00048, 2.497.740,43 el 23/04) son intercambiables:
   // se toman en orden mientras alcancen para este movimiento y los otros que los quieren.
   for (const m of aunSinPago) {
@@ -694,7 +701,7 @@ export function cruzarBanco(
     }
     movsUsados.add(mov.id);
     const pago = pagoDe.get(mov.id)?.pago ?? null;
-    const estado: EstadoComprobante = !pago ? "sin_registrar" : revisar ? "por_revisar" : "conciliado";
+    const estado: EstadoComprobante = !pago && !yaConciliados.has(mov.id) ? "sin_registrar" : revisar ? "por_revisar" : "conciliado";
     return { ...c, estado, movimiento: mov, pago };
   });
 

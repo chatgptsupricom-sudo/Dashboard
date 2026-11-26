@@ -436,3 +436,16 @@ console.log("saldosDelMes ok");
   assert.ok(!ajustePermitido(1000, 1000)); // ya es igual
 }
 console.log("ajustePermitido ok");
+
+{
+  const previa = mov("anterior", "2026-04-13", "20421888621", -966400);
+  const abierta = mov("pendiente", "2026-04-13", "20421890251", -966400);
+  const asiento = { id: -240862, nombre: "MERCA/2026/00024", fecha: abierta.fecha, monto: abierta.monto, ref: "TRANSF/00036 - Send", cliente: "" };
+  for (const filas of [[previa, abierta], [abierta, previa]]) {
+    const res = cruzarBanco(filas, [asiento], [], new Map(), () => true, new Set([previa.id]));
+    assert.strictEqual(res.movimientos.find(m => m.id === previa.id).pago, null);
+    const propuesta = res.movimientos.find(m => m.id === abierta.id);
+    assert.strictEqual(propuesta.pago.id, asiento.id);
+    assert.strictEqual(propuesta.estado, "parcial");
+  }
+}
