@@ -94,3 +94,32 @@ CREATE TABLE IF NOT EXISTS supricom_panel.rotacion_contactos_marca (
 );
 
 SHOW TABLES FROM supricom_panel LIKE 'rotacion_%';
+
+-- Plan para salir del rojo: lo que estaba en rojo el día que arrancó el plan de 90 días de la sede.
+CREATE TABLE IF NOT EXISTS supricom_panel.rotacion_plan_rojo (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  company_id INT NOT NULL,
+  inicio DATE NOT NULL,
+  estado VARCHAR(12) NOT NULL DEFAULT 'activo',
+  referencias INT NOT NULL DEFAULT 0,
+  unidades DECIMAL(14,2) NOT NULL DEFAULT 0,
+  valor DECIMAL(14,2) NOT NULL DEFAULT 0,
+  cerrado_el DATE NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_plan_rojo (company_id, inicio),
+  INDEX idx_estado (company_id, estado)
+);
+
+CREATE TABLE IF NOT EXISTS supricom_panel.rotacion_plan_rojo_lineas (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  plan_id INT NOT NULL,
+  product_id INT NOT NULL,
+  codigo VARCHAR(120) NULL,
+  nombre VARCHAR(500) NULL,
+  marca VARCHAR(255) NULL,
+  categoria VARCHAR(255) NULL,
+  unidades DECIMAL(14,2) NOT NULL DEFAULT 0,
+  costo_unitario DECIMAL(14,4) NOT NULL DEFAULT 0,
+  dias_sin_venta INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_linea (plan_id, product_id)
+);

@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
       sedes,
       meses: porSede[0].meses,
       fichas,
+      planesRojo: porSede.flatMap((s) => (s.planRojo ? [s.planRojo] : [])),
       puedeEditar: a.puedeEditar,
       puedeGestionarSolicitudes: a.puedeGestionarSolicitudes,
       eligeSede: a.eligeSede,
