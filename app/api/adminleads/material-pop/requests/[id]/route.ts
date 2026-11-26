@@ -77,7 +77,7 @@ export async function PATCH(
       });
       // Correo al vendedor, con copia a almacén y a Gabriel Camacho.
       avisarSolicitud("entregada", solicitudId, cids, getPublicOrigin(request), {
-        ubicacion: String(body?.location || "office"),
+        ubicaciones: salida.ubicaciones,
         entregadoPor: revisorNombre,
       });
       return NextResponse.json({ success: true, ...salida });

@@ -430,7 +430,7 @@ export async function entregarSolicitud(opts: {
   location: string;
   revisorId: number | null;
   revisorNombre: string;
-}): Promise<{ movementGroupId: string }> {
+}): Promise<{ movementGroupId: string; ubicaciones: string[] }> {
   if (!VALID_LOCATION.includes(opts.location)) {
     throw new ErrorSolicitud("Ubicación inválida");
   }
@@ -450,6 +450,8 @@ export async function entregarSolicitud(opts: {
     ? `Solicitud ${solicitud.code}${solicitud.notes ? ` · ${solicitud.notes}` : ""}`.slice(0, 255)
     : null;
 
+  // De dónde salió de verdad: lo que no alcanza en la elegida sale de la otra.
+  const usadas = new Set<string>();
   let conn: any;
   try {
     conn = await getConnection();
@@ -486,6 +488,7 @@ export async function entregarSolicitud(opts: {
 
       for (const [ubicacion, parte] of partes) {
         if (parte <= 0) continue;
+        usadas.add(ubicacion);
         await cambiarStock(conn, item.productId, ubicacion, -parte);
         await conn.execute(
           `INSERT INTO pop_movements
@@ -523,7 +526,7 @@ export async function entregarSolicitud(opts: {
     );
 
     await conn.commit();
-    return { movementGroupId };
+    return { movementGroupId, ubicaciones: [...usadas].sort() };
   } catch (e) {
     if (conn) await conn.rollback();
     throw e;

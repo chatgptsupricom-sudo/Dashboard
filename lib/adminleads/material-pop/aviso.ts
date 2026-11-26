@@ -28,7 +28,7 @@ export function avisarSolicitud(
   solicitudId: number,
   cids: number | null,
   origenPeticion: string,
-  extra: { ubicacion?: string; entregadoPor?: string } = {},
+  extra: { ubicaciones?: string[]; entregadoPor?: string } = {},
 ): void {
   procesarAviso(evento, solicitudId, cids, origenPeticion, extra).catch((e) => {
     console.error(`[material-pop/aviso] ${evento} solicitud ${solicitudId}:`, e?.message);
@@ -40,7 +40,7 @@ async function procesarAviso(
   solicitudId: number,
   cids: number | null,
   origenPeticion: string,
-  extra: { ubicacion?: string; entregadoPor?: string },
+  extra: { ubicaciones?: string[]; entregadoPor?: string },
 ): Promise<void> {
   const url = process.env.N8N_POP_WEBHOOK_URL;
   if (!url) return;
@@ -82,7 +82,10 @@ async function procesarAviso(
         // movimientos): la ruta lo pasa aparte.
         entregado_por: extra.entregadoPor || null,
         fecha_entrega: solicitud.deliveredAt,
-        ubicacion: extra.ubicacion ? NOMBRE_UBICACION[extra.ubicacion] || extra.ubicacion : null,
+        // Las que de verdad se usaron: si no alcanzó en una, salió de las dos.
+        ubicacion: extra.ubicaciones?.length
+          ? extra.ubicaciones.map((u) => NOMBRE_UBICACION[u] || u).join(" y ")
+          : null,
         total_unidades: solicitud.items.reduce((s, it) => s + it.quantity, 0),
         // Lo libre de cada producto (stock menos lo ya comprometido) va en el
         // correo de solicitud nueva: sin abrir el panel se ve si se puede

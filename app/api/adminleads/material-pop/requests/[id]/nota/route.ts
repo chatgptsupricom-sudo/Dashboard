@@ -4,7 +4,7 @@ import {
   resolveMaterialPopCids,
 } from "@/lib/adminleads/material-pop/auth";
 import { listarSolicitudes } from "@/lib/adminleads/material-pop/requests";
-import { notaEntregaHtml } from "@/lib/adminleads/material-pop/notaEntrega";
+import { notaEntregaHtml, type ItemNota } from "@/lib/adminleads/material-pop/notaEntrega";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -40,15 +40,39 @@ export async function GET(
     // los movimientos; si está aprobada, la elige quien emite la nota y por
     // defecto es la oficina (C7), como en la pantalla.
     let origen = (new URL(request.url).searchParams.get("origen") || "").trim();
+    if (origen !== "office" && origen !== "warehouse") origen = "office";
+
+    // Solo lo aprobado: lo pedido de más no sale del almacén.
+    let items: ItemNota[] = solicitud.items
+      .filter((it) => (it.approvedQuantity ?? 0) > 0)
+      .map((it) => ({
+        code: it.code,
+        name: it.name,
+        brand: it.brand,
+        quantity: it.approvedQuantity ?? 0,
+      }));
+    // Ya entregada: lo que salió y de dónde, por producto y ubicación. Un
+    // producto puede haber salido partido entre Oficina y Almacén.
     if (solicitud.status === "entregada" && solicitud.movementGroupId) {
       const salidas = await query(
-        `SELECT location FROM pop_movements
-         WHERE movement_group_id = ? AND type = 'exit' LIMIT 1`,
+        `SELECT m.location, SUM(m.quantity) AS quantity, p.code, p.name, p.brand
+         FROM pop_movements m
+         JOIN pop_products p ON p.id = m.product_id
+         WHERE m.movement_group_id = ? AND m.type = 'exit'
+         GROUP BY p.id, p.code, p.name, p.brand, m.location
+         ORDER BY p.name ASC, m.location ASC`,
         [solicitud.movementGroupId],
       );
-      origen = salidas.rows?.[0]?.location || origen;
+      if (salidas.rows?.length) {
+        items = salidas.rows.map((f: any) => ({
+          code: f.code,
+          name: f.name,
+          brand: f.brand,
+          quantity: Number(f.quantity) || 0,
+          location: f.location,
+        }));
+      }
     }
-    if (origen !== "office" && origen !== "warehouse") origen = "office";
 
     // Uso interno sale como una salida de uso interno: destino = para qué es,
     // y lo recibe quien lo pidió.
@@ -72,15 +96,7 @@ export async function GET(
         ? [solicitud.reviewNotes]
         : [solicitud.notes, solicitud.reviewNotes]
       ).filter(Boolean).join(" · ") || null,
-      // Solo lo aprobado: lo pedido de más no sale del almacén.
-      items: solicitud.items
-        .filter((it) => (it.approvedQuantity ?? 0) > 0)
-        .map((it) => ({
-          code: it.code,
-          name: it.name,
-          brand: it.brand,
-          quantity: it.approvedQuantity ?? 0,
-        })),
+      items,
       origen,
     });
 
