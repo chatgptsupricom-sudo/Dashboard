@@ -123,6 +123,7 @@
 // }
 import { query } from "@/lib/db"; // Importación centralizada
 import { requireSession } from "@/lib/auth/roles";
+import { alcanceDe, puedeVerPersona } from "@/lib/actividades/datos";
 import { NextRequest, NextResponse } from "next/server";
 
 // Declaración global para soporte de WebSocket en Next.js
@@ -153,11 +154,15 @@ export async function GET(req: NextRequest) {
       WHERE 1=1
     `;
 
-    const params: any[] = [];
-    if (userId) {
-      sql += " AND a.user_id = ?";
-      params.push(userId);
+    // Sin userId = las propias; con userId, solo si el usuario puede ver a
+    // esa persona (antes cualquier sesión leía las de cualquiera).
+    const alcance = alcanceDe(auth.payload);
+    const pedido = Number(userId) || alcance.yo;
+    if (!(await puedeVerPersona(alcance, pedido))) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
+    const params: any[] = [pedido];
+    sql += " AND a.user_id = ?";
     sql += " ORDER BY a.created_at DESC";
 
     const result = await query(sql, params);

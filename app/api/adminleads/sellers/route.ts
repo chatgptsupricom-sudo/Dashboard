@@ -1,17 +1,20 @@
 import { query } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
-import { mismaOperacion } from "@/lib/adminleads/sucursal";
+import { condSedeElegida, mismaOperacion, payloadLeads, sedeElegida } from "@/lib/adminleads/sucursal";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const userCids = auth.payload!.cids as number;
 
-    const sql =
-      userCids === 7
+    const elegida = condSedeElegida(auth.payload, "cids");
+    const sql = elegida
+      ? `SELECT id, name, cids, activo, whatsapp FROM sellers WHERE ${elegida} ORDER BY cids ASC, name ASC`
+      : userCids === 7
         ? `SELECT id, name, cids, activo, whatsapp FROM sellers WHERE cids = 7 ORDER BY name ASC`
         : `SELECT id, name, cids, activo, whatsapp FROM sellers WHERE cids != 7 ORDER BY cids ASC, name ASC`;
 
@@ -25,6 +28,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
     const userCids = auth.payload!.cids as number;
@@ -38,7 +42,7 @@ export async function PATCH(request: NextRequest) {
     // como una sola operacion. El listado de arriba ya devuelve las dos
     // sedes juntas, asi que pedir igualdad exacta de cids dejaba a Caracas
     // sin poder activar a los vendedores que su propia pantalla le muestra.
-    if (userRole !== "superadmin" && userCids) {
+    if (userRole !== "superadmin" && userCids && sedeElegida(auth.payload) !== "todas") {
       const check: any = await query(`SELECT cids FROM sellers WHERE id = ?`, [id]);
       const seller = (check.rows || check)?.[0];
       if (!seller || !mismaOperacion(userCids, seller.cids))

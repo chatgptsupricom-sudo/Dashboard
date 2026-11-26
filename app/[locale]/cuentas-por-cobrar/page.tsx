@@ -23,6 +23,7 @@ import {
   FileText,
   Package,
   Download,
+  Check,
 } from "lucide-react";
 import { descargarExcel } from "@/lib/excel";
 import { useAuthStore } from "@/lib/stores/auth.store";
@@ -177,6 +178,9 @@ export default function CxcDashboardPage() {
   const qDetalle = busquedaDetalle.trim().toLowerCase();
   const coincideDetalle = (inv: any) =>
     !qDetalle || String(inv.name || "").toLowerCase().includes(qDetalle) || String(inv.partnerName || "").toLowerCase().includes(qDetalle);
+  // Bandas marcadas en Cartera Vencida: filtran la tabla y lo que se exporta (vacio = todas).
+  const [bandasSel, setBandasSel] = useState<Banda[]>([]);
+  const enBandas = (inv: any) => bandasSel.length === 0 || bandasSel.includes(inv.agingBand);
   const [kpiLoading, setKpiLoading] = useState(false);
   // Track where invoice detail was opened from
   const [detailOrigin, setDetailOrigin] = useState<"invoices" | "clientInvoices">("invoices");
@@ -286,6 +290,7 @@ export default function CxcDashboardPage() {
   // KPI detail modal handlers
   const fetchKpiDetail = useCallback(async (type: string, title: string) => {
     setBusquedaDetalle("");
+    setBandasSel([]);
     setKpiModal({ open: true, type, title });
     setKpiLoading(true);
     setKpiData(null);
@@ -1313,17 +1318,87 @@ export default function CxcDashboardPage() {
                   </p>
                 )}
                 <div>
-                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distribución por Bandas</h4>
+                  {(() => {
+                    const filas = kpiData.invoices.filter((i: any) => coincideDetalle(i) && enBandas(i));
+                    const total = filas.reduce((s: number, i: any) => s + (i.amountResidual || 0), 0);
+                    const etiqueta = (b: string) => BANDAS.find((x) => x.key === b)?.label ?? b;
+                    const exportar = () => {
+                      const nombre = bandasSel.length ? bandasSel.map(etiqueta).join(", ") : "todas las bandas";
+                      descargarExcel(`Cartera_${bandasSel.length ? bandasSel.join("_") : "todas"}_${new Date().toISOString().slice(0, 10)}`, [
+                        {
+                          nombre: "Facturas",
+                          filas: [
+                            ...filas.map((i: any) => ({
+                              Factura: i.name,
+                              Cliente: i.partnerName,
+                              Sede: i.companyName,
+                              Vendedor: i.userName,
+                              "Fecha factura": i.invoiceDate || "",
+                              Vencimiento: i.invoiceDateDue || "",
+                              Banda: etiqueta(i.agingBand),
+                              "Días vencida": i.daysOverdue > 0 ? i.daysOverdue : 0,
+                              Saldo: i.amountResidual,
+                            })),
+                            { Factura: "TOTAL", Cliente: nombre, Saldo: Math.round(total * 100) / 100 },
+                          ],
+                        },
+                        {
+                          nombre: "Resumen por banda",
+                          filas: BANDAS.filter((b) => !bandasSel.length || bandasSel.includes(b.key)).map((b) => {
+                            const de = filas.filter((i: any) => i.agingBand === b.key);
+                            return {
+                              Banda: b.label,
+                              Facturas: de.length,
+                              Saldo: Math.round(de.reduce((s: number, i: any) => s + (i.amountResidual || 0), 0) * 100) / 100,
+                            };
+                          }),
+                        },
+                      ]);
+                    };
+                    return (
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                          Distribución por Bandas <span className="normal-case font-normal tracking-normal text-slate-400">· toca una o varias para filtrar</span>
+                        </h4>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-slate-500">
+                            {bandasSel.length ? `${bandasSel.length} banda${bandasSel.length > 1 ? "s" : ""} · ` : ""}
+                            {filas.length} fact. · <strong className="text-slate-800">{formatCurrency(total)}</strong>
+                          </span>
+                          {bandasSel.length > 0 && (
+                            <button onClick={() => setBandasSel([])} className="text-xs text-blue-600 hover:underline">Quitar selección</button>
+                          )}
+                          <button
+                            onClick={exportar}
+                            disabled={filas.length === 0}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 text-xs font-medium disabled:opacity-50"
+                          >
+                            <Download size={13} /> Exportar a Excel
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
                     {BANDAS.map(({ key: band, label }) => {
                       const bandData = kpiData.byBand[band] || { count: 0, total: 0 };
                       const c = COLOR_BANDA[band];
+                      const marcada = bandasSel.includes(band);
                       return (
-                        <div key={band} className={`${c.fondo} border rounded-xl p-3 text-center`}>
+                        <button
+                          type="button"
+                          key={band}
+                          aria-pressed={marcada}
+                          onClick={() => setBandasSel((sel) => (sel.includes(band) ? sel.filter((b) => b !== band) : [...sel, band]))}
+                          className={`relative ${c.fondo} border rounded-xl p-3 text-center transition hover:shadow-sm ${marcada ? "ring-2 ring-blue-500 border-blue-500" : ""}`}
+                        >
+                          <span className={`absolute top-1.5 left-1.5 w-3.5 h-3.5 rounded border flex items-center justify-center ${marcada ? "bg-blue-500 border-blue-500 text-white" : "bg-white border-slate-300"}`}>
+                            {marcada && <Check size={10} strokeWidth={3} />}
+                          </span>
                           <span className="text-[9px] font-bold uppercase tracking-widest block mb-1">{label}</span>
                           <span className={`text-sm font-bold ${c.texto}`}>{formatCurrency(bandData.total)}</span>
                           <span className="text-[10px] text-slate-400 block">{bandData.count} fact.</span>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -1341,7 +1416,7 @@ export default function CxcDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {kpiData.invoices.filter(coincideDetalle).map((inv: any) => {
+                      {kpiData.invoices.filter((i: any) => coincideDetalle(i) && enBandas(i)).map((inv: any) => {
                         const cb = COLOR_BANDA[inv.agingBand as Banda];
                         return (
                           <tr key={inv.id} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">

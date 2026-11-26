@@ -6,6 +6,7 @@
 import { calcularRecompra, filtrosRecompra, SEDES } from "@/lib/adminleads/recompra";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
+import { payloadLeads, sedeElegida, sedeLeadsNum } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -16,10 +17,14 @@ const USD = '"$"#,##0.00';
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
-    const filtros = filtrosRecompra(request.nextUrl.searchParams);
-    const data = await calcularRecompra({ userCids: (auth.payload!.cids as number) ?? null, ...filtros });
+    const pedidos = filtrosRecompra(request.nextUrl.searchParams);
+    const filtros = { ...pedidos, sede: sedeLeadsNum(auth.payload, pedidos.sede) };
+    // Con las tres sedes elegidas, sin restricción (null), como el SuperAdmin.
+    const userCids = sedeElegida(auth.payload) === "todas" ? null : ((auth.payload!.cids as number) ?? null);
+    const data = await calcularRecompra({ userCids, ...filtros });
 
     const ExcelJS = (await import("exceljs")).default;
     const wb = new ExcelJS.Workbook();

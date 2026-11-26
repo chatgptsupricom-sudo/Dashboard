@@ -12,6 +12,7 @@
 import { getCampaignMetrics, type CampaignAggregate } from "@/lib/campanas-meta";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
+import { cidsLeads, payloadLeads, sedeLeadsParam } from "@/lib/adminleads/sucursal";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -141,12 +142,13 @@ function economiaDeCampana(c: CampaignAggregate, margenPct: number) {
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   try {
-    const userCids = (auth.payload!.cids as number) ?? null;
+    const userCids = cidsLeads(auth.payload);
 
     const { searchParams } = new URL(request.url);
-    const sede = searchParams.get("sede");
+    const sede = sedeLeadsParam(auth.payload, searchParams.get("sede"));
     const fechaInicio = DATE_REGEX.test(searchParams.get("fecha_inicio") || "")
       ? searchParams.get("fecha_inicio")!
       : null;

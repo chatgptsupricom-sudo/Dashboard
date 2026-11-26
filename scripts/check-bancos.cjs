@@ -295,4 +295,144 @@ assert.strictEqual(porMov("rep2").pago, null);
 assert.strictEqual(porMov("dos").pago, null);
 assert.strictEqual(porMov("com").estado, "comision");
 
+// Misma fecha y monto casi igual (Odoo con unos centimos de diferencia): un unico candidato
+const casi = cruzarBanco(
+  [
+    mov("t2", "2026-04-06", "13313570942", -861300, "TRFOB 0102 V022730491 JOSE LINAREZ 4182"), // TRANSF/00002 en Odoo -861.300,29
+    mov("lejos", "2026-04-06", "999", -50000), // pago casi igual, pero 14 dias despues: nada
+    mov("d1", "2026-04-07", "1", -1000), // dos movimientos casi iguales al mismo pago: duda, nada
+    mov("d2", "2026-04-07", "2", -1000.5),
+  ],
+  [pg(95, "2026-04-06", -861300.29, "TRANSF/00002 - Send"), pg(96, "2026-04-20", -50010, "y"), pg(97, "2026-04-07", -1000.2, "z")],
+  [],
+  new Map(),
+  () => true,
+);
+const casiMov = (id) => casi.movimientos.find((x) => x.id === id);
+assert.strictEqual(casiMov("t2").pago?.id, 95);
+assert.strictEqual(casiMov("t2").estado, "parcial");
+assert.ok(casiMov("t2").coincide.fecha && !casiMov("t2").coincide.monto);
+assert.strictEqual(casiMov("lejos").pago, null); // fuera de los dias
+assert.strictEqual(casiMov("d1").pago, null);
+assert.strictEqual(casiMov("d2").pago, null);
+
+// Fechas mes/dia (Excel de Banesco Panama) y dia/mes
+{
+  const { ordenDeFechas } = m.exports;
+  assert.strictEqual(ordenDeFechas(["04/01/2026", "04/13/2026", "04/30/2026"]), "mdy");
+  assert.strictEqual(ordenDeFechas(["01/04/2026", "13/04/2026"]), "dmy");
+  assert.strictEqual(ordenDeFechas(["01/04/2026", "02/04/2026"]), "dmy"); // sin pistas: dia/mes
+  assert.strictEqual(fechaDeCelda("04/13/2026", "mdy"), "2026-04-13");
+  const pan = leerFilasExcel([["Fecha", "Descripcion", "Monto"], ["04/01/2026", "ACH A", "100.00"], ["04/13/2026", "ACH B", "50.00"]]);
+  assert.deepStrictEqual(pan.filas.map((f) => f.fecha), ["2026-04-01", "2026-04-13"]);
+}
+
+// Excel en ingles con dia/mes cruzados: dias 1-12 como fecha real al reves, 13+ como texto (Banesco Panama abril)
+{
+  const filas = [["Fecha ", "Referencia", "monto"], [46026, "ACH A", 3029.64], [46177, "ACH B", 2149.13], ["13/04/2026", "ACH C", 100], ["30/04/2026", "ACH D", 50]];
+  const l = leerFilasExcel(filas);
+  assert.deepStrictEqual(l.filas.map((f) => f.fecha), ["2026-04-01", "2026-04-06", "2026-04-13", "2026-04-30"]);
+  // Un Excel normal con fechas reales no se toca
+  assert.deepStrictEqual(leerFilasExcel([["Fecha", "Monto"], [46026, 10], [46177, 20]]).filas.map((f) => f.fecha), ["2026-01-04", "2026-06-04"]);
+}
+
+// Bancamiga: periodo y «Saldo Inicial» arriba del encabezado, totales abajo, «Nro.» y «Referencia»
+{
+  const l = leerFilasExcel([
+    ["Bancamiga Banco Universal"],
+    ["Movimientos del 01/04/2026-30/04/2026"],
+    ["Saldo Inicial: 21076.56"],
+    ["Nro.", "Fecha", "Referencia", "Concepto", "Débito", "Crédito", "Saldo"],
+    [1, 46119, "'13914869", "NC Credito Inmediato", 0, 150000, 171076.56],
+    [23, 46142, "'563042", "Envio de SMS", 8, 0, 717.59],
+    ["", "", "", "", "", "", ""],
+    ["Creditos Total: 798000", "", "", "Debito Total: 818358,97", "", "Saldo Final: 717,59000000004"],
+  ]);
+  assert.strictEqual(l.filas.length, 2);
+  assert.deepStrictEqual(l.filas.map((f) => f.referencia), ["13914869", "563042"]);
+  assert.strictEqual(l.desde, "2026-04-01");
+  assert.strictEqual(l.hasta, "2026-04-30");
+}
+
+// Cobro dividido del mismo cliente (principal + 4 %) con Memo que no es la referencia del banco
+const pc = (id, fecha, monto, ref, cliente) => ({ id, nombre: "P/" + id, fecha, monto, cliente, ref });
+const div = cruzarBanco(
+  [mov("d", "2026-08-26", "00007190453", 798544.87, "TRF")],
+  [pc(951, "2026-08-26", 767831.61, "51795203", "CORPORACION X"), pc(952, "2026-08-26", 30713.26, "51795203-1", "CORPORACION X"), pc(953, "2026-08-25", 30713.26, "z", "OTRO")],
+  [],
+  new Map(),
+  () => true,
+);
+assert.strictEqual(div.movimientos[0].pago?.id, 951);
+assert.deepStrictEqual(div.movimientos[0].otrosPagos.map((p) => p.id), [952]);
+assert.ok(div.movimientos[0].coincide.monto);
+
+// Cobro dividido con Memo = referencia + 1 cifra, sin guion
+const ext = cruzarBanco(
+  [mov("e", "2026-05-08", "03600573202", 643526.93, "TRF")],
+  [pc(4362, "2026-05-08", 618775.9, "3600573202", "X"), pc(131, "2026-05-08", 24751.03, "36005732021", "X")],
+  [],
+  new Map(),
+  () => true,
+);
+assert.strictEqual(ext.movimientos[0].pago?.id, 4362);
+assert.deepStrictEqual(ext.movimientos[0].otrosPagos.map((p) => p.id), [131]);
+assert.ok(ext.movimientos[0].coincide.monto);
+// Casi igual: 800 Bs en 985.800 ya no (tope 2 o 0,01 %)
+const ochocientos = cruzarBanco([mov("x", "2026-04-20", "1", -985800)], [pc(10, "2026-04-20", -984999.7, "TRANSF/00013 - Send", "")], [], new Map(), () => true);
+assert.strictEqual(ochocientos.movimientos[0].pago, null);
+
+// La referencia del banco con un registro de un mes despues
+const lejos = cruzarBanco([mov("r", "2026-04-15", "03596376793", 160000, "TRF")], [pc(171, "2026-05-15", 160000, "3596376793", "JAILINA")], [], new Map(), () => true);
+assert.strictEqual(lejos.movimientos[0].pago?.id, 171);
+assert.strictEqual(lejos.movimientos[0].estado, "parcial");
+
+// Dos registros identicos (mismo monto y dia) y dos movimientos: se emparejan en orden; con uno solo, toma el primero
+const gemelos = cruzarBanco(
+  [mov("g1", "2026-04-23", "13322883918", -2497740), mov("g2", "2026-04-23", "13322883999", -2497740)],
+  [pg(48, "2026-04-23", -2497740.43, "TRANSF/00048 - Send"), pg(47, "2026-04-23", -2497740.43, "TRANSF/00047 - Send")],
+  [],
+  new Map(),
+  () => true,
+);
+assert.deepStrictEqual(gemelos.movimientos.map((x) => x.pago?.id).sort(), [47, 48]);
+const uno = cruzarBanco([mov("g1", "2026-04-23", "13322883918", -2497740)], [pg(48, "2026-04-23", -2497740.43, "a"), pg(47, "2026-04-23", -2497740.43, "b")], [], new Map(), () => true);
+assert.strictEqual(uno.movimientos[0].pago?.id, 47);
+// Tres movimientos para dos registros identicos: duda, nada
+const tresDos = cruzarBanco(
+  [mov("a", "2026-04-23", "1", -2497740), mov("b", "2026-04-23", "2", -2497740), mov("c", "2026-04-23", "3", -2497740)],
+  [pg(48, "2026-04-23", -2497740.43, "a"), pg(47, "2026-04-23", -2497740.43, "b")],
+  [],
+  new Map(),
+  () => true,
+);
+assert.ok(tresDos.movimientos.every((x) => x.pago === null));
+
 console.log("check-bancos: OK");
+
+// saldosDelMes: archivo en cualquier orden, saldo inicial y final del mes.
+{
+  const { saldosDelMes } = m.exports;
+  const movs = [
+    { fecha: "2026-10-31", monto: -50, saldo: 1150 },
+    { fecha: "2026-10-31", monto: 200, saldo: 1200 },
+    { fecha: "2026-10-02", monto: 100, saldo: 1000 },
+  ];
+  assert.deepStrictEqual(saldosDelMes(movs), { inicial: 900, final: 1150, cuadra: true });
+  assert.deepStrictEqual(saldosDelMes([...movs].reverse()), { inicial: 900, final: 1150, cuadra: true });
+  // Falta una fila: el inicial no calza con ningun movimiento.
+  assert.strictEqual(saldosDelMes(movs.slice(0, 2).concat([{ fecha: "2026-10-02", monto: 100, saldo: 990 }])).cuadra, false);
+  assert.strictEqual(saldosDelMes([{ fecha: "2026-10-02", monto: 5, saldo: null }]), null);
+}
+console.log("saldosDelMes ok");
+
+// ajustePermitido: corregir en Odoo el monto de un cobro/pago que difiere poco del banco.
+{
+  const { ajustePermitido } = m.exports;
+  assert.ok(ajustePermitido(-95700, -95698.45)); // Valencia, BANES/2026/00002
+  assert.ok(ajustePermitido(1000, 1009.99));
+  assert.ok(!ajustePermitido(1000, 1011)); // mas de 1 %
+  assert.ok(!ajustePermitido(-1000, 999)); // signo contrario
+  assert.ok(!ajustePermitido(1000, 1000)); // ya es igual
+}
+console.log("ajustePermitido ok");

@@ -1,4 +1,5 @@
 import { veTodasLasSedes } from "@/lib/auth/inteligenciaNegocio";
+import { sedeElegida } from "@/lib/adminleads/sucursal";
 
 /** Atienden las solicitudes los mismos que suben flyers al banco (superadmin siempre entra). */
 export const ROLES_ADMIN_FLYERS = ["adminleads", "gerente de operaciones", "diseñador"];
@@ -10,7 +11,7 @@ export const ROLES_VENDEDOR_FLYERS = ["vendedor", "seller"];
  * sede en el token (algún diseñador) ve todas las solicitudes en vez de ninguna.
  */
 export function sedeDe(payload: any): number | null {
-  if (veTodasLasSedes(payload?.role)) return null;
+  if (veTodasLasSedes(payload?.role) || sedeElegida(payload) === "todas") return null;
   const cids = Number(payload?.cids);
   return Number.isInteger(cids) && cids > 0 ? cids : null;
 }

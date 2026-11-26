@@ -10,6 +10,7 @@ import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
 import { respuestaSedeNoPermitida } from "@/lib/auth/sedeRol";
 import { respuestaDeError } from "@/lib/administracion/lectura";
 import { NextRequest, NextResponse } from "next/server";
+import { payloadLeads } from "@/lib/adminleads/sucursal";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -17,6 +18,7 @@ export const maxDuration = 120;
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
   if (auth.error) return auth.error;
+  auth.payload = payloadLeads(request, auth.payload);
 
   const sp = request.nextUrl.searchParams;
   const sedes = sedesDelUsuario(auth.payload, sp);

@@ -78,7 +78,7 @@ export const MANUAL_MARKETING_ELECTRO: Semilla = {
         "Organizar tu trabajo",
         "Marketing y Electro",
         "/gestion/actividades",
-        "- En Actividades crea tus tareas (\"+ Nueva Actividad\", con fecha límite) y muévelas a En curso y Culminadas.\n- En el Agente IA haz preguntas en lenguaje natural (por ejemplo, qué marca cayó este mes); verifica la cifra en su pantalla antes de presentarla (regla M4).",
+        "- En Actividades anota tus tareas en \"Mi día\" (escribe y Enter) y culmínalas con un clic en el círculo.\n- En el Agente IA haz preguntas en lenguaje natural (por ejemplo, qué marca cayó este mes); verifica la cifra en su pantalla antes de presentarla (regla M4).",
       ),
     ],
     documentos:
@@ -183,7 +183,7 @@ export const TUTORIAL_MARKETING_ELECTRO: Semilla = {
         "Actividades",
         "Menú › Actividades",
         "/gestion/actividades",
-        "Tus tareas: \"+ Nueva Actividad\" (título, fecha límite, descripción) y el tablero de pendientes, en curso y culminadas. Ves y mueves solo las tuyas.",
+        "Tu día de trabajo.\n- \"Mi día\" ordena tus tareas en Vencidas, Para hoy, Próximos 7 días y Sin fecha. Escribe arriba y pulsa Enter para anotar una tarea (eliges Hoy, Mañana o Sin fecha y la prioridad).\n- El círculo de cada tarea la culmina con un clic (\"Deshacer\" si fue un error); \"Empezar\" la pasa a En curso.\n- Al abrir una tarea cambias fecha, prioridad, estado, observaciones y sus pasos (checklist); los pasos también se tildan desde la lista.\n- \"Tablero\" muestra las mismas tareas en Pendientes, En curso y Culminadas; arrástralas para cambiar el estado.",
       ),
       PASO(
         "Agente IA",

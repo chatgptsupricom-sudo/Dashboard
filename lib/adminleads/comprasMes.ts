@@ -7,6 +7,7 @@
 
 import { idM2o, leerTodo, nombreM2o, redondear } from "@/lib/administracion/lectura";
 import { sedeDelToken } from "@/lib/auth/sedeRol";
+import { sedeElegida } from "@/lib/adminleads/sucursal";
 import { sinIntercompania } from "@/lib/intercompania";
 
 export const SEDES_COMPRAS: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
@@ -46,7 +47,8 @@ export type ReporteComprasMes = {
  * no tiene una válida → 403); los demás, la pedida en `?sede=` o todas.
  */
 export function sedesDelUsuario(payload: any, sp: URLSearchParams): number[] | null {
-  if (String(payload?.role || "").toLowerCase().trim() === "adminleads") {
+  // El AdminLeads de Panamá con las tres sedes elegidas elige como los demás.
+  if (String(payload?.role || "").toLowerCase().trim() === "adminleads" && sedeElegida(payload) !== "todas") {
     const propia = sedeDelToken(payload);
     return propia === null ? null : [propia];
   }

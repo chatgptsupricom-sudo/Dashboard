@@ -9,8 +9,10 @@ import { esHostNC, RUTA_INTERNA, RUTA_PUBLICA } from "@/lib/notas-credito/hostCl
 import { puedeEditarPoliticas, puedeVerPoliticas } from "@/lib/politicas/permisos";
 import { puedeVerSolicitudesPersonal } from "@/lib/solicitudes-personal/tipos";
 import { puedeVerSemaforo } from "@/lib/semaforo-clientes/acceso";
+import { puedeVerPerfilesClientes } from "@/lib/tienda-web/clientes/accesoPanel";
 import { puedeVerCupo } from "@/lib/cupo-credito/acceso";
 import { puedeVerRotacion } from "@/lib/rotacion-inventario/acceso";
+import { payloadSesion } from "@/lib/adminleads/sucursal";
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -65,13 +67,28 @@ function origenDePanelPermitido(origin: string): boolean {
  * tocan: no hay ninguna ruta GET que mute datos (confirmado en el estudio
  * de seguridad), asi que no hay nada que este chequeo proteja ahi.
  */
+// La tienda web (odoo/landing) vive en los dominios de cada sede y manda a
+// /api/tienda-web/* la solicitud de cuenta. Solo esas rutas aceptan además
+// estos orígenes; no usan cookies, así que no hay sesión que forjar.
+function origenDeTiendaPermitido(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname.toLowerCase().replace(/^www\./, "");
+    return ["supricom.com.ve", "supricom.com.pa", "supricom.com"].some(
+      (d) => host === d || host.endsWith(`.${d}`),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function verificarOrigenApi(request: NextRequest): NextResponse {
   if (!METODOS_ESCRITURA.has(request.method.toUpperCase())) {
     return NextResponse.next();
   }
   const origin = request.headers.get("origin");
   if (!origin) return NextResponse.next();
-  if (!origenDePanelPermitido(origin)) {
+  const deTienda = request.nextUrl.pathname.startsWith("/api/tienda-web/") && origenDeTiendaPermitido(origin);
+  if (!deTienda && !origenDePanelPermitido(origin)) {
     return NextResponse.json({ error: "Origen no permitido" }, { status: 403 });
   }
   return NextResponse.next();
@@ -184,6 +201,8 @@ export default async function middleware(request: NextRequest) {
     pathname.includes("/solicitudes-personal") ||
     // Semáforo de clientes: vendedores, Gerencia de Ventas, SuperAdmin y BI (lib/semaforo-clientes/acceso.ts).
     pathname.includes("/semaforo-clientes") ||
+    // Perfiles de clientes de la tienda web: vendedores, gerencia comercial y SuperAdmin (lib/tienda-web/clientes/accesoPanel.ts).
+    pathname.includes("/perfiles-clientes") ||
     // Cupo de crédito: vendedores, Gerencia comercial, SuperAdmin y BI (lib/cupo-credito/acceso.ts).
     pathname.includes("/cupo-credito") ||
     // Rotación de inventario: SuperAdmin, Compras, Gerente de Marca, gerencias y BI (lib/rotacion-inventario/acceso.ts).
@@ -195,7 +214,8 @@ export default async function middleware(request: NextRequest) {
     }
 
     try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
+      // AdminLeads de Panamá con Venezuela elegida entra como Valencia (lib/adminleads/sucursal.ts).
+      const payload = payloadSesion(request, (await jwtVerify(token, JWT_SECRET)).payload);
 
       // Aseguramos que sea string y normalizamos
       const userRole = ((payload.role as string) || "").toLowerCase().trim();
@@ -456,6 +476,11 @@ export default async function middleware(request: NextRequest) {
 
       // 10f. Semáforo de clientes: el vendedor ve su cartera, la gerencia su sede, la dirección todo.
       if (pathname.includes("/semaforo-clientes") && !puedeVerSemaforo(userRole)) {
+        return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
+      }
+
+      // 10f-ter. Perfiles de clientes de la tienda web: el vendedor los suyos, la gerencia su sede, el SuperAdmin todo.
+      if (pathname.includes("/perfiles-clientes") && !puedeVerPerfilesClientes(userRole)) {
         return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
       }
 

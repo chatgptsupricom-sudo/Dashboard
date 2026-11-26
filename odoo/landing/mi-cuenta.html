@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Mi cuenta · SUPRICOM</title>
+<meta name="description" content="Mi cuenta SUPRICOM: tus pedidos, facturas y estado de cuenta por sede.">
+<script>
+    // Tema antes de pintar, para que no parpadee: lo elegido antes, si no el del sistema.
+    (function () {
+        var t = new URLSearchParams(location.search).get("tema");
+        if (t !== "claro" && t !== "oscuro") { try { t = localStorage.getItem("supricom-tema"); } catch (e) {} }
+        if (t !== "claro" && t !== "oscuro") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro";
+        document.documentElement.setAttribute("data-tema", t);
+        document.documentElement.classList.add("js");
+    })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="estilos.css?v=20261125n">
+<link rel="stylesheet" href="tienda.css?v=20261125n">
+<link rel="stylesheet" href="cuenta.css?v=20261125n">
+<link rel="stylesheet" href="mi-cuenta.css?v=20261125n">
+</head>
+<body data-pagina="mi-cuenta">
+<a class="saltar" href="#contenido">Saltar al contenido</a>
+
+<header class="cabecera">
+    <div class="contenedor cabecera-fila">
+        <a class="marca" href="./" data-ir="./" aria-label="SUPRICOM, inicio">
+            <img class="logo logo-claro" src="img/logo-claro.png" alt="SUPRICOM" width="190" height="45">
+            <img class="logo logo-oscuro" src="img/logo-oscuro.png" alt="SUPRICOM" width="190" height="45">
+        </a>
+        <div class="cabecera-acciones">
+            <nav id="menu" class="menu" aria-label="Secciones">
+                <div class="menu-sede"><span class="menu-sede-titulo" aria-hidden="true">Tu sede</span></div>
+                <a href="tienda.html" data-ir="tienda.html">Tienda</a>
+                <a href="./#destacados" data-ir="./#destacados">Destacados</a>
+                <a href="./#comprar" data-ir="./#comprar">Cómo comprar</a>
+                <a href="./#marcas" data-ir="./#marcas">Marcas</a>
+                <button type="button" class="menu-tema">Cambiar a modo oscuro</button>
+                <a class="boton boton-claro" href="mi-cuenta.html" data-ir="mi-cuenta.html" data-cuenta-entrar>Entrar</a>
+            </nav>
+            <a class="boton boton-tinta cabecera-cta" href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
+            <div class="sede-selector">
+                <svg class="sede-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+                <label class="solo-lectores" for="sede">Sede</label>
+                <select id="sede" aria-describedby="sede-ayuda"></select>
+                <p id="sede-ayuda" class="solo-lectores">Cambia los productos del catálogo y el contacto de la página.</p>
+                <button class="sede-ubicar" type="button" aria-label="Usar mi ubicación para elegir la sede más cercana" title="Usar mi ubicación">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>
+                </button>
+                <div class="sede-aviso" role="region" aria-label="Elegir sede" hidden>
+                    <p class="sede-aviso-texto" role="status"></p>
+                    <div class="sede-aviso-acciones">
+                        <button type="button" class="boton boton-tinta sede-aviso-cambiar" hidden></button>
+                        <button type="button" class="boton boton-tinta sede-aviso-ubicar">Usar mi ubicación</button>
+                        <button type="button" class="boton boton-claro sede-aviso-listo">Así está bien</button>
+                    </div>
+                </div>
+            </div>
+            <button class="carrito-boton" type="button" aria-haspopup="dialog" aria-controls="carrito" aria-label="Abrir tu cotización">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="17" rx="2.5"/><path d="M9.5 2.75h5a.75.75 0 0 1 .75.75v1.75a.75.75 0 0 1-.75.75h-5a.75.75 0 0 1-.75-.75V3.5a.75.75 0 0 1 .75-.75ZM8.75 11h6.5M8.75 14.5h6.5M8.75 18h3.5"/></svg>
+                <span class="carrito-n" hidden>0</span>
+            </button>
+            <button class="tema" type="button" aria-pressed="false" aria-label="Activar modo oscuro">
+                <svg class="tema-sol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/></svg>
+                <svg class="tema-luna" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+            </button>
+            <button class="menu-boton" type="button" aria-expanded="false" aria-controls="menu" aria-label="Abrir menú">
+                <span></span><span></span>
+            </button>
+        </div>
+    </div>
+</header>
+
+<main id="contenido">
+
+    <!-- Sin sesión: entrar, o crear/recuperar la contraseña con un código que llega al correo -->
+    <section class="cuenta-portada acceso" hidden>
+        <div class="contenedor">
+            <nav class="migas" aria-label="Estás en">
+                <a href="./" data-ir="./">Inicio</a>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                <span aria-current="page">Mi cuenta</span>
+            </nav>
+            <div class="cuenta-fila">
+                <div class="cuenta-lado">
+                    <p class="cuenta-sobre">Mi cuenta</p>
+                    <h1 class="cuenta-titulo">Tus pedidos y facturas, en un solo lugar</h1>
+                    <p class="cuenta-nota">Para clientes de SUPRICOM. Entra con el correo que tenemos en la ficha de tu empresa.</p>
+                    <ul class="cuenta-beneficios">
+                        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg><span><strong>Sigue cada pedido</strong>De la cotización al despacho y la factura, con su detalle.</span></li>
+                        <li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span><strong>Tu estado de cuenta</strong>Lo que debes y lo vencido, por sede.</span></li>
+                        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg><span><strong>Repite un pedido</strong>Pasa un pedido anterior a tu cotización con un clic.</span></li>
+                    </ul>
+                </div>
+
+                <div class="cuenta-tarjeta acceso-tarjeta">
+                    <!-- Entrar -->
+                    <form class="acceso-paso" data-paso="entrar" novalidate aria-labelledby="t-entrar">
+                        <h2 id="t-entrar" class="cuenta-form-titulo">Entrar</h2>
+                        <p class="cuenta-form-nota">Con tu correo y tu contraseña.</p>
+                        <div class="campo campo-ancho">
+                            <label for="a-correo">Correo electrónico</label>
+                            <input id="a-correo" name="correo" type="email" inputmode="email" autocomplete="username" spellcheck="false" maxlength="160" required>
+                        </div>
+                        <div class="campo campo-ancho">
+                            <label for="a-clave">Contraseña</label>
+                            <div class="clave-caja">
+                                <input id="a-clave" name="clave" type="password" autocomplete="current-password" maxlength="200" required>
+                                <button type="button" class="clave-ver" aria-pressed="false" aria-label="Mostrar la contraseña">Mostrar</button>
+                            </div>
+                        </div>
+                        <label class="recordar campo-ancho"><input type="checkbox" name="recordar" checked> Mantener la sesión iniciada en este equipo</label>
+                        <p class="cuenta-fallo campo-ancho" role="alert" hidden></p>
+                        <div class="cuenta-enviar campo-ancho">
+                            <button type="submit" class="boton boton-tinta boton-grande cuenta-boton"><span class="cuenta-boton-texto">Entrar</span><span class="cuenta-girando" aria-hidden="true"></span></button>
+                        </div>
+                        <div class="acceso-enlaces campo-ancho">
+                            <button type="button" class="enlace-chico enlace-acento" data-a-paso="codigo" data-modo="crear">¿Primera vez? Crea tu contraseña</button>
+                            <button type="button" class="enlace-chico" data-a-paso="codigo" data-modo="recuperar">Olvidé mi contraseña</button>
+                        </div>
+                    </form>
+
+                    <!-- Pedir el código -->
+                    <form class="acceso-paso" data-paso="codigo" novalidate hidden aria-labelledby="t-codigo">
+                        <button type="button" class="acceso-volver campo-ancho" data-a-paso="entrar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Volver</button>
+                        <h2 id="t-codigo" class="cuenta-form-titulo acceso-codigo-titulo">Crea tu contraseña</h2>
+                        <p class="cuenta-form-nota">Escribe el correo que tenemos en la ficha de tu empresa y te mandamos un código para confirmar que es tuyo.</p>
+                        <div class="campo campo-ancho">
+                            <label for="c-correo2">Correo electrónico</label>
+                            <input id="c-correo2" name="correo" type="email" inputmode="email" autocomplete="email" spellcheck="false" maxlength="160" required>
+                        </div>
+                        <p class="cuenta-fallo campo-ancho" role="alert" hidden></p>
+                        <div class="cuenta-enviar campo-ancho">
+                            <button type="submit" class="boton boton-tinta boton-grande cuenta-boton"><span class="cuenta-boton-texto">Enviar código</span><span class="cuenta-girando" aria-hidden="true"></span></button>
+                        </div>
+                    </form>
+
+                    <!-- Código y contraseña nueva -->
+                    <form class="acceso-paso" data-paso="clave" novalidate hidden aria-labelledby="t-clave">
+                        <button type="button" class="acceso-volver campo-ancho" data-a-paso="codigo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Cambiar el correo</button>
+                        <h2 id="t-clave" class="cuenta-form-titulo">Revisa tu correo</h2>
+                        <p class="cuenta-form-nota acceso-enviado" role="status"></p>
+                        <div class="campo campo-ancho">
+                            <label for="c-codigo">Código de 6 números</label>
+                            <input id="c-codigo" name="codigo" class="codigo-entrada" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" spellcheck="false" required>
+                        </div>
+                        <div class="campo campo-ancho">
+                            <label for="c-clave">Contraseña nueva</label>
+                            <div class="clave-caja">
+                                <input id="c-clave" name="clave" type="password" autocomplete="new-password" maxlength="72" required aria-describedby="reglas-clave">
+                                <button type="button" class="clave-ver" aria-pressed="false" aria-label="Mostrar la contraseña">Mostrar</button>
+                            </div>
+                            <ul id="reglas-clave" class="reglas-clave">
+                                <li data-regla="largo">Al menos 8 caracteres</li>
+                                <li data-regla="mezcla">Letras y números</li>
+                            </ul>
+                        </div>
+                        <label class="recordar campo-ancho"><input type="checkbox" name="recordar" checked> Mantener la sesión iniciada en este equipo</label>
+                        <p class="cuenta-fallo campo-ancho" role="alert" hidden></p>
+                        <div class="cuenta-enviar campo-ancho">
+                            <button type="submit" class="boton boton-tinta boton-grande cuenta-boton"><span class="cuenta-boton-texto">Guardar y entrar</span><span class="cuenta-girando" aria-hidden="true"></span></button>
+                        </div>
+                        <div class="acceso-enlaces campo-ancho">
+                            <button type="button" class="enlace-chico enlace-acento acceso-reenviar">Reenviar el código</button>
+                        </div>
+                        <p class="campo-ayuda campo-ancho">¿No te llega? Revisa la carpeta de spam. Si tu correo no está en la ficha de tu empresa, pídele a tu vendedor que lo agregue o <a href="cuenta.html" data-ir="cuenta.html">solicita una cuenta</a>.</p>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Con sesión: menú lateral con la empresa y, a la derecha, resumen, pedidos y facturas -->
+    <section class="panel-cliente" hidden>
+        <div class="contenedor panel-marco">
+            <!-- En el celular el menú se esconde a la izquierda y esta barra lo abre -->
+            <div class="panel-barra">
+                <button type="button" class="panel-menu" aria-expanded="false" aria-controls="panel-lado">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+                    <span class="panel-barra-texto"><small>Tu cuenta</small><strong class="panel-barra-seccion">Resumen</strong></span>
+                </button>
+                <span class="panel-avatar panel-avatar-chico" aria-hidden="true"></span>
+            </div>
+            <div class="panel-lado-fondo" aria-hidden="true"></div>
+            <aside id="panel-lado" class="panel-lado" aria-label="Tu cuenta">
+                <button type="button" class="panel-cerrar" aria-label="Cerrar el menú"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+                <div class="panel-perfil">
+                    <span class="panel-avatar" aria-hidden="true"></span>
+                    <div class="panel-perfil-texto">
+                        <p class="panel-empresa"></p>
+                        <p class="panel-datos"></p>
+                    </div>
+                </div>
+                <div class="panel-nav" role="tablist" aria-orientation="vertical" aria-label="Secciones de tu cuenta">
+                    <button type="button" role="tab" id="p-resumen" data-vista="resumen" aria-controls="vista-resumen" aria-selected="true">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>Resumen
+                    </button>
+                    <button type="button" role="tab" id="p-pedidos" data-vista="pedidos" aria-controls="vista-pedidos" aria-selected="false" tabindex="-1">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>Pedidos
+                    </button>
+                    <button type="button" role="tab" id="p-facturas" data-vista="facturas" aria-controls="vista-facturas" aria-selected="false" tabindex="-1">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h7"/></svg>Estado de cuenta
+                    </button>
+                    <button type="button" role="tab" id="p-rma" data-vista="rma" aria-controls="vista-rma" aria-selected="false" tabindex="-1">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/></svg>Servicio técnico
+                    </button>
+                    <button type="button" role="tab" id="p-perfil" data-vista="perfil" aria-controls="vista-perfil" aria-selected="false" tabindex="-1">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Perfil
+                    </button>
+                </div>
+                <div class="panel-lado-pie">
+                    <a class="panel-enlace" href="tienda.html" data-ir="tienda.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5 5.5 4h13L20 9.5M4 9.5h16v10.5H4zM9 20v-5h6v5"/></svg>Ir a la tienda</a>
+                    <button type="button" class="panel-enlace panel-salir"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>Cerrar sesión</button>
+                </div>
+            </aside>
+
+            <div class="panel-principal">
+                <div class="panel-aviso" role="alert" hidden></div>
+
+                <!-- Resumen -->
+                <div id="vista-resumen" class="panel-vista" role="tabpanel" aria-labelledby="p-resumen">
+                    <header class="vista-cabeza">
+                        <div>
+                            <h1 class="vista-titulo panel-saludo">Tu cuenta</h1>
+                            <p class="vista-nota resumen-nota">Lo que debes, tus pedidos en curso y lo último que pediste.</p>
+                        </div>
+                    </header>
+                    <div class="tarjetas-resumen"></div>
+                    <div class="tabla-caja">
+                        <div class="tabla-barra">
+                            <h2 class="tabla-titulo">Últimos pedidos</h2>
+                            <button type="button" class="enlace-chico enlace-acento" data-ir-vista="pedidos">Ver todos los pedidos</button>
+                        </div>
+                        <div class="tabla tabla-pedidos" role="table" aria-label="Últimos pedidos">
+                            <div class="tabla-cabeza" role="row"><span role="columnheader">Pedido</span><span role="columnheader">Fecha</span><span role="columnheader">Sede</span><span role="columnheader">Estado</span><span role="columnheader" class="a-la-derecha">Total</span><span aria-hidden="true"></span></div>
+                            <div class="tabla-cuerpo resumen-pedidos" role="rowgroup"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pedidos -->
+                <div id="vista-pedidos" class="panel-vista" role="tabpanel" aria-labelledby="p-pedidos" hidden>
+                    <header class="vista-cabeza">
+                        <div>
+                            <h1 class="vista-titulo">Pedidos</h1>
+                            <p class="vista-nota panel-conteo" role="status"></p>
+                        </div>
+                    </header>
+                    <div class="tabla-caja">
+                        <form class="tabla-barra panel-filtros" data-filtros="pedidos" role="search">
+                            <div class="tienda-buscar">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                                <label class="solo-lectores" for="f-pedido">Buscar pedido</label>
+                                <input id="f-pedido" name="q" type="search" placeholder="Número o tu referencia" autocomplete="off">
+                            </div>
+                            <div class="filtros-derecha">
+                                <label class="solo-lectores" for="f-pedido-sede">Sede</label>
+                                <select id="f-pedido-sede" name="sede" class="selector"><option value="">Todas las sedes</option></select>
+                                <label class="solo-lectores" for="f-pedido-etapa">Estado</label>
+                                <select id="f-pedido-etapa" name="etapa" class="selector selector-oculto" tabindex="-1" aria-hidden="true">
+                                    <option value="">Todos los estados</option>
+                                    <option value="abiertos">En curso</option>
+                                    <option value="cotizacion">Cotizaciones</option>
+                                    <option value="facturado">Facturados</option>
+                                    <option value="anulado">Anulados</option>
+                                </select>
+                            </div>
+                        </form>
+                        <div class="chips-etapa" role="group" aria-label="Estado del pedido"></div>
+                        <div class="tabla tabla-pedidos" role="table" aria-label="Pedidos">
+                            <div class="tabla-cabeza" role="row"><span role="columnheader">Pedido</span><span role="columnheader">Fecha</span><span role="columnheader">Sede</span><span role="columnheader">Estado</span><span role="columnheader" class="a-la-derecha">Total</span><span aria-hidden="true"></span></div>
+                            <div class="tabla-cuerpo pedidos-lista" role="rowgroup"></div>
+                        </div>
+                        <div class="panel-paginas" data-paginas="pedidos"></div>
+                    </div>
+                </div>
+
+                <!-- Facturas -->
+                <div id="vista-facturas" class="panel-vista" role="tabpanel" aria-labelledby="p-facturas" hidden>
+                    <header class="vista-cabeza">
+                        <div>
+                            <h1 class="vista-titulo">Estado de cuenta</h1>
+                            <p class="vista-nota panel-conteo" role="status"></p>
+                        </div>
+                        <button type="button" class="boton boton-claro imprimir-cuenta"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3h10v6M7 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/></svg>Imprimir</button>
+                    </header>
+                    <div class="estado-cuenta"></div>
+                    <div class="tabla-caja">
+                        <form class="tabla-barra panel-filtros" data-filtros="facturas" role="search">
+                            <div class="tienda-buscar">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                                <label class="solo-lectores" for="f-factura">Buscar factura</label>
+                                <input id="f-factura" name="q" type="search" placeholder="Número de factura o pedido" autocomplete="off">
+                            </div>
+                            <div class="filtros-derecha">
+                                <label class="solo-lectores" for="f-factura-sede">Sede</label>
+                                <select id="f-factura-sede" name="sede" class="selector"><option value="">Todas las sedes</option></select>
+                                <label class="solo-lectores" for="f-factura-estado">Estado</label>
+                                <select id="f-factura-estado" name="estado" class="selector">
+                                    <option value="abiertas">Por pagar</option>
+                                    <option value="vencida">Vencidas</option>
+                                    <option value="pagada">Pagadas</option>
+                                    <option value="nota">Notas de crédito</option>
+                                    <option value="">Todas</option>
+                                </select>
+                            </div>
+                        </form>
+                        <div class="tabla tabla-facturas" role="table" aria-label="Facturas">
+                            <div class="tabla-cabeza" role="row"><span role="columnheader">Factura</span><span role="columnheader">Emitida</span><span role="columnheader">Vence</span><span role="columnheader">Estado</span><span role="columnheader" class="a-la-derecha">Total</span><span role="columnheader" class="a-la-derecha">Saldo</span></div>
+                            <div class="tabla-cuerpo facturas-lista" role="rowgroup"></div>
+                        </div>
+                        <div class="panel-paginas" data-paginas="facturas"></div>
+                    </div>
+                </div>
+                <!-- Servicio técnico: sus casos y reportar una falla con los productos que compró -->
+                <div id="vista-rma" class="panel-vista" role="tabpanel" aria-labelledby="p-rma" hidden>
+                    <header class="vista-cabeza">
+                        <div>
+                            <h1 class="vista-titulo">Servicio técnico</h1>
+                            <p class="vista-nota">Reporta una falla con los equipos que compraste, sin buscar la factura ni escribir tu RIF, y sigue cada caso.</p>
+                        </div>
+                        <button type="button" class="boton boton-tinta rma-nuevo"><svg class="icono-mas" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Reportar una falla</button>
+                    </header>
+
+                    <!-- Reportar: 1 factura, 2 productos, 3 detalles -->
+                    <section class="rma-asistente tabla-caja" hidden aria-labelledby="rma-titulo">
+                        <div class="tabla-barra rma-barra">
+                            <h2 id="rma-titulo" class="tabla-titulo">Reportar una falla</h2>
+                            <ol class="rma-pasos" aria-label="Pasos">
+                                <li data-paso-rma="1"><span>1</span>Factura</li>
+                                <li data-paso-rma="2"><span>2</span>Equipos</li>
+                                <li data-paso-rma="3"><span>3</span>Detalles</li>
+                            </ol>
+                            <button type="button" class="enlace-chico rma-cancelar">Cancelar</button>
+                        </div>
+
+                        <div class="rma-paso" data-rma="1">
+                            <div class="rma-paso-cabeza">
+                                <p class="rma-ayuda">¿En qué factura vino el equipo? Si no te acuerdas, búscalo por el número del pedido.</p>
+                                <div class="tienda-buscar">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                                    <label class="solo-lectores" for="rma-q">Buscar factura</label>
+                                    <input id="rma-q" type="search" placeholder="Número de factura o de pedido" autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="rma-facturas" role="list" aria-label="Tus facturas"></div>
+                            <div class="panel-paginas" data-paginas="rma"></div>
+                        </div>
+
+                        <div class="rma-paso" data-rma="2" hidden>
+                            <div class="rma-paso-cabeza">
+                                <button type="button" class="acceso-volver rma-atras" data-a="1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Otra factura</button>
+                                <p class="rma-ayuda rma-factura-elegida"></p>
+                            </div>
+                            <div class="rma-productos" role="group" aria-label="Equipos de la factura"></div>
+                            <div class="rma-pie">
+                                <p class="rma-cuenta" role="status"></p>
+                                <button type="button" class="boton boton-tinta rma-siguiente" disabled>Continuar</button>
+                            </div>
+                        </div>
+
+                        <form class="rma-paso" data-rma="3" hidden novalidate>
+                            <div class="rma-paso-cabeza">
+                                <button type="button" class="acceso-volver rma-atras" data-a="2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Cambiar equipos</button>
+                                <p class="rma-ayuda">Cuéntanos qué le pasa a cada equipo y adjunta al menos una foto o un video de la falla.</p>
+                            </div>
+                            <div class="rma-detalles"></div>
+                            <div class="rma-contacto">
+                                <div class="campo">
+                                    <label for="rma-telefono">Teléfono para coordinar la entrega del equipo</label>
+                                    <input id="rma-telefono" name="telefono" type="tel" inputmode="tel" autocomplete="tel" maxlength="50" required>
+                                </div>
+                                <p class="rma-ayuda">Te avisamos por correo cada vez que el caso avance.</p>
+                            </div>
+                            <p class="cuenta-fallo" role="alert" hidden></p>
+                            <div class="rma-pie">
+                                <span></span>
+                                <button type="submit" class="boton boton-tinta boton-grande cuenta-boton"><span class="cuenta-boton-texto">Enviar reporte</span><span class="cuenta-girando" aria-hidden="true"></span></button>
+                            </div>
+                        </form>
+
+                        <div class="rma-listo" hidden tabindex="-1">
+                            <div class="cuenta-listo-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></div>
+                            <h3 class="rma-listo-titulo"></h3>
+                            <p class="rma-ayuda">Lleva el equipo a la sucursal o coordina el envío con tu vendedor. Te avisamos por correo cada vez que el caso avance.</p>
+                            <div class="acciones">
+                                <a class="boton boton-tinta rma-seguir" target="_blank" rel="noopener" hidden>Ver el seguimiento</a>
+                                <button type="button" class="boton boton-claro rma-otro">Reportar otro equipo</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="tabla-caja">
+                        <div class="tabla-barra"><h2 class="tabla-titulo">Tus casos</h2></div>
+                        <div class="tabla tabla-rma" role="table" aria-label="Casos de servicio técnico">
+                            <div class="tabla-cabeza" role="row"><span role="columnheader">Caso</span><span role="columnheader">Equipos</span><span role="columnheader">Sede</span><span role="columnheader">Estado</span><span aria-hidden="true"></span></div>
+                            <div class="tabla-cuerpo rma-casos" role="rowgroup"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Perfil: lo que el cliente escribe de su empresa (nombre, logo, redes, razones sociales con sus
+                     sucursales en el mapa), su vendedor en cada sede y la seguridad de su acceso. Pestañas y edición por bloque. -->
+                <div id="vista-perfil" class="panel-vista" role="tabpanel" aria-labelledby="p-perfil" hidden>
+                    <header class="vista-cabeza">
+                        <div>
+                            <h1 class="vista-titulo">Perfil</h1>
+                            <p class="vista-nota">Así conocemos a tu empresa. Con tus sucursales al día, tu vendedor arma tus pedidos, facturas y despachos sin preguntarte de nuevo.</p>
+                        </div>
+                    </header>
+                    <section class="perfil-hero" aria-label="Tu empresa"></section>
+                    <div class="perfil-pestanas" role="tablist" aria-label="Partes del perfil">
+                        <button type="button" role="tab" id="pt-empresa" data-pt="empresa" aria-controls="pp-empresa" aria-selected="true">Mi empresa</button>
+                        <button type="button" role="tab" id="pt-sucursales" data-pt="sucursales" aria-controls="pp-sucursales" aria-selected="false" tabindex="-1">Razones sociales y sucursales <span class="pt-n"></span></button>
+                        <button type="button" role="tab" id="pt-vendedores" data-pt="vendedores" aria-controls="pp-vendedores" aria-selected="false" tabindex="-1">Mis vendedores</button>
+                        <button type="button" role="tab" id="pt-seguridad" data-pt="seguridad" aria-controls="pp-seguridad" aria-selected="false" tabindex="-1">Acceso y seguridad</button>
+                    </div>
+                    <section id="pp-empresa" class="perfil-panel" role="tabpanel" aria-labelledby="pt-empresa">
+                        <div class="perfil-empresa"></div>
+                    </section>
+                    <section id="pp-sucursales" class="perfil-panel" role="tabpanel" aria-labelledby="pt-sucursales" hidden>
+                        <div class="perfil-razones"></div>
+                    </section>
+                    <section id="pp-vendedores" class="perfil-panel" role="tabpanel" aria-labelledby="pt-vendedores" hidden>
+                        <div class="perfil-sedes"></div>
+                    </section>
+                    <section id="pp-seguridad" class="perfil-panel" role="tabpanel" aria-labelledby="pt-seguridad" hidden>
+                    <div class="perfil-rejilla">
+                        <section class="tarjeta-perfil perfil-acceso" aria-labelledby="t-perfil-acceso">
+                            <h2 id="t-perfil-acceso" class="perfil-titulo">Acceso y seguridad</h2>
+                            <dl class="perfil-datos perfil-acceso-datos"></dl>
+                            <form class="perfil-clave" novalidate>
+                                <h3 class="perfil-subtitulo">Cambiar contraseña</h3>
+                                <div class="campo">
+                                    <label for="pf-actual">Contraseña actual</label>
+                                    <div class="clave-caja"><input id="pf-actual" name="actual" type="password" autocomplete="current-password" maxlength="200" required><button type="button" class="clave-ver" aria-pressed="false" aria-label="Mostrar la contraseña">Mostrar</button></div>
+                                </div>
+                                <div class="campo">
+                                    <label for="pf-nueva">Contraseña nueva</label>
+                                    <div class="clave-caja"><input id="pf-nueva" name="nueva" type="password" autocomplete="new-password" maxlength="72" required><button type="button" class="clave-ver" aria-pressed="false" aria-label="Mostrar la contraseña">Mostrar</button></div>
+                                    <p class="campo-ayuda">Al menos 8 caracteres, con letras y números. Se cierra tu sesión en los otros equipos.</p>
+                                </div>
+                                <p class="cuenta-fallo" role="alert" hidden></p>
+                                <div class="perfil-acciones">
+                                    <button type="submit" class="boton boton-tinta cuenta-boton"><span class="cuenta-boton-texto">Guardar contraseña</span><span class="cuenta-girando" aria-hidden="true"></span></button>
+                                    <button type="button" class="enlace-chico perfil-salir-todos">Cerrar sesión en todos los equipos</button>
+                                </div>
+                            </form>
+                        </section>
+                    </div>
+                    </section>
+                    <!-- Editar una razón social o una sucursal (con su mapa), y confirmar al quitar -->
+                    <dialog class="perfil-dialogo" aria-labelledby="pd-titulo"></dialog>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<!-- Detalle de un pedido: panel lateral, como la cotización -->
+<div class="detalle-fondo" aria-hidden="true"></div>
+<aside class="detalle-pedido" role="dialog" aria-modal="true" aria-labelledby="detalle-titulo" inert>
+    <div class="carrito-cabeza">
+        <div>
+            <p class="detalle-sobre"></p>
+            <h2 id="detalle-titulo" class="carrito-titulo"></h2>
+        </div>
+        <button type="button" class="carrito-cerrar detalle-cerrar" aria-label="Cerrar el pedido"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="carrito-cuerpo detalle-cuerpo"></div>
+    <div class="carrito-pie detalle-pie">
+        <button type="button" class="boton boton-tinta boton-grande detalle-repetir"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg><span>Repetir este pedido</span></button>
+        <p class="ticket-nota">Pasa los productos a tu cotización con las mismas cantidades; puedes cambiarlas antes de enviarla.</p>
+    </div>
+</aside>
+
+<footer class="pie">
+    <div class="contenedor pie-grilla">
+        <div class="pie-marca">
+            <img class="logo logo-claro" src="img/logo-claro.png" alt="SUPRICOM" width="170" height="40">
+            <img class="logo logo-oscuro" src="img/logo-oscuro.png" alt="SUPRICOM" width="170" height="40">
+            <p>¡Tu mayorista de confianza!</p>
+        </div>
+        <nav aria-label="Tienda">
+            <h3>Tienda</h3>
+            <a href="tienda.html" data-ir="tienda.html">Catálogo</a>
+            <a href="mi-cuenta.html" data-ir="mi-cuenta.html">Mi cuenta</a>
+            <a href="cuenta.html" data-ir="cuenta.html">Solicitar cuenta</a>
+        </nav>
+        <nav aria-label="Ayuda">
+            <h3>Ayuda</h3>
+            <a href="https://servicio.supricom.com.ve/es/servicio-tecnico">Servicio técnico</a>
+            <a href="./#preguntas" data-ir="./#preguntas">Preguntas frecuentes</a>
+            <a data-odoo="/contactenos">Contacto</a>
+        </nav>
+        <nav aria-label="SUPRICOM">
+            <h3>SUPRICOM</h3>
+            <a data-odoo="/quienes-somos">Quiénes somos</a>
+            <a href="https://www.facebook.com/supricomvenezuela/" target="_blank" rel="noopener">Facebook</a>
+        </nav>
+    </div>
+    <div class="contenedor pie-legal">
+        <p>© 2026 SUPRICOM. Precios solo para clientes registrados.</p>
+    </div>
+</footer>
+
+<!-- Carrito: el mismo panel del inicio. Es una cotización: se manda a ventas de la sede, no se cobra. -->
+<div class="carrito-fondo" aria-hidden="true"></div>
+<aside id="carrito" class="carrito" role="dialog" aria-modal="true" aria-labelledby="carrito-titulo" inert>
+    <div class="carrito-cabeza">
+        <div>
+            <h2 id="carrito-titulo" class="carrito-titulo">Tu cotización</h2>
+        </div>
+        <button type="button" class="carrito-cerrar" aria-label="Cerrar tu cotización">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+    </div>
+
+    <div class="carrito-cuerpo">
+        <div class="buscador">
+            <label class="solo-lectores" for="buscar-codigo">Agregar un producto por nombre, marca o código</label>
+            <div class="buscador-caja">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input id="buscar-codigo" type="search" role="combobox" aria-expanded="false" aria-controls="buscar-opciones" aria-autocomplete="list" aria-describedby="buscar-ayuda buscar-estado" autocomplete="off" spellcheck="false" placeholder="Agrega por nombre, marca o código">
+            </div>
+            <p id="buscar-ayuda" class="buscador-ayuda">¿Tienes una lista de códigos? Pégala aquí y la sumamos completa.</p>
+            <p id="buscar-estado" class="solo-lectores" role="status"></p>
+            <div class="buscador-panel" hidden>
+                <ul id="buscar-opciones" class="buscador-opciones" role="listbox" aria-label="Productos"></ul>
+                <p class="opcion-nada" hidden></p>
+                <a class="buscador-catalogo" target="_blank" rel="noopener"></a>
+            </div>
+        </div>
+
+        <div class="ticket-lineas" role="list" aria-label="Productos de tu cotización"></div>
+        <div class="ticket-vacio">
+            <p><strong>Tu cotización está vacía.</strong> Toca + en cualquier producto o búscalo arriba.</p>
+        </div>
+
+        <div class="sugeridos" hidden>
+            <p class="sugeridos-titulo">Suele pedirse con lo que llevas</p>
+            <div class="sugeridos-lista"></div>
+        </div>
+    </div>
+
+    <div class="carrito-pie">
+        <div class="ticket-totales">
+            <span aria-hidden="true"><strong data-total="lineas">0</strong> productos</span>
+            <span aria-hidden="true"><strong data-total="unidades">0</strong> unidades</span>
+            <button type="button" class="enlace-chico" data-accion="vaciar">Vaciar</button>
+            <button type="button" class="enlace-chico enlace-acento" data-accion="deshacer" hidden>Deshacer</button>
+        </div>
+        <p id="pedido-resumen" class="pedido-resumen"></p>
+        <a class="boton boton-grande pedido-enviar" target="_blank" rel="noopener">
+            <span data-solo-whatsapp><svg class="icono-lleno" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.8-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z"/></svg></span>
+            <span data-solo-correo hidden><svg class="icono-linea" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg></span>
+            <span class="enviar-texto">Pedir cotización por <span data-sede="medio">WhatsApp</span><span class="solo-lectores" data-solo-whatsapp> (abre WhatsApp en otra pestaña)</span><span class="solo-lectores" data-solo-correo hidden> (abre tu programa de correo)</span></span>
+        </a>
+        <p id="enviar-ayuda" class="solo-lectores">Agrega al menos un producto para enviar.</p>
+        <p class="ticket-largo" hidden>Tu lista es larga para un correo: al enviar la copiamos y solo tienes que pegarla.</p>
+        <p class="ticket-nota">Sin precios ni pago aquí: tu vendedor te responde con la cotización.</p>
+    </div>
+</aside>
+
+<p id="pedido-anuncio" class="solo-lectores" role="status"></p>
+
+<div class="carrito-aviso" hidden>
+    <img class="carrito-aviso-foto" alt="">
+    <p><strong>Sumado a tu cotización</strong><span class="carrito-aviso-nombre"></span></p>
+    <button type="button" class="boton boton-tinta carrito-aviso-ver">Ver cotización</button>
+</div>
+
+<script src="datos.js?v=20261125n"></script>
+<script src="vivo.js?v=20261125n" data-despues="app.js?v=20261125n,mi-cuenta.js?v=20261125n"></script>
+</body>
+</html>

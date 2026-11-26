@@ -1,0 +1,247 @@
+// Chequeo de las reglas de la tienda web pública (nombre legible, marca, categoría, descripción):
+//   node scripts/check-tienda-web.cjs
+// Transpila lib/tienda-web/tipos.ts con TypeScript (no usa Odoo ni la base).
+const fs = require("fs");
+const path = require("path");
+const ts = require("typescript");
+const assert = require("assert");
+
+const fuente = fs.readFileSync(path.join(__dirname, "..", "lib/tienda-web/tipos.ts"), "utf8");
+const js = ts.transpileModule(fuente, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+const m = { exports: {} };
+new Function("require", "module", "exports", js)(require, m, m.exports);
+const { nombreBonito, marcaBonita, categoriaDe, limpiarDescripcion, textoPlano, recortar } = m.exports;
+
+// Nombres reales de Odoo
+assert.strictEqual(nombreBonito("CANON IMPRESORA PIXMA G4170 -  MULTIFUNCIONAL, T. TINTA, WIFI", "Canon"),
+    "Impresora PIXMA G4170 - Multifuncional, T. Tinta, WiFi");
+assert.strictEqual(nombreBonito("HAVIT AUDIFONOS PRO INALAMBRICOS BLUETOOTH  SPACE NC01H GREY", "Havit"),
+    "Audífonos Pro Inalámbricos Bluetooth Space NC01H Grey");
+assert.strictEqual(nombreBonito("IMPRESORA HP MULTIFUNCIONAL SMART TANK 580 W", "HP"), "Impresora HP Multifuncional Smart Tank 580 W");
+assert.strictEqual(nombreBonito("HP TINTA GT52 CYAN PROMO (ORIGINAL)", "HP"), "Tinta GT52 Cyan Promo (Original)");
+assert.strictEqual(nombreBonito("ASUS VIVOBOOK 16 F1605VA-WS96 CORETM I9-13900H 1TB SSD 16GB", "ASUS"),
+    "Vivobook 16 F1605VA-WS96 Coretm I9-13900H 1TB SSD 16GB");
+assert.strictEqual(nombreBonito("TP-LINK ROUTER ARCHER C6U AC1200 DE DOBLE BANDA", "TP-Link"), "Router Archer C6U AC1200 de Doble Banda");
+// Lo que ya viene con minúsculas se respeta
+assert.strictEqual(nombreBonito("NEXXT HOME Cámara inteligente Wi-Fi PTZ", "Nexxt"), "Home Cámara inteligente Wi-Fi PTZ");
+assert.strictEqual(nombreBonito("", "HP"), "");
+// Sin marca no se quita nada
+assert.strictEqual(nombreBonito("CABLE USB A TIPO C 1M", ""), "Cable USB a Tipo C 1M");
+
+// Marcas
+assert.strictEqual(marcaBonita("TP-LINK"), "TP-Link");
+assert.strictEqual(marcaBonita("HAVIT"), "Havit");
+assert.strictEqual(marcaBonita("SIN MARCA"), "");
+assert.strictEqual(marcaBonita("GRAN MARCA NUEVA"), "Gran Marca Nueva");
+assert.strictEqual(marcaBonita("Smartbitt"), "Smartbitt");
+
+// Categorías de Odoo → de la página
+assert.strictEqual(categoriaDe("IMPRESORA"), "impresion");
+assert.strictEqual(categoriaDe("PAPELERIA"), "consumibles");
+assert.strictEqual(categoriaDe("COMPONENTES / COMPUTACION"), "computo");
+assert.strictEqual(categoriaDe("UPS Y REGULADORES"), "energia");
+assert.strictEqual(categoriaDe("All / Saleable / ROUTERING"), "redes");
+assert.strictEqual(categoriaDe("GENERAL"), "otros");
+assert.strictEqual(categoriaDe(null), "otros");
+
+// Descripción: viñetas de la larga, sin etiquetas ni entidades
+const larga = '<section><div><h2>Descripción</h2><ul><li><strong>Impresión</strong>:&nbsp;<a href="x">A color</a></li><li>Peso: 5 kg</li><li>Peso: 5 kg</li></ul></div></section>';
+const d = limpiarDescripcion("<p>La HP Smart Tank 580 es una impresora multifuncional para hogares y oficinas.</p><ul><li>no</li></ul>", larga);
+assert.deepStrictEqual(d.puntos, ["Impresión: A color", "Peso: 5 kg"]);
+assert.strictEqual(d.resumen, "La HP Smart Tank 580 es una impresora multifuncional para hogares y oficinas.");
+// Sin <li> en la larga: los párrafos «Clave: valor»
+const kv = limpiarDescripcion("", "<p>Resolución DPI: 800-1200-1600</p><p>Un párrafo largo sin dos puntos que no es especificación.</p><p>Teclas: 104</p>");
+assert.deepStrictEqual(kv.puntos, ["Resolución DPI: 800-1200-1600", "Teclas: 104"]);
+// Sin nada en la larga: las <li> del resumen
+assert.deepStrictEqual(limpiarDescripcion("<ul><li>Color: Cian</li></ul>", "").puntos, ["Color: Cian"]);
+// Un resumen que es solo el nombre no sirve
+assert.strictEqual(limpiarDescripcion("CANON IMPRESORA PIXMA TS3610", "").resumen, "");
+assert.strictEqual(textoPlano("A&amp;B<br>C"), "A&B C");
+assert.strictEqual(recortar("Uno dos tres. Cuatro cinco seis siete", 20), "Uno dos tres.");
+
+// Solicitud de cuenta (lib/tienda-web/cuentaTipos.ts)
+const fuenteCuenta = fs.readFileSync(path.join(__dirname, "..", "lib/tienda-web/cuentaTipos.ts"), "utf8");
+const jsCuenta = ts.transpileModule(fuenteCuenta, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+const mc = { exports: {} };
+new Function("require", "module", "exports", jsCuenta)(require, mc, mc.exports);
+const { validarSolicitud, normalizarRif, telefonoValido, correosDeSede } = mc.exports;
+
+assert.strictEqual(normalizarRif("j123456789"), "J-12345678-9");
+assert.strictEqual(normalizarRif("J-31737690-0"), "J-31737690-0");
+assert.strictEqual(normalizarRif("V 12.345.678"), "V-12345678");
+assert.strictEqual(normalizarRif("123456789"), null); // sin letra
+assert.strictEqual(normalizarRif("X123456789"), null);
+assert.ok(telefonoValido("0412-555 5555"));
+assert.ok(telefonoValido("+507 399-4554"));
+assert.ok(!telefonoValido("12345"));
+assert.ok(!telefonoValido("0412abc5555"));
+
+// A quién le llega: por sede, y la variable de entorno manda si trae correos válidos
+assert.deepStrictEqual(correosDeSede("caracas"), ["azampetti@supricom.com.ve"]);
+assert.deepStrictEqual(correosDeSede("valencia"), ["gerencia.ventas@supricom.com.ve"]);
+assert.deepStrictEqual(correosDeSede("panama"), ["contabilidad@supricom.com"]);
+assert.deepStrictEqual(correosDeSede("caracas", "valencia=a@x.com;caracas=b@x.com, c@x.com"), ["b@x.com", "c@x.com"]);
+assert.deepStrictEqual(correosDeSede("panama", "panama=no-es-correo"), ["contabilidad@supricom.com"]);
+
+const base = {
+    sede: "caracas", compraMayor: "si", nombre: "Ana", apellido: "Pérez", telefono: "0412 555 5555", correo: "Ana@Empresa.com",
+    empresa: "Tecno Ana C.A.", documento: "j-40123456-7", estado: "Miranda", direccion: "Av. Principal, local 3", tipoNegocio: "Otro",
+};
+const ok = validarSolicitud(base);
+assert.ok(ok.ok);
+assert.strictEqual(ok.datos.documento, "J-40123456-7");
+assert.strictEqual(ok.datos.correo, "ana@empresa.com");
+assert.strictEqual(ok.datos.compraMayor, true);
+assert.strictEqual(validarSolicitud({ ...base, sede: "maracaibo" }).campo, "sede");
+assert.strictEqual(validarSolicitud({ ...base, documento: "123" }).campo, "documento");
+assert.strictEqual(validarSolicitud({ ...base, estado: "Chiriquí" }).campo, "estado"); // provincia de Panamá en Caracas
+assert.strictEqual(validarSolicitud({ ...base, correo: "ana@" }).campo, "correo");
+assert.strictEqual(validarSolicitud({ ...base, compraMayor: "" }).campo, "compraMayor");
+assert.strictEqual(validarSolicitud({ ...base, tipoNegocio: "<script>" }).datos.tipoNegocio, ""); // fuera de la lista: vacío
+const pa = validarSolicitud({ ...base, sede: "panama", documento: "155612345-2-2021", estado: "Chiriquí" });
+assert.ok(pa.ok);
+assert.strictEqual(pa.datos.documento, "155612345-2-2021");
+
+// «Mi cuenta» (lib/tienda-web/clientes/tipos.ts)
+const fuenteCli = fs.readFileSync(path.join(__dirname, "..", "lib/tienda-web/clientes/tipos.ts"), "utf8");
+const jsCli = ts.transpileModule(fuenteCli, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+const mk = { exports: {} };
+new Function("require", "module", "exports", jsCli)(require, mk, mk.exports);
+const { normalizarCorreo, esCorreoInterno, problemaContrasena, codigoValido, claveDocumento, nucleoDocumento, etapaPedido, estadoFactura, diasDeAtraso } = mk.exports;
+
+assert.strictEqual(normalizarCorreo("  Ana@Empresa.COM "), "ana@empresa.com");
+assert.strictEqual(normalizarCorreo("ana@empresa"), null);
+assert.ok(esCorreoInterno("ventas@supricom.com.ve"));
+assert.ok(esCorreoInterno("contabilidad@supricom.com"));
+assert.ok(!esCorreoInterno("compras@tiendasupricomx.com"));
+assert.strictEqual(problemaContrasena("abc12345"), null);
+assert.ok(problemaContrasena("corta1"));
+assert.ok(problemaContrasena("soloLetrasAqui"));
+assert.ok(problemaContrasena("12345678"));
+assert.ok(codigoValido("012345"));
+assert.ok(!codigoValido("12345"));
+assert.ok(!codigoValido("12a456"));
+assert.strictEqual(claveDocumento("J-31737690-0"), claveDocumento("j317376900"));
+assert.strictEqual(nucleoDocumento("J-31737690-0"), "31737690");
+assert.strictEqual(nucleoDocumento("155612345-2-2021"), "155612345");
+assert.strictEqual(nucleoDocumento("J-123"), null);
+
+// Etapa del pedido
+assert.strictEqual(etapaPedido({ state: "draft" }), "cotizacion");
+assert.strictEqual(etapaPedido({ state: "sent" }), "cotizacion");
+assert.strictEqual(etapaPedido({ state: "sale", delivery_status: "partial", invoice_status: "to invoice" }), "confirmado");
+assert.strictEqual(etapaPedido({ state: "sale", delivery_status: "full", invoice_status: "to invoice" }), "despachado");
+assert.strictEqual(etapaPedido({ state: "sale", delivery_status: "full", invoice_status: "invoiced" }), "facturado");
+assert.strictEqual(etapaPedido({ state: "cancel", invoice_status: "invoiced" }), "anulado");
+
+// Estado de la factura
+const hoyF = "2026-11-25";
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "paid", amount_residual: 0 }, hoyF), "pagada");
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "not_paid", amount_residual: 100, invoice_date_due: "2026-11-30" }, hoyF), "pendiente");
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "partial", amount_residual: 40, invoice_date_due: "2026-12-30" }, hoyF), "parcial");
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "partial", amount_residual: 40, invoice_date_due: "2026-11-24" }, hoyF), "vencida");
+assert.strictEqual(estadoFactura({ move_type: "out_invoice", payment_state: "not_paid", amount_residual: 100, invoice_date_due: "2026-11-25" }, hoyF), "pendiente"); // vence hoy: todavía no
+assert.strictEqual(estadoFactura({ move_type: "out_refund", amount_residual: -20 }, hoyF), "nota");
+assert.strictEqual(diasDeAtraso("2026-11-15", hoyF), 10);
+assert.strictEqual(diasDeAtraso("2026-12-05", hoyF), -10);
+assert.strictEqual(diasDeAtraso(false, hoyF), null);
+
+// Antigüedad de la deuda y avance del despacho
+const { tramoDeuda, avanceDespacho } = mk.exports;
+assert.strictEqual(tramoDeuda(null), "porVencer");
+assert.strictEqual(tramoDeuda(-5), "porVencer");
+assert.strictEqual(tramoDeuda(0), "porVencer");
+assert.strictEqual(tramoDeuda(1), "d1_30");
+assert.strictEqual(tramoDeuda(30), "d1_30");
+assert.strictEqual(tramoDeuda(31), "d31_60");
+assert.strictEqual(tramoDeuda(90), "d61_90");
+assert.strictEqual(tramoDeuda(91), "d90");
+assert.strictEqual(avanceDespacho([]), 0);
+assert.strictEqual(avanceDespacho([{ cantidad: 3, despachado: 1 }, { cantidad: 1, despachado: 1 }]), 50);
+assert.strictEqual(avanceDespacho([{ cantidad: 2, despachado: 5 }]), 100); // de más no pasa del 100
+assert.strictEqual(avanceDespacho([{ cantidad: 0, despachado: 0 }]), 0);
+
+// Perfil editable
+const { rifValido, enlaceRed, telefonoValido: telefonoPerfil, validarPerfil, tipoDeImagen } = mk.exports;
+assert.strictEqual(rifValido("j317376900"), "J-31737690-0");
+assert.strictEqual(rifValido("J-31737690-0"), "J-31737690-0");
+assert.strictEqual(rifValido("v 12.345.678"), "V-12345678");
+assert.strictEqual(rifValido("155612345-2-2021"), "155612345-2-2021"); // RUC de Panamá
+assert.strictEqual(rifValido("8-123-456"), "8-123-456");
+assert.strictEqual(rifValido("hola"), null);
+assert.strictEqual(rifValido("J-12"), null);
+assert.strictEqual(enlaceRed("instagram", "@mitienda.ve"), "https://instagram.com/mitienda.ve");
+assert.strictEqual(enlaceRed("instagram", "https://www.instagram.com/mitienda/"), "https://instagram.com/mitienda");
+assert.strictEqual(enlaceRed("instagram", "https://facebook.com/mitienda"), null); // enlace de otra red
+assert.strictEqual(enlaceRed("facebook", "facebook.com/mitienda"), "https://facebook.com/mitienda");
+assert.strictEqual(enlaceRed("tiktok", "mitienda"), "https://tiktok.com/@mitienda");
+assert.strictEqual(enlaceRed("web", "javascript:alert(1)"), null);
+assert.strictEqual(enlaceRed("instagram", "javascript:alert(1)"), null);
+assert.strictEqual(enlaceRed("web", "mitienda.com.ve"), "https://mitienda.com.ve");
+assert.strictEqual(enlaceRed("web", "mitienda"), null);
+assert.strictEqual(enlaceRed("x", ""), "");
+assert.strictEqual(telefonoPerfil("0414-123.45.67"), "0414-123.45.67");
+assert.strictEqual(telefonoPerfil("12345"), null);
+assert.strictEqual(telefonoPerfil("0414abc1234"), null);
+const suc = { nombre: "Principal", direccion: "Av. Bolívar, Valencia", contacto: "Ana", telefono: "0241-8251234" };
+const bien = { nombre: "Tienda Ana", razones: [{ razon: "Ana C.A.", rif: "j123456789", sucursales: [suc] }], redes: { instagram: "@ana" } };
+let r = validarPerfil(bien);
+assert.ok(r.ok);
+assert.strictEqual(r.datos.razones[0].rif, "J-12345678-9");
+assert.strictEqual(r.datos.redes.instagram, "https://instagram.com/ana");
+assert.strictEqual(validarPerfil({ ...bien, razones: [] }).campo, "razones"); // mínimo una razón social
+assert.strictEqual(validarPerfil({ ...bien, razones: [{ ...bien.razones[0], sucursales: [] }] }).campo, "razones.0.sucursales"); // mínimo una sucursal
+assert.strictEqual(validarPerfil({ ...bien, razones: [bien.razones[0], { ...bien.razones[0], razon: "Otra" }] }).campo, "razones.1.rif"); // RIF repetido
+assert.strictEqual(validarPerfil({ ...bien, razones: [{ ...bien.razones[0], sucursales: [{ ...suc, telefono: "12" }] }] }).campo, "razones.0.sucursales.0.telefono");
+assert.strictEqual(validarPerfil({ ...bien, redes: { web: "javascript:alert(1)" } }).campo, "redes.web");
+assert.strictEqual(tipoDeImagen(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10])), "image/png");
+assert.strictEqual(tipoDeImagen(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0])), "image/jpeg");
+assert.strictEqual(tipoDeImagen(Uint8Array.from(Buffer.from("<svg onload=alert(1)>"))), null);
+// Historial del panel: qué cambió entre dos versiones
+const { resumenCambios } = mk.exports;
+const v1 = validarPerfil(bien).datos;
+assert.match(resumenCambios(null, v1)[0], /primera vez: 1 razón social y 1 sucursal/);
+assert.deepStrictEqual(resumenCambios(v1, v1), []);
+const v2 = JSON.parse(JSON.stringify(v1));
+v2.razones[0].sucursales[0].telefono = "0241-0000000";
+v2.razones[0].sucursales.push({ ...suc, nombre: "Almacén" });
+v2.razones.push({ razon: "Otra C.A.", rif: "J-11111111-1", sucursales: [suc] });
+v2.redes.web = "https://ana.com";
+assert.deepStrictEqual(resumenCambios(v1, v2), [
+  "Agregó la razón social Otra C.A. (J-11111111-1) con 1 sucursal",
+  "Cambió el teléfono de la sucursal Principal de Ana C.A.",
+  "Agregó la sucursal Almacén de Ana C.A.",
+  "Agregó su Página web",
+]);
+// Ubicación, enlaces pegados en otro campo y redes encontradas en una página
+const { coordenadas, redDeEnlace, redesEnHtml } = mk.exports;
+assert.deepStrictEqual(coordenadas("10.1620305", "-68.0076543"), { lat: 10.162031, lng: -68.007654 });
+assert.strictEqual(coordenadas(48.85, 2.35), null); // París: fuera de Venezuela y Panamá
+assert.strictEqual(coordenadas("", ""), null);
+const conPunto = validarPerfil({ ...bien, razones: [{ ...bien.razones[0], sucursales: [{ ...suc, lat: 10.16, lng: -68.0 }] }] });
+assert.strictEqual(conPunto.datos.razones[0].sucursales[0].lat, 10.16);
+const puntoMalo = validarPerfil({ ...bien, razones: [{ ...bien.razones[0], sucursales: [{ ...suc, lat: "x", lng: 5 }] }] });
+assert.ok(puntoMalo.ok); // una ubicación mala no traba el guardado: se ignora
+assert.strictEqual(puntoMalo.datos.razones[0].sucursales[0].lat, undefined);
+const v3 = JSON.parse(JSON.stringify(v1));
+v3.razones[0].sucursales[0].lat = 10.1; v3.razones[0].sucursales[0].lng = -68;
+assert.deepStrictEqual(resumenCambios(v1, v3), ["Cambió la ubicación en el mapa de la sucursal Principal de Ana C.A."]);
+assert.strictEqual(redDeEnlace("https://www.instagram.com/tienda"), "instagram");
+assert.strictEqual(redDeEnlace("fb.com/tienda"), "facebook");
+assert.strictEqual(redDeEnlace("@tienda"), null);
+assert.strictEqual(redDeEnlace("https://tienda.com"), null);
+assert.deepStrictEqual(redesEnHtml(`
+  <a href="https://www.facebook.com/sharer/sharer.php?u=x">Compartir</a>
+  <a href="https://www.instagram.com/p/ABC123/">Una foto</a>
+  <a href="https://www.instagram.com/mitienda/?hl=es">IG</a>
+  <a href='https://facebook.com/MiTienda'>FB</a>
+  <a href="https://twitter.com/intent/tweet?text=x">tuit</a>
+  <a href="https://www.tiktok.com/@mitienda">TikTok</a>
+  <a href="https://instagram.com/otra">otra</a>
+`), {
+  instagram: "https://instagram.com/mitienda",
+  facebook: "https://facebook.com/MiTienda",
+  tiktok: "https://tiktok.com/@mitienda",
+});
+
+console.log("tienda-web: todo bien");

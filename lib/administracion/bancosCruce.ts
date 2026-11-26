@@ -39,21 +39,67 @@ const COLUMNAS: Record<string, RegExp> = {
 };
 
 /** Dia (YYYY-MM-DD) de una celda: fecha de Excel, "2026/10/22", "27/10/2026" (dia/mes). */
-export function fechaDeCelda(v: unknown): string | null {
+export function fechaDeCelda(v: unknown, orden: "dmy" | "mdy" = "dmy", invertirSerial = false): string | null {
   const iso = (y: number, m: number, d: number) => {
     const f = new Date(Date.UTC(y, m - 1, d));
     return y >= 2000 && f.getUTCMonth() === m - 1 && f.getUTCDate() === d ? f.toISOString().slice(0, 10) : null;
   };
   if (v instanceof Date) return iso(v.getFullYear(), v.getMonth() + 1, v.getDate());
   if (typeof v === "number" && v > 30000 && v < 80000) {
-    return new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400_000).toISOString().slice(0, 10);
+    const f = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400_000).toISOString().slice(0, 10);
+    // Excel guardo «01/04/2026» (dia/mes) como 4 de enero: se devuelven mes y dia a su lugar (ver serialesInvertidos).
+    return invertirSerial && +f.slice(8) <= 12 ? iso(+f.slice(0, 4), +f.slice(8), +f.slice(5, 7)) : f;
   }
   const s = String(v ?? "").trim();
   let r = /^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})/.exec(s);
   if (r) return iso(+r[1], +r[2], +r[3]);
   r = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?!\d)/.exec(s);
-  if (r) return iso(r[3].length === 2 ? 2000 + +r[3] : +r[3], +r[2], +r[1]);
+  if (r) {
+    const y = r[3].length === 2 ? 2000 + +r[3] : +r[3];
+    return orden === "mdy" ? iso(y, +r[1], +r[2]) : iso(y, +r[2], +r[1]);
+  }
   return null;
+}
+
+/**
+ * Orden de las fechas en texto de una columna: dia/mes (Venezuela) salvo que alguna
+ * tenga el segundo numero mayor que 12 y ninguna el primero (mes/dia, como el Excel
+ * de Banesco Panama: «04/13/2026»; leido como dia/mes salian del 04/01 al 04/10 y las
+ * de dia > 12 se perdian, nov-2026).
+ */
+/**
+ * Fechas guardadas por un Excel en ingles con dia y mes cruzados: los dias 1 al 12
+ * quedan como fecha real con el mes y el dia al reves («01/04/2026» = 4 de enero) y
+ * los del 13 en adelante como texto «13/04/2026», que Excel no pudo convertir
+ * (Banesco Panama «Abril 2026.xlsx», nov-2026: 27 de 72 filas caian en enero, junio,
+ * julio...). true si la columna mezcla las dos cosas y, al cruzarlas, las fechas reales
+ * caen en los meses del texto.
+ */
+export function serialesInvertidos(valores: unknown[]): boolean {
+  const meses = new Set<number>();
+  for (const v of valores) {
+    const r = typeof v === "string" ? /^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?!\d)/.exec(v) : null;
+    if (r && +r[1] > 12) meses.add(+r[2]);
+  }
+  const seriales = valores
+    .filter((v): v is number => typeof v === "number" && v > 30000 && v < 80000)
+    .map((v) => new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400_000));
+  if (!meses.size || !seriales.length) return false;
+  const tal = seriales.filter((f) => meses.has(f.getUTCMonth() + 1)).length;
+  const cruzado = seriales.filter((f) => f.getUTCDate() <= 12 && meses.has(f.getUTCDate())).length;
+  return cruzado > tal;
+}
+
+export function ordenDeFechas(valores: unknown[]): "dmy" | "mdy" {
+  let primero = false;
+  let segundo = false;
+  for (const v of valores) {
+    const r = typeof v === "string" ? /^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?!\d)/.exec(v) : null;
+    if (!r) continue;
+    if (+r[1] > 12) primero = true;
+    if (+r[2] > 12) segundo = true;
+  }
+  return segundo && !primero ? "mdy" : "dmy";
 }
 
 /**
@@ -124,14 +170,42 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
     const titulos = (celdas[h] || []).map((c) => sinAcentos(String(c ?? "")));
     const col = (clave: string) => titulos.findIndex((t) => t && COLUMNAS[clave].test(t));
     const c = Object.fromEntries(Object.keys(COLUMNAS).map((k) => [k, col(k)]));
+    // «Referencia» antes que «Nro.» (Bancamiga trae las dos y «Nro.» es el numero de fila).
+    const ref = titulos.findIndex((t) => t && /referencia|^ref\b/.test(t));
+    if (ref >= 0) c.referencia = ref;
     if (c.monto < 0 && (c.credito < 0 || c.debito < 0)) c.monto = c.montoOtro;
     if (c.fecha < 0 || (c.monto < 0 && (c.credito < 0 || c.debito < 0))) continue;
     const filas: FilaEstado[] = [];
     const dias: string[] = [];
     let fecha: string | null = null;
+    const valoresFecha = celdas.slice(h + 1).map((f) => f?.[c.fecha]);
+    const orden = ordenDeFechas(valoresFecha);
+    const invertir = serialesInvertidos(valoresFecha);
+    // Lineas de saldo inicial/final y de totales sin fecha (Bancamiga: «Saldo Inicial: 21.076,56» arriba y «Creditos
+    // Total: 798000 / Debito Total: 818358,97» abajo; la de totales se leia como un movimiento de 717,59 con la fecha de
+    // la fila de arriba). No son movimientos, pero dicen que el estado cubre desde el inicio o hasta el fin del mes.
+    let saldoInicialSinFecha = false;
+    let totalesSinFecha = false;
+    // Lo de arriba del encabezado: «Saldo Inicial: 21076.56» y el periodo «Movimientos del 01/04/2026-30/04/2026».
+    for (const fila of celdas.slice(0, h)) {
+      const texto = sinAcentos((fila || []).map((x) => String(x ?? "")).join(" "));
+      if (/saldo (inicial|anterior)/.test(texto)) saldoInicialSinFecha = true;
+      const p = /(?:del|desde)\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})\s*(?:-|al|hasta|a)\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{4})/.exec(texto);
+      const d1 = p && fechaDeCelda(p[1], orden);
+      const d2 = p && fechaDeCelda(p[2], orden);
+      if (d1 && d2 && d1 <= d2) dias.push(d1, d2);
+    }
     for (const fila of celdas.slice(h + 1)) {
       const celda = (i: number) => (i >= 0 ? fila?.[i] : undefined);
-      fecha = fechaDeCelda(celda(c.fecha)) ?? (String(celda(c.fecha) ?? "").trim() ? null : fecha);
+      const texto = sinAcentos((fila || []).map((x) => String(x ?? "")).join(" "));
+      const fechaFila = fechaDeCelda(celda(c.fecha), orden, invertir);
+      if (/saldo (inicial|anterior)/.test(texto) || /(creditos?|debitos?) total|total (de )?(creditos?|debitos?)|saldo final/.test(texto)) {
+        if (fechaFila) dias.push(fechaFila);
+        else if (/saldo (inicial|anterior)/.test(texto)) saldoInicialSinFecha = true;
+        else totalesSinFecha = true;
+        continue;
+      }
+      fecha = fechaFila ?? (String(celda(c.fecha) ?? "").trim() ? null : fecha);
       if (!fecha) continue;
       dias.push(fecha);
       const descripcion = String(celda(c.descripcion) ?? "").replace(/\s+/g, " ").trim();
@@ -143,13 +217,19 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
       if (monto === null || monto === 0) continue;
       filas.push({
         fecha,
-        referencia: String(celda(c.referencia) ?? "").trim().slice(0, 60),
+        referencia: String(celda(c.referencia) ?? "").trim().replace(/^'+/, "").slice(0, 60),
         descripcion: descripcion.slice(0, 255),
         monto,
         saldo: montoDeCelda(celda(c.saldo)),
       });
     }
     if (!filas.length) return null;
+    const fechas = filas.map((f) => f.fecha).sort();
+    if (saldoInicialSinFecha) dias.push(`${fechas[0].slice(0, 7)}-01`);
+    if (totalesSinFecha) {
+      const ult = fechas[fechas.length - 1];
+      dias.push(new Date(Date.UTC(+ult.slice(0, 4), +ult.slice(5, 7), 0)).toISOString().slice(0, 10));
+    }
     return armarEstado(filas, dias);
   }
   return null;
@@ -160,6 +240,32 @@ export function armarEstado(leidas: FilaEstado[], diasExtra: string[] = []): Est
   const filas = signosPorSaldo(leidas);
   const dias = [...diasExtra, ...filas.map((f) => f.fecha)].sort();
   return { filas, desde: dias[0], hasta: dias[dias.length - 1], saltos: saltosDeSaldo(filas) };
+}
+
+// ---------- Saldos del estado de cuenta ----------
+
+/**
+ * Saldo inicial y final de unos movimientos (los de un mes) segun el saldo que
+ * trae cada fila. Los archivos vienen en cualquier orden (Banesco va del mas nuevo
+ * al mas viejo): el final es el del ultimo dia con saldo cuyo saldo no es el saldo
+ * previo (saldo - monto) de otro movimiento de ese dia, mas lo que haya despues sin
+ * saldo; el inicial = final - suma de los montos. `cuadra` = algun movimiento
+ * arranca justo en ese inicial y el final no es ambiguo (si no, falta una fila).
+ * null si ninguno trae saldo.
+ */
+export function saldosDelMes(movs: { fecha: string; monto: number; saldo: number | null }[]) {
+  const c = (n: number) => Math.round(n * 100);
+  const con = movs.filter((m) => m.saldo !== null);
+  if (!con.length) return null;
+  const ultimoDia = con.reduce((d, m) => (m.fecha > d ? m.fecha : d), "");
+  const delDia = con.filter((m) => m.fecha === ultimoDia);
+  const previos = delDia.map((m) => c(m.saldo! - m.monto));
+  const finales = delDia.filter((m, i) => !previos.some((p, j) => j !== i && p === c(m.saldo!)));
+  const despues = movs.filter((m) => m.fecha > ultimoDia).reduce((s, m) => s + c(m.monto), 0);
+  const final = c((finales.length === 1 ? finales[0] : delDia[delDia.length - 1]).saldo!) + despues;
+  const inicial = final - movs.reduce((s, m) => s + c(m.monto), 0);
+  const cuadra = finales.length === 1 && con.some((m) => c(m.saldo! - m.monto) === inicial);
+  return { inicial: inicial / 100, final: final / 100, cuadra };
 }
 
 // ---------- Periodo ----------
@@ -277,6 +383,16 @@ export function errorPagos(monto: number, pendientes: number[]): string | null {
   if (pendientes.length === 1) return total + 0.005 >= objetivo ? null : `Le quedan ${total.toFixed(2)} por conciliar y el movimiento es por ${objetivo.toFixed(2)}`;
   return Math.abs(total - objetivo) < 0.01 ? null : `Suman ${total.toFixed(2)} y el movimiento es por ${objetivo.toFixed(2)}`;
 }
+/** Hasta que diferencia se deja corregir en Odoo el monto de un cobro/pago para que sea el del banco (un error al escribirlo). */
+export const MAX_AJUSTE = 0.01;
+
+/** El registro de Odoo es del mismo signo que el movimiento y difiere en mas de un centimo y hasta MAX_AJUSTE (1 %). */
+export function ajustePermitido(movimiento: number, registro: number): boolean {
+  const a = Math.abs(movimiento);
+  const d = Math.abs(a - Math.abs(registro));
+  return movimiento !== 0 && Math.sign(movimiento) === Math.sign(registro) && d >= 0.005 && d <= a * MAX_AJUSTE;
+}
+
 export type EstadoComprobante = "conciliado" | "por_revisar" | "sin_registrar" | "no_encontrado" | "sin_estado";
 
 export type MovimientoCruzado = Movimiento & {
@@ -342,6 +458,10 @@ export function mismaReferencia(a: string, b: string) {
 // "misma fecha". Sin la fecha, la referencia se busca hasta 15 dias.
 const DIAS_FECHA = 3;
 const DIAS_VENTANA = 15;
+// La referencia del banco con un registro mas viejo o mas nuevo: hasta ~mes y medio.
+const DIAS_REF_LEJOS = 45;
+// Los dos cobros de un pago dividido y el movimiento del banco.
+const DIAS_DIVIDIDO = 5;
 // Los comprobantes siguen con sus margenes.
 const DIAS_POR_REFERENCIA = 7;
 const DIAS_POR_MONTO = 3;
@@ -359,6 +479,15 @@ export function coincidencia(m: Movimiento, p: PagoOdoo | PagoOdoo[]): Coincide 
 /** "3626455533-1" -> "3626455533": CxC registra una transferencia en varios cobros con el mismo Memo y -1, -2... */
 const SUFIJO_DIVIDIDO = /-\d{1,2}$/;
 export const memoBase = (ref: string) => String(ref || "").trim().replace(SUFIJO_DIVIDIDO, "");
+/**
+ * El Memo es la referencia del banco con 1 o 2 cifras de mas al final, sin guion: la otra parte de un cobro dividido
+ * (Valencia: banco 03600573202 = Memo 3600573202 + Memo 36005732021, el 4 % aparte).
+ */
+export function refExtendida(memo: string, ref: string) {
+  const d = String(memo || "").replace(/\D/g, "").replace(/^0+/, "");
+  const r = String(ref || "").replace(/\D/g, "").replace(/^0+/, "");
+  return r.length >= 6 && d.length > r.length && d.length <= r.length + 2 && d.startsWith(r);
+}
 
 /**
  * Cruza el estado de cuenta con los cobros y pagos de Odoo del mismo diario
@@ -426,16 +555,56 @@ export function cruzarBanco(
           !usados.has(p.id) &&
           p.monto > 0 === m.monto > 0 &&
           dias(p.fecha, m.fecha) <= DIAS_VENTANA &&
-          mismaReferencia(memoBase(p.ref), m.referencia),
+          (mismaReferencia(memoBase(p.ref), m.referencia) || refExtendida(p.ref, m.referencia)),
       )
       .sort((a, b) => a.ref.localeCompare(b.ref));
-    if (grupo.length < 2 || !grupo.some((p) => SUFIJO_DIVIDIDO.test(p.ref.trim()))) continue;
+    if (grupo.length < 2 || !grupo.some((p) => SUFIJO_DIVIDIDO.test(p.ref.trim()) || refExtendida(p.ref, m.referencia))) continue;
     const c = coincidencia(m, grupo);
     if (!c.monto) continue;
     for (const p of grupo) usados.add(p.id);
     pagoDe.set(m.id, { pago: grupo[0], otros: grupo.slice(1), estado: c.fecha ? "referencia" : "parcial" });
   }
   pasos.slice(2).forEach(correr);
+  // La referencia del banco con un registro de hace mas de DIAS_VENTANA (hasta DIAS_REF_LEJOS): CxC lo registro un mes
+  // despues (Valencia, P00171: banco 15/04 160.000 ref 3596376793, Odoo 15/05). Mismo monto o casi (0,1 %), un solo candidato.
+  for (const m of todos) {
+    if (pagoDe.has(m.id) || !normalRef(m.referencia) || esComision(m)) continue;
+    const candidatos = pagos.filter(
+      (p) =>
+        !usados.has(p.id) &&
+        p.monto > 0 === m.monto > 0 &&
+        dias(p.fecha, m.fecha) <= DIAS_REF_LEJOS &&
+        mismaReferencia(memoBase(p.ref), m.referencia) &&
+        Math.abs(Math.abs(p.monto) - Math.abs(m.monto)) <= Math.max(0.01, Math.abs(m.monto) * 0.001),
+    );
+    if (candidatos.length === 1) tomar(m, candidatos[0], "parcial");
+  }
+  // Un pago del cliente que CxC registro en dos cobros (el principal y un 4 % aparte) con un Memo que no es la referencia
+  // del banco (Valencia, P00951 767.831,61 + P00952 30.713,26 = banco 798.544,87 del 26/08): dos cobros libres del mismo
+  // cliente que suman justo el movimiento en +-DIAS_DIVIDIDO dias. Solo si hay un unico par y ningun otro movimiento del
+  // mismo monto lo puede querer.
+  const libresDividido = (m: Movimiento) =>
+    pagos.filter(
+      (p) => !usados.has(p.id) && p.monto > 0 === m.monto > 0 && p.cliente && Math.abs(p.monto) < Math.abs(m.monto) && dias(p.fecha, m.fecha) <= DIAS_DIVIDIDO,
+    );
+  const sinPagoDividido = todos.filter((m) => !pagoDe.has(m.id) && !esComision(m));
+  for (const m of sinPagoDividido) {
+    if (pagoDe.has(m.id)) continue;
+    const libres = libresDividido(m);
+    const pares: [PagoOdoo, PagoOdoo][] = [];
+    for (let i = 0; i < libres.length && pares.length < 2; i++) {
+      for (let j = i + 1; j < libres.length; j++) {
+        if (libres[i].cliente === libres[j].cliente && mismoMonto(libres[i].monto + libres[j].monto, m.monto)) pares.push([libres[i], libres[j]]);
+      }
+    }
+    if (pares.length !== 1) continue;
+    const rivales = sinPagoDividido.filter((o) => o.id !== m.id && !pagoDe.has(o.id) && mismoMonto(o.monto, m.monto) && dias(o.fecha, m.fecha) <= DIAS_DIVIDIDO * 2);
+    if (rivales.length) continue;
+    const [a, b] = Math.abs(pares[0][0].monto) >= Math.abs(pares[0][1].monto) ? pares[0] : [pares[0][1], pares[0][0]];
+    usados.add(a.id);
+    usados.add(b.id);
+    pagoDe.set(m.id, { pago: a, otros: [b], estado: "parcial" });
+  }
   // Solo el monto: domiciliaciones y servicios que el banco cobra solo y Odoo registra dias despues con otra
   // referencia (CEPRO ALARM: banco 04/05 ref 89, Odoo PBANES/2026/00105 12/05 Memo 877). Se propone para revisar
   // solo si no hay duda: un unico cobro/pago libre de ese monto exacto en ±15 dias y ningun otro movimiento sin
@@ -448,6 +617,28 @@ export function cruzarBanco(
       (o) => o.id !== m.id && !pagoDe.has(o.id) && mismoMonto(o.monto, m.monto) && dias(o.fecha, candidatos[0].fecha) <= DIAS_VENTANA,
     );
     if (!rivales.length) tomar(m, candidatos[0], "parcial");
+  }
+  // Misma fecha y monto casi igual: Odoo lo registro con unos centimos o bolivares de diferencia y otra referencia
+  // (al empezar no dejaba cambiar la tasa; Valencia 06/04: banco 861.300,00 y BANES/2026/00003 TRANSF/00002 - Send
+  // 861.300,29). Se propone para revisar (alli se ofrece corregir el monto en Odoo) solo si no hay duda: un unico
+  // cobro/pago libre en +-DIAS_FECHA dias a menos de MAX(2, 0,01 %) y ningun otro movimiento sin amarrar que lo quiera
+  // (o varios identicos, ver abajo).
+  const cerca = (a: number, b: number) => a > 0 === b > 0 && Math.abs(Math.abs(a) - Math.abs(b)) <= Math.max(2, Math.abs(b) * 0.0001);
+  const aunSinPago = todos.filter((m) => !pagoDe.has(m.id) && !esComision(m));
+  // Varios candidatos identicos (mismo monto y dia: TRANSF/00047 y 00048, 2.497.740,43 el 23/04) son intercambiables:
+  // se toman en orden mientras alcancen para este movimiento y los otros que los quieren.
+  for (const m of aunSinPago) {
+    if (pagoDe.has(m.id)) continue;
+    const candidatos = pagos
+      .filter((p) => !usados.has(p.id) && cerca(p.monto, m.monto) && dias(p.fecha, m.fecha) <= DIAS_FECHA)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+    if (!candidatos.length) continue;
+    const identicos = candidatos.every((p) => mismoMonto(p.monto, candidatos[0].monto) && p.fecha === candidatos[0].fecha);
+    if (!identicos) continue;
+    const rivales = aunSinPago.filter(
+      (o) => o.id !== m.id && !pagoDe.has(o.id) && cerca(candidatos[0].monto, o.monto) && dias(o.fecha, candidatos[0].fecha) <= DIAS_FECHA,
+    );
+    if (rivales.length + 1 <= candidatos.length) tomar(m, candidatos[0], "parcial");
   }
 
   const movDePago = new Map([...pagoDe].map(([movId, { pago }]) => [pago.id, movId]));
@@ -622,7 +813,7 @@ export function distanciaMonto(odoo: number, banco: number): number | null {
  * monto mal cargado (`distanciaMonto`), mismo dia o la misma referencia hasta 3
  * dias. Primero los pares mas parecidos.
  */
-export function emparejarViejas(lineas: LineaOdooVieja[], movs: MovPanel[]): Map<number, MovPanel> {
+export function emparejarViejas<M extends MovPanel>(lineas: LineaOdooVieja[], movs: M[]): Map<number, M> {
   const pares: { linea: number; mov: number; puntos: number }[] = [];
   lineas.forEach((l, i) => {
     movs.forEach((m, j) => {
@@ -637,7 +828,7 @@ export function emparejarViejas(lineas: LineaOdooVieja[], movs: MovPanel[]): Map
   pares.sort((a, b) => a.puntos - b.puntos);
   const usadas = new Set<number>();
   const tomados = new Set<number>();
-  const res = new Map<number, MovPanel>();
+  const res = new Map<number, M>();
   for (const p of pares) {
     if (usadas.has(p.linea) || tomados.has(p.mov)) continue;
     usadas.add(p.linea);

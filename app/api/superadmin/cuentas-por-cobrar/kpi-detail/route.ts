@@ -119,7 +119,8 @@ async function leerGET(request: NextRequest) {
         })) || []));
       }
       const filtered = moves.map((m: any) => {
-        const due = m.invoice_date_due ? new Date(String(m.invoice_date_due).slice(0, 10) + "T00:00:00") : null;
+        // Saldo a favor (NC abierta, negativo) no vence: va a corriente, como en la tarjeta.
+        const due = m.invoice_date_due && (mapa.get(m.id) || 0) > 0 ? new Date(String(m.invoice_date_due).slice(0, 10) + "T00:00:00") : null;
         return {
           id: m.id,
           document_number: m.name,

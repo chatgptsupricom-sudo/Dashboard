@@ -332,7 +332,9 @@ export async function calcularSeriesCxC(
       // Vencida = su fecha de vencimiento ya había pasado EN ESE CORTE. No se
       // puede usar el `days_overdue` del reporte de Odoo, que está calculado
       // contra hoy: una factura que vencía el 10 no estaba vencida el 7.
-      if (vencidaEn(f.due, corte)) {
+      // Un saldo a favor (nota de crédito abierta, saldo negativo) no vence:
+      // resta en el total y queda en corriente, no en las bandas vencidas.
+      if (saldo > 0 && vencidaEn(f.due, corte)) {
         vencido += saldo;
         facturasVencidas++;
         const dias = Math.round((dia.getTime() - f.due!.getTime()) / DIA_MS);

@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Aviso } from "@/components/administracion/comunes";
 import type { ConciliacionBanco, CuentaContable } from "@/lib/administracion/bancos";
-import type { PagoOdoo } from "@/lib/administracion/bancosCruce";
+import { ajustePermitido, type PagoOdoo } from "@/lib/administracion/bancosCruce";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -20,7 +20,7 @@ const textoCuenta = (c: CuentaContable) => `${c.codigo} ${c.nombre}`;
 const OPCIONES: { valor: Opcion; titulo: string; detalle: string }[] = [
   { valor: "pagos", titulo: "Cobro(s) o pago(s) de Odoo", detalle: "Uno solo, o varios que sumen justo el movimiento. Incluye transferencias internas y asientos que quedaron en pendientes." },
   { valor: "cuenta", titulo: "Cuenta contable", detalle: "Comisión, IGTF, intereses, gastos…" },
-  { valor: "transferencia", titulo: "Transferencia entre cuentas propias", detalle: "Va a la cuenta de transferencias internas; se concilia con la otra cuenta cuando su movimiento esté." },
+  { valor: "transferencia", titulo: "Transferencia entre cuentas propias", detalle: "Elige la otra cuenta y se registra la transferencia interna en Odoo con sus dos patas." },
   { valor: "sin_conciliar", titulo: "Pasar a Odoo sin conciliar", detalle: "Crea la línea en el extracto de Odoo y se termina en la conciliación de Odoo." },
 ];
 
@@ -30,12 +30,15 @@ const OPCIONES: { valor: Opcion; titulo: string; detalle: string }[] = [
  */
 export function AprobarMovimiento({
   cuenta,
+  moneda = "USD",
   movimiento: m,
   pagosLibres,
   cerrar,
   listo,
 }: {
   cuenta: number;
+  /** Moneda de la cuenta (VEF, USD): con otra moneda en la otra cuenta se pide la tasa de la transferencia. */
+  moneda?: string;
   movimiento: Movimiento | null;
   pagosLibres: PagoOdoo[];
   cerrar: () => void;
@@ -47,8 +50,14 @@ export function AprobarMovimiento({
   const [contables, setContables] = useState<CuentaContable[] | null>(null);
   const [textoContable, setTextoContable] = useState("");
   const [enviando, setEnviando] = useState(false);
+  /** Corregir en Odoo el monto del unico elegido al del banco (difiere hasta 1 %). */
+  const [ajustar, setAjustar] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  /** Transferencia interna: los otros bancos y cajas de la sede, la elegida y la tasa (si es de otra moneda). */
+  const [diarios, setDiarios] = useState<{ id: number; nombre: string; moneda: string }[] | null>(null);
+  const [otraCuenta, setOtraCuenta] = useState<number | "">("");
+  const [tasa, setTasa] = useState("");
 
   // Cobros si es entrada, pagos si es salida; sin los ya conciliados en Odoo. El propuesto primero, despues los mas parecidos.
   const candidatos = useMemo(() => {
@@ -67,8 +76,18 @@ export function AprobarMovimiento({
     setFiltro("");
     setElegidos(m.pago ? [m.pago, ...m.otrosPagos].map((p) => p.id) : []);
     setTextoContable(m.sugerida ? textoCuenta(m.sugerida) : "");
+    setOtraCuenta("");
+    setTasa("");
     setOpcion(m.pago ? "pagos" : m.sugerida ? "cuenta" : candidatos.length ? "pagos" : "sin_conciliar");
   }, [m]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!m || opcion !== "transferencia" || diarios) return;
+    fetch(`/api/administracion/bancos?cuenta=${cuenta}&diarios=1`)
+      .then((r) => r.json())
+      .then((j) => (j.success ? setDiarios(j.diarios) : setError(j.error || "No se pudieron leer las otras cuentas")))
+      .catch(() => setError("No se pudieron leer las otras cuentas"));
+  }, [m, opcion, diarios, cuenta]);
 
   useEffect(() => {
     if (!m || opcion !== "cuenta" || contables) return;
@@ -85,19 +104,34 @@ export function AprobarMovimiento({
     .slice(0, 40);
   const totalElegido = candidatos.filter((p) => elegidos.includes(p.id)).reduce((s, p) => s + p.monto, 0);
   const cuentaElegida = contables?.find((c) => textoCuenta(c) === textoContable) ?? (m.sugerida && textoCuenta(m.sugerida) === textoContable ? m.sugerida : null);
+  // Un solo cobro/pago elegido que difiere poco del banco: se ofrece corregir su monto en Odoo.
+  const unico = elegidos.length === 1 ? candidatos.find((p) => p.id === elegidos[0]) : undefined;
+  const ofrecerAjuste = opcion === "pagos" && !!unico && ajustePermitido(m.monto, unico.monto);
+  const otra = diarios?.find((d) => d.id === otraCuenta);
+  // Entre cuentas de distinta moneda (Banesco Bs -> Criptos) hace falta la tasa del cambio.
+  const otraMoneda = !!otra && (otra.moneda || "USD") !== (moneda || "USD");
+  // "870,50" (como se escribe en Venezuela) o "870.50".
+  const tasaNum = Number(tasa.includes(",") ? tasa.replace(/\./g, "").replace(",", ".") : tasa);
+  const tasaValida = tasa.trim() === "" ? null : tasaNum > 0 ? tasaNum : NaN;
   const listoParaAprobar =
-    opcion === "pagos" ? elegidos.length > 0 : opcion === "cuenta" ? !!cuentaElegida : true;
+    opcion === "pagos"
+      ? elegidos.length > 0
+      : opcion === "cuenta"
+        ? !!cuentaElegida
+        : opcion === "transferencia"
+          ? !(otraMoneda && !(tasaValida && tasaValida > 0)) && !Number.isNaN(tasaValida)
+          : true;
 
   const aprobar = async () => {
     setEnviando(true);
     setError(null);
     const destino =
       opcion === "pagos"
-        ? { pagos: elegidos }
+        ? { pagos: elegidos, ...(ofrecerAjuste && ajustar ? { ajustar_monto: true } : {}) }
         : opcion === "cuenta"
           ? { cuenta_contable: cuentaElegida!.id }
           : opcion === "transferencia"
-            ? { transferencia: true }
+            ? { transferencia: true, ...(otraCuenta ? { otra_cuenta: otraCuenta, ...(tasaValida ? { tasa: tasaValida } : {}) } : {}) }
             : { sin_conciliar: true };
     const res = await fetch("/api/administracion/bancos", {
       method: "PATCH",
@@ -173,6 +207,65 @@ export function AprobarMovimiento({
                 <p className={`text-xs ${elegidos.length > 1 && Math.abs(totalElegido - m.monto) >= 0.01 ? "text-red-700" : "text-gray-500"}`}>
                   Elegido: {cifra(totalElegido)} de {cifra(m.monto)}. Uno solo puede ser mayor (se abonó en partes); varios tienen que sumar justo el movimiento.
                 </p>
+                {ofrecerAjuste && unico && (
+                  <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm cursor-pointer">
+                    <input type="checkbox" className="mt-1" checked={ajustar} onChange={(e) => setAjustar(e.target.checked)} />
+                    <span>
+                      Corregir en Odoo el monto de <span className="font-medium">{unico.nombre}</span> de {cifra(Math.abs(unico.monto))} a{" "}
+                      <span className="font-medium">{cifra(Math.abs(m.monto))}</span> (el del banco; diferencia {cifra(Math.abs(m.monto) - Math.abs(unico.monto))})
+                      <span className="block text-xs text-gray-600 mt-0.5">
+                        Se pasa a borrador, se le pone el monto del banco con la misma tasa y se vuelve a confirmar; queda una nota en Odoo.
+                        Si ya está aplicado a facturas, se suelta y se vuelve a aplicar a las mismas. En una transferencia entre cuentas propias, la diferencia en Bs pasa a su
+                        asiento de diferencial (el USD no cambia).
+                      </span>
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
+
+            {opcion === "transferencia" && (
+              <div className="space-y-2 text-sm">
+                <label className="block">
+                  <span className="font-medium">{m.monto > 0 ? "¿De qué cuenta salió?" : "¿A qué cuenta fue?"}</span>
+                  <select
+                    className="mt-1 w-full border rounded-md px-2 py-2 bg-white"
+                    value={otraCuenta}
+                    onChange={(e) => setOtraCuenta(e.target.value ? Number(e.target.value) : "")}
+                  >
+                    <option value="">{diarios ? "Ninguna: solo a la cuenta de transferencias (la otra pata se concilia después)" : "Cargando cuentas…"}</option>
+                    {(diarios || []).map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.nombre} ({d.moneda || "USD"})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {otra && (
+                  <p className="text-xs text-gray-600">
+                    Se registra en Odoo la transferencia interna {m.monto > 0 ? `de ${otra.nombre} a esta cuenta` : `de esta cuenta a ${otra.nombre}`} por{" "}
+                    {cifra(Math.abs(m.monto))} el {dia(m.fecha)}: Odoo crea la otra pata, que ya queda lista para conciliar cuando se concilie {otra.nombre}. Si
+                    ya está registrada, se usa esa.
+                  </p>
+                )}
+                {otra && (otraMoneda || /VEF|VES|BS/i.test(moneda)) && (
+                  <label className="block">
+                    <span className="font-medium">
+                      Tasa (Bs por USD){otraMoneda ? "" : ", opcional"}
+                    </span>
+                    <Input
+                      className="mt-1"
+                      inputMode="decimal"
+                      placeholder={otraMoneda ? "La del cambio, ej. 870,50" : "Vacía = la BCV del día"}
+                      value={tasa}
+                      onChange={(e) => setTasa(e.target.value)}
+                    />
+                    {tasaValida && tasaValida > 0 && (
+                      <span className="text-xs text-gray-500">= {cifra(Math.abs(m.monto) / tasaValida)} USD</span>
+                    )}
+                    {Number.isNaN(tasaValida) && <span className="text-xs text-red-700">Escribe una tasa válida</span>}
+                  </label>
+                )}
               </div>
             )}
 

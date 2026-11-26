@@ -247,6 +247,34 @@ export async function perfilPublicoInstagram(
   }
 }
 
+/**
+ * Lo justo para mostrarle a un cliente su propia cuenta de Instagram (y ofrecerle su foto como logo), con
+ * `business_discovery` desde una cuenta nuestra. Solo cuentas de empresa o creador; si no, null y el motivo.
+ */
+export async function fichaInstagram(
+  igUserId: string,
+  usuario: string,
+): Promise<{ ficha: { usuario: string; nombre: string; foto: string; seguidores: number; web: string } | null; motivo: string }> {
+  try {
+    const data = await graphGet(igUserId, {
+      fields: `business_discovery.username(${usuario}){username,name,profile_picture_url,followers_count,website}`,
+    });
+    const b = data.business_discovery || {};
+    return {
+      ficha: {
+        usuario: String(b.username || usuario),
+        nombre: String(b.name || ""),
+        foto: String(b.profile_picture_url || ""),
+        seguidores: parseInt(b.followers_count) || 0,
+        web: String(b.website || ""),
+      },
+      motivo: "",
+    };
+  } catch (err: any) {
+    return { ficha: null, motivo: err?.message || "No se pudo leer el perfil de Instagram" };
+  }
+}
+
 const EMPTY_METRICS: IgAccountMetrics = {
   views: 0,
   reach: 0,
