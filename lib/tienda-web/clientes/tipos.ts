@@ -392,3 +392,33 @@ export function preciosDeLista(items: ItemLista[], plantillaDe: Map<number, numb
   const todos = { ...porProducto, ...porVariante };
   return Object.fromEntries(Object.entries(todos).map(([k, v]) => [k, Math.round(v * 100) / 100]));
 }
+
+/* ------------------------------------------------------------------ Cotización directa a Odoo */
+export const MAX_LINEAS_COTIZACION = 200;
+export const MAX_CANTIDAD_COTIZACION = 99999;
+export interface LineaCotizacion { codigo: string; cantidad: number }
+export interface DatosCotizacion { sede: string; lineas: LineaCotizacion[]; nota: string; clave: string }
+
+/**
+ * Lo que manda la tienda al enviar la cotización: la sede, los códigos con su cantidad (los mismos del carrito;
+ * un código que no está en Odoo llega igual y queda «por revisar»), una nota opcional y una clave que la tienda
+ * genera por envío para que un doble clic o un reintento no creen dos cotizaciones. Códigos repetidos se suman.
+ */
+export function validarCotizacion(c: any): { ok: true; datos: DatosCotizacion } | { ok: false; error: string } {
+  const sede = String(c?.sede || "");
+  if (!Object.values(SEDE_DE_COMPANIA).some((s) => s.id === sede)) return { ok: false, error: "Elige la sede de la cotización" };
+  const clave = String(c?.clave || "");
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(clave)) return { ok: false, error: "Vuelve a intentarlo" };
+  const entrada = Array.isArray(c?.lineas) ? c.lineas : [];
+  const porCodigo = new Map<string, number>();
+  for (const l of entrada) {
+    const codigo = String(l?.codigo ?? "").replace(/\s+/g, " ").trim().toUpperCase().slice(0, 60);
+    const cantidad = Math.floor(Number(l?.cantidad));
+    if (!codigo || !Number.isFinite(cantidad) || cantidad < 1) continue;
+    porCodigo.set(codigo, Math.min(MAX_CANTIDAD_COTIZACION, (porCodigo.get(codigo) || 0) + cantidad));
+  }
+  if (!porCodigo.size) return { ok: false, error: "Agrega al menos un producto a tu cotización" };
+  if (porCodigo.size > MAX_LINEAS_COTIZACION) return { ok: false, error: `Tu cotización puede tener hasta ${MAX_LINEAS_COTIZACION} productos` };
+  const nota = String(c?.nota ?? "").replace(/\r\n/g, "\n").trim().slice(0, 1000);
+  return { ok: true, datos: { sede, lineas: [...porCodigo].map(([codigo, cantidad]) => ({ codigo, cantidad })), nota, clave } };
+}

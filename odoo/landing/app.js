@@ -124,6 +124,7 @@
        (app/api/tienda-web/clientes/precios) y los pinta en todo lo que tenga [data-precio="<id>"]. Se guardan
        10 min en la pestaña para no pedirlos en cada página. Solo si el panel dice que la sesión terminó se borra. */
     const precios = { estado: haySesionCliente ? "cargando" : "sin-sesion", datos: null };
+    const oyentesPrecios = [];
     const tokenCliente = () => { try { return localStorage.getItem(CLAVE_SESION_CLIENTE) || sessionStorage.getItem(CLAVE_SESION_CLIENTE) || ""; } catch (e) { return ""; } };
     const apiClientes = (() => {
         const pedida = new URLSearchParams(location.search).get("api");
@@ -174,6 +175,7 @@
     const pintarPrecios = (raiz = document) => {
         for (const el of $$("[data-precio]", raiz)) pintarUnPrecio(el);
         for (const el of $$("[data-precio-ficha]", raiz)) pintarPrecioFicha(el);
+        if (raiz === document) for (const f of oyentesPrecios) f();
     };
     // Las tarjetas se dibujan después (tienda.js, producto.js, filtros, «Ver más»): se pintan al aparecer.
     new MutationObserver((cambios) => {
@@ -995,6 +997,8 @@
         document.documentElement.classList.remove("carrito-abierto");
         botonCarrito.setAttribute("aria-expanded", "false");
         carrito.inert = true;
+        // Al cerrarlo después de enviar la cotización, la próxima vez abre el carrito normal.
+        if (carrito.classList.contains("cotizacion-enviada")) { carrito.classList.remove("cotizacion-enviada"); const listo = $(".pedido-listo"); if (listo) listo.hidden = true; }
         // El foco vuelve a donde estaba; si eso ya no se ve (el aviso que se cerró), al botón del carrito.
         if (devolverFoco) (focoAntes && focoAntes.isConnected && focoAntes.offsetParent !== null ? focoAntes : botonCarrito).focus({ preventScroll: true });
     };
@@ -1059,6 +1063,98 @@
     let listaParaCopiar = null;
     enviar.classList.toggle("por-whatsapp", POR_WHATSAPP);
     for (const a of $$("[data-abrir-lista]")) a.addEventListener("click", (ev) => { ev.preventDefault(); abrirCarrito(buscador); });
+
+    /* ---- Cotización directa a Odoo: con la sesión de «Mi cuenta» el carrito se envía y queda como cotización en
+       Odoo a nombre de su empresa en esta sede, con su vendedor (app/api/tienda-web/clientes/cotizacion). Sale en
+       Mi cuenta › Pedidos. WhatsApp/correo sigue como segunda opción y es la única sin sesión o sin cuenta en la
+       sede. `claveEnvio` evita que un doble clic o un reintento creen dos cotizaciones. */
+    const notaDirecto = crear("textarea", { class: "pedido-nota-campo", id: "pedido-nota", rows: 2, maxLength: 1000, placeholder: "Ej.: la necesito para el viernes, despachar a la sucursal de San Diego…" });
+    const botonDirecto = crear("button", { type: "button", class: "boton boton-grande pedido-directo-boton" }, [
+        svg("icono-linea", "M4 12 20 4l-4 16-4-7-8-1Z"), crear("span", { text: "Enviar cotización a mi vendedor" }),
+    ]);
+    const estadoDirecto = crear("p", { class: "pedido-directo-estado", role: "status" });
+    const directo = crear("div", { class: "pedido-directo", hidden: true }, [
+        crear("details", { class: "pedido-nota" }, [
+            crear("summary", { text: "Agregar una nota para tu vendedor" }),
+            crear("label", { class: "solo-lectores", for: "pedido-nota", text: "Nota para tu vendedor" }),
+            notaDirecto,
+        ]),
+        botonDirecto,
+        estadoDirecto,
+    ]);
+    enviar.before(directo);
+    const listoDirecto = crear("div", { class: "pedido-listo", hidden: true, tabIndex: -1 });
+    $(".carrito-pie").before(listoDirecto);
+    let claveEnvio = null;
+    let enviandoDirecto = false;
+    const sinCuentaEnSede = () => Boolean(precios.datos && precios.datos.ok === false && precios.datos.motivo === "sin_ficha");
+    const actualizarDirecto = () => {
+        const puede = haySesionCliente && Boolean(apiClientes) && !sinCuentaEnSede();
+        directo.hidden = !puede;
+        enviar.classList.toggle("pedido-enviar-secundario", puede);
+        botonDirecto.disabled = enviandoDirecto || !cotizacion.size;
+    };
+    const nuevaClave = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`);
+    const mostrarListo = (r) => {
+        listoDirecto.replaceChildren(
+            crear("div", { class: "pedido-listo-icono", "aria-hidden": "true" }, [svg("icono-linea", ICONO_LISTO)]),
+            crear("h3", { text: "¡Listo! Tu cotización llegó a tu vendedor" }),
+            crear("p", { class: "pedido-listo-numero", text: r.numero }),
+            crear("p", { text: `${r.vendedor ? `${r.vendedor} la revisa` : "Tu vendedor la revisa"} y te confirma precios, existencia y entrega. La ves en Mi cuenta › Pedidos.` }),
+            ...(r.porRevisar && r.porRevisar.length ? [crear("p", { class: "pedido-listo-aviso", text: `${r.porRevisar.length === 1 ? "Un código" : `${r.porRevisar.length} códigos`} no ${r.porRevisar.length === 1 ? "está" : "están"} en el catálogo (${r.porRevisar.join(", ")}): tu vendedor ${r.porRevisar.length === 1 ? "lo" : "los"} revisa.` })] : []),
+            crear("div", { class: "pedido-listo-acciones" }, [
+                crear("a", { class: "boton boton-tinta", href: conSede("mi-cuenta.html#pedidos"), text: "Ver en Mi cuenta" }),
+                crear("button", { type: "button", class: "boton boton-claro", "data-accion": "seguir", text: "Seguir comprando" }),
+            ]),
+        );
+        $('[data-accion="seguir"]', listoDirecto).addEventListener("click", () => { listoDirecto.hidden = true; carrito.classList.remove("cotizacion-enviada"); cerrarCarrito(); });
+        carrito.classList.add("cotizacion-enviada");
+        listoDirecto.hidden = false;
+        listoDirecto.focus({ preventScroll: true });
+    };
+    botonDirecto.addEventListener("click", async () => {
+        if (enviandoDirecto || !cotizacion.size) return;
+        const token = tokenCliente();
+        if (!token) { cerrarSesionCliente(); actualizarDirecto(); return; }
+        enviandoDirecto = true;
+        claveEnvio = claveEnvio || nuevaClave();
+        estadoDirecto.textContent = "Enviando tu cotización…";
+        estadoDirecto.classList.remove("error");
+        actualizarDirecto();
+        try {
+            const r = await fetch(`${apiClientes}/clientes/cotizacion`, {
+                method: "POST", credentials: "omit",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ sede: SEDE.id, clave: claveEnvio, nota: notaDirecto.value, lineas: [...cotizacion].map(([codigo, cantidad]) => ({ codigo, cantidad })) }),
+            });
+            const d = await r.json().catch(() => ({}));
+            if (r.status === 401) {
+                cerrarSesionCliente();
+                estadoDirecto.textContent = "Tu sesión terminó. Entra de nuevo a Mi cuenta o envíala por " + MEDIO + ".";
+                estadoDirecto.classList.add("error");
+            } else if (!r.ok || !d.ok) {
+                if (d.motivo === "sin_ficha") { precios.datos = { ok: false, motivo: "sin_ficha" }; claveEnvio = null; }
+                estadoDirecto.textContent = d.error || "No pudimos enviar tu cotización. Intenta de nuevo o envíala por " + MEDIO + ".";
+                estadoDirecto.classList.add("error");
+            } else {
+                claveEnvio = null;
+                notaDirecto.value = "";
+                estadoDirecto.textContent = "";
+                cotizacion.clear();
+                cambio();
+                mostrarListo(d);
+                anunciar(`Cotización ${d.numero} enviada a tu vendedor.`);
+            }
+        } catch (e) {
+            // Sin red: se puede reintentar con la misma clave (si llegó a crearse, no se duplica).
+            estadoDirecto.textContent = "Sin conexión con SUPRICOM. Revisa tu internet e intenta de nuevo.";
+            estadoDirecto.classList.add("error");
+        } finally {
+            enviandoDirecto = false;
+            actualizarDirecto();
+        }
+    });
+    oyentesPrecios.push(actualizarDirecto);
 
     const filasTicket = new Map();
     const nuevaFila = (codigo) => {
@@ -1203,12 +1299,14 @@
         marcarBotones();
         marcarCombos();
         pintarBotonCarrito();
+        if (typeof actualizarDirecto === "function") actualizarDirecto();
         for (const f of oyentesCotizacion) f();
         primeraVez = false;
     };
 
     const cambio = () => {
         cambiosEnEstaVisita = true;
+        if (cotizacion.size) claveEnvio = null;
         if (respaldo && cotizacion.size) { respaldo = null; botonDeshacer.hidden = true; }
         guardarCotizacion();
         pintar();
