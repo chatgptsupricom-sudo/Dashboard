@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avance, Luz, fecha, num, usd } from "@/components/rotacion-inventario/comunes";
+import VentasRojoDialog, { type FiltroVentas } from "@/components/rotacion-inventario/VentasRojoDialog";
+import { Receipt } from "lucide-react";
 import {
   HORIZONTE_DIAS,
   MESES_PLAN,
@@ -72,13 +74,17 @@ export default function AvanceRojo({
   planes,
   fichas,
   multiSede,
+  sede,
 }: {
   planes: PlanRojo[];
   fichas: FichaProducto[];
   multiSede: boolean;
+  /** La sede elegida en la pantalla (9, 10, 7 o "todas"), para pedir las ventas. */
+  sede: string;
 }) {
   const [agrupar, setAgrupar] = useState<AgruparRojo>("marca");
   const [verTodos, setVerTodos] = useState(false);
+  const [ventas, setVentas] = useState<{ filtro: FiltroVentas | null } | null>(null);
 
   const total = useMemo(() => sumarResumenes(planes.map((p) => p.resumen)), [planes]);
   const grupos = useMemo(
@@ -106,9 +112,15 @@ export default function AvanceRojo({
     <Card className="bg-white">
       <CardContent className="p-0">
         <div className="p-4 border-b space-y-1">
-          <p className="font-medium text-sm flex items-center gap-2">
-            <Luz color="rojo" /> Lo vendido de la mercancía en rojo contra la cuota de {HORIZONTE_DIAS} días
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="font-medium text-sm flex items-center gap-2">
+              <Luz color="rojo" /> Lo vendido de la mercancía en rojo contra la cuota de {HORIZONTE_DIAS} días
+            </p>
+            <Button variant="outline" size="sm" onClick={() => setVentas({ filtro: null })}>
+              <Receipt className="h-4 w-4 mr-2" />
+              Ver cada venta
+            </Button>
+          </div>
           <p className="text-xs text-slate-500">
             {mismasFechas ? (
               <>
@@ -200,8 +212,13 @@ export default function AvanceRojo({
             </thead>
             <tbody>
               {visibles.map(([clave, r]) => (
-                <tr key={clave} className="border-t">
-                  <td className="px-3 py-2 font-medium max-w-[320px] truncate" title={clave}>
+                <tr
+                  key={clave}
+                  className="border-t hover:bg-slate-50 cursor-pointer"
+                  onClick={() => setVentas({ filtro: { tipo: agrupar, clave } })}
+                  title="Ver a quién y cómo se vendió"
+                >
+                  <td className="px-3 py-2 font-medium max-w-[320px] truncate text-blue-700" title={clave}>
                     {clave}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
@@ -229,6 +246,7 @@ export default function AvanceRojo({
             </tbody>
           </table>
         </div>
+        {ventas && <VentasRojoDialog sede={sede} filtro={ventas.filtro} cerrar={() => setVentas(null)} />}
         {grupos.length > 15 && (
           <div className="p-3 border-t text-center">
             <Button variant="ghost" size="sm" onClick={() => setVerTodos((v) => !v)}>

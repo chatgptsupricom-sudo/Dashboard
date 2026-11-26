@@ -355,7 +355,7 @@ export default function PantallaRotacion() {
             })}
             <TarjetaCuotaRojo rojo={total.porColor.rojo} planes={planesRojo} />
           </div>
-          <AvanceRojo planes={planesRojo} fichas={datos.fichas} multiSede={multiSede} />
+          <AvanceRojo planes={planesRojo} fichas={datos.fichas} multiSede={multiSede} sede={sede || String(datos.sedes[0])} />
           <Card>
             <CardContent className="p-4 space-y-2">
               <div className="flex justify-between text-sm">
