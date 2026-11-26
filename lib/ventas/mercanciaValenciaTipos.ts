@@ -66,9 +66,11 @@ export function armarLinea(
   base: Omit<LineaMercancia, "pendiente" | "montoFacturado" | "montoPendiente" | "diasEsperando">,
   hoy: string,
 ): LineaMercancia {
-  const pendiente = r2(Math.max(0, base.facturado - base.despachado));
+  const despachado = Math.min(base.facturado, Math.max(0, base.despachado));
+  const pendiente = r2(base.facturado - despachado);
   return {
     ...base,
+    despachado,
     pendiente,
     montoFacturado: r2(base.facturado * base.precio),
     montoPendiente: r2(pendiente * base.precio),
@@ -86,7 +88,7 @@ export function resumir(lineas: LineaMercancia[]): ResumenMercancia {
   const s = { facturado: 0, despachado: 0, pendiente: 0, montoFacturado: 0, montoPendiente: 0 };
   for (const l of lineas) {
     s.facturado += l.facturado;
-    s.despachado += Math.min(l.despachado, l.facturado);
+    s.despachado += l.despachado;
     s.pendiente += l.pendiente;
     s.montoFacturado += l.montoFacturado;
     s.montoPendiente += l.montoPendiente;

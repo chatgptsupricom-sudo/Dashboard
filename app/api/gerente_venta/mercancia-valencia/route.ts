@@ -24,13 +24,13 @@ export async function GET(request: NextRequest) {
   }
 
   const mes = request.nextUrl.searchParams.get("mes") || "todos";
-  if (mes !== "todos" && !/^\d{4}-\d{2}$/.test(mes)) {
+  if (mes !== "todos" && !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) {
     return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
   }
 
   try {
-    const todas = await lineasCaracas();
     const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Caracas" });
+    const todas = await lineasCaracas(hoy);
     const lineas = delMes(todas, mes);
     return NextResponse.json({
       success: true,
