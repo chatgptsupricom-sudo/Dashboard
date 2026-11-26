@@ -680,7 +680,11 @@ export async function sincronizar(id: number, origen?: string): Promise<Candidat
     if (pasaAPublicada) {
       await registrarEvento(id, "procesada", panel, `Nota de crédito ${info.nombre} publicada en Odoo por ${info.por || "—"}`);
       const nueva = await obtener(id);
-      if (nueva && origen) avisarNC("procesada", nueva, origen);
+      if (nueva && origen) {
+        avisarNC("procesada", nueva, origen);
+        // A Almacén, con los productos que se acreditan (paso "almacen" de la sede).
+        avisarNC("almacen", nueva, origen);
+      }
     }
     return [];
   }
