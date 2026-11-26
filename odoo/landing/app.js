@@ -98,16 +98,121 @@
     const CLAVE_SESION_CLIENTE = "supricom-cliente-token";
     let haySesionCliente = false;
     try { haySesionCliente = Boolean(localStorage.getItem(CLAVE_SESION_CLIENTE) || sessionStorage.getItem(CLAVE_SESION_CLIENTE)); } catch (e) { /* sin almacenamiento */ }
+    // Textos que cambian con la sesión: [data-con-sesion] trae el texto para quien entró (ve sus precios) y
+    // [data-sin-sesion] solo se muestra sin sesión. Se guarda el original por si la sesión resulta vencida.
+    const textosDeSesion = (con) => {
+        for (const el of $$("[data-con-sesion]")) {
+            if (el.dataset.sinSesionTexto === undefined) el.dataset.sinSesionTexto = el.innerHTML;
+            if (con) el.textContent = el.dataset.conSesion; else el.innerHTML = el.dataset.sinSesionTexto;
+        }
+        for (const el of $$("[data-sin-sesion]")) el.hidden = con;
+    };
     if (haySesionCliente) {
         for (const a of $$("[data-cuenta-entrar]")) a.textContent = "Mi cuenta";
         // Ya es cliente: la cabecera no le ofrece «Solicitar cuenta».
         for (const a of $$(".cabecera-cta")) a.hidden = true;
+        textosDeSesion(true);
     }
     // Categorías, marcas y banners llevan a la tienda con ese filtro puesto.
     const urlTienda = (filtros = {}) => {
         const q = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v)).toString();
         return conSede(`tienda.html${q ? `?${q}` : ""}`);
     };
+    /* ---------------------------------------------------------------- Precios con sesión
+       La tienda es pública y sin sesión no muestra precios. Con la sesión de «Mi cuenta» (el token que guarda
+       mi-cuenta.js, que se queda al pasar de una página a otra) pide al panel los de SU lista en esta sede
+       (app/api/tienda-web/clientes/precios) y los pinta en todo lo que tenga [data-precio="<id>"]. Se guardan
+       10 min en la pestaña para no pedirlos en cada página. Solo si el panel dice que la sesión terminó se borra. */
+    const precios = { estado: haySesionCliente ? "cargando" : "sin-sesion", datos: null };
+    const tokenCliente = () => { try { return localStorage.getItem(CLAVE_SESION_CLIENTE) || sessionStorage.getItem(CLAVE_SESION_CLIENTE) || ""; } catch (e) { return ""; } };
+    const apiClientes = (() => {
+        const pedida = new URLSearchParams(location.search).get("api");
+        return (pedida === "no" ? "" : pedida || TODO.api || "").replace(/\/+$/, "");
+    })();
+    const dinero = (n, moneda) => `${moneda === "USD" || !moneda ? "$" : `${moneda} `}${Number(n).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const pintarUnPrecio = (el) => {
+        const id = Number(el.dataset.precio);
+        const d = precios.datos;
+        el.classList.remove("cargando", "con-precio");
+        el.replaceChildren();
+        if (precios.estado === "sin-sesion") {
+            el.append(crear("a", { href: conSede("mi-cuenta.html"), text: "Entra para ver tu precio" }));
+        } else if (precios.estado === "cargando") {
+            el.classList.add("cargando");
+            el.textContent = "Cargando tu precio…";
+        } else if (d && d.ok && d.precios[id] > 0) {
+            el.classList.add("con-precio");
+            el.append(crear("strong", { text: dinero(d.precios[id], d.moneda) }));
+        } else {
+            el.textContent = d && d.ok === false && d.motivo === "sin_ficha" ? `Tu vendedor de ${S.nombre} te da el precio` : "Precio con tu cotización";
+        }
+    };
+    // La ficha del producto tiene su recuadro de precio grande (producto.js le pone data-precio-ficha).
+    const pintarPrecioFicha = (caja) => {
+        const id = Number(caja.dataset.precioFicha);
+        const d = precios.datos;
+        const titulo = $(".producto-precio-titulo", caja);
+        const texto = $(".producto-precio-texto", caja);
+        if (!titulo || !texto) return;
+        caja.classList.toggle("con-precio", Boolean(d && d.ok && d.precios[id] > 0));
+        if (precios.estado === "sin-sesion") {
+            titulo.textContent = "Precio de distribuidor";
+            texto.replaceChildren("Entra con tu cuenta para ver tu precio. ", crear("a", { href: conSede("mi-cuenta.html"), text: "Entrar" }));
+        } else if (precios.estado === "cargando") {
+            titulo.textContent = "Tu precio";
+            texto.textContent = "Cargando tu precio…";
+        } else if (d && d.ok && d.precios[id] > 0) {
+            titulo.textContent = dinero(d.precios[id], d.moneda);
+            texto.textContent = `Tu precio de distribuidor en ${S.nombre}. Tu vendedor lo confirma con la cotización.`;
+        } else {
+            titulo.textContent = "Precio de distribuidor";
+            texto.textContent = d && d.ok === false && d.motivo === "sin_ficha"
+                ? `Todavía no compras en ${S.nombre}: tu vendedor te da el precio con la cotización.`
+                : "Este producto no tiene precio en tu lista: te lo envía tu vendedor con la cotización.";
+        }
+    };
+    const pintarPrecios = (raiz = document) => {
+        for (const el of $$("[data-precio]", raiz)) pintarUnPrecio(el);
+        for (const el of $$("[data-precio-ficha]", raiz)) pintarPrecioFicha(el);
+    };
+    // Las tarjetas se dibujan después (tienda.js, producto.js, filtros, «Ver más»): se pintan al aparecer.
+    new MutationObserver((cambios) => {
+        for (const c of cambios) for (const n of c.addedNodes) {
+            if (n.nodeType !== 1) continue;
+            if (n.matches("[data-precio]")) pintarUnPrecio(n);
+            pintarPrecios(n);
+        }
+    }).observe(document.body, { childList: true, subtree: true });
+    const cerrarSesionCliente = () => {
+        try { localStorage.removeItem(CLAVE_SESION_CLIENTE); sessionStorage.removeItem(CLAVE_SESION_CLIENTE); } catch (e) { /* */ }
+        haySesionCliente = false;
+        for (const a of $$("[data-cuenta-entrar]")) a.textContent = "Entrar";
+        for (const a of $$(".cabecera-cta")) a.hidden = false;
+        textosDeSesion(false);
+    };
+    (async () => {
+        const token = tokenCliente();
+        if (!token || !apiClientes) { precios.estado = "sin-sesion"; pintarPrecios(); return; }
+        const llave = `supricom-precios|${SEDE.id}|${token.slice(-16)}`;
+        try {
+            const guardado = JSON.parse(sessionStorage.getItem(llave) || "null");
+            if (guardado && Date.now() - guardado.t < 10 * 60 * 1000) { precios.datos = guardado.d; precios.estado = "listo"; pintarPrecios(); return; }
+        } catch (e) { /* sin almacenamiento */ }
+        try {
+            const r = await fetch(`${apiClientes}/clientes/precios?sede=${encodeURIComponent(SEDE.id)}`, { headers: { Authorization: `Bearer ${token}` }, credentials: "omit" });
+            if (r.status === 401) { cerrarSesionCliente(); precios.estado = "sin-sesion"; pintarPrecios(); return; }
+            if (!r.ok) throw new Error(String(r.status));
+            precios.datos = await r.json();
+            precios.estado = "listo";
+            try { sessionStorage.setItem(llave, JSON.stringify({ t: Date.now(), d: precios.datos })); } catch (e) { /* lleno o sin almacenamiento */ }
+        } catch (e) {
+            // Sin red o el panel no responde: la sesión sigue; el precio sale con la cotización.
+            precios.estado = "listo";
+            precios.datos = null;
+        }
+        pintarPrecios();
+    })();
+
     const enlazarTienda = (a, filtros) => { a.href = urlTienda(filtros); };
 
     // Enlaces a la tienda real de Odoo.
@@ -1516,6 +1621,7 @@
                 crear("p", { class: "prod-marca", text: p.marca }),
                 crear("h3", { class: "prod-nombre", text: p.nombre }),
                 crear("p", { class: "prod-codigo", text: p.codigo }),
+                crear("p", { class: "prod-precio", "data-precio": p.id }),
             ]),
             crear("div", { class: "prod-pie" }, pie),
         ]);
@@ -1623,6 +1729,7 @@
         alCambiarCotizacion: (f) => oyentesCotizacion.push(f),
         sumarCodigos: (lista) => sumarCodigos(lista),
         haySesionCliente,
+        pintarPrecios: () => pintarPrecios(),
         abrirCotizacion: () => abrirCarrito(),
         porId, MAX_CANT, LISTAS_SEDE: { masVendidos: S.masVendidos || [], novedades: S.novedades || [], menosRotan: S.menosRotan || [] },
     };

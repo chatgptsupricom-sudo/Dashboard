@@ -354,3 +354,41 @@ export function resumenCambios(antes: DatosPerfil | null, despues: DatosPerfil):
   }
   return out;
 }
+
+/* ------------------------------------------------------------------ Precios de su lista */
+/** Renglón de `product.pricelist.item` como se lee de Odoo (solo los de precio fijo). */
+export interface ItemLista {
+  applied_on: string;
+  product_tmpl_id: [number, string] | false;
+  product_id: [number, string] | false;
+  fixed_price: number;
+  min_quantity: number;
+  date_start: string | false;
+  date_end: string | false;
+}
+
+/**
+ * El precio de cada producto (product.template) en la lista del cliente: el del producto o, si la lista lo
+ * tiene por variante, el más bajo de sus variantes. Solo precio fijo mayor que cero, vigente hoy y desde una
+ * unidad; lo demás (sin precio en la lista) se cotiza con el vendedor. `plantillaDe`: variante → producto.
+ */
+export function preciosDeLista(items: ItemLista[], plantillaDe: Map<number, number>, hoy: string): Record<number, number> {
+  const porProducto: Record<number, number> = {};
+  const porVariante: Record<number, number> = {};
+  for (const it of items) {
+    const precio = Number(it.fixed_price);
+    if (!(precio > 0) || Number(it.min_quantity) > 1) continue;
+    if (it.date_start && String(it.date_start).slice(0, 10) > hoy) continue;
+    if (it.date_end && String(it.date_end).slice(0, 10) < hoy) continue;
+    if (it.applied_on === "1_product" && it.product_tmpl_id) {
+      const id = it.product_tmpl_id[0];
+      porProducto[id] = id in porProducto ? Math.min(porProducto[id], precio) : precio;
+    } else if (it.applied_on === "0_product_variant" && it.product_id) {
+      const id = plantillaDe.get(it.product_id[0]);
+      if (id) porVariante[id] = id in porVariante ? Math.min(porVariante[id], precio) : precio;
+    }
+  }
+  // La variante manda sobre el producto (en Odoo, la regla más específica gana).
+  const todos = { ...porProducto, ...porVariante };
+  return Object.fromEntries(Object.entries(todos).map(([k, v]) => [k, Math.round(v * 100) / 100]));
+}

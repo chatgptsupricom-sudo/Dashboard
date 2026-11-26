@@ -445,6 +445,13 @@ button { font: inherit; color: inherit; }
 .prod-marca { font-size: 13px; font-weight: 700; color: var(--acento); }
 .prod-nombre { margin-top: 2px; font-size: 15px; font-weight: 700; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .prod-codigo { margin-top: 4px; font: 500 12px "JetBrains Mono", monospace; color: var(--gris); }
+/* Precio: solo con sesión de «Mi cuenta»; sin sesión, un enlace para entrar (app.js lo pinta) */
+.prod-precio { margin-top: 8px; min-height: 20px; font-size: 13px; color: var(--gris); }
+.prod-precio:empty { visibility: hidden; }
+.prod-precio a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.prod-precio.con-precio { color: var(--tinta); }
+.prod-precio.con-precio strong { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
+.prod-precio.cargando { opacity: .6; }
 .prod-pie { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .prod-ver { display: inline-flex; align-items: center; min-height: 40px; padding: 0 6px; margin-left: -6px; font-size: 13px; font-weight: 700; color: var(--gris); text-decoration: none; white-space: nowrap; }
 .prod-ver:hover { color: var(--tinta); }

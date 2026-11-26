@@ -152,6 +152,23 @@ assert.strictEqual(diasDeAtraso(false, hoyF), null);
 
 // Antigüedad de la deuda y avance del despacho
 const { tramoDeuda, avanceDespacho } = mk.exports;
+// Precios de su lista: precio fijo > 0, vigente hoy, desde 1 unidad; la variante manda sobre el producto
+{
+  const { preciosDeLista } = mk.exports;
+  const it = (o) => ({ applied_on: "1_product", product_tmpl_id: false, product_id: false, fixed_price: 0, min_quantity: 0, date_start: false, date_end: false, ...o });
+  const plantillaDe = new Map([[501, 50], [502, 50]]);
+  const p = preciosDeLista([
+    it({ product_tmpl_id: [10, "A"], fixed_price: 12.499 }),
+    it({ product_tmpl_id: [11, "B"], fixed_price: 0 }),                                  // sin precio: se cotiza
+    it({ product_tmpl_id: [12, "C"], fixed_price: 9, min_quantity: 10 }),                // por volumen: no
+    it({ product_tmpl_id: [13, "D"], fixed_price: 7, date_end: "2026-01-31" }),          // vencido
+    it({ product_tmpl_id: [14, "E"], fixed_price: 8, date_start: "2027-01-01" }),        // todavía no
+    it({ product_tmpl_id: [50, "F"], fixed_price: 30 }),
+    it({ applied_on: "0_product_variant", product_id: [501, "F rojo"], fixed_price: 28 }),
+    it({ applied_on: "0_product_variant", product_id: [502, "F azul"], fixed_price: 26 }),
+  ], plantillaDe, "2026-11-26");
+  assert.deepStrictEqual(p, { 10: 12.5, 50: 26 });
+}
 assert.strictEqual(tramoDeuda(null), "porVencer");
 assert.strictEqual(tramoDeuda(-5), "porVencer");
 assert.strictEqual(tramoDeuda(0), "porVencer");

@@ -67,6 +67,10 @@
     $(".producto-disponible").classList.toggle("agotado", agotado);
     if (agotado) { chip.textContent = "Agotado"; chip.className = "prod-chip producto-chip agotado"; chip.hidden = false; }
 
+    // El precio: solo con sesión de «Mi cuenta» (app.js lo pide y lo pinta en este recuadro).
+    $(".producto-precio").dataset.precioFicha = String(p.id);
+    if (P.pintarPrecios) P.pintarPrecios();
+
     // Copiar el código: es lo que más se pega en una lista de pedido.
     const copiar = $(".producto-copiar");
     let relojCopia = 0;
@@ -188,6 +192,7 @@
                 crear("p", { class: "prod-marca", text: q.marca }),
                 crear("h3", { class: "prod-nombre", text: q.nombre }),
                 crear("p", { class: "prod-codigo", text: q.codigo }),
+                crear("p", { class: "prod-precio", "data-precio": q.id }),
             ]),
             crear("div", { class: "prod-pie" }, [
                 crear("a", { class: "prod-ver", href: ficha(q.id), text: "Ver ficha", "aria-label": `Ver la ficha de ${q.marca} ${q.nombre}` }),
