@@ -45,6 +45,14 @@ export function enlaceSeguimiento(companyId: number, token: string | null): stri
   return `https://${host}/es/servicio-tecnico/${slug}/consultar?token=${encodeURIComponent(token)}`;
 }
 
+/** La página del portal para pedir servicio con costo (productos fuera de garantía). */
+export function enlaceServicioConCosto(companyId: number): string | null {
+  const slug = SLUGS_SUCURSAL[companyId];
+  if (!slug) return null;
+  const host = String(process.env.PORTAL_HOSTS || "servicio.supricom.com.ve").split(",")[0].trim();
+  return `https://${host}/es/servicio-tecnico/${slug}/servicio-con-costo`;
+}
+
 /* ------------------------------------------------------------------ Facturas para elegir */
 const POR_PAGINA = 15;
 
@@ -117,7 +125,7 @@ export async function productosDeFactura(c: ClienteOdoo, id: number) {
 export interface PedidoReporte { itemId: string; serialManual: string; falla: string; uploadToken: string }
 export type ResultadoReporte =
   | { ok: true; numero: string; seguimiento: string | null }
-  | { ok: false; error: string; status?: number };
+  | { ok: false; error: string; status?: number; codigo?: string; enlace?: string | null };
 
 const MAX_PRODUCTOS = 10;
 
@@ -133,6 +141,16 @@ export async function reportarFalla(c: ClienteOdoo, facturaId: number, pedidos: 
   for (const p of pedidos) {
     const matched = f.resultado.items.find((i) => i.id === p.itemId);
     if (!matched) return { ok: false, error: "Ese producto no es de esta factura. Vuelve a elegirlo." };
+    // Igual que el portal: fuera de garantía no se reporta por garantía, se pide como servicio con costo.
+    if (matched.garantia?.estado === "vencida") {
+      const enlace = enlaceServicioConCosto(f.cid);
+      return {
+        ok: false,
+        codigo: "fuera_de_garantia",
+        enlace,
+        error: `${matched.nombre} está fuera de garantía. Puedes solicitar el servicio técnico con costo${enlace ? ` en ${enlace}` : ""}.`,
+      };
+    }
     if (p.falla.length < 10) return { ok: false, error: `Cuéntanos con más detalle qué le pasa a ${matched.nombre}.` };
     if (matched.lleva_serial && !matched.serial && !p.serialManual) return { ok: false, error: `Necesitamos el serial de ${matched.nombre} para identificarlo.` };
     const adjuntos = await query("SELECT COUNT(*) AS total FROM rma_ticket_adjuntos WHERE tracking_token = ? AND ticket_id IS NULL", [p.uploadToken]);

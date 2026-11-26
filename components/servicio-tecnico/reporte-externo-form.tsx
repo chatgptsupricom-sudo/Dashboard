@@ -4,7 +4,7 @@ import AttachmentUploader, {
   type AdjuntoEstado,
 } from "@/components/servicio-tecnico/adjuntos-uploader";
 import { CaptchaTurnstile } from "@/components/servicio-tecnico/captcha-turnstile";
-import { Aviso, MensajeError, Pasos } from "@/components/servicio-tecnico/form-ui";
+import { Aviso, AvisoCosto, MensajeError, Pasos } from "@/components/servicio-tecnico/form-ui";
 import {
   paisDeSucursal,
   tipoPorDefecto,
@@ -21,7 +21,7 @@ import {
   telefonoValido,
 } from "@/lib/servicio-tecnico/externo";
 import { RESUMEN_KEY } from "@/lib/servicio-tecnico/resumen";
-import { ArrowLeft, ArrowRight, Check, Info, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Loader2, Plus, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -634,19 +634,6 @@ function Campo({
         autoComplete="off"
       />
       {error && <MensajeError id={`${id}-error`} texto={error} />}
-    </div>
-  );
-}
-
-/** El servicio se cobra: se dice antes de pedir un solo dato. */
-function AvisoCosto({ titulo, texto }: { titulo: string; texto: string }) {
-  return (
-    <div className="mt-6 flex gap-2.5 rounded-[10px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-      <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-      <span>
-        <span className="block font-semibold">{titulo}</span>
-        <span className="mt-1 block">{texto}</span>
-      </span>
     </div>
   );
 }

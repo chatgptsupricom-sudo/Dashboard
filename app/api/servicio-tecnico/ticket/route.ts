@@ -135,6 +135,10 @@ export async function POST(request: NextRequest) {
     // le hacía parseInt y quedaba en NaN, así que el UPDATE de más abajo nunca
     // corría y los adjuntos se quedaban huérfanos con ticket_id NULL.
     const uploadToken = String(body.upload_token || body.ticket_id || "").trim();
+    // Por garantía (lo de siempre) o servicio con costo: el cliente pide
+    // reparar pagando un producto que compró aquí, porque se le venció la
+    // garantía o porque la falla no la cubre. Un caso es de un solo tipo.
+    const conCosto = body.tipo_servicio === "con_costo";
 
     // Un envío puede traer varios productos de la factura (issue #331), cada
     // uno con su falla, su serial escrito a mano si hace falta y sus fotos
@@ -203,6 +207,14 @@ export async function POST(request: NextRequest) {
     }
     if (!esSucursalValida(clientCid)) {
       return NextResponse.json({ error: "Falta elegir la sucursal" }, { status: 400 });
+    }
+    // El servicio con costo exige que el cliente acepte que se cobra. Se
+    // valida acá y no solo en el formulario.
+    if (conCosto && body.acepta_costo !== true) {
+      return NextResponse.json(
+        { error: "Confirma que entiendes que el servicio tiene un costo." },
+        { status: 400 },
+      );
     }
 
     // Captcha. Inerte mientras no haya TURNSTILE_SECRET_KEY configurada, así
@@ -297,6 +309,20 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Fuera de garantía no se reporta por garantía: va como servicio con
+      // costo. Se decide con la garantía que calcula el servidor (la misma que
+      // se congela en el caso), no con lo que diga el navegador. "Por
+      // confirmar" sí pasa: la confirma RMA al revisar.
+      if (!conCosto && matched.garantia?.estado === "vencida") {
+        return NextResponse.json(
+          {
+            error: `${matched.nombre} está fuera de garantía. Puedes solicitar el servicio técnico con costo.`,
+            codigo: "fuera_de_garantia",
+          },
+          { status: 400 },
+        );
+      }
+
       // Si Odoo no tiene serial para esa línea, el cliente debe escribirlo. Se
       // valida acá y no solo en el navegador: el formulario es sugerencia,
       // esto es la regla.
@@ -350,6 +376,7 @@ export async function POST(request: NextRequest) {
       })),
       telefono: clientPhone || null,
       facturaEscrita: invoiceNumber,
+      conCosto,
     });
 
     // Ahora sí: el ticket existe, se consume la cuota de creación.
@@ -515,6 +542,8 @@ export async function GET(request: NextRequest) {
         invoice_number: row.invoice_number || "",
         // Equipo que no se compró en Supricom: sin factura ni garantía.
         externo,
+        // Producto comprado aquí que se repara pagando.
+        con_costo: Number(row.servicio_con_costo) === 1,
         serial: row.serial || null,
         client_phone_masked: maskPhoneForResponse(row.client_phone),
         // La garantía es la CONGELADA del reporte, no una recalculada: si el

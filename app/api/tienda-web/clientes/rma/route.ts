@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     const telefono = String(c?.telefono ?? "").trim().slice(0, 50);
     if (telefono.replace(/\D/g, "").length < 7) return jsonTienda({ error: "Escribe un teléfono para coordinar la entrega del equipo" }, { status: 400 });
     const r = await reportarFalla(s.cliente, factura, pedidos, telefono);
-    if (!r.ok) return jsonTienda({ error: r.error }, { status: r.status || 400 });
+    if (!r.ok) return jsonTienda({ error: r.error, codigo: r.codigo, enlace: r.enlace }, { status: r.status || 400 });
     return jsonTienda({ ok: true, numero: r.numero, seguimiento: r.seguimiento }, { status: 201 });
   });
 }

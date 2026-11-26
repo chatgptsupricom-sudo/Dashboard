@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Mail } from "lucide-react";
+import { AlertCircle, Info, Mail } from "lucide-react";
 
 /**
  * Piezas comunes de los formularios del portal: el reporte con factura
@@ -75,6 +75,19 @@ export function Aviso({ texto, ayuda }: { texto: string; ayuda: string }) {
         <Mail className="h-4 w-4" aria-hidden />
         {ayuda}
       </a>
+    </div>
+  );
+}
+
+/** Aviso de que el servicio se cobra (equipos externos y servicio con costo). */
+export function AvisoCosto({ titulo, texto, className = "mt-6" }: { titulo: string; texto: string; className?: string }) {
+  return (
+    <div className={`${className} flex gap-2.5 rounded-[10px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900`}>
+      <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <span>
+        <span className="block font-semibold">{titulo}</span>
+        <span className="mt-1 block">{texto}</span>
+      </span>
     </div>
   );
 }

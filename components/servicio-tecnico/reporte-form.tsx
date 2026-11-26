@@ -5,7 +5,7 @@ import { GarantiaBadge } from "@/components/servicio-tecnico/garantia-badge";
 import AttachmentUploader, {
   type AdjuntoEstado,
 } from "@/components/servicio-tecnico/adjuntos-uploader";
-import { Aviso, Dato, MensajeError, Pasos } from "@/components/servicio-tecnico/form-ui";
+import { Aviso, AvisoCosto, Dato, MensajeError, Pasos } from "@/components/servicio-tecnico/form-ui";
 import {
   AlertCircle,
   ArrowLeft,
@@ -79,6 +79,18 @@ type Coincidencia = {
   compania: string;
 };
 
+/**
+ * Por garantía (lo de siempre) o servicio con costo: el cliente pide reparar,
+ * pagando, un producto que compró aquí (se le venció la garantía o la falla
+ * no la cubre). Un envío es de un solo tipo.
+ */
+export type ModoReporte = "garantia" | "con_costo";
+
+/** Fuera de garantía: no se reporta por garantía, va como servicio con costo. */
+function fueraDeGarantia(item: Item): boolean {
+  return item.garantia?.estado === "vencida";
+}
+
 type Factura = {
   estado: "ok";
   factura: { numero: string; fecha: string | null; compania: string };
@@ -91,9 +103,12 @@ export function ReporteForm({
   turnstileSiteKey = "",
   sucursalCid,
   sucursalSlug,
+  modoInicial = "garantia",
 }: {
   locale: string;
   turnstileSiteKey?: string;
+  /** /nuevo = garantía; /servicio-con-costo = con costo. Se cambia en el paso 2 sin volver a buscar la factura. */
+  modoInicial?: ModoReporte;
   /** Resuelta por la URL (/servicio-tecnico/valencia, /panama, /caracas) — ya no la elige el cliente. */
   sucursalCid: number;
   sucursalSlug: string;
@@ -102,6 +117,11 @@ export function ReporteForm({
   const router = useRouter();
 
   const [paso, setPaso] = useState<1 | 2 | 3>(1);
+  const [modo, setModo] = useState<ModoReporte>(modoInicial);
+  const conCosto = modo === "con_costo";
+  // Por garantía no se puede elegir un producto fuera de garantía.
+  const bloqueado = useCallback((i: Item) => !conCosto && fueraDeGarantia(i), [conCosto]);
+  const [aceptaCosto, setAceptaCosto] = useState(false);
 
   // Paso 1. El documento es tipo (select) + número: los tipos dependen del
   // país de la sucursal (lib/servicio-tecnico/documento).
@@ -168,6 +188,8 @@ export function ReporteForm({
     setDetalles((prev) => ({ ...prev, [id]: { ...prev[id], ...cambios } }));
 
   function alternar(id: string) {
+    const item = factura?.items.find((i) => i.id === id);
+    if (item && bloqueado(item) && !seleccion.includes(id)) return;
     if (!seleccion.includes(id) && seleccion.length >= MAX_PRODUCTOS) {
       setErrores((p) => ({ ...p, seleccion: t("form.maxProductos", { n: MAX_PRODUCTOS }) }));
       return;
@@ -209,8 +231,10 @@ export function ReporteForm({
 
         if (data.estado === "ok") {
           setFactura(data);
-          // Si la factura trae un solo item, ya queda elegido.
-          const unico: string | null = data.items.length === 1 ? data.items[0].id : null;
+          // Si la factura trae un solo item, ya queda elegido (si se puede
+          // elegir en este modo).
+          const unico: string | null =
+            data.items.length === 1 && !bloqueado(data.items[0]) ? data.items[0].id : null;
           setSeleccion(unico ? [unico] : []);
           setDetalles(unico ? { [unico]: detalleNuevo() } : {});
           setPaso(2);
@@ -229,8 +253,37 @@ export function ReporteForm({
         setBuscando(false);
       }
     },
-    [t, sucursalCid],
+    [t, sucursalCid, bloqueado],
   );
+
+  /**
+   * Cambia el envío entre garantía y servicio con costo sin volver a buscar la
+   * factura. A servicio con costo se pasa con el producto vencido que se tocó
+   * (si es una sola unidad, ya marcada); de vuelta a garantía se desmarcan los
+   * que están fuera de garantía.
+   */
+  function cambiarModo(nuevo: ModoReporte, unidades: Item[] = []) {
+    setModo(nuevo);
+    setErrores({});
+    setErrorEnvio(null);
+    if (nuevo === "con_costo") {
+      const ids = unidades.length === 1 ? [unidades[0].id] : [];
+      setSeleccion(ids);
+      setDetalles((prev) => {
+        const sig = { ...prev };
+        for (const id of ids) if (!sig[id]) sig[id] = detalleNuevo();
+        return sig;
+      });
+    } else {
+      setSeleccion((prev) =>
+        prev.filter((id) => {
+          const item = factura?.items.find((i) => i.id === id);
+          return !item || !fueraDeGarantia(item);
+        }),
+      );
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   async function enviar() {
     if (!factura || !elegidos.length) return;
@@ -253,6 +306,8 @@ export function ReporteForm({
             upload_token: detalles[i.id].uploadToken,
           })),
           client_phone: telefono.trim(),
+          tipo_servicio: modo,
+          acepta_costo: conCosto ? aceptaCosto : undefined,
           captcha_token: captchaToken,
         }),
       });
@@ -275,6 +330,7 @@ export function ReporteForm({
           JSON.stringify({
             factura: factura.factura.numero,
             telefono: telefono.trim(),
+            conCosto,
             productos: elegidos.map((i) => ({
               nombre: i.nombre,
               serial: i.serial || detalles[i.id].serialManual.trim(),
@@ -318,7 +374,7 @@ export function ReporteForm({
       <div className="pt-formcard">
         <div className="pt-formcard__body">
           <div className="pt-formcard__meta">
-            <span className="pt-eyebrow">{t("eyebrow")}</span>
+            <span className="pt-eyebrow">{conCosto ? t("conCosto.eyebrow") : t("eyebrow")}</span>
             <span className="pt-formcard__stepno">
               {t("form.stepOf", { n: paso, total: etiquetasPaso.length })}
             </span>
@@ -327,7 +383,15 @@ export function ReporteForm({
 
       {paso === 1 && (
         <section className="mt-2">
-          <h1 className="pt-h1">{t("form.invoiceTitle")}</h1>
+          {conCosto && (
+            <>
+              <h1 className="pt-h1">{t("conCosto.titulo")}</h1>
+              <p className="pt-sub">{t("conCosto.subtitulo")}</p>
+              <AvisoCosto titulo={t("conCosto.costoTitulo")} texto={t("conCosto.costoTexto")} />
+              <h2 className="mt-8 text-lg font-bold">{t("form.invoiceTitle")}</h2>
+            </>
+          )}
+          {!conCosto && <h1 className="pt-h1">{t("form.invoiceTitle")}</h1>}
           <p className="pt-sub">{t("form.invoiceHelp")}</p>
 
           <form
@@ -464,9 +528,20 @@ export function ReporteForm({
 
           {errorBusqueda && <Aviso texto={errorBusqueda} ayuda={t("form.emailInstead")} />}
 
+          {/* Entre garantía y servicio con costo: la otra página del portal. */}
+          <p className="pt-hint mt-6">
+            {conCosto ? t("conCosto.enlaceAGarantia") : t("conCosto.enlaceDesdeGarantia")}{" "}
+            <a
+              href={`/${locale}/servicio-tecnico/${sucursalSlug}/${conCosto ? "nuevo" : "servicio-con-costo"}`}
+              className="font-semibold text-[color:var(--portal-primary)] underline underline-offset-2"
+            >
+              {conCosto ? t("conCosto.enlaceAGarantiaCta") : t("conCosto.enlaceDesdeGarantiaCta")}
+            </a>
+          </p>
+
           {/* Sin factura de Supricom no hay nada que buscar: el equipo se
               reporta por el formulario de equipos externos. */}
-          <p className="pt-hint mt-6">
+          <p className="pt-hint mt-3">
             {t("externo.enlaceDesdeFactura")}{" "}
             <a
               href={`/${locale}/servicio-tecnico/${sucursalSlug}/externo`}
@@ -490,7 +565,27 @@ export function ReporteForm({
             )}
           </dl>
 
-          <p className="pt-sub mt-6">{t("form.productHelp")}</p>
+          {conCosto ? (
+            <>
+              <AvisoCosto titulo={t("conCosto.costoTitulo")} texto={t("conCosto.costoTexto")} />
+              <p className="pt-hint mt-3">
+                {t("conCosto.enlaceAGarantia")}{" "}
+                <button
+                  type="button"
+                  onClick={() => cambiarModo("garantia")}
+                  className="font-semibold text-[color:var(--portal-primary)] underline underline-offset-2"
+                >
+                  {t("conCosto.enlaceAGarantiaCta")}
+                </button>
+              </p>
+            </>
+          ) : (
+            factura.items.some(fueraDeGarantia) && (
+              <p className="pt-hint mt-6">{t("conCosto.hayVencidos")}</p>
+            )
+          )}
+
+          <p className="pt-sub mt-6">{conCosto ? t("conCosto.productHelp") : t("form.productHelp")}</p>
 
           <div className="mt-4 space-y-6">
             {grupos.map((g) => (
@@ -505,6 +600,22 @@ export function ReporteForm({
                   {g.productos.map((prod) => {
                     const primero = prod.unidades[0];
                     const garantia = primero.garantia ? textoGarantia(primero.garantia) : null;
+                    // Por garantía, un producto fuera de garantía se ve pero no
+                    // se elige: se ofrece pedirlo como servicio con costo.
+                    const prodBloqueado = prod.unidades.every(bloqueado);
+                    const avisoBloqueo = prodBloqueado && (
+                      <span className="mt-3 block rounded-[10px] border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        <span className="block">{t("conCosto.productoVencido")}</span>
+                        <button
+                          type="button"
+                          onClick={() => cambiarModo("con_costo", prod.unidades)}
+                          className="mt-2 inline-flex items-center gap-1.5 font-semibold underline underline-offset-2"
+                        >
+                          {t("conCosto.solicitarCta")}
+                          <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                        </button>
+                      </span>
+                    );
                     // Una sola unidad sin serial: se marca el producto entero.
                     const unaSinSerial = prod.unidades.length === 1 && !primero.serial;
                     const cabecera = (
@@ -524,11 +635,16 @@ export function ReporteForm({
                     if (unaSinSerial) {
                       return (
                         <li key={prod.clave}>
-                          <label className={`pt-choice ${seleccion.includes(primero.id) ? "pt-choice--on" : ""}`}>
+                          <label
+                            className={`pt-choice ${seleccion.includes(primero.id) ? "pt-choice--on" : ""} ${
+                              prodBloqueado ? "cursor-default" : ""
+                            }`}
+                          >
                             <input
                               type="checkbox"
-                              className="mt-1 accent-[color:var(--portal-primary)]"
+                              className="mt-1 accent-[color:var(--portal-primary)] disabled:opacity-40"
                               checked={seleccion.includes(primero.id)}
+                              disabled={prodBloqueado}
                               onChange={() => alternar(primero.id)}
                             />
                             <span className="min-w-0">
@@ -536,6 +652,7 @@ export function ReporteForm({
                               <span className="mt-1 block text-sm text-[color:var(--portal-muted)]">
                                 {primero.lleva_serial ? t("form.serialMissing") : t("form.units", { n: primero.cantidad })}
                               </span>
+                              {avisoBloqueo}
                             </span>
                           </label>
                         </li>
@@ -544,17 +661,23 @@ export function ReporteForm({
                     return (
                       <li key={prod.clave} className="pt-panel">
                         {cabecera}
+                        {avisoBloqueo}
                         <p className="mt-3 text-xs font-semibold text-[color:var(--portal-muted)]">
                           {t("form.eligeSerial", { n: prod.unidades.length })}
                         </p>
                         <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                           {prod.unidades.map((u) => (
                             <li key={u.id}>
-                              <label className={`pt-choice py-2.5 ${seleccion.includes(u.id) ? "pt-choice--on" : ""}`}>
+                              <label
+                                className={`pt-choice py-2.5 ${seleccion.includes(u.id) ? "pt-choice--on" : ""} ${
+                                  bloqueado(u) ? "cursor-default opacity-60" : ""
+                                }`}
+                              >
                                 <input
                                   type="checkbox"
                                   className="mt-1 accent-[color:var(--portal-primary)]"
                                   checked={seleccion.includes(u.id)}
+                                  disabled={bloqueado(u)}
                                   onChange={() => alternar(u.id)}
                                 />
                                 <span className="min-w-0">
@@ -607,6 +730,9 @@ export function ReporteForm({
         <section className={paso === 3 ? "mt-2" : "hidden"}>
           <h1 className="pt-h1">{t("form.faultTitle")}</h1>
           {elegidos.length > 1 && <p className="pt-sub">{t("form.faultHelpMulti")}</p>}
+          {conCosto && (
+            <AvisoCosto titulo={t("conCosto.costoTitulo")} texto={t("conCosto.costoTexto")} />
+          )}
 
           <div className="mt-6 space-y-5">
             {conDetalle.map((item) => {
@@ -776,6 +902,25 @@ export function ReporteForm({
             )}
           </div>
 
+          {conCosto && (
+            <>
+              <label className="mt-7 flex cursor-pointer items-start gap-2.5 rounded-[10px] border border-[color:var(--portal-line-strong)] p-4 text-sm">
+                <input
+                  id="aceptaCosto"
+                  type="checkbox"
+                  className="mt-0.5 accent-[color:var(--portal-primary)]"
+                  checked={aceptaCosto}
+                  onChange={(e) => {
+                    setAceptaCosto(e.target.checked);
+                    setErrores((p) => ({ ...p, aceptaCosto: "" }));
+                  }}
+                />
+                <span>{t("conCosto.aceptaLabel")}</span>
+              </label>
+              {errores.aceptaCosto && <MensajeError id="aceptaCosto-error" texto={errores.aceptaCosto} />}
+            </>
+          )}
+
           {/* Solo en el paso 3: el token del captcha vence a los pocos
               minutos, y montado desde el paso 2 podía llegar vencido. */}
           {paso === 3 && (
@@ -822,6 +967,7 @@ export function ReporteForm({
                   faltan[`adjuntos-${k}`] = t("form.attachmentsRequired");
               }
               if (!telefonoValido) faltan.telefono = t("form.phoneRequired");
+              if (conCosto && !aceptaCosto) faltan.aceptaCosto = t("conCosto.aceptaRequerido");
               // Solo se exige captcha si está configurado; si no, no se puede
               // producir un token y bloquearía a todo el mundo.
               if (captchaActivo && !captchaToken)
@@ -844,7 +990,7 @@ export function ReporteForm({
             ) : (
               <>
                 <Check className="h-4 w-4" aria-hidden />
-                {t("form.submit")}
+                {conCosto ? t("conCosto.submit") : t("form.submit")}
               </>
             )}
           </button>
