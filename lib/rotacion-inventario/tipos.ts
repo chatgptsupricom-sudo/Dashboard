@@ -428,6 +428,47 @@ export function sumarResumenes(rs: ResumenPlanRojo[]): ResumenPlanRojo {
 /** % de lo vendido contra una meta; null si la meta es 0. */
 export const porcentaje = (vendido: number, meta: number): number | null => (meta > 0 ? Math.round((vendido / meta) * 1000) / 10 : null);
 
+/** Una venta (o nota de crédito) de un producto del plan para salir del rojo. */
+export interface VentaPlanRojo {
+  companyId: number;
+  fecha: string;
+  moveId: number;
+  factura: string;
+  tipo: "Factura" | "Nota de crédito";
+  pedido: string;
+  urlOdoo: string;
+  clienteId: number | null;
+  cliente: string;
+  rif: string;
+  vendedor: string;
+  productoId: number;
+  codigo: string;
+  nombre: string;
+  marca: string;
+  categoria: string;
+  /** Unidades de la línea (la NC en negativo). */
+  cantidad: number;
+  /** De esas, las que cuentan para la cuota (con tope en lo que había en rojo). */
+  cuentaCuota: number;
+  /** USD sin IVA, con descuento. */
+  precioUnitario: number;
+  venta: number;
+  /** Costo de la foto del plan. */
+  costoUnitario: number;
+  costoTotal: number;
+  margen: number;
+  margenPct: number | null;
+  condicion: "Contado" | "Crédito";
+  plazo: string;
+  /** Vencimiento − fecha de factura; 0 de contado. */
+  diasCredito: number | null;
+  vence: string | null;
+  estadoPago: string;
+  /** Lo que falta por cobrar de la factura entera (USD). */
+  saldo: number;
+  diasVencida: number;
+}
+
 export interface PlanRojo {
   companyId: number;
   inicio: string;

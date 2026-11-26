@@ -495,7 +495,7 @@ async function sincronizarPlanRojo(d: DatosSede, companyId: number) {
 }
 
 /** El plan del rojo activo de la sede con lo vendido de cada producto desde que arrancó. */
-async function planRojoDeSede(companyId: number, d: DatosSede): Promise<PlanRojo | null> {
+export async function planRojoDeSede(companyId: number, d: DatosSede): Promise<PlanRojo | null> {
   const plan = (await filas(`SELECT id, inicio FROM rotacion_plan_rojo WHERE company_id = ? AND estado = 'activo' ORDER BY inicio DESC LIMIT 1`, [companyId]))[0];
   if (!plan) return null;
   const inicio = dia(plan.inicio)!;
