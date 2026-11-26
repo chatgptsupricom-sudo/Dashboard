@@ -3,7 +3,7 @@
  *
  * RRHH sube el Excel que exporta el biométrico de cada sede; las marcas se
  * guardan (sin repetir) y el reporte se calcula con el horario de la empresa:
- * lunes a viernes de 8:00 a. m. a 4:30 p. m., y los sábados que haya
+ * lunes a viernes de 8:00 a. m. a 5:00 p. m., y los sábados que haya
  * inventario con el mismo horario (los marca RRHH en el calendario, igual que
  * los feriados). Todo lo de aquí es puro: lo usan la API y la pantalla.
  */
@@ -12,7 +12,7 @@ export const ROLES_ASISTENCIA = ["recursos humanos"];
 
 export const SEDES_ASISTENCIA: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 
-export const HORARIO = { entrada: "08:00", salida: "16:30" };
+export const HORARIO = { entrada: "08:00", salida: "17:00" };
 /** Minutos después de la entrada que todavía no cuentan como retardo. */
 export const TOLERANCIA_MIN = 0;
 /**
@@ -53,7 +53,7 @@ export type Dia = {
   salida: string | null;
   estado: EstadoDia;
   retardoMin: number;
-  /** Minutos que se fue antes de las 4:30 (0 si no hay salida). */
+  /** Minutos que se fue antes de las 5:00 (0 si no hay salida). */
   salidaAnticipadaMin: number;
   /** Laborable con entrada pero sin marca de salida. */
   sinSalida: boolean;

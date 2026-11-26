@@ -8,7 +8,7 @@ import { Pastilla, fechaCorta } from "../seleccion/comunes";
 
 const inputCls = "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700";
 
-/** Sábados de inventario (se trabajan 8:00 a 4:30) y feriados (no se cuentan ausencias). */
+/** Sábados de inventario (se trabajan 8:00 a 5:00) y feriados (no se cuentan ausencias). */
 export function Calendario({ sede, onCambio }: { sede: number; onCambio: () => void }) {
   const [dias, setDias] = useState<DiaEspecial[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -61,7 +61,7 @@ export function Calendario({ sede, onCambio }: { sede: number; onCambio: () => v
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-sm font-bold text-slate-800">Agregar un día</h3>
         <p className="mt-1 text-xs text-slate-500">
-          Los sábados solo se trabajan si hay inventario: márcalos aquí y ese día se evalúa con el horario de 8:00 a 4:30. En un feriado no
+          Los sábados solo se trabajan si hay inventario: márcalos aquí y ese día se evalúa con el horario de 8:00 a 5:00. En un feriado no
           se cuentan ausencias.
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
