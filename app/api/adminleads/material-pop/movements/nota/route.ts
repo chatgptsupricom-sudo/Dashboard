@@ -3,7 +3,7 @@ import {
   requireAdminLeadsValencia,
   resolveMaterialPopCids,
 } from "@/lib/adminleads/material-pop/auth";
-import { notaEntregaHtml } from "@/lib/adminleads/material-pop/notaEntrega";
+import { notaEntregaHtml, type ItemNota } from "@/lib/adminleads/material-pop/notaEntrega";
 import { hayColumnaRecipiente } from "@/lib/adminleads/material-pop/columnas";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -51,19 +51,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Movimiento no encontrado" }, { status: 404 });
     }
 
-    // Un mismo producto puede venir partido entre las dos ubicaciones: para el
-    // papel es una sola línea con el total.
-    const porProducto = new Map<string, { code: string; name: string; brand: string | null; quantity: number }>();
+    // Una línea por producto y ubicación: si salió partido entre las dos, el
+    // papel dice cuánto salió de cada una.
+    const porProducto = new Map<string, ItemNota>();
     for (const f of filas) {
-      const clave = String(f.code);
+      const clave = `${f.code}|${f.location}`;
       const actual = porProducto.get(clave);
       const cantidad = Number(f.quantity) || 0;
       if (actual) actual.quantity += cantidad;
-      else porProducto.set(clave, { code: f.code, name: f.name, brand: f.brand, quantity: cantidad });
+      else porProducto.set(clave, { code: f.code, name: f.name, brand: f.brand, quantity: cantidad, location: f.location });
     }
 
-    // Si salió de las dos ubicaciones, la nota habla de la Oficina C7: en una
-    // salida a cliente es el traslado a C4 lo que hay que respaldar.
+    // Respaldo: la nota toma de dónde salió cada línea (`location`).
     const origen = filas.some((f: any) => f.location === "office") ? "office" : "warehouse";
     const fecha = filas[0].movement_date
       ? String(new Date(filas[0].movement_date).toISOString().slice(0, 10))

@@ -31,6 +31,8 @@ export interface ItemNota {
   name: string;
   brand: string | null;
   quantity: number;
+  /** De dónde salió esta línea (`office`/`warehouse`), si ya salió. */
+  location?: string;
 }
 
 /** Nombre de cada tipo de salida en el papel. */
@@ -90,7 +92,21 @@ const hoyTexto = (): string => {
  * traslada al otro, desde donde se despacha al cliente. Si la salida ya es
  * desde C4, no hay traslado que documentar.
  */
+/**
+ * Ubicaciones de las que sale el material: las de cada línea si ya salió (lo
+ * que dicen los movimientos), si no la que se eligió al emitir la nota.
+ */
+function origenes(datos: DatosNota): string[] {
+  const usadas = new Set(
+    datos.items.filter((it) => it.quantity > 0 && it.location).map((it) => it.location as string),
+  );
+  return usadas.size ? [...usadas].sort() : [datos.origen];
+}
+
+const nombreUbicacion = (loc: string): string => escapar(NOMBRE_UBICACION[loc] || loc);
+
 function fraseMovimiento(datos: DatosNota): string {
+  const locs = origenes(datos);
   if (!esACliente(datos)) {
     // Sin cliente no hay traslado a C4 que documentar: el material se entrega
     // en mano desde donde está.
@@ -100,7 +116,7 @@ function fraseMovimiento(datos: DatosNota): string {
       : "";
     const destino = datos.destino ? `: <strong>${escapar(datos.destino)}</strong>` : "";
     return `Se deja constancia de la entrega del material detallado a continuación,
-      desde <strong>${escapar(NOMBRE_UBICACION[datos.origen] || datos.origen)}</strong>${quien},
+      desde ${locs.map((l) => `<strong>${nombreUbicacion(l)}</strong>`).join(" y ")}${quien},
       para ${tipo}${destino}.`;
   }
 
@@ -110,7 +126,15 @@ function fraseMovimiento(datos: DatosNota): string {
     ? `, atendido por el vendedor <strong>${vendedor}</strong>`
     : "";
 
-  if (datos.origen === "warehouse") {
+  if (locs.length > 1) {
+    // Salió de las dos: la columna "Sale de" dice de cuál salió cada producto.
+    return `Se autoriza la salida del material detallado a continuación desde
+      <strong>${NOMBRE_UBICACION.office}</strong> y <strong>${NOMBRE_UBICACION.warehouse}</strong>
+      (columna «Sale de»). Lo que sale de <strong>${NOMBRE_UBICACION.office}</strong> se traslada
+      hasta <strong>${NOMBRE_UBICACION.warehouse}</strong>, desde donde se despacha al cliente
+      <strong>${cliente}</strong>${atendido}.`;
+  }
+  if (locs[0] === "warehouse") {
     return `Se autoriza la salida del material detallado a continuación desde
       <strong>${NOMBRE_UBICACION.warehouse}</strong>, para su despacho al cliente
       <strong>${cliente}</strong>${atendido}.`;
@@ -149,6 +173,7 @@ export function notaEntregaHtml(datos: DatosNota): string {
   const aCliente = esACliente(datos);
   const items = datos.items.filter((it) => it.quantity > 0);
   const totalUnidades = items.reduce((s, it) => s + it.quantity, 0);
+  const conUbicacion = items.some((it) => it.location);
 
   const filas = items
     .map(
@@ -157,10 +182,12 @@ export function notaEntregaHtml(datos: DatosNota): string {
           <td class="mono">${escapar(it.code)}</td>
           <td>${escapar(it.name)}</td>
           <td>${escapar(it.brand || "—")}</td>
+          ${conUbicacion ? `<td>${it.location ? nombreUbicacion(it.location) : "—"}</td>` : ""}
           <td class="num">${it.quantity}</td>
         </tr>`,
     )
     .join("");
+  const columnas = conUbicacion ? 5 : 4;
 
   const datosExtra = [
     aCliente
@@ -250,11 +277,11 @@ export function notaEntregaHtml(datos: DatosNota): string {
 
     <table>
       <thead>
-        <tr><th>SKU</th><th>Producto</th><th>Marca</th><th class="num">Cantidad</th></tr>
+        <tr><th>SKU</th><th>Producto</th><th>Marca</th>${conUbicacion ? "<th>Sale de</th>" : ""}<th class="num">Cantidad</th></tr>
       </thead>
-      <tbody>${filas || `<tr><td colspan="4">Sin productos</td></tr>`}</tbody>
+      <tbody>${filas || `<tr><td colspan="${columnas}">Sin productos</td></tr>`}</tbody>
       <tfoot>
-        <tr><td colspan="3">Total de unidades</td><td class="num">${totalUnidades}</td></tr>
+        <tr><td colspan="${columnas - 1}">Total de unidades</td><td class="num">${totalUnidades}</td></tr>
       </tfoot>
     </table>
 
