@@ -82,9 +82,9 @@ async function leerParaSincronizar(clave: string) {
     .map((f) => ({ id: f.id, company: Number(f.company_id[0]), clave: claveDocumento(f.vat), pais: f.country_id ? Number(f.country_id[0]) : null, hijos: [], website: String(f.website || ""), street: direccionOdoo(f), calle: String(f.street || ""), lat: Number(f.partner_latitude) || 0, lng: Number(f.partner_longitude) || 0 }));
   if (padresTodos.length) {
     const hijos = (await callOdooRPCEstricto<any[]>("res.partner", "search_read", [[["parent_id", "in", padresTodos.map((p) => p.id)], ["type", "=", "delivery"]]], {
-      fields: ["id", "name", "street", "active", "parent_id"], limit: 2000, context: { ...CTX(), active_test: false },
+      fields: ["id", "name", "street", "street2", "city", "state_id", "country_id", "active", "parent_id"], limit: 2000, context: { ...CTX(), active_test: false },
     })) || [];
-    for (const h of hijos) padresTodos.find((p) => p.id === h.parent_id?.[0])?.hijos.push({ id: h.id, name: String(h.name || ""), street: String(h.street || ""), active: Boolean(h.active) });
+    for (const h of hijos) padresTodos.find((p) => p.id === h.parent_id?.[0])?.hijos.push({ id: h.id, name: String(h.name || ""), street: direccionOdoo(h), calle: String(h.street || ""), active: Boolean(h.active) });
   }
   const [filasEnlaces]: any = await db.query("SELECT sucursal_id, company_id, partner_id, firma FROM tienda_perfiles_odoo WHERE clave = ?", [clave]);
   const enlaces: EnlaceOdoo[] = (filasEnlaces || []).filter((e: any) => !String(e.sucursal_id).startsWith("_"))

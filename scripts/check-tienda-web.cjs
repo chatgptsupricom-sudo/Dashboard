@@ -123,6 +123,10 @@ assert.ok(!codigoValido("12345"));
 assert.ok(!codigoValido("12a456"));
 assert.strictEqual(claveDocumento("J-31737690-0"), claveDocumento("j317376900"));
 assert.strictEqual(nucleoDocumento("J-31737690-0"), "31737690");
+// Todo junto también da el cuerpo (si no, el verificador pegado impide encontrar el escrito con guiones en la otra sede)
+assert.strictEqual(nucleoDocumento("J317376900"), "31737690");
+assert.strictEqual(nucleoDocumento("j 3173 7690 0"), "31737690");
+assert.ok("J-31737690-0".includes(nucleoDocumento("J317376900")));
 assert.strictEqual(nucleoDocumento("155612345-2-2021"), "155612345");
 assert.strictEqual(nucleoDocumento("J-123"), null);
 
@@ -257,6 +261,17 @@ assert.deepStrictEqual(redesEnHtml(`
   assert.ok(esDireccionDeLaFicha(fichaReal, "AV ABRAHAM LINCOLN CON CALLE UNION CC CITY MARKET, Distrito Capital, Distrito Capital, Venezuela"));
   assert.ok(esDireccionDeLaFicha(fichaReal, "Av. Abraham Lincoln con calle Unión CC City Market"));
   assert.ok(!esDireccionDeLaFicha(fichaReal, "Av. Andrés Galarraga local 06, Chacao"));
+  // Una dirección de entrega que ya estaba en Odoo se adopta aunque el perfil la proponga con ciudad, estado y país
+  {
+    const padreConEntrega = [{ id: 1, company: 9, clave: "J500000010", pais: 238, street: "Av Bolivar, Valencia, Carabobo, Venezuela", calle: "Av Bolivar", hijos: [
+      { id: 10, name: "Depósito San Diego", street: "ZONA INDUSTRIAL CASTILLITO GALPON 7, San Diego, Carabobo, Venezuela", calle: "ZONA INDUSTRIAL CASTILLITO GALPON 7", active: true },
+    ] }];
+    const datosEntrega = { nombre: "Demo", redes: {}, razones: [{ razon: "Demo", rif: "J-50000001-0", sucursales: [
+      { id: "s1", nombre: "Depósito San Diego", direccion: "ZONA INDUSTRIAL CASTILLITO GALPON 7, San Diego, Carabobo, Venezuela", contacto: "María", telefono: "0241-5550111" },
+    ] }] };
+    const planEntrega = planearSincronizacion(datosEntrega, padreConEntrega, []).ops;
+    assert.deepStrictEqual(planEntrega.map((o) => [o.tipo, o.partnerId]), [["adoptar", 10]]);
+  }
 
   // Interruptor TIENDA_PERFIL_ODOO: apagado por defecto, un RIF de prueba, o todos
   assert.strictEqual(pasoAOdooActivo(undefined, "d:J123456789"), false);
