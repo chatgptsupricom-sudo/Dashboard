@@ -13,6 +13,11 @@ export const ROLES_ASISTENCIA = ["recursos humanos"];
 export const SEDES_ASISTENCIA: Record<number, string> = { 9: "Valencia", 10: "Caracas", 7: "Panamá" };
 
 export const HORARIO = { entrada: "08:00", salida: "17:00" };
+/**
+ * Horas extra en un día laborable: se cuentan desde `desde`, pero solo si la
+ * salida es a las `minimoSalida` o después (así lo calcula RRHH).
+ */
+export const EXTRA = { desde: "16:30", minimoSalida: "17:00" };
 /** Minutos después de la entrada que todavía no cuentan como retardo. */
 export const TOLERANCIA_MIN = 0;
 /**
@@ -20,12 +25,6 @@ export const TOLERANCIA_MIN = 0;
  * seguidas): no se toma la segunda como salida.
  */
 export const MIN_ENTRE_MARCAS = 60;
-/**
- * Horas extra: lo trabajado después de la salida en un día laborable, o todo
- * lo trabajado (entrada a salida) en un día de descanso o feriado. Menos de
- * esto en un día no cuenta (se quedó unos minutos de más).
- */
-export const MIN_HORA_EXTRA = 30;
 /** Una sola marca antes de esta hora es la entrada; después, la salida. */
 export const MEDIODIA = "12:00";
 /** Días máximos de un reporte. */
@@ -64,7 +63,7 @@ export type Dia = {
   /** Laborable con entrada pero sin marca de salida. */
   sinSalida: boolean;
   horas: number | null;
-  /** Minutos de horas extra del día (0 si no llega a MIN_HORA_EXTRA o falta una marca). */
+  /** Minutos exactos de horas extra del día (0 si falta la entrada o la salida). */
   extraMin: number;
 };
 
@@ -196,15 +195,18 @@ export function evaluarDia(fecha: string, marcasDelDia: string[], laborable: boo
 }
 
 /**
- * Horas extra de un día con entrada y salida: en un laborable, desde la hora
- * de salida (o desde la entrada si llegó después) hasta que marcó; en uno no
- * laborable, todo. Lo que no llega a MIN_HORA_EXTRA no cuenta.
+ * Horas extra de un día con entrada y salida (la regla de RRHH, nov-2026): en
+ * un laborable (también el sábado de inventario), si marcó la salida a las
+ * `EXTRA.minimoSalida` (5:00 p. m.) o después, cuenta cada minuto desde
+ * `EXTRA.desde` (4:30 p. m., o desde la entrada si llegó después); si se fue
+ * antes de las 5:00, ese día no hay horas extra. En un día de descanso o
+ * feriado cuenta todo, de entrada a salida. Minutos exactos, sin redondear.
  */
 export function minutosExtra(entrada: string | null, salida: string | null, laborable: boolean): number {
   if (!entrada || !salida) return 0;
-  const desde = laborable ? Math.max(minutos(HORARIO.salida), minutos(entrada)) : minutos(entrada);
-  const extra = minutos(salida) - desde;
-  return extra >= MIN_HORA_EXTRA ? extra : 0;
+  if (!laborable) return Math.max(0, minutos(salida) - minutos(entrada));
+  if (minutos(salida) < minutos(EXTRA.minimoSalida)) return 0;
+  return Math.max(0, minutos(salida) - Math.max(minutos(EXTRA.desde), minutos(entrada)));
 }
 
 /**

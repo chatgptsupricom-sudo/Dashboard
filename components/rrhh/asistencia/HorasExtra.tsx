@@ -11,8 +11,7 @@ import {
 } from "@/lib/asistencia/horasExtra";
 import {
   DIAS_SEMANA,
-  HORARIO,
-  MIN_HORA_EXTRA,
+  EXTRA,
   SEDES_ASISTENCIA,
   diaSemana,
   hoyCaracas,
@@ -77,7 +76,8 @@ function Panel({ titulo, children, accion }: { titulo: string; children: React.R
   );
 }
 
-const tooltipHoras = (v: number, n: string) => [`${v.toLocaleString("es-VE")} h`, n];
+// Las barras van en horas (con 2 decimales); de vuelta a minutos da el número exacto.
+const tooltipHoras = (v: number, n: string) => [formatoExtra(Math.round(v * 60)), n];
 
 /** Pestaña «Horas extra» de Asistencia (lib/asistencia/horasExtra.ts). */
 export function HorasExtra({ sede }: { sede: number }) {
@@ -149,10 +149,11 @@ export function HorasExtra({ sede }: { sede: number }) {
         Nombre: e.nombre,
         Departamento: e.departamento,
         "Días con horas extra": e.dias,
-        "Después de hora (h)": h(e.minutosLaborable),
-        "Descanso y feriados (h)": h(e.minutosDescanso),
-        "Total (h)": h(e.minutos),
+        "Después de hora (min)": e.minutosLaborable,
+        "Descanso y feriados (min)": e.minutosDescanso,
         "Total (min)": e.minutos,
+        Total: formatoExtra(e.minutos),
+        "Total (h)": h(e.minutos),
       })),
     },
     {
@@ -166,8 +167,8 @@ export function HorasExtra({ sede }: { sede: number }) {
         Tipo: tipoDiaExtra(d),
         Entrada: d.entrada ?? "",
         Salida: d.salida ?? "",
-        "Horas extra (h)": h(d.extraMin),
         "Horas extra (min)": d.extraMin,
+        "Horas extra": formatoExtra(d.extraMin),
       })),
     },
     {
@@ -175,15 +176,16 @@ export function HorasExtra({ sede }: { sede: number }) {
       filas: r.porDia.map((d) => ({
         Fecha: d.fecha,
         Día: nombreDia(d.fecha),
-        "Después de hora (h)": h(d.laborable),
-        "Descanso y feriados (h)": h(d.descanso),
-        "Total (h)": h(d.laborable + d.descanso),
+        "Después de hora (min)": d.laborable,
+        "Descanso y feriados (min)": d.descanso,
+        "Total (min)": d.laborable + d.descanso,
+        Total: formatoExtra(d.laborable + d.descanso),
         Empleados: d.empleados,
       })),
     },
     {
       nombre: "Por departamento",
-      filas: r.porDepartamento.map((d) => ({ Departamento: d.departamento, Empleados: d.empleados, "Total (h)": h(d.minutos) })),
+      filas: r.porDepartamento.map((d) => ({ Departamento: d.departamento, Empleados: d.empleados, "Total (min)": d.minutos, Total: formatoExtra(d.minutos) })),
     },
   ];
 
@@ -226,9 +228,9 @@ export function HorasExtra({ sede }: { sede: number }) {
       </div>
 
       <p className="text-xs text-slate-500">
-        Horas extra = lo trabajado después de las {HORARIO.salida} en un día laborable (también el sábado de inventario), o todo lo trabajado de
-        entrada a salida en un día de descanso o feriado. Menos de {MIN_HORA_EXTRA} min en un día no cuenta, y un día sin marca de entrada o de
-        salida no se puede calcular.
+        Horas extra = en un día laborable (también el sábado de inventario), si salió a las {EXTRA.minimoSalida} o después, cada minuto desde las{" "}
+        {EXTRA.desde}; si salió antes de las {EXTRA.minimoSalida}, ese día no hay. En un día de descanso o feriado, todo lo trabajado de entrada a
+        salida. Minutos exactos; un día sin marca de entrada o de salida no se puede calcular.
       </p>
 
       {error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -251,13 +253,13 @@ export function HorasExtra({ sede }: { sede: number }) {
           )}
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Tarjeta titulo="Horas extra" valor={`${horasDec(r.totalMin)} h`} detalle={formatoExtra(r.totalMin)} />
-            <Tarjeta titulo={ETQ_LAB} color={AZUL} valor={`${horasDec(r.laborableMin)} h`} detalle={`Después de las ${HORARIO.salida}`} />
-            <Tarjeta titulo={ETQ_DES} color={AMBAR} valor={`${horasDec(r.descansoMin)} h`} detalle="Todo lo trabajado ese día" />
+            <Tarjeta titulo="Horas extra" valor={formatoExtra(r.totalMin)} detalle={`${r.totalMin.toLocaleString("es-VE")} min · ${horasDec(r.totalMin)} h`} />
+            <Tarjeta titulo={ETQ_LAB} color={AZUL} valor={formatoExtra(r.laborableMin)} detalle={`Desde las ${EXTRA.desde}, saliendo a las ${EXTRA.minimoSalida} o después`} />
+            <Tarjeta titulo={ETQ_DES} color={AMBAR} valor={formatoExtra(r.descansoMin)} detalle="Todo lo trabajado ese día" />
             <Tarjeta
               titulo="Empleados"
               valor={r.empleados}
-              detalle={`${r.dias} día${r.dias === 1 ? "" : "s"} con horas extra${r.empleados ? ` · ${horasDec(r.totalMin / r.empleados)} h por empleado` : ""}`}
+              detalle={`${r.dias} día${r.dias === 1 ? "" : "s"} con horas extra${r.empleados ? ` · ${formatoExtra(Math.round(r.totalMin / r.empleados))} por empleado` : ""}`}
             />
           </div>
 
@@ -342,7 +344,7 @@ export function HorasExtra({ sede }: { sede: number }) {
                         <XAxis type="number" tick={{ fontSize: 11, fill: "#64748b" }} unit=" h" allowDecimals={false} />
                         <YAxis type="category" dataKey="nombre" width={120} tick={{ fontSize: 11, fill: "#334155" }} />
                         <Tooltip
-                          formatter={(v: number, _n, p) => [`${v.toLocaleString("es-VE")} h · ${p.payload.empleados} empleado(s)`, "Horas extra"]}
+                          formatter={(v: number, _n, p) => [`${formatoExtra(Math.round(v * 60))} · ${p.payload.empleados} empleado(s)`, "Horas extra"]}
                           cursor={{ fill: "#f1f5f9" }}
                         />
                         <Bar dataKey="Horas" fill="#6366f1" radius={[0, 3, 3, 0]} />
@@ -385,7 +387,7 @@ export function HorasExtra({ sede }: { sede: number }) {
                             <td className={`${td} text-right`}>{e.dias}</td>
                             <td className={`${td} text-right`}>{formatoExtra(e.minutosLaborable)}</td>
                             <td className={`${td} text-right`}>{formatoExtra(e.minutosDescanso)}</td>
-                            <td className={`${td} text-right font-semibold text-slate-900`}>{horasDec(e.minutos)} h</td>
+                            <td className={`${td} text-right font-semibold text-slate-900`}>{formatoExtra(e.minutos)}</td>
                             <td className={`${td} w-40`}>
                               <div className="flex h-2.5 overflow-hidden rounded-full bg-slate-100">
                                 <div style={{ width: `${(e.minutosLaborable / max) * 100}%`, background: AZUL }} />

@@ -4,7 +4,7 @@
  * se imprime como PDF. Todo puro: lo usa la pantalla.
  */
 
-import { DIAS_SEMANA, HORARIO, MIN_HORA_EXTRA, diaSemana, sumarDias, type Dia, type ResumenEmpleado } from "./tipos";
+import { DIAS_SEMANA, EXTRA, diaSemana, sumarDias, type Dia, type ResumenEmpleado } from "./tipos";
 
 export type FilaExtra = { e: ResumenEmpleado; d: Dia };
 
@@ -152,7 +152,7 @@ export function htmlPdfExtra(r: ResumenExtra, { sede, desde, hasta, filtro }: { 
     .map(
       (e) => `<div class="fila"><div class="nom">${esc(e.nombre || e.codigo)}</div>
         <div class="pista"><div class="b lab" style="width:${(e.minutosLaborable / maxEmp) * 100}%"></div><div class="b des" style="width:${(e.minutosDescanso / maxEmp) * 100}%"></div></div>
-        <div class="val">${horasDec(e.minutos)} h</div></div>`,
+        <div class="val">${formatoExtra(e.minutos)}</div></div>`,
     )
     .join("");
 
@@ -160,7 +160,7 @@ export function htmlPdfExtra(r: ResumenExtra, { sede, desde, hasta, filtro }: { 
     .map(
       (e) => `<tr><td class="mono">${esc(e.codigo)}</td><td>${esc(e.nombre)}</td><td>${esc(e.departamento)}</td>
         <td class="n">${e.dias}</td><td class="n">${formatoExtra(e.minutosLaborable)}</td><td class="n">${formatoExtra(e.minutosDescanso)}</td>
-        <td class="n b">${formatoExtra(e.minutos)}</td><td class="n">${horasDec(e.minutos)}</td></tr>`,
+        <td class="n b">${formatoExtra(e.minutos)}</td><td class="n">${e.minutos}</td></tr>`,
     )
     .join("");
 
@@ -190,7 +190,7 @@ h1{font-size:18px;margin:0}h2{font-size:12.5px;margin:18px 0 8px;border-bottom:1
 .dias{display:flex;align-items:flex-end;gap:2px;height:130px;border-bottom:1px solid #cbd5e1}
 .col{flex:1;display:flex;flex-direction:column;height:100%;min-width:0}.pila{flex:1;display:flex;flex-direction:column;justify-content:flex-end}.pila .b{width:100%;border-radius:2px 2px 0 0}
 .eje{font-size:7.5px;text-align:center;color:#64748b;padding-top:2px}.eje.fin{color:#cbd5e1}
-.fila{display:flex;align-items:center;gap:8px;margin:3px 0}.nom{width:34%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pista{flex:1;display:flex;height:11px;background:#f1f5f9;border-radius:3px;overflow:hidden}.val{width:48px;text-align:right;font-weight:bold}
+.fila{display:flex;align-items:center;gap:8px;margin:3px 0}.nom{width:34%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pista{flex:1;display:flex;height:11px;background:#f1f5f9;border-radius:3px;overflow:hidden}.val{width:78px;white-space:nowrap;text-align:right;font-weight:bold}
 table{width:100%;border-collapse:collapse}th{background:#f1f5f9;text-align:left;font-size:9.5px;padding:5px 6px}td{border-top:1px solid #e2e8f0;padding:4px 6px}
 .n{text-align:right;white-space:nowrap}td.b{font-weight:bold}.mono{font-family:monospace}
 tr{page-break-inside:avoid}.nota{color:#64748b;font-size:9px;margin-top:4px}
@@ -198,9 +198,9 @@ tr{page-break-inside:avoid}.nota{color:#64748b;font-size:9px;margin-top:4px}
 <div class="cab"><div><h1>Horas extra · ${esc(sede)}</h1><div class="sub">Del ${fechaCorta(desde)} al ${fechaCorta(hasta)}${filtro ? ` · ${esc(filtro)}` : ""}</div></div>
 <div class="sub">Supricom · Recursos Humanos<br>Generado ${esc(generado)}</div></div>
 <div class="tars">
-${tarjeta("Horas extra", `${horasDec(r.totalMin)} h`, formatoExtra(r.totalMin))}
-${tarjeta("Después de hora", `${horasDec(r.laborableMin)} h`, `Lunes a viernes después de las ${HORARIO.salida}`)}
-${tarjeta("Descanso y feriados", `${horasDec(r.descansoMin)} h`, "Todo lo trabajado ese día")}
+${tarjeta("Horas extra", formatoExtra(r.totalMin), `${r.totalMin.toLocaleString("es-VE")} min · ${horasDec(r.totalMin)} h`)}
+${tarjeta("Después de hora", formatoExtra(r.laborableMin), `Desde las ${EXTRA.desde} si salió a las ${EXTRA.minimoSalida} o después`)}
+${tarjeta("Descanso y feriados", formatoExtra(r.descansoMin), "Todo lo trabajado ese día")}
 ${tarjeta("Empleados", String(r.empleados), `${r.dias} días con horas extra`)}
 </div>
 <h2>Horas extra por día</h2>
@@ -208,9 +208,9 @@ ${tarjeta("Empleados", String(r.empleados), `${r.dias} días con horas extra`)}
 <div class="dias">${barrasDia}</div>
 ${top.length ? `<h2>Empleados con más horas extra${r.porEmpleado.length > top.length ? ` (los ${top.length} primeros)` : ""}</h2>${barrasEmp}` : ""}
 <h2>Por empleado</h2>
-<table><thead><tr><th>Código</th><th>Empleado</th><th>Departamento</th><th class="n">Días</th><th class="n">Después de hora</th><th class="n">Descanso/feriado</th><th class="n">Total</th><th class="n">Horas</th></tr></thead>
+<table><thead><tr><th>Código</th><th>Empleado</th><th>Departamento</th><th class="n">Días</th><th class="n">Después de hora</th><th class="n">Descanso/feriado</th><th class="n">Total</th><th class="n">Minutos</th></tr></thead>
 <tbody>${tablaEmp || `<tr><td colspan="8" class="gris">Nadie hizo horas extra en el período.</td></tr>`}</tbody></table>
 ${r.filas.length ? `<h2>Detalle por día</h2><table><thead><tr><th>Fecha</th><th>Empleado</th><th>Tipo</th><th class="n">Entrada</th><th class="n">Salida</th><th class="n">Horas extra</th></tr></thead><tbody>${tablaDias}</tbody></table>` : ""}
-<p class="nota">Horas extra = lo trabajado después de las ${HORARIO.salida} en un día laborable, o todo lo trabajado (entrada a salida) en un día de descanso o feriado (un sábado de inventario es laborable: cuenta después de las ${HORARIO.salida}). Menos de ${MIN_HORA_EXTRA} min en un día no cuenta. Sale de las marcas del biométrico: un día sin marca de entrada o de salida no se puede calcular.</p>
+<p class="nota">Horas extra = en un día laborable (también el sábado de inventario), si salió a las ${EXTRA.minimoSalida} o después, cada minuto desde las ${EXTRA.desde}; si salió antes de las ${EXTRA.minimoSalida}, ese día no hay. En un día de descanso o feriado, todo lo trabajado de entrada a salida. Minutos exactos. Sale de las marcas del biométrico: un día sin marca de entrada o de salida no se puede calcular.</p>
 </body></html>`;
 }
