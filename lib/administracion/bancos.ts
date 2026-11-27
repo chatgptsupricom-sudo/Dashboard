@@ -2429,7 +2429,7 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
       [cuenta.id, inicio, fin],
     ),
     query(
-      `SELECT DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
+      `SELECT id, archivo_nombre, DATE_FORMAT(desde, '%Y-%m-%d') AS desde, DATE_FORMAT(hasta, '%Y-%m-%d') AS hasta
          FROM banco_estados WHERE journal_id = ? AND desde <= ? AND hasta >= ?`,
       [cuenta.id, fin, inicio],
     ),
@@ -2473,8 +2473,26 @@ export async function cuadreMes(cuenta: CuentaBanco, mes: string) {
   // Sin columna de saldo en el estado de cuenta, el final se calcula con el saldo con que arranco el mes (cierre o
   // estado anterior) + los movimientos del mes (Banesco Panama: Fecha, Referencia y Monto). Se puede corregir a mano.
   const suma = Math.round(lista.reduce((t: number, m: { monto: number }) => t + Math.round(m.monto * 100), 0)) / 100;
-  const estado: { inicial: number; final: number; cuadra: boolean; deAnterior?: boolean } | null =
-    saldos ?? (lista.length && anterior ? { inicial: anterior.saldo, final: Math.round((anterior.saldo + suma) * 100) / 100, cuadra: true, deAnterior: true } : null);
+  // El archivo original también conserva la apertura de extractos importados antes de reconocer esa fila.
+  let apertura: number | undefined;
+  const delInicio = estados.rows.filter((e: any) => e.desde <= inicio);
+  if (!saldos && lista.length && delInicio.length === 1) {
+    const e = delInicio[0];
+    if (e.desde === inicio && esExcel(e.archivo_nombre)) {
+      const { rows } = await query("SELECT archivo FROM banco_estados WHERE id = ? AND journal_id = ?", [e.id, cuenta.id]);
+      if (rows[0]?.archivo) {
+        const leido = await leerEstado(rows[0].archivo, e.archivo_nombre, "");
+        if (leido.desde === inicio) apertura = leido.saldoInicialDeclarado;
+      }
+    }
+  }
+  const inicial = apertura ?? anterior?.saldo;
+  const estado: { inicial: number; final: number; cuadra: boolean; deAnterior?: boolean } | null = saldos ?? (lista.length && inicial !== undefined ? {
+    inicial,
+    final: Math.round((inicial + suma) * 100) / 100,
+    cuadra: true,
+    deAnterior: apertura === undefined,
+  } : null);
 
   const ctx = { allowed_company_ids: [cuenta.sede] };
   const [libros, sinConciliar] = await Promise.all([

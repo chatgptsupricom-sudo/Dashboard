@@ -14,6 +14,7 @@ export type FilaEstado = {
 };
 
 export type EstadoLeido = {
+  saldoInicialDeclarado?: number;
   filas: FilaEstado[];
   /** Dias que cubre el archivo (con las filas de saldo inicial y final). */
   desde: string;
@@ -185,6 +186,7 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
     // Total: 798000 / Debito Total: 818358,97» abajo; la de totales se leia como un movimiento de 717,59 con la fecha de
     // la fila de arriba). No son movimientos, pero dicen que el estado cubre desde el inicio o hasta el fin del mes.
     let saldoInicialSinFecha = false;
+    const aperturas = new Set<number>();
     let totalesSinFecha = false;
     // Lo de arriba del encabezado: «Saldo Inicial: 21076.56» y el periodo «Movimientos del 01/04/2026-30/04/2026».
     for (const fila of celdas.slice(0, h)) {
@@ -200,6 +202,10 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
       const texto = sinAcentos((fila || []).map((x) => String(x ?? "")).join(" "));
       const fechaFila = fechaDeCelda(celda(c.fecha), orden, invertir);
       if (/saldo (inicial|anterior)/.test(texto) || /(creditos?|debitos?) total|total (de )?(creditos?|debitos?)|saldo final/.test(texto)) {
+        if (!fechaFila && fila.some((v) => /^saldo (inicial|anterior)[:.]?$/.test(sinAcentos(String(v ?? ""))))) {
+          const importe = montoDeCelda(celda(c.saldo)) ?? montoDeCelda(celda(c.monto));
+          if (importe !== null) aperturas.add(importe);
+        }
         if (fechaFila) dias.push(fechaFila);
         else if (/saldo (inicial|anterior)/.test(texto)) saldoInicialSinFecha = true;
         else totalesSinFecha = true;
@@ -230,7 +236,9 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
       const ult = fechas[fechas.length - 1];
       dias.push(new Date(Date.UTC(+ult.slice(0, 4), +ult.slice(5, 7), 0)).toISOString().slice(0, 10));
     }
-    return armarEstado(filas, dias);
+    const estado = armarEstado(filas, dias);
+    if (aperturas.size === 1) estado.saldoInicialDeclarado = [...aperturas][0];
+    return estado;
   }
   return null;
 }
