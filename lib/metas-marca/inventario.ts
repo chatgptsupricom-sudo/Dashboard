@@ -1,6 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
-import { almacenSede, disponible as disponibleDe } from "@/lib/compras/datosOdoo";
+import { almacenSede, disponible as disponibleDe, ubicacionesAlmacen } from "@/lib/compras/datosOdoo";
 import { claveMarca, SIN_MARCA } from "./marcas";
 import { partnersIntercompania } from "@/lib/intercompania";
 import { leerProductos } from "./odoo";
@@ -75,17 +74,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Ubicaciones de Entrada del almacén principal (su reservado no cuenta, como en `almacenSede`). */
 async function ubicacionesEntrada(companyId: number): Promise<number[]> {
-  const warehouseId = MAIN_WAREHOUSE_BY_COMPANY[companyId];
-  if (!warehouseId) return [];
-  const wh = await callOdooRPC<any[]>("stock.warehouse", "search_read", [[["id", "=", warehouseId]]], {
-    fields: ["wh_input_stock_loc_id"], limit: 1,
-  });
-  if (!Array.isArray(wh)) throw new Error("Odoo no respondió stock.warehouse");
-  const entrada = wh[0]?.wh_input_stock_loc_id?.[0];
-  if (!entrada) return [];
-  const ids = await callOdooRPC<number[]>("stock.location", "search", [[["id", "child_of", entrada]]]);
-  if (!Array.isArray(ids)) throw new Error("Odoo no respondió las ubicaciones de Entrada");
-  return ids;
+  return [...(await ubicacionesAlmacen(companyId)).deEntrada];
 }
 
 /** Productos cuya cantidad total en el almacén es negativa (`almacenSede` los toma como 0). */

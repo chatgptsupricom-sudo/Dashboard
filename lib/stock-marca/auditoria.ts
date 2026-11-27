@@ -47,13 +47,13 @@ export async function auditarSede(companyId: number, periodo: Periodo, incluirIC
     const panel = r.totales.stock;
     if (esHoy) {
       const [quants, nativo, q] = await Promise.all([
-        agrupar("stock.quant", [["location_id", "child_of", alm.vista], ["location_id.usage", "=", "internal"], ["company_id", "=", companyId], ["product_id.type", "=", "product"]], ["quantity:sum"], []),
+        agrupar("stock.quant", [["location_id", "in", alm.ubicaciones], ["company_id", "=", companyId], ["product_id.type", "=", "product"]], ["quantity:sum"], []),
         (async () => {
           const ids = await idsAlmacenables();
           let t = 0;
           for (let i = 0; i < ids.length; i += 1000) {
             const x = await callOdooRPC<any[]>("product.product", "read", [ids.slice(i, i + 1000), ["qty_available"]], {
-              context: { location: alm.vista, allowed_company_ids: [companyId], active_test: false },
+              context: { location: alm.vistas, allowed_company_ids: [companyId], active_test: false },
             });
             if (!Array.isArray(x)) throw new Error("Odoo no respondió una verificación (qty_available)");
             for (const p of x) t += Math.max(0, Number(p.qty_available) || 0);
