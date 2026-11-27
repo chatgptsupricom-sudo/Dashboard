@@ -463,3 +463,20 @@ console.log("ajustePermitido ok");
   filas[2][3] = 0;
   assert.strictEqual(leerFilasExcel(filas).saldoInicialDeclarado, 0);
 }
+
+{
+  const codigo = "FT26106P4T9NL";
+  const texto = "Transf Banesco Online DE CUENTA NO.- 1000497025 " + codigo + " ANDRES";
+  const banco = { ...mov("valencia", "2026-04-16", texto.slice(0, 60), 360), referenciaCompleta: texto };
+  const pago = { id: 135, ref: codigo, fecha: "2026-06-02", monto: 360, admiteCruceExtendido: true };
+  const cruce = (pagos, movimientos = [banco]) =>
+    cruzarBanco(movimientos, [], [], new Map(), () => true, new Set(), pagos).movimientos[0];
+  assert.strictEqual(cruce([pago]).estado, "parcial");
+  assert.strictEqual(cruce([pago]).pago.id, 135);
+  assert.strictEqual(cruce([{ ...pago, fecha: "2026-06-15" }]).pago.id, 135); // 60 días
+  for (const cambio of [{ fecha: "2026-06-16" }, { ref: "FT26106P4T9N1" }, { monto: -360 }, { monto: 361 }, { conciliado: true }, { admiteCruceExtendido: false }]) {
+    assert.strictEqual(cruce([{ ...pago, ...cambio }]).pago, null);
+  }
+  assert.strictEqual(cruce([pago, { ...pago, id: 136 }]).pago, null);
+  assert.strictEqual(cruce([pago], [banco, { ...banco, id: "otra" }]).pago, null);
+}
