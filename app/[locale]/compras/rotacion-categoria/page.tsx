@@ -35,6 +35,8 @@ interface RotacionCategoria {
   pctC: number;
   ventas45d: number;
   stockTotal: number;
+  existencia: number;
+  reservado: number;
   capitalEstancado: number;
   skusQuiebre: number;
 }
@@ -45,6 +47,8 @@ interface ProductoModal {
   nombre: string;
   categoria: string;
   stock: number;
+  existencia: number;
+  reservado: number;
   ventas45d: number;
   costo: number;
   capitalEstancado: number;
@@ -167,7 +171,8 @@ export default function RotacionCategoriaPage() {
       "% B": c.pctB,
       "% C": c.pctC,
       "Ventas 45d": c.ventas45d,
-      "Stock total": c.stockTotal,
+      Existencia: c.existencia,
+      Reservado: c.reservado,
       "Capital estancado ($)": c.capitalEstancado,
       "SKUs en quiebre": c.skusQuiebre,
     }));
@@ -331,7 +336,10 @@ export default function RotacionCategoriaPage() {
                     <ColumnHeader label="Ventas 45d" tooltip={COLUMN_TOOLTIPS["Ventas 45d"]} />
                   </th>
                   <th className="text-center px-3 py-3 font-medium text-gray-600">
-                    <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
+                    <ColumnHeader label="Existencia" tooltip="Unidades físicas en el almacén principal de la sede (Existencias y zona de Entrada)" />
+                  </th>
+                  <th className="text-center px-3 py-3 font-medium text-gray-600">
+                    <ColumnHeader label="Reservado" tooltip="Unidades de la existencia reservadas para pedidos de venta" />
                   </th>
                   <th className="text-center px-3 py-3 font-medium text-gray-600 min-w-[160px]">
                     <ColumnHeader label="Clasificación ABC" tooltip={COLUMN_TOOLTIPS["Clasificación ABC"]} />
@@ -347,7 +355,7 @@ export default function RotacionCategoriaPage() {
               <tbody>
                 {pageItems.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-gray-400">
+                    <td colSpan={8} className="text-center py-8 text-gray-400">
                       No hay datos disponibles.
                     </td>
                   </tr>
@@ -379,7 +387,10 @@ export default function RotacionCategoriaPage() {
                         {c.ventas45d.toLocaleString()}
                       </td>
                       <td className="px-3 py-3 text-center text-gray-600">
-                        {c.stockTotal.toLocaleString()}
+                        {c.existencia.toLocaleString()}
+                      </td>
+                      <td className="px-3 py-3 text-center text-gray-600">
+                        {c.reservado.toLocaleString()}
                       </td>
                       <td className="px-3 py-3">
                         <div className="space-y-1">
@@ -487,7 +498,10 @@ export default function RotacionCategoriaPage() {
                       <ColumnHeader label="Ventas 45d" tooltip={COLUMN_TOOLTIPS["Ventas 45d"]} />
                     </th>
                     <th className="text-center px-3 py-3 font-medium text-gray-600">
-                      <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
+                      <ColumnHeader label="Existencia" tooltip="Unidades físicas en el almacén principal de la sede (Existencias y zona de Entrada)" />
+                    </th>
+                    <th className="text-center px-3 py-3 font-medium text-gray-600">
+                      <ColumnHeader label="Reservado" tooltip="Unidades de la existencia reservadas para pedidos de venta" />
                     </th>
                     <th className="text-center px-3 py-3 font-medium text-gray-600 min-w-[160px]">
                       <ColumnHeader label="Clasificación ABC" tooltip={COLUMN_TOOLTIPS["Clasificación ABC"]} />
@@ -504,7 +518,7 @@ export default function RotacionCategoriaPage() {
                   {filtradas.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={8}
                         className="text-center py-8 text-gray-400"
                       >
                         No hay datos disponibles.
@@ -526,7 +540,10 @@ export default function RotacionCategoriaPage() {
                           {c.ventas45d.toLocaleString()}
                         </td>
                         <td className="px-3 py-3 text-center text-gray-600">
-                          {c.stockTotal.toLocaleString()}
+                          {c.existencia.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-3 text-center text-gray-600">
+                          {c.reservado.toLocaleString()}
                         </td>
                         <td className="px-3 py-3">
                           <div className="space-y-1">
@@ -594,7 +611,10 @@ export default function RotacionCategoriaPage() {
                       </th>
                     )}
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
-                      <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
+                      <ColumnHeader label="Existencia" tooltip="Unidades físicas en el almacén principal de la sede (Existencias y zona de Entrada)" />
+                    </th>
+                    <th className="text-center px-3 py-2 font-medium text-gray-600">
+                      <ColumnHeader label="Reservado" tooltip="Unidades de la existencia reservadas para pedidos de venta" />
                     </th>
                     <th className="text-center px-3 py-2 font-medium text-gray-600">
                       <ColumnHeader label="Ventas 45d" tooltip={COLUMN_TOOLTIPS["Ventas 45d"]} />
@@ -631,7 +651,10 @@ export default function RotacionCategoriaPage() {
                         <td className="px-3 py-2 text-gray-600">{p.categoria}</td>
                       )}
                       <td className="px-3 py-2 text-center text-gray-600">
-                        {p.stock}
+                        {p.existencia}
+                      </td>
+                      <td className="px-3 py-2 text-center text-gray-600">
+                        {p.reservado}
                       </td>
                       <td className="px-3 py-2 text-center font-semibold text-gray-800">
                         {p.ventas45d}

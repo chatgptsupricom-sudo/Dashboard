@@ -7,16 +7,19 @@ import {
   RefreshCcw,
   Search,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
+// Inventario del almacén principal de cada sede: una fila por producto con
+// existencia y reservado (/api/superadmin/inventory).
 export default function InventoryPageClient() {
+  const t = useTranslations("superadmin.inventory");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   // Filtros
   const [search, setSearch] = useState("");
   const [selCompany, setSelCompany] = useState("all");
-  const [selWarehouse, setSelWarehouse] = useState("all");
   const [selBrand, setSelBrand] = useState("all");
   const [selCategory, setSelCategory] = useState("all");
   const [onlyLowStock, setOnlyLowStock] = useState(false);
@@ -47,7 +50,6 @@ export default function InventoryPageClient() {
   }, [
     search,
     selCompany,
-    selWarehouse,
     selBrand,
     selCategory,
     onlyLowStock,
@@ -60,7 +62,6 @@ export default function InventoryPageClient() {
     try {
       const query = new URLSearchParams({
         company_id: selCompany,
-        warehouse_id: selWarehouse,
         brand: selBrand,
         category: selCategory,
         low_stock: onlyLowStock ? "true" : "false",
@@ -68,30 +69,21 @@ export default function InventoryPageClient() {
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
       });
+
       const res = await fetch(`/api/superadmin/inventory?${query}`);
       const json = await res.json();
 
-      // VALIDACIÓN DE SEGURIDAD PARA FILTROS DINÁMICOS
-      // Si la marca o categoría seleccionada ya no existen en la nueva disponibilidad, regresamos a "all"
-      // Si el almacén seleccionado ya no está en la lista de almacenes válidos, resetear a 'all'
-      if (
-        selWarehouse !== "all" &&
-        !json.filters.warehouses.some((w) => w.id.toString() === selWarehouse)
-      ) {
-        setSelWarehouse("all");
-      }
+      // Si la marca o categoría seleccionada ya no existen, regresamos a "all"
       if (
         selBrand !== "all" &&
-        !json.filters.brands.includes(selBrand.toUpperCase())
-      ) {
+        !json.filters?.brands?.includes(selBrand.toUpperCase())
+      )
         setSelBrand("all");
-      }
       if (
         selCategory !== "all" &&
-        !json.filters.categories.includes(selCategory)
-      ) {
+        !json.filters?.categories?.includes(selCategory)
+      )
         setSelCategory("all");
-      }
 
       setData(json);
     } catch (err) {
@@ -106,18 +98,25 @@ export default function InventoryPageClient() {
   const showingFrom =
     totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
   const showingTo = Math.min(currentPage * itemsPerPage, totalItems);
+  const unidades = (n: number | null | undefined) =>
+    Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
   return (
     <div className="space-y-6 p-4 md:p-6 bg-slate-50/50 min-h-screen flex flex-col font-sans text-slate-900">
       {/* HEADER */}
       <div className="flex justify-between items-center mb-2">
-        <h1 className="text-2xl md:text-3xl font-black tracking-tighter uppercase">
-          Inven<span className="text-blue-600">tario</span>
-        </h1>
+        <div>
+          <h1 className="text-2xl md:text-3xl font-black tracking-tighter uppercase">
+            {t("title")}
+          </h1>
+          <p className="text-[11px] font-bold text-slate-400 mt-1">
+            {t("nota_principal")}
+          </p>
+        </div>
       </div>
 
       {/* BARRA DE FILTROS AVANZADA */}
-      <div className="grid grid-cols-1 md:grid-cols-7 gap-3 bg-white p-4 rounded-3xl shadow-sm border border-slate-100 items-center">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3 bg-white p-4 rounded-3xl shadow-sm border border-slate-100 items-center">
         {/* Búsqueda */}
         <div className="relative md:col-span-2">
           <Search
@@ -126,7 +125,7 @@ export default function InventoryPageClient() {
           />
           <input
             type="text"
-            placeholder="Buscar productos..."
+            placeholder={t("buscar")}
             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border-none rounded-xl text-xs font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none"
             value={search}
             onChange={(e) => {
@@ -142,13 +141,12 @@ export default function InventoryPageClient() {
           value={selCompany}
           onChange={(e) => {
             setSelCompany(e.target.value);
-            setSelWarehouse("all");
             setSelBrand("all");
             setSelCategory("all");
             setCurrentPage(1);
           }}
         >
-          <option value="all">Todas las Empresas</option>
+          <option value="all">{t("todas_empresas")}</option>
           {data?.filters?.companies?.map((c: any) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -165,7 +163,7 @@ export default function InventoryPageClient() {
             setCurrentPage(1);
           }}
         >
-          <option value="all">Marcas</option>
+          <option value="all">{t("marcas")}</option>
           {data?.filters?.brands?.map((b: string) => (
             <option key={b} value={b}>
               {b}
@@ -182,27 +180,10 @@ export default function InventoryPageClient() {
             setCurrentPage(1);
           }}
         >
-          <option value="all">Categorías</option>
+          <option value="all">{t("categorias")}</option>
           {data?.filters?.categories?.map((c: string) => (
             <option key={c} value={c}>
               {c}
-            </option>
-          ))}
-        </select>
-
-        {/* Filtro Almacén */}
-        <select
-          className="bg-slate-50 border-none rounded-xl text-[10px] font-bold p-2.5 outline-none cursor-pointer hover:bg-slate-100 transition-colors"
-          value={selWarehouse}
-          onChange={(e) => {
-            setSelWarehouse(e.target.value);
-            setCurrentPage(1); // Importante
-          }}
-        >
-          <option value="all">Almacenes</option>
-          {data?.filters?.warehouses?.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
             </option>
           ))}
         </select>
@@ -220,7 +201,7 @@ export default function InventoryPageClient() {
           }`}
         >
           <Filter size={14} />
-          {onlyLowStock ? "Bajo Stock" : "Stock"}
+          {onlyLowStock ? t("bajo_stock") : t("stock")}
         </button>
       </div>
 
@@ -230,7 +211,7 @@ export default function InventoryPageClient() {
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[2px] z-10">
             <RefreshCcw className="animate-spin text-blue-600 mb-4" size={40} />
             <h2 className="text-slate-400 font-black tracking-widest uppercase text-xs animate-pulse">
-              Sincronizando...
+              {t("sincronizando")}
             </h2>
           </div>
         )}
@@ -240,22 +221,22 @@ export default function InventoryPageClient() {
             <thead>
               <tr className="bg-slate-50/50">
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Nombre
+                  {t("nombre")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Marca
+                  {t("marca")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Categoría
-                </th>
-                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  Almacén
+                  {t("categoria")}
                 </th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">
-                  Stock
+                  {t("existencia")}
+                </th>
+                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">
+                  {t("reservado")}
                 </th>
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-right">
-                  Estado
+                  {t("estado")}
                 </th>
               </tr>
             </thead>
@@ -269,6 +250,11 @@ export default function InventoryPageClient() {
                     <span className="text-xs font-bold text-slate-700 uppercase tracking-tight">
                       {item.name}
                     </span>
+                    {item.code && (
+                      <span className="block text-[10px] font-bold text-slate-400 tabular-nums">
+                        {item.code}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-[10px] font-black text-blue-500/80 bg-blue-50 px-2.5 py-1 rounded-lg uppercase italic">
@@ -278,11 +264,11 @@ export default function InventoryPageClient() {
                   <td className="px-6 py-4 font-bold text-[10px] text-slate-500 uppercase">
                     {item.category}
                   </td>
-                  <td className="px-6 py-4 font-bold text-[10px] text-slate-400 uppercase">
-                    {item.warehouse}
+                  <td className="px-6 py-4 text-center font-black text-xs text-slate-800 tabular-nums">
+                    {unidades(item.existencia ?? item.quantity)}
                   </td>
-                  <td className="px-6 py-4 text-center font-black text-xs text-slate-800">
-                    {item.quantity}
+                  <td className="px-6 py-4 text-center font-bold text-xs text-slate-500 tabular-nums">
+                    {unidades(item.reservado)}
                   </td>
                   <td className="px-8 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
@@ -292,7 +278,7 @@ export default function InventoryPageClient() {
                       <span
                         className={`text-[10px] font-bold ${item.status === "Bajo" ? "text-red-500" : "text-green-500"}`}
                       >
-                        {item.status === "Bajo" ? "Bajo Stock" : "Activo"}
+                        {item.status === "Bajo" ? t("bajo_stock") : t("activo")}
                       </span>
                     </div>
                   </td>
@@ -305,7 +291,7 @@ export default function InventoryPageClient() {
         {/* FOOTER */}
         <div className="px-8 py-4 bg-white border-t border-slate-100 flex items-center justify-between">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            Mostrando {showingFrom} - {showingTo} de {totalItems} Productos
+            {t("mostrando")} {showingFrom} - {showingTo} {t("de")} {totalItems} {t("productos")}
           </div>
 
           <div className="flex items-center gap-3">

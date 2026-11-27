@@ -62,7 +62,10 @@ export interface FilaProducto {
 export interface PuntoSerie { mes: string; vendido: number; stock: number; pct: number | null }
 
 export interface Agregado {
+  /** Existencia (unidades físicas). */
   stock: number;
+  /** Reservado para pedidos; null en el histórico (no hay reservado al corte). */
+  reservado: number | null;
   disponible: number | null;
   vendido: number;
   ventaUsd: number;
@@ -131,7 +134,7 @@ export function estadoDe(stock: number, vendido: number, cobertura: number | nul
 }
 
 const vacio = (): Agregado => ({
-  stock: 0, disponible: null, vendido: 0, ventaUsd: 0, pct: null, pctAnterior: null, valor: 0, cobertura: null,
+  stock: 0, reservado: null, disponible: null, vendido: 0, ventaUsd: 0, pct: null, pctAnterior: null, valor: 0, cobertura: null,
   productos: 0, conStock: 0, sinVenta: 0, valorSinVenta: 0, sinCosto: 0,
 });
 
@@ -152,7 +155,7 @@ export function calcularStockMarca(periodo: Periodo, datos: DatosSede[], incluir
   const marcas = new Map<string, Acum>();
   const serieV = meses.map(() => 0);
   const serieS = meses.map(() => 0);
-  const tot = { ...vacio(), disponible: hayReservado ? 0 : null } as Agregado;
+  const tot = { ...vacio(), reservado: hayReservado ? 0 : null, disponible: hayReservado ? 0 : null } as Agregado;
   let vendidoAnt = 0;
   let stockAnt = 0;
   const hayAnterior = datos.every((d) => d.stockAnterior && d.ventasAnterior);
@@ -191,7 +194,7 @@ export function calcularStockMarca(periodo: Periodo, datos: DatosSede[], incluir
       const clave = p.clave;
       let m = marcas.get(clave);
       if (!m) {
-        m = { ...vacio(), disponible: hayReservado ? 0 : null, clave, nombres: new Map(), vendidoAnt: 0, stockAnt: 0, hayAnterior,
+        m = { ...vacio(), reservado: hayReservado ? 0 : null, disponible: hayReservado ? 0 : null, clave, nombres: new Map(), vendidoAnt: 0, stockAnt: 0, hayAnterior,
           porSede: new Map(), serieV: meses.map(() => 0), serieS: meses.map(() => 0) };
         marcas.set(clave, m);
       }
@@ -217,6 +220,7 @@ export function calcularStockMarca(periodo: Periodo, datos: DatosSede[], incluir
       if (p.marcaOdoo) m.nombres.set(p.marcaOdoo, (m.nombres.get(p.marcaOdoo) ?? 0) + 1);
       for (const a of [m, tot]) {
         a.stock += stock;
+        if (a.reservado != null && reservado != null) a.reservado += reservado;
         if (a.disponible != null && disponible != null) a.disponible += disponible;
         a.vendido += n.u;
         a.ventaUsd += n.usd;
@@ -234,6 +238,7 @@ export function calcularStockMarca(periodo: Periodo, datos: DatosSede[], incluir
 
   const cerrar = (a: Agregado, vAnt: number, sAnt: number) => {
     a.stock = r2(a.stock);
+    if (a.reservado != null) a.reservado = r2(a.reservado);
     if (a.disponible != null) a.disponible = r2(a.disponible);
     a.vendido = r2(a.vendido);
     a.ventaUsd = r2(a.ventaUsd);
@@ -259,7 +264,7 @@ export function calcularStockMarca(periodo: Periodo, datos: DatosSede[], incluir
       clave: m.clave,
       marca: m.clave === SIN_MARCA ? "Sin marca" : nombre || m.clave,
       generica: m.clave === SIN_MARCA || esMarcaGenerica(m.clave),
-      stock: m.stock, disponible: m.disponible, vendido: m.vendido, ventaUsd: m.ventaUsd, pct: m.pct, pctAnterior: m.pctAnterior,
+      stock: m.stock, reservado: m.reservado, disponible: m.disponible, vendido: m.vendido, ventaUsd: m.ventaUsd, pct: m.pct, pctAnterior: m.pctAnterior,
       valor: m.valor, cobertura: m.cobertura, productos: m.productos, conStock: m.conStock, sinVenta: m.sinVenta,
       valorSinVenta: m.valorSinVenta, sinCosto: m.sinCosto, estado,
       participacionStock: tot.stock > 0 ? r1((m.stock / tot.stock) * 100) : 0,

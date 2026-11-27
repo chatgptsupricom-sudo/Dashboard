@@ -64,7 +64,8 @@ async function leerGET(request: NextRequest) {
       { header: "Categoría", get: (f) => f.categoria },
       { header: "Precio de venta", get: (f) => f.precio },
       ...(verCosto ? [{ header: "Costo", get: (f: FilaRotacion) => f.costo ?? "" }] : []),
-      { header: "Stock actual", get: (f) => f.stock },
+      { header: "Existencia", get: (f) => f.stock },
+      { header: "Reservado", get: (f) => f.reservado },
       { header: "Unidades vendidas (30 días)", get: (f) => f.vendidas30 },
       { header: "Unidades vendidas (60 días)", get: (f) => f.vendidas60 },
       {

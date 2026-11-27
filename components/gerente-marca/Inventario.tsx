@@ -16,7 +16,7 @@ import {
  * y por producto. Datos: /api/gerente-marca/inventario.
  */
 
-type ColProd = "codigo" | "nombre" | "fisico" | "disponible" | "transito" | "costo" | "valor";
+type ColProd = "codigo" | "nombre" | "fisico" | "reservado" | "disponible" | "transito" | "costo" | "valor";
 
 interface FilaMarca {
   marcaId: number;
@@ -150,6 +150,7 @@ export function Inventario() {
                     <th className="px-3 py-2.5 text-left">Marca</th>
                     <th className="px-3 py-2.5 text-right">Con existencia</th>
                     <th className="px-3 py-2.5 text-right">Existencia</th>
+                    <th className="px-3 py-2.5 text-right">Reservado</th>
                     <th className="px-3 py-2.5 text-right">Disponible</th>
                     <th className="px-3 py-2.5 text-right">Por llegar</th>
                     <th className="px-3 py-2.5 text-right">Valor al costo</th>
@@ -166,6 +167,7 @@ export function Inventario() {
                       <td className="px-3 py-2.5 font-semibold text-slate-800">{m.etiqueta}</td>
                       <td className="px-3 py-2.5 text-right text-slate-600">{m.conStock}</td>
                       <td className="px-3 py-2.5 text-right">{unidades(m.fisico)}</td>
+                      <td className="px-3 py-2.5 text-right text-slate-600">{m.reservado ? unidades(m.reservado) : "—"}</td>
                       <td className="px-3 py-2.5 text-right">{unidades(m.disponible)}</td>
                       <td className="px-3 py-2.5 text-right text-slate-600">{m.transito ? unidades(m.transito) : "—"}</td>
                       <td className="px-3 py-2.5 text-right font-semibold">{dinero(m.valor)}</td>
@@ -202,6 +204,7 @@ export function Inventario() {
                     <Th col="nombre" orden={orden} alternar={alternar} derecha={false}>Descripción</Th>
                     {variasSedes && sedes.map((s) => <th key={s} className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-slate-500">{nombreSedeGerente(s)}</th>)}
                     <Th col="fisico" orden={orden} alternar={alternar}>Existencia</Th>
+                    <Th col="reservado" orden={orden} alternar={alternar} title="Reservado para pedidos">Reservado</Th>
                     <Th col="disponible" orden={orden} alternar={alternar} title="Existencia menos lo reservado para pedidos">Disponible</Th>
                     <Th col="transito" orden={orden} alternar={alternar}>Por llegar</Th>
                     <Th col="costo" orden={orden} alternar={alternar}>Costo unit.</Th>
@@ -218,6 +221,7 @@ export function Inventario() {
                       </td>
                       {variasSedes && sedes.map((s) => <td key={s} className="px-3 py-2 text-right text-slate-500">{unidades(c.porSede.get(s)?.fisico ?? 0)}</td>)}
                       <td className="px-3 py-2 text-right font-semibold">{unidades(c.fisico)}</td>
+                      <td className="px-3 py-2 text-right text-slate-600">{c.reservado ? unidades(c.reservado) : "—"}</td>
                       <td className="px-3 py-2 text-right">{unidades(c.disponible)}</td>
                       <td className="px-3 py-2 text-right text-slate-600">{c.transito ? unidades(c.transito) : "—"}</td>
                       <td className="px-3 py-2 text-right text-slate-600">{c.costo ? dinero(c.costo) : <span className="text-amber-600">sin costo</span>}</td>
@@ -225,7 +229,7 @@ export function Inventario() {
                     </tr>
                   ))}
                   {visibles.length === 0 && (
-                    <tr><td colSpan={9} className="px-3 py-10 text-center text-sm text-slate-400">No hay productos con esos filtros</td></tr>
+                    <tr><td colSpan={8 + (variasSedes ? sedes.length : 0)} className="px-3 py-10 text-center text-sm text-slate-400">No hay productos con esos filtros</td></tr>
                   )}
                 </tbody>
               </table>

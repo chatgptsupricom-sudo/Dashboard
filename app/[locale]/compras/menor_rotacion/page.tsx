@@ -33,6 +33,10 @@ interface ProductoAnalisis {
   marca: string;
   categoria: string;
   stockDisponible: number;
+  /** Físico en el almacén principal. */
+  existencia: number;
+  /** Reservado para pedidos. */
+  reservado: number;
   costo: number;
   /** Días desde la última venta; null = nunca se vendió en la sede. */
   days_inactive: number | null;
@@ -151,7 +155,8 @@ export default function MenorRotacionPage() {
       Descripción: item.descripcion,
       Marca: item.marca,
       Categoría: item.categoria,
-      "Stock disponible": item.stockDisponible,
+      Existencia: item.existencia,
+      Reservado: item.reservado,
       "Última venta": item.ultimaVenta ? fechaCorta(item.ultimaVenta) : "Nunca vendido",
       "En stock desde": item.enStockDesde ? fechaCorta(item.enStockDesde) : "",
       "Días Inactivos": item.days_inactive === null ? "Nunca vendido" : item.days_inactive,
@@ -342,7 +347,10 @@ export default function MenorRotacionPage() {
                     <ColumnHeader label="Marca/Cat" tooltip={COLUMN_TOOLTIPS.Categoría} />
                   </TableHead>
                   <TableHead className="text-center font-bold text-gray-800">
-                    <ColumnHeader label="Stock disp." tooltip={COLUMN_TOOLTIPS["Stock disponible"]} />
+                    <ColumnHeader label="Existencia" tooltip="Unidades físicas en el almacén principal de la sede (Existencias y zona de Entrada)" />
+                  </TableHead>
+                  <TableHead className="text-center font-bold text-gray-800">
+                    <ColumnHeader label="Reservado" tooltip="Unidades de la existencia reservadas para pedidos de venta. El capital estancado se calcula sobre lo disponible (existencia − reservado)" />
                   </TableHead>
                   <TableHead className="text-center text-red-700">
                     <ColumnHeader label="Días Inactivos" tooltip={COLUMN_TOOLTIPS["Días Inactivos"]} />
@@ -358,7 +366,7 @@ export default function MenorRotacionPage() {
               <TableBody>
                 {currentItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       No hay inventario estancado con estos filtros.
                     </TableCell>
                   </TableRow>
@@ -385,7 +393,10 @@ export default function MenorRotacionPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-center font-bold text-lg text-gray-800">
-                        {item.stockDisponible}
+                        {item.existencia}
+                      </TableCell>
+                      <TableCell className="text-center font-bold text-lg text-gray-800">
+                        {item.reservado}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="destructive" className="bg-red-600">

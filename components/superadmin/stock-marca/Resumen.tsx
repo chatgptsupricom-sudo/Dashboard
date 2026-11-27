@@ -138,12 +138,13 @@ export function Resumen({ data, onFiltrar, onAbrir }: { data: DatosStock; onFilt
         />
         <Tarjeta
           icono={Boxes}
-          titulo={p.enCurso ? "Stock hoy" : "Stock al cierre"}
+          titulo={p.enCurso ? "Existencia hoy" : "Existencia al cierre"}
           acento="bg-slate-100 text-slate-700"
           valor={<>{unidadesFmt(t.stock)} <span className="text-sm font-semibold text-slate-500">u</span></>}
           pie={<>
             Valor al costo <b className="text-slate-700">{dinero(t.valor)}</b> · {unidadesFmt(t.conStock)} productos de {t.marcas} marcas.
-            {t.disponible != null && <span className="block mt-1">Disponible (sin lo reservado para pedidos): {unidadesFmt(t.disponible)} u</span>}
+            {t.reservado != null && <span className="block mt-1">Reservado para pedidos: {unidadesFmt(t.reservado)} u</span>}
+            {t.disponible != null && <span className="block">Disponible (sin lo reservado para pedidos): {unidadesFmt(t.disponible)} u</span>}
           </>}
         />
         <Tarjeta

@@ -1,14 +1,18 @@
-// Bypass SSL para subdominios multi-nivel de Odoo Sh, escopeado por-request
-// via callOdooRPCInsecure (ver lib/odoo.ts) — nunca process.env global.
-import { callOdooRPCInsecure as callOdooRPC } from "@/lib/odoo";
 import { esRolBI, ROL_BI } from "@/lib/auth/inteligenciaNegocio";
 import { requireRoles } from "@/lib/auth/roles";
+import {
+  inventarioPrincipal,
+  nombreSede,
+  SEDES_INVENTARIO,
+  VENTANAS_VENTAS,
+} from "@/lib/inventario/principal";
 import { NextRequest, NextResponse } from "next/server";
-import { costos, hoyCaracas, sumarDias, unidadesVendidas } from "@/lib/compras/datosOdoo";
 
-// Ventanas de "Vendidas" que puede pedir Inteligencia de Negocio (días).
-const VENTANAS_VENTAS = [30, 90, 365];
-
+/**
+ * Inventario del almacén principal de cada sede (`lib/inventario/principal.ts`):
+ * una fila por producto con existencia y reservado. `company_id` = 9, 10, 7 o
+ * "all" (las tres sumadas).
+ */
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ["superadmin", ROL_BI]);
   if (auth.error) return auth.error;
@@ -16,200 +20,38 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
 
-    // 1. CAPTURA DE PARÁMETROS DE LA URL
-    const companyId = searchParams.get("company_id");
-    const warehouseId = searchParams.get("warehouse_id");
-    const search = searchParams.get("search") || "";
-    const brandFilter = searchParams.get("brand") || "all";
-    const categoryFilter = searchParams.get("category") || "all";
-    const lowStockOnly = searchParams.get("low_stock") === "true";
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "10");
-    const offset = (page - 1) * limit;
-
-    // 2. DOMINIO MAESTRO (Solo stock interno físico disponible)
-    const masterDomain: any[] = [
-      ["location_id.usage", "=", "internal"],
-      ["quantity", ">", 0],
-    ];
-
-    let filterLocationId: number | null = null;
-    if (warehouseId && warehouseId !== "all") {
-      try {
-        const warehouseData = await callOdooRPC<any[]>(
-          "stock.warehouse",
-          "read",
-          [[parseInt(warehouseId)], ["view_location_id"]],
-        );
-        if (warehouseData && warehouseData[0]?.view_location_id) {
-          filterLocationId = warehouseData[0].view_location_id[0];
-        }
-      } catch (e) {
-        console.error("⚠️ Almacén sin ubicación válida");
-      }
-    }
-
-    const baseContext = [...masterDomain];
-    if (companyId && companyId !== "all") {
-      baseContext.push(["company_id", "=", parseInt(companyId)]);
-    }
-    if (filterLocationId) {
-      baseContext.push(["location_id", "child_of", filterLocationId]);
-    }
-
-    let stockForFilters = [];
-    try {
-      stockForFilters =
-        (await callOdooRPC<any[]>("stock.quant", "search_read", [
-          baseContext,
-          ["product_id", "company_id"],
-        ])) || [];
-    } catch (e) {
-      stockForFilters = [];
-    }
-
-    const availProductIds = Array.from(
-      new Set(stockForFilters.map((s) => s.product_id[0])),
-    );
-    const availCompanyIds = Array.from(
-      new Set(stockForFilters.map((s) => s.company_id[0])),
-    );
-
-    // 3. OBTENER METADATOS
-    let allProductsInfo: any[] = [];
-    let allRealCompanies: any[] = [];
-
-    if (availProductIds.length > 0) {
-      allProductsInfo =
-        (await callOdooRPC<any[]>("product.product", "search_read", [
-          [["id", "in", availProductIds]],
-          ["categ_id", "display_name", "lst_price"],
-        ])) || [];
-    }
-
-    allRealCompanies =
-      (await callOdooRPC<any[]>("res.company", "search_read", [
-        [["id", "in", availCompanyIds.length ? availCompanyIds : [-1]]],
-        ["name"],
-      ])) || [];
-
-    const dynamicBrands = Array.from(
-      new Set(
-        allProductsInfo
-          .filter(
-            (p) => categoryFilter === "all" || p.categ_id[1] === categoryFilter,
-          )
-          .map((p) =>
-            p.display_name
-              .replace(/\[.*?\]/g, "")
-              .trim()
-              .split(" ")[0]
-              .toUpperCase(),
-          ),
-      ),
-    ).sort();
-
-    const dynamicCategories = Array.from(
-      new Set(
-        allProductsInfo
-          .filter((p) => {
-            const b = p.display_name
-              .replace(/\[.*?\]/g, "")
-              .trim()
-              .split(" ")[0]
-              .toUpperCase();
-            return brandFilter === "all" || b === brandFilter.toUpperCase();
-          })
-          .map((p) => p.categ_id[1]),
-      ),
-    ).sort();
-
-    // 4. DOMINIO FINAL PARA LA FILTRACIÓN EN TABLA
-    const tableDomain = [...baseContext];
-    if (brandFilter !== "all")
-      tableDomain.push(["product_id.name", "=ilike", `${brandFilter}%`]);
-    if (categoryFilter !== "all")
-      tableDomain.push(["product_id.categ_id.name", "=", categoryFilter]);
-    if (lowStockOnly) tableDomain.push(["quantity", "<=", 20]);
-    if (search) tableDomain.push(["product_id.name", "ilike", search]);
-
-    // 5. EJECUCIÓN RPC FINAL
-    const [resStock, resCount] = await Promise.all([
-      callOdooRPC<any[]>("stock.quant", "search_read", [
-        tableDomain,
-        ["product_id", "location_id", "quantity", "company_id"],
-        offset,
-        limit,
-      ]),
-      callOdooRPC<number>("stock.quant", "search_count", [tableDomain]),
-    ]);
-
-    const stockData = resStock || [];
-    const totalCount = resCount || 0;
+    const companyId = parseInt(searchParams.get("company_id") || "", 10);
+    const companyIds = SEDES_INVENTARIO.includes(companyId) ? [companyId] : SEDES_INVENTARIO;
 
     // Inteligencia de Negocio ve además costo, precio base y lo vendido. El
     // costo es por sede (standard_price, o el del proveedor si está en 0) y lo
-    // vendido son las unidades netas de la sede en la ventana, Odoo + Smartbit
-    // antes del corte y sin intercompañía: las mismas cifras de Compras
+    // vendido son las unidades netas en la ventana, Odoo + Smartbit antes del
+    // corte y sin intercompañía: las mismas cifras de Compras
     // (lib/compras/datosOdoo.ts, en caché 10 min).
     const verCostos = esRolBI(auth.payload?.role);
     const pedida = parseInt(searchParams.get("ventas_dias") || "", 10);
     const ventasDias = VENTANAS_VENTAS.includes(pedida) ? pedida : 90;
-    const porSede = new Map<number, { costo: Map<number, number>; vendidas: Map<number, number> }>();
-    if (verCostos) {
-      const hasta = hoyCaracas();
-      const desde = sumarDias(hasta, -(ventasDias - 1));
-      const sedes = [...new Set(stockData.map((s) => s.company_id?.[0]).filter(Boolean))] as number[];
-      await Promise.all(sedes.map(async (cid) => {
-        const [costo, vendidas] = await Promise.all([costos(cid), unidadesVendidas(cid, desde, hasta)]);
-        porSede.set(cid, { costo, vendidas });
-      }));
-    }
 
-    // 6. MAPEO LIMPIO Y SEGURO PARA EL FRONTEND
-    const inventory = stockData.map((item) => {
-      const pInfo = allProductsInfo.find((p) => p.id === item.product_id[0]);
-      const cleanName = item.product_id[1].replace(/\[.*?\]/g, "").trim();
-      return {
-        id: item.id,
-        name: cleanName,
-        brand: cleanName.split(" ")[0].toUpperCase(),
-        category: pInfo?.categ_id ? pInfo.categ_id[1] : "General",
-        quantity: item.quantity,
-        warehouse: item.location_id[1],
-        company: item.company_id[1],
-        status: item.quantity <= 20 ? "Bajo" : "Activo",
-        ...(verCostos && {
-          costo: porSede.get(item.company_id[0])?.costo.get(item.product_id[0]) ?? null,
-          precioBase: pInfo?.lst_price ?? null,
-          vendidas: porSede.get(item.company_id[0])?.vendidas.get(item.product_id[0]) ?? 0,
-        }),
-      };
+    const r = await inventarioPrincipal({
+      companyIds,
+      search: searchParams.get("search") || "",
+      brand: searchParams.get("brand") || "all",
+      category: searchParams.get("category") || "all",
+      lowStock: searchParams.get("low_stock") === "true",
+      page: parseInt(searchParams.get("page") || "1", 10) || 1,
+      limit: parseInt(searchParams.get("limit") || "10", 10) || 10,
+      verCostos,
+      ventasDias,
     });
 
-    const warehousesList =
-      (await callOdooRPC<any[]>("stock.warehouse", "search_read", [
-        companyId && companyId !== "all"
-          ? [["company_id", "=", parseInt(companyId)]]
-          : [
-              [
-                "company_id",
-                "in",
-                availCompanyIds.length ? availCompanyIds : [-1],
-              ],
-            ],
-        ["name"],
-      ])) || [];
-
     return NextResponse.json({
-      inventory,
-      total_count: totalCount,
+      inventory: r.inventory,
+      total_count: r.total_count,
       ...(verCostos && { verCostos, ventasDias }),
       filters: {
-        companies: allRealCompanies,
-        brands: dynamicBrands,
-        categories: dynamicCategories,
-        warehouses: warehousesList,
+        companies: SEDES_INVENTARIO.map((id) => ({ id, name: nombreSede(id) })),
+        brands: r.brands,
+        categories: r.categories,
       },
     });
   } catch (error: any) {
@@ -218,7 +60,7 @@ export async function GET(request: NextRequest) {
       {
         inventory: [],
         total_count: 0,
-        filters: { companies: [], brands: [], categories: [], warehouses: [] },
+        filters: { companies: [], brands: [], categories: [] },
         error: error.message,
       },
       { status: 500 },

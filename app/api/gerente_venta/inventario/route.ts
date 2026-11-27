@@ -1,9 +1,13 @@
 import { verifyToken } from "@/lib/jwt";
-// Bypass SSL para subdominios multi-nivel de Odoo Sh, escopeado por-request
-// via callOdooRPCInsecure (ver lib/odoo.ts) — nunca process.env global.
-import { callOdooRPCInsecure as callOdooRPC } from "@/lib/odoo";
+import { inventarioPrincipal, SEDES_INVENTARIO } from "@/lib/inventario/principal";
 import { NextRequest, NextResponse } from "next/server";
 
+/**
+ * Inventario del almacén principal de la sede del usuario (`cids` del token),
+ * una fila por producto con existencia y reservado
+ * (`lib/inventario/principal.ts`). El SuperAdmin elige con `company_id`
+ * (9, 10, 7 o "all" = las tres sumadas).
+ */
 export async function GET(request: NextRequest) {
   try {
     const token = request.cookies.get("token")?.value;
@@ -16,11 +20,10 @@ export async function GET(request: NextRequest) {
     }
 
     const isSuperAdmin = (payload.role as string)?.toLowerCase().trim() === "superadmin";
-    const allCompanyIds = [9, 10, 7];
     let userCompanyId: number;
 
     if (payload.cids) {
-      userCompanyId = parseInt(payload.cids as string);
+      userCompanyId = parseInt(String(payload.cids), 10);
     } else if (isSuperAdmin) {
       userCompanyId = 0;
     } else {
@@ -29,127 +32,29 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
 
-    // 1. DOMINIO MAESTRO (Filtro base por empresa y ubicación interna)
-    const companyFilter =
-      isSuperAdmin && searchParams.get("company_id") && searchParams.get("company_id") !== "all"
-        ? ["company_id", "=", parseInt(searchParams.get("company_id")!)]
-        : userCompanyId === 0
-          ? ["company_id", "in", allCompanyIds]
-          : ["company_id", "=", userCompanyId];
+    const pedida = parseInt(searchParams.get("company_id") || "", 10);
+    let companyIds: number[];
+    if (isSuperAdmin && SEDES_INVENTARIO.includes(pedida)) companyIds = [pedida];
+    else if (userCompanyId === 0) companyIds = SEDES_INVENTARIO;
+    else if (SEDES_INVENTARIO.includes(userCompanyId)) companyIds = [userCompanyId];
+    else return NextResponse.json({ error: "Sede sin almacén principal" }, { status: 403 });
 
-    const masterDomain = [
-      ["location_id.usage", "=", "internal"],
-      ["quantity", ">", 0],
-      companyFilter,
-    ];
-
-    // 2. OBTENER METADATOS PARA FILTROS (Independiente de la búsqueda)
-    const allStock =
-      (await callOdooRPC<any[]>("stock.quant", "search_read", [
-        masterDomain,
-        ["product_id"],
-      ])) || [];
-    const allProductIds = Array.from(
-      new Set(allStock.map((s) => s.product_id[0])),
-    );
-
-    const [allProductsInfo, warehousesList] = await Promise.all([
-      allProductIds.length > 0
-        ? callOdooRPC<any[]>("product.product", "search_read", [
-            [["id", "in", allProductIds]],
-            ["categ_id", "display_name"],
-          ])
-        : [],
-      callOdooRPC<any[]>("stock.warehouse", "search_read", [
-        [["company_id", "=", userCompanyId]],
-        ["name"],
-      ]) || [],
-    ]);
-
-    const dynamicBrands = Array.from(
-      new Set(
-        allProductsInfo.map((p) =>
-          p.display_name
-            .replace(/\[.*?\]/g, "")
-            .trim()
-            .split(" ")[0]
-            .toUpperCase(),
-        ),
-      ),
-    ).sort();
-    const dynamicCategories = Array.from(
-      new Set(
-        allProductsInfo.map((p) => (p.categ_id ? p.categ_id[1] : "General")),
-      ),
-    ).sort();
-
-    // 3. CONSTRUCCIÓN DOMINIO DE TABLA (Con filtros de usuario)
-    const tableDomain = [...masterDomain];
-    const warehouseId = searchParams.get("warehouse_id");
-    if (warehouseId && warehouseId !== "all") {
-      const whData = await callOdooRPC<any[]>("stock.warehouse", "read", [
-        [parseInt(warehouseId)],
-        ["view_location_id"],
-      ]);
-      if (whData?.[0]?.view_location_id)
-        tableDomain.push([
-          "location_id",
-          "child_of",
-          whData[0].view_location_id[0],
-        ]);
-    }
-
-    const brand = searchParams.get("brand");
-    const category = searchParams.get("category");
-    if (brand && brand !== "all")
-      tableDomain.push(["product_id.name", "=ilike", `${brand}%`]);
-    if (category && category !== "all")
-      tableDomain.push(["product_id.categ_id.name", "=", category]);
-    if (searchParams.get("low_stock") === "true")
-      tableDomain.push(["quantity", "<=", 20]);
-    if (searchParams.get("search"))
-      tableDomain.push([
-        "product_id.name",
-        "ilike",
-        searchParams.get("search"),
-      ]);
-
-    // 4. EJECUCIÓN DATOS TABLA
-    const limit = parseInt(searchParams.get("limit") || "10");
-    const offset = (parseInt(searchParams.get("page") || "1") - 1) * limit;
-
-    const [stockData, totalCount] = await Promise.all([
-      callOdooRPC<any[]>("stock.quant", "search_read", [
-        tableDomain,
-        ["product_id", "location_id", "quantity", "company_id"],
-        offset,
-        limit,
-      ]),
-      callOdooRPC<number>("stock.quant", "search_count", [tableDomain]),
-    ]);
-
-    // 5. MAPEO FINAL
-    const inventory = (stockData || []).map((item) => {
-      const pInfo = allProductsInfo.find((p) => p.id === item.product_id[0]);
-      return {
-        id: item.id,
-        name: item.product_id[1].replace(/\[.*?\]/g, "").trim(),
-        brand: item.product_id[1].split(" ")[0].toUpperCase(),
-        category: pInfo?.categ_id?.[1] || "General",
-        quantity: item.quantity,
-        warehouse: item.location_id[1],
-        company: item.company_id[1],
-        status: item.quantity <= 20 ? "Bajo" : "Activo",
-      };
+    const r = await inventarioPrincipal({
+      companyIds,
+      search: searchParams.get("search") || "",
+      brand: searchParams.get("brand") || "all",
+      category: searchParams.get("category") || "all",
+      lowStock: searchParams.get("low_stock") === "true",
+      page: parseInt(searchParams.get("page") || "1", 10) || 1,
+      limit: parseInt(searchParams.get("limit") || "10", 10) || 10,
     });
 
     return NextResponse.json({
-      inventory,
-      total_count: totalCount || 0,
+      inventory: r.inventory,
+      total_count: r.total_count,
       filters: {
-        brands: dynamicBrands,
-        categories: dynamicCategories,
-        warehouses: warehousesList,
+        brands: r.brands,
+        categories: r.categories,
       },
     });
   } catch (error: any) {

@@ -109,7 +109,7 @@ export function TablaMarcas({ data, filtro, setFiltro, onAbrir }: {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold tracking-wide text-slate-500">
               {th("marca", "Marca", "text-left")}
-              {th("stock", data.periodo.enCurso ? "Stock hoy" : "Stock al cierre")}
+              {th("stock", data.periodo.enCurso ? "Existencia hoy" : "Existencia al cierre")}
               {th("vendido", "Vendido")}
               {th("pct", "% vendido")}
               <th className="px-3 py-2.5 text-left w-[160px] uppercase">Vendido vs stock</th>
@@ -136,7 +136,9 @@ export function TablaMarcas({ data, filtro, setFiltro, onAbrir }: {
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">
                   <p className="font-semibold text-slate-900">{unidadesFmt(m.stock)}</p>
-                  {hayDisponible && m.disponible != null && m.disponible !== m.stock && <p className="text-[11px] text-slate-400">{unidadesFmt(m.disponible)} disp.</p>}
+                  {hayDisponible && m.reservado != null && m.reservado > 0 && (
+                    <p className="text-[11px] text-slate-400">{unidadesFmt(m.reservado)} reserv.{m.disponible != null ? ` · ${unidadesFmt(m.disponible)} disp.` : ""}</p>
+                  )}
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">
                   <p className="font-semibold text-slate-900">{unidadesFmt(m.vendido)}</p>

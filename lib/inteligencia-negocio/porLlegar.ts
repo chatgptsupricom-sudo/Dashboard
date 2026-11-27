@@ -79,8 +79,12 @@ export interface FilaPorLlegar {
   /** La fecha más próxima de los documentos. */
   fecha: string | null;
   origenes: OrigenLlegada[];
-  /** Disponible hoy en el almacén principal de la sede. */
+  /** Disponible hoy en el almacén principal de la sede (existencia − reservado). */
   stock: number;
+  /** Unidades físicas hoy en el almacén principal de la sede. */
+  existencia: number;
+  /** Reservado para pedidos en el almacén principal de la sede. */
+  reservado: number;
   /** ¿Se vendió alguna vez en la sede? */
   vendido: boolean;
   ultimaVenta: string | null;
@@ -322,6 +326,8 @@ export async function porLlegar(companyIds: number[]): Promise<{ filas: FilaPorL
         fecha: minFecha(g.origenes),
         origenes: g.origenes.sort((a, b) => (a.fecha ?? "9999").localeCompare(b.fecha ?? "9999")),
         stock: g.productId ? r2(disponible(almacen.stock.get(g.productId))) : 0,
+        existencia: g.productId ? r2(almacen.stock.get(g.productId)?.fisico ?? 0) : 0,
+        reservado: g.productId ? r2(almacen.stock.get(g.productId)?.reservado ?? 0) : 0,
         vendido: !!ultimaSede,
         ultimaVenta: ultimaSede,
         unidades12m: g.productId ? r2(vendidas12m.get(g.productId) ?? 0) : 0,

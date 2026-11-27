@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles } from "@/lib/auth/roles";
+import { existenciaPrincipal } from "@/lib/compras/datosOdoo";
 
 export const dynamic = "force-dynamic";
 
@@ -22,16 +23,19 @@ export async function GET(request: NextRequest) {
 
     // 3. FILTRADO DE EMPRESA
     let companyFilter: any[] = [];
+    let cids: number[];
     if (payload.role === "superAdmin") {
       const companyIdParam = searchParams.get("company_id");
       companyFilter =
         companyIdParam && companyIdParam !== "all"
           ? ["company_id", "=", parseInt(companyIdParam)]
           : ["company_id", "in", [9, 10, 7]];
+      cids = companyIdParam && companyIdParam !== "all" ? [parseInt(companyIdParam)] : [9, 10, 7];
     } else {
       if (!payload.cids)
         return NextResponse.json({ error: "Sin empresa" }, { status: 403 });
       companyFilter = ["company_id", "=", parseInt(payload.cids as any)];
+      cids = [parseInt(payload.cids as any)];
     }
 
     // 4. DEFINIR FILTROS (Ya con start y end definidos arriba)
@@ -74,17 +78,11 @@ export async function GET(request: NextRequest) {
         "price_subtotal desc",
       ])) || [];
 
-    const productIds = linesData.map((l) => l.product_id[0]);
-    const productsInfo =
-      productIds.length > 0
-        ? (await callOdooRPC<any[]>("product.product", "read", [
-            productIds,
-            ["qty_available"],
-          ])) || []
-        : [];
-    const stockMap = new Map(
-      productsInfo.map((p) => [p.id, p.qty_available || 0]),
-    );
+    // Existencia y reservado del almacén principal de la sede.
+    const stockMap = await existenciaPrincipal(cids).catch((e) => {
+      console.error("stats: existencia del almacén principal", e?.message);
+      return new Map<number, { existencia: number; reservado: number }>();
+    });
 
     // 6. PROCESAMIENTO (Marcas y productos)
     const brandMap: Record<string, { revenue: number; cantidad: number }> = {};
@@ -204,7 +202,8 @@ export async function GET(request: NextRequest) {
           brand: brandName,
           revenue,
           cantidad,
-          stock: stockMap.get(p.product_id[0]) || 0,
+          stock: stockMap.get(p.product_id[0])?.existencia || 0,
+          reservado: stockMap.get(p.product_id[0])?.reservado || 0,
         };
       });
     // const sortedBrands = Object.entries(brandMap)

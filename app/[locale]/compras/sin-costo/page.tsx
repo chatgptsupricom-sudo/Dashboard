@@ -34,6 +34,8 @@ interface ProductoSinCosto {
   sinCostoEn: string[];
   stockPorSede: Record<string, number>;
   stockTotal: number;
+  existencia: number;
+  reservado: number;
 }
 
 export default function SinCostoPage() {
@@ -91,10 +93,9 @@ export default function SinCostoPage() {
       Nombre: p.name,
       Categoría: p.categoria,
       "Sin costo en": p.sinCostoEn.join(", "),
+      Existencia: p.existencia,
+      Reservado: p.reservado,
       "Stock total": p.stockTotal,
-      ...Object.fromEntries(
-        Object.entries(p.stockPorSede).map(([k, v]) => [`Stock ${k}`, v]),
-      ),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -232,10 +233,13 @@ export default function SinCostoPage() {
                     <ColumnHeader label="Sin costo en" tooltip={COLUMN_TOOLTIPS["Sin costo en"]} />
                   </TableHead>
                   <TableHead className="text-center">
-                    <ColumnHeader label="Stock por sede" tooltip={COLUMN_TOOLTIPS["Stock por sede"]} />
+                    <ColumnHeader label="Existencia" tooltip="Unidades físicas en el almacén principal de la sede (Existencias y zona de Entrada)" />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Reservado" tooltip="Unidades de la existencia reservadas para pedidos de venta" />
                   </TableHead>
                   <TableHead className="text-center font-bold">
-                    <ColumnHeader label="Stock total" tooltip={COLUMN_TOOLTIPS["Stock total"]} />
+                    <ColumnHeader label="Stock total" tooltip="Disponible: existencia menos lo reservado" />
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -243,7 +247,7 @@ export default function SinCostoPage() {
                 {pageItems.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="text-center py-8 text-gray-400"
                     >
                       No se encontraron productos sin costo con stock
@@ -278,14 +282,11 @@ export default function SinCostoPage() {
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell className="text-center text-sm">
-                        <div className="flex flex-col gap-0.5">
-                          {Object.entries(p.stockPorSede).map(([sede, qty]) => (
-                            <span key={sede} className="text-xs text-gray-600">
-                              {sede}: <span className="font-medium">{qty}</span>
-                            </span>
-                          ))}
-                        </div>
+                      <TableCell className="text-center text-sm font-medium text-gray-700">
+                        {p.existencia}
+                      </TableCell>
+                      <TableCell className="text-center text-sm text-gray-600">
+                        {p.reservado}
                       </TableCell>
                       <TableCell className="text-center">
                         <span className="font-bold text-gray-800">

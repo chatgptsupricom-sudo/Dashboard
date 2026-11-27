@@ -10,7 +10,8 @@ import { nombreSede } from "./odoo";
 
 export interface DatosSedePrecios {
   companyId: number;
-  costoStock: Map<number, { costo: number; stock: number }>;
+  /** `stock` = existencia del almacén principal de la sede; `reservado` = reservado para pedidos. */
+  costoStock: Map<number, { costo: number; stock: number; reservado: number }>;
   lista: ListaPrecios | undefined;
 }
 
@@ -20,7 +21,8 @@ const COL: Columna[] = [
   { clave: "codigo", titulo: "Código" },
   { clave: "producto", titulo: "Producto" },
   { clave: "marca", titulo: "Marca" },
-  { clave: "stock", titulo: "Stock", tipo: "numero" },
+  { clave: "stock", titulo: "Existencia", tipo: "numero" },
+  { clave: "reservado", titulo: "Reservado", tipo: "numero" },
 ];
 
 export function chequeosPrecios(productos: Producto[], sedes: DatosSedePrecios[]): Chequeo[] {
@@ -38,7 +40,7 @@ export function chequeosPrecios(productos: Producto[], sedes: DatosSedePrecios[]
       if (!cs || cs.stock <= 0) continue;
       const base = {
         id: p.id, modelo: "product.template", companyId: s.companyId,
-        codigo: p.codigo, producto: p.nombre, marca: p.marca?.[1]?.trim() ?? "", stock: cs.stock, lista,
+        codigo: p.codigo, producto: p.nombre, marca: p.marca?.[1]?.trim() ?? "", stock: cs.stock, reservado: cs.reservado, lista,
       };
       const precios = s.lista?.precios.get(p.id) ?? [];
       const costo = cs.costo;

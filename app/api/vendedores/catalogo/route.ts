@@ -79,6 +79,7 @@
 //   }
 // }
 import { sedeDelCatalogo } from "@/lib/catalogo/sede";
+import { almacenSede } from "@/lib/compras/datosOdoo";
 import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextResponse } from "next/server";
@@ -105,53 +106,54 @@ export async function GET(request: Request) {
       );
     }
 
-    const warehouses = await callOdooRPC<any[]>(
-      "stock.warehouse",
-      "search_read",
-      [
-        [
-          ["company_id", "=", userCompanyId],
-          ["name", "in", ["Central", "Principal"]],
-        ],
-      ],
-      { fields: ["id", "name", "lot_stock_id"], limit: 1 },
-    );
-    const locationId = warehouses?.[0]?.lot_stock_id?.[0] ?? null;
+    // Existencia y reservado del almacén principal de la sede (Existencias +
+    // Entrada), el mismo número que el resto del panel.
+    const { stock } = await almacenSede(userCompanyId);
+    const conExistencia = [...stock]
+      .filter(([, s]) => s.fisico > 0)
+      .map(([id]) => id);
 
-    const productos = await callOdooRPC<any[]>(
-      "product.product",
-      "search_read",
-      [
-        [
-          ["sale_ok", "=", true],
-          ["qty_available", ">", 0],
-          ["type", "=", "product"],
-        ],
-      ],
-      {
-        fields: [
-          "id",
-          "display_name",
-          "name",
-          "product_tmpl_id",
-          "default_code",
-          "company_sale_price",
-          "qty_available",
-          "categ_id",
-          "barcode",
-          "image_1024",
-          "uom_id",
-          "x_studio_marca",
-        ],
-        limit: 5000,
-        order: "name asc",
-        context: {
-          allowed_company_ids: [userCompanyId],
-          lang: "es_VE",
-          ...(locationId ? { location: locationId } : {}),
-        },
-      },
-    );
+    const productos = conExistencia.length
+      ? await callOdooRPC<any[]>(
+          "product.product",
+          "search_read",
+          [
+            [
+              ["id", "in", conExistencia],
+              ["sale_ok", "=", true],
+              ["type", "=", "product"],
+            ],
+          ],
+          {
+            fields: [
+              "id",
+              "display_name",
+              "name",
+              "product_tmpl_id",
+              "default_code",
+              "company_sale_price",
+              "categ_id",
+              "barcode",
+              "image_1024",
+              "uom_id",
+              "x_studio_marca",
+            ],
+            limit: 5000,
+            order: "name asc",
+            context: {
+              allowed_company_ids: [userCompanyId],
+              lang: "es_VE",
+            },
+          },
+        )
+      : [];
+
+    if (!productos) {
+      return NextResponse.json(
+        { error: "No se pudo conectar con Odoo" },
+        { status: 502 },
+      );
+    }
 
     // Fetch translated names from product.template in es_VE
     const tmplIds = [
@@ -174,7 +176,7 @@ export async function GET(request: Request) {
       },
     );
 
-    const tmplNameMap = new Map(templates.map((t: any) => [t.id, t.name]));
+    const tmplNameMap = new Map((templates ?? []).map((t: any) => [t.id, t.name]));
 
     productos.forEach((p: any) => {
       const tmplId = Array.isArray(p.product_tmpl_id)
@@ -183,14 +185,12 @@ export async function GET(request: Request) {
       if (tmplId) p.translated_name = tmplNameMap.get(tmplId) || null;
       const m = p.x_studio_marca;
       p.marca = Array.isArray(m) ? m[1] : m || "";
+      const s = stock.get(p.id);
+      p.existencia = s?.fisico ?? 0;
+      p.reservado = s?.reservado ?? 0;
+      // Compatibilidad: qty_available = existencia del almacén principal.
+      p.qty_available = p.existencia;
     });
-
-    if (!productos) {
-      return NextResponse.json(
-        { error: "No se pudo conectar con Odoo" },
-        { status: 502 },
-      );
-    }
 
     return NextResponse.json(productos);
   } catch (error: any) {

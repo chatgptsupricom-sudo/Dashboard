@@ -40,6 +40,10 @@ export interface FilaMenorRotacion {
   categoria: string;
   /** Disponible en el almacén principal (físico − reservado para pedidos). */
   stockDisponible: number;
+  /** Físico en el almacén principal. */
+  existencia: number;
+  /** Reservado para pedidos. */
+  reservado: number;
   costo: number;
   /** Días desde la última venta; null = nunca se vendió en la sede. */
   days_inactive: number | null;
@@ -82,6 +86,8 @@ export function menorRotacion(sedeId: number): Promise<FilaMenorRotacion[]> {
         marca: p.marca,
         categoria: p.categoria,
         stockDisponible: stock,
+        existencia: s.fisico,
+        reservado: s.reservado,
         costo: costo.get(p.id) ?? 0,
         days_inactive: dias,
         ultimaVenta: u,
@@ -166,6 +172,10 @@ export interface FilaCobertura {
   categoria: string;
   abc: ClaseABC;
   stockDisponible: number;
+  /** Físico en el almacén principal. */
+  existencia: number;
+  /** Reservado para pedidos. */
+  reservado: number;
   ventas45d: number;
   demandaDiaria: number;
   diasCobertura: number;
@@ -193,6 +203,8 @@ export async function coberturaStock(sedeId: number): Promise<FilaCobertura[]> {
       categoria: f.categoria,
       abc: c.abc,
       stockDisponible: stock,
+      existencia: f.fisico,
+      reservado: f.reservado,
       ventas45d: f.ventas45d,
       demandaDiaria,
       diasCobertura: Math.floor(stock / demandaDiaria),
@@ -215,7 +227,12 @@ export interface ProductoRotacion {
   codigo: string;
   nombre: string;
   categoria: string;
+  /** Disponible (físico − reservado). */
   stock: number;
+  /** Físico en el almacén principal. */
+  existencia: number;
+  /** Reservado para pedidos. */
+  reservado: number;
   ventas45d: number;
   costo: number;
   capitalEstancado: number;
@@ -234,7 +251,10 @@ export interface CategoriaRotacion {
   pctB: number;
   pctC: number;
   ventas45d: number;
+  /** Suma del disponible de sus productos. */
   stockTotal: number;
+  existencia: number;
+  reservado: number;
   capitalEstancado: number;
   skusQuiebre: number;
 }
@@ -276,6 +296,8 @@ export function rotacionPorCategoria(sedeId: number): Promise<{ categorias: Cate
         nombre: p.nombre,
         categoria: p.categoria,
         stock,
+        existencia: s?.fisico ?? 0,
+        reservado: s?.reservado ?? 0,
         ventas45d,
         costo: Math.round(c * 100) / 100,
         capitalEstancado: stock > 0 && sinRotar ? Math.round(stock * c) : 0,
@@ -290,7 +312,7 @@ export function rotacionPorCategoria(sedeId: number): Promise<{ categorias: Cate
     for (const f of filas) {
       let cat = porCategoria.get(f.categoria);
       if (!cat) {
-        cat = { nombre: f.categoria, skus: 0, clasA: 0, clasB: 0, clasC: 0, pctA: 0, pctB: 0, pctC: 0, ventas45d: 0, stockTotal: 0, capitalEstancado: 0, skusQuiebre: 0 };
+        cat = { nombre: f.categoria, skus: 0, clasA: 0, clasB: 0, clasC: 0, pctA: 0, pctB: 0, pctC: 0, ventas45d: 0, stockTotal: 0, existencia: 0, reservado: 0, capitalEstancado: 0, skusQuiebre: 0 };
         porCategoria.set(f.categoria, cat);
       }
       cat.skus++;
@@ -299,6 +321,8 @@ export function rotacionPorCategoria(sedeId: number): Promise<{ categorias: Cate
       else cat.clasC++;
       cat.ventas45d += f.ventas45d;
       cat.stockTotal += f.stock;
+      cat.existencia += f.existencia;
+      cat.reservado += f.reservado;
       cat.capitalEstancado += f.capitalEstancado;
       if (f.quiebre) cat.skusQuiebre++;
     }
@@ -306,6 +330,8 @@ export function rotacionPorCategoria(sedeId: number): Promise<{ categorias: Cate
       .map((c) => ({
         ...c,
         stockTotal: Math.round(c.stockTotal),
+        existencia: Math.round(c.existencia),
+        reservado: Math.round(c.reservado),
         pctA: Math.round((c.clasA / c.skus) * 100),
         pctB: Math.round((c.clasB / c.skus) * 100),
         pctC: Math.round((c.clasC / c.skus) * 100),

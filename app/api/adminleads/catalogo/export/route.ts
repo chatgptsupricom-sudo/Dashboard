@@ -1,6 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
+import { almacenSede } from "@/lib/compras/datosOdoo";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -18,7 +19,9 @@ export async function GET(request: NextRequest) {
       referencia: searchParams.get("referencia") !== "0",
       nombre: searchParams.get("nombre") !== "0",
       marca: searchParams.get("marca") !== "0",
+      // `stock` = Existencia (la llave de antes); `reservado` es nueva.
       stock: searchParams.get("stock") !== "0",
+      reservado: searchParams.get("reservado") !== "0",
       precio: searchParams.get("precio") !== "0",
       imagen: searchParams.get("imagen") !== "0",
     };
@@ -28,29 +31,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Sede no válida" }, { status: 400 });
     }
 
-    const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = { 9: 9, 10: 10 };
-    const warehouseId = MAIN_WAREHOUSE_BY_COMPANY[companyId];
-    let locationIds: number[] = [];
-
-    if (warehouseId) {
-      const warehouseData = await callOdooRPC<any[]>(
-        "stock.warehouse",
-        "search_read",
-        [[["id", "=", warehouseId]]],
-        { fields: ["id", "lot_stock_id"], limit: 1 },
-      );
-      const locId = warehouseData?.[0]?.lot_stock_id?.[0];
-      if (locId) locationIds = [locId];
-    }
+    // Existencia y reservado del almacén principal de la sede (Existencias +
+    // Entrada), el mismo número que el resto del panel.
+    const { stock } = await almacenSede(companyId);
+    const conExistencia = [...stock]
+      .filter(([, s]) => s.fisico > 0)
+      .map(([id]) => id);
 
     const domain: any[] = [
+      ["id", "in", conExistencia],
       ["sale_ok", "=", true],
       ["active", "=", true],
       ["type", "=", "product"],
     ];
     if (categoria !== "todas") domain.push(["categ_id.name", "=", categoria]);
 
-    const productos = await callOdooRPC<any[]>(
+    const productos = !conExistencia.length ? [] : await callOdooRPC<any[]>(
       "product.product",
       "search_read",
       [domain],
@@ -68,31 +64,6 @@ export async function GET(request: NextRequest) {
 
     if (!productos) {
       return NextResponse.json({ error: "No se pudo conectar con Odoo" }, { status: 502 });
-    }
-
-    const productIds = productos.map((p: any) => p.id);
-    const stockDomain: any[] = [["product_id", "in", productIds]];
-    if (locationIds.length > 0) {
-      stockDomain.push(["location_id", "child_of", locationIds]);
-    } else {
-      stockDomain.push(["location_id.usage", "=", "internal"]);
-      stockDomain.push(["company_id", "=", companyId]);
-    }
-
-    const stockData = await callOdooRPC<any[]>(
-      "stock.quant",
-      "search_read",
-      [stockDomain],
-      { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
-    );
-
-    const stockMap: Record<number, number> = {};
-    if (stockData) {
-      stockData.forEach((s: any) => {
-        if (!s.product_id) return;
-        const id = s.product_id[0];
-        stockMap[id] = (stockMap[id] || 0) + Math.max(0, s.quantity - s.reserved_quantity);
-      });
     }
 
     if (productos.length > 0) {
@@ -114,10 +85,13 @@ export async function GET(request: NextRequest) {
       if (tmplId) p.translated_name = tmplNameMap.get(tmplId) || null;
       const m = p.x_studio_marca;
       p.marca = Array.isArray(m) ? m[1] : m || "";
-      p.qty_available = stockMap[p.id] ?? 0;
+      const s = stock.get(p.id);
+      p.existencia = s?.fisico ?? 0;
+      p.reservado = s?.reservado ?? 0;
+      p.qty_available = p.existencia;
       p.default_code = typeof p.default_code === "string" ? p.default_code : "";
       return p;
-    }).filter((p: any) => p.qty_available > 0 && (p.company_sale_price ?? 0) > 1);
+    }).filter((p: any) => p.existencia > 0 && (p.company_sale_price ?? 0) > 1);
 
     const getNombre = (p: any) => p.translated_name || p.display_name?.replace(/\[.*?\]/g, "").trim() || p.name || "";
     const getCategoria = (p: any) => Array.isArray(p.categ_id) ? p.categ_id[1] : "Sin categoría";
@@ -151,7 +125,8 @@ export async function GET(request: NextRequest) {
       if (cols.nombre) colDefs.push({ header: "Nombre en pantalla", key: "nombre", width: 50 });
       if (incluirColumnaCategoria) colDefs.push({ header: "Categoría", key: "categoria", width: 24 });
       if (cols.marca) colDefs.push({ header: "Marca", key: "marca", width: 20 });
-      if (cols.stock) colDefs.push({ header: "Cantidad Disponible", key: "stock", width: 20 });
+      if (cols.stock) colDefs.push({ header: "Existencia", key: "stock", width: 14 });
+      if (cols.reservado) colDefs.push({ header: "Reservado", key: "reservado", width: 14 });
       if (cols.precio) colDefs.push({ header: "Precio", key: "precio", width: 14 });
       if (cols.imagen) colDefs.push({ header: "Imagen", key: "imagen", width: 19 });
 
@@ -175,7 +150,8 @@ export async function GET(request: NextRequest) {
         if (cols.nombre) rowData.nombre = getNombre(p);
         if (incluirColumnaCategoria) rowData.categoria = getCategoria(p);
         if (cols.marca) rowData.marca = p.marca || "";
-        if (cols.stock) rowData.stock = p.qty_available ?? 0;
+        if (cols.stock) rowData.stock = p.existencia ?? 0;
+        if (cols.reservado) rowData.reservado = p.reservado ?? 0;
         if (cols.precio) rowData.precio = p.company_sale_price ?? 0;
         if (cols.imagen) rowData.imagen = "";
 

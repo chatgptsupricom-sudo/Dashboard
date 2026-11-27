@@ -18,12 +18,13 @@ import {
  * Datos: /api/gerente-marca/inventario.
  */
 
-type Col = "marca" | "categoria" | "codigo" | "dias" | "costo" | "fisico" | "disponible" | "valor" | "valorDisponible" | "vendidas6m" | `m${number}`;
+type Col = "marca" | "categoria" | "codigo" | "dias" | "costo" | "fisico" | "reservado" | "disponible" | "valor" | "valorDisponible" | "vendidas6m" | `m${number}`;
 
 /** Lo que se suma en el resumen, por marca y por tipo de producto dentro de la marca. */
 interface Grupo {
   productos: number;
   fisico: number;
+  reservado: number;
   disponible: number;
   valor: number;
   valorDisponible: number;
@@ -39,6 +40,7 @@ function agrupar(prods: Combinado[]): Grupo {
   return {
     productos: prods.length,
     fisico: prods.reduce((s, c) => s + c.fisico, 0),
+    reservado: prods.reduce((s, c) => s + c.reservado, 0),
     disponible: prods.reduce((s, c) => s + c.disponible, 0),
     valor: prods.reduce((s, c) => s + c.valor, 0),
     valorDisponible: prods.reduce((s, c) => s + c.valorDisponible, 0),
@@ -62,6 +64,7 @@ function FilaGrupo({ g, etiqueta, sub, activa, onClick }: { g: Grupo; etiqueta: 
     <tr onClick={onClick} className={`cursor-pointer tabular-nums ${activa ? "bg-blue-50" : sub ? "hover:bg-slate-50 text-slate-600 text-xs" : "hover:bg-slate-50"}`}>
       <td className={`px-3 ${p} whitespace-nowrap ${sub ? "pl-8" : "font-semibold text-slate-800"}`}>{etiqueta}</td>
       <td className={`px-3 ${p} text-right`}>{unidades(g.fisico)}</td>
+      <td className={`px-3 ${p} text-right`}>{unidades(g.reservado)}</td>
       <td className={`px-3 ${p} text-right`}>{unidades(g.disponible)}</td>
       <td className={`px-3 ${p} text-right ${sub ? "" : "font-semibold"}`}>{dinero(g.valor)}</td>
       <td className={`px-3 ${p} text-right`}>{g.diasPromedio ?? "—"}</td>
@@ -110,6 +113,7 @@ export function Antiguedad() {
     valor: resumen.reduce((s, m) => s + m.valor, 0),
     valorDisponible: resumen.reduce((s, m) => s + m.valorDisponible, 0),
     fisico: resumen.reduce((s, m) => s + m.fisico, 0),
+    reservado: resumen.reduce((s, m) => s + m.reservado, 0),
     disponible: resumen.reduce((s, m) => s + m.disponible, 0),
     porTramo: Object.fromEntries(TRAMOS.map((t) => [t.id, resumen.reduce((s, m) => s + m.porTramo[t.id], 0)])) as Record<Tramo, number>,
   };
@@ -158,6 +162,7 @@ export function Antiguedad() {
           Marca: g.etiqueta,
           "Tipo de producto": "categoria" in g ? g.categoria : `Total ${g.etiqueta}`,
           "Inv. existente": g.fisico,
+          "Inv. reservado": g.reservado,
           "Inv. disponible": g.disponible,
           "Total costo existente USD": Math.round(g.valor * 100) / 100,
           "Total costo disponible USD": Math.round(g.valorDisponible * 100) / 100,
@@ -181,6 +186,7 @@ export function Antiguedad() {
           "Costo unit. USD": Math.round(c.costo * 100) / 100,
           ...(variasSedes ? Object.fromEntries(sedes.map((s) => [`Existencia ${nombreSedeGerente(s)}`, c.porSede.get(s)?.fisico ?? 0])) : {}),
           "Inv. existente": c.fisico,
+          "Inv. reservado": c.reservado,
           "Inv. disponible": c.disponible,
           "Total costo existente USD": c.valor,
           "Total costo disponible USD": c.valorDisponible,
@@ -232,6 +238,7 @@ export function Antiguedad() {
                   <tr className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                     <th className="px-3 py-2.5 text-left">Marca</th>
                     <th className="px-3 py-2.5 text-right">Existencia</th>
+                    <th className="px-3 py-2.5 text-right">Reservado</th>
                     <th className="px-3 py-2.5 text-right">Disponible</th>
                     <th className="px-3 py-2.5 text-right">Total costo</th>
                     <th className="px-3 py-2.5 text-right">Días prom.</th>
@@ -252,6 +259,7 @@ export function Antiguedad() {
                   <tr className="bg-slate-50 font-bold tabular-nums">
                     <td className="px-3 py-2.5">Total</td>
                     <td className="px-3 py-2.5 text-right">{unidades(total.fisico)}</td>
+                    <td className="px-3 py-2.5 text-right">{unidades(total.reservado)}</td>
                     <td className="px-3 py-2.5 text-right">{unidades(total.disponible)}</td>
                     <td className="px-3 py-2.5 text-right">{dinero(total.valor)}</td>
                     <td className="px-3 py-2.5 text-right">{diasTotal ?? "—"}</td>
@@ -299,6 +307,7 @@ export function Antiguedad() {
                     <th className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500 min-w-[120px]">Unidades por edad</th>
                     <Th col="costo" orden={orden} alternar={alternar}>Costo unit.</Th>
                     <Th col="fisico" orden={orden} alternar={alternar} title="Unidades en el almacén">Existencia</Th>
+                    <Th col="reservado" orden={orden} alternar={alternar} title="Reservado para pedidos">Reservado</Th>
                     <Th col="disponible" orden={orden} alternar={alternar} title="Existencia menos lo reservado para pedidos">Disponible</Th>
                     <Th col="valor" orden={orden} alternar={alternar} title="Existencia × costo">Costo total</Th>
                     <Th col="valorDisponible" orden={orden} alternar={alternar} title="Disponible × costo">Costo disp.</Th>
@@ -329,6 +338,7 @@ export function Antiguedad() {
                       </td>
                       <td className="px-3 py-2 text-right text-slate-600">{c.costo ? dinero(c.costo) : <span className="text-amber-600">sin costo</span>}</td>
                       <td className="px-3 py-2 text-right font-semibold" title={variasSedes ? sedes.map((s) => `${nombreSedeGerente(s)}: ${unidades(c.porSede.get(s)?.fisico ?? 0)}`).join(" · ") : undefined}>{unidades(c.fisico)}</td>
+                      <td className="px-3 py-2 text-right text-slate-600">{c.reservado ? unidades(c.reservado) : <span className="text-slate-300">0</span>}</td>
                       <td className={`px-3 py-2 text-right ${c.disponible < c.fisico ? "text-amber-700" : ""}`}>{unidades(c.disponible)}</td>
                       <td className="px-3 py-2 text-right font-semibold">{dinero(c.valor)}</td>
                       <td className="px-3 py-2 text-right">{dinero(c.valorDisponible)}</td>

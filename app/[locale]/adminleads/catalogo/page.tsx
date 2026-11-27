@@ -14,7 +14,8 @@ const COLUMNAS_DISPONIBLES = [
   { key: "referencia", label: "Referencia" },
   { key: "nombre", label: "Nombre en pantalla" },
   { key: "marca", label: "Marca" },
-  { key: "stock", label: "Cantidad Disponible" },
+  { key: "stock", label: "Existencia" },
+  { key: "reservado", label: "Reservado" },
   { key: "precio", label: "Precio" },
   { key: "imagen", label: "Imagen" },
 ];
@@ -267,7 +268,9 @@ export default function AdminLeadsCatalogoPage() {
 function ProductoCard({ producto, index }: { producto: any; index: number }) {
   const imagen = producto.image_128 ? `data:image/png;base64,${producto.image_128}` : null;
   const categoria = Array.isArray(producto.categ_id) ? producto.categ_id[1] : null;
-  const stock = producto.qty_available ?? 0;
+  // Existencia y reservado del almacén principal de la sede.
+  const stock = producto.existencia ?? producto.qty_available ?? 0;
+  const reservado = producto.reservado ?? 0;
   const precio = producto.company_sale_price ?? 0;
   const displayRaw = typeof producto.display_name === "string" ? producto.display_name : "";
   const nombreLimpio = displayRaw.replace(/\[.*?\]/g, "").trim() || safeStr(producto.name);
@@ -290,8 +293,10 @@ function ProductoCard({ producto, index }: { producto: any; index: number }) {
         <h3 className="font-bold text-sm text-zinc-900 line-clamp-2 leading-snug min-h-[2.5rem]">{nombreLimpio}</h3>
         {producto.default_code && <p className="text-xs text-zinc-400 font-mono">{producto.default_code}</p>}
         <div className="flex items-center justify-between pt-1">
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${stock > 10 ? "bg-emerald-50 text-emerald-600" : stock > 0 ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
-            {stock} uds
+          <span
+            title={`${stock} en existencia · ${reservado} reservadas`}
+            className={`text-xs font-bold px-2 py-0.5 rounded-full ${stock > 10 ? "bg-emerald-50 text-emerald-600" : stock > 0 ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"}`}>
+            {stock} uds · {reservado} res.
           </span>
           <span className="text-sm font-bold text-zinc-800">
             ${(precio || 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

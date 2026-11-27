@@ -97,6 +97,8 @@ export function MetasMarcaVentas() {
         "Unidades vendidas": m.unidades,
         "Meta unidades": m.metaUnidades ?? "",
         "% Unidades": m.cumplimientoUnidades ?? "",
+        "Existencia hoy (u)": data.inventario?.[m.clave]?.existencia ?? "",
+        "Reservado hoy (u)": data.inventario?.[m.clave]?.reservado ?? "",
         "Stock disponible hoy (u)": data.inventario?.[m.clave]?.unidades ?? "",
         "Valor del stock (USD)": data.inventario?.[m.clave]?.valor ?? "",
         "% de la venta": m.participacion,

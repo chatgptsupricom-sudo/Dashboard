@@ -1,11 +1,7 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoles, ROLES_LEADS } from "@/lib/auth/roles";
-
-const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
-  9: 9, // Valencia
-  10: 10, // Caracas
-};
+import { almacenSede } from "@/lib/compras/datosOdoo";
 
 export async function GET(request: NextRequest) {
   const auth = await requireRoles(request, ROLES_LEADS);
@@ -21,25 +17,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Sede no válida" }, { status: 400 });
     }
 
-    const warehouseId = MAIN_WAREHOUSE_BY_COMPANY[companyId];
-    let locationIds: number[] = [];
+    // Existencia y reservado del almacén principal de la sede (Existencias +
+    // Entrada), el mismo número que el resto del panel.
+    const { stock } = await almacenSede(companyId);
+    const conExistencia = [...stock]
+      .filter(([, s]) => s.fisico > 0)
+      .map(([id]) => id);
 
-    if (warehouseId) {
-      const warehouseData = await callOdooRPC<any[]>(
-        "stock.warehouse",
-        "search_read",
-        [[["id", "=", warehouseId]]],
-        { fields: ["id", "lot_stock_id"], limit: 1 },
-      );
-      const locId = warehouseData?.[0]?.lot_stock_id?.[0];
-      if (locId) locationIds = [locId];
-    }
-
-    const productos = await callOdooRPC<any[]>(
+    const productos = !conExistencia.length ? [] : await callOdooRPC<any[]>(
       "product.product",
       "search_read",
       [
         [
+          ["id", "in", conExistencia],
           ["sale_ok", "=", true],
           ["active", "=", true],
           ["type", "=", "product"],
@@ -70,33 +60,6 @@ export async function GET(request: NextRequest) {
         { error: "No se pudo conectar con Odoo" },
         { status: 502 },
       );
-    }
-
-    const productIds = productos.map((p: any) => p.id);
-
-    const stockDomain: any[] = [["product_id", "in", productIds]];
-    if (locationIds.length > 0) {
-      stockDomain.push(["location_id", "child_of", locationIds]);
-    } else {
-      stockDomain.push(["location_id.usage", "=", "internal"]);
-      stockDomain.push(["company_id", "=", companyId]);
-    }
-
-    const stockData = await callOdooRPC<any[]>(
-      "stock.quant",
-      "search_read",
-      [stockDomain],
-      { fields: ["product_id", "quantity", "reserved_quantity"], limit: 0 },
-    );
-
-    const stockMap: Record<number, number> = {};
-    if (stockData) {
-      stockData.forEach((s: any) => {
-        if (!s.product_id) return;
-        const id = s.product_id[0];
-        stockMap[id] =
-          (stockMap[id] || 0) + Math.max(0, s.quantity - s.reserved_quantity);
-      });
     }
 
     // Asegurar que display_name sea string (name_get devuelve [id, name])
@@ -145,14 +108,18 @@ export async function GET(request: NextRequest) {
         if (tmplId) p.translated_name = tmplNameMap.get(tmplId) || null;
         const m = p.x_studio_marca;
         p.marca = Array.isArray(m) ? m[1] : m || "";
-        p.qty_available = stockMap[p.id] ?? 0;
+        const s = stock.get(p.id);
+        p.existencia = s?.fisico ?? 0;
+        p.reservado = s?.reservado ?? 0;
+        // Compatibilidad: qty_available = existencia del almacén principal.
+        p.qty_available = p.existencia;
         p.default_code =
           typeof p.default_code === "string" ? p.default_code : "";
         p.barcode = typeof p.barcode === "string" ? p.barcode : "";
         return p;
       })
       .filter(
-        (p: any) => p.qty_available > 0 && (p.company_sale_price ?? 0) > 1,
+        (p: any) => p.existencia > 0 && (p.company_sale_price ?? 0) > 1,
       );
 
     return NextResponse.json(resultado);

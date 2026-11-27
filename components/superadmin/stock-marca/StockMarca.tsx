@@ -108,8 +108,8 @@ export function StockMarca() {
       const hayDisp = d.totales.disponible != null;
       const marcas = d.marcas.map((m) => ({
         Marca: m.marca,
-        [d.periodo.enCurso ? "Stock hoy (u)" : "Stock al cierre (u)"]: m.stock,
-        ...(hayDisp ? { "Disponible (u)": m.disponible ?? "" } : {}),
+        [d.periodo.enCurso ? "Existencia hoy (u)" : "Existencia al cierre (u)"]: m.stock,
+        ...(hayDisp ? { "Reservado (u)": m.reservado ?? "", "Disponible (u)": m.disponible ?? "" } : {}),
         "Vendido (u)": m.vendido,
         "% vendido": m.pct ?? "",
         "% vendido período anterior": m.pctAnterior ?? "",
@@ -130,8 +130,8 @@ export function StockMarca() {
         "Marca Odoo": p.marcaOdoo || "(sin marca)",
         Categoría: p.categoria,
         Archivado: p.activo ? "No" : "Sí",
-        "Stock (u)": p.stock,
-        ...(hayDisp ? { "Disponible (u)": p.disponible ?? "" } : {}),
+        "Existencia (u)": p.stock,
+        ...(hayDisp ? { "Reservado (u)": p.reservado ?? "", "Disponible (u)": p.disponible ?? "" } : {}),
         "Vendido (u)": p.vendido,
         "% vendido": p.pct ?? "",
         "Venta sin IVA (USD)": p.ventaUsd,

@@ -1,5 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { almacenSede, costos, disponible, ultimaVenta } from "@/lib/compras/datosOdoo";
+import { almacenSede, costos, ultimaVenta } from "@/lib/compras/datosOdoo";
 import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
 import { IDS_SEDES, listasPrincipales } from "@/lib/calidad-odoo/odoo";
 import { ultimosIngresos } from "@/lib/inteligencia-negocio/reportes";
@@ -40,12 +40,15 @@ export type FilaRotacion = {
    * Solo viene si se pidió con costo; null = sin costo.
    */
   costo?: number | null;
+  /** Existencia: unidades físicas en el almacén principal (Existencias + Entrada). */
   stock: number;
+  /** De esa existencia, lo reservado para pedidos. Lo disponible es stock − reservado. */
+  reservado: number;
   vendidas30: number;
   vendidas60: number;
   /**
-   * Cobertura: días que dura el stock al ritmo de venta de 60 días,
-   * stock ÷ (vendidas60 / 60). No es la antigüedad en el almacén. Con 60 y no
+   * Cobertura: días que dura lo disponible al ritmo de venta de 60 días,
+   * (stock − reservado) ÷ (vendidas60 / 60). No es la antigüedad en el almacén. Con 60 y no
    * 30 días, un mes flojo no la dispara. null = sin ventas en 60 días.
    */
   coberturaDias: number | null;
@@ -198,14 +201,17 @@ export async function calcularRotacion(
   // Entrada, `almacenSede` de Compras), disponible = físico − reservado.
   // Mal Estado, Exhibición, Demo, RMA y Consumo Interno quedan fuera
   // (nov-2026, mismo criterio que Rotación de inventario).
-  const stock = new Map<number, number>();
+  // Se muestran la existencia y lo reservado; cobertura y estado usan lo disponible.
+  const stock = new Map<number, { existencia: number; reservado: number }>();
   const entrada = new Map<number, string>(); // in_date más viejo con unidades
   const almacenes = await Promise.all(companyIds.map((c) => almacenSede(c)));
   for (const { stock: porProducto } of almacenes) {
     for (const [pid, s] of porProducto) {
       if (!infoProd.has(pid)) continue;
-      const disp = disponible(s);
-      if (disp > 0) stock.set(pid, (stock.get(pid) || 0) + disp);
+      const x = stock.get(pid) ?? { existencia: 0, reservado: 0 };
+      x.existencia += s.fisico;
+      x.reservado += s.reservado;
+      stock.set(pid, x);
       const dia = s.fisico > 0 ? s.enStockDesde : null;
       if (dia && (!entrada.has(pid) || dia < entrada.get(pid)!)) entrada.set(pid, dia);
     }
@@ -256,15 +262,16 @@ export async function calcularRotacion(
   let filas: FilaRotacion[] = [];
   for (const [pid, info] of infoProd) {
     const v = ventas.get(pid) || { v30: 0, v60: 0, ultima: null };
-    const st = stock.get(pid) || 0;
-    // Ignora productos sin stock y sin ventas: no aportan nada al contenido.
-    if (st === 0 && v.v60 === 0) continue;
+    const { existencia, reservado } = stock.get(pid) ?? { existencia: 0, reservado: 0 };
+    const st = Math.max(0, existencia - reservado); // disponible
+    // Ignora productos sin existencia y sin ventas: no aportan nada al contenido.
+    if (existencia === 0 && v.v60 === 0) continue;
 
     const ritmoDiario = v.v60 / 60;
     const coberturaDias = ritmoDiario > 0 ? Math.round(st / ritmoDiario) : null;
     const ultima = ultimaDe(pid, v.ultima);
     const diasSinVenta = diasDesde(ultima);
-    const entro = st > 0 ? entrada.get(pid) ?? null : null;
+    const entro = existencia > 0 ? entrada.get(pid) ?? null : null;
 
     let estado: EstadoRotacion;
     const estancado =
@@ -287,7 +294,8 @@ export async function calcularRotacion(
       categoria: info.categoria,
       precio: info.precio,
       ...(conCosto && { costo: costoDe(pid) }),
-      stock: Math.round(st),
+      stock: Math.round(existencia),
+      reservado: Math.round(reservado),
       vendidas30: Math.round(v.v30),
       vendidas60: Math.round(v.v60),
       coberturaDias,

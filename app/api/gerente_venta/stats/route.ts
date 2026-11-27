@@ -11,6 +11,7 @@ import {
   sumarVendedores,
 } from "@/lib/smartbit";
 import { NextRequest, NextResponse } from "next/server";
+import { existenciaPrincipal } from "@/lib/compras/datosOdoo";
 import { requireRoles } from "@/lib/auth/roles";
 import { esVendedorRetirado } from "@/lib/vendedores/retirados";
 
@@ -112,7 +113,9 @@ export async function GET(request: NextRequest) {
     const historiaDesde = HISTORIA_DESDE;
     const today = now.toISOString().split("T")[0];
 
-    const [odooLines, sbResumen, sbMensual] = await Promise.all([
+    // Existencia y reservado del almacén principal de cada sede (se lee junto
+    // con las ventas; si falla, los productos salen sin stock).
+    const [odooLines, sbResumen, sbMensual, stockMap] = await Promise.all([
       lineasProductoOdoo(currentMonthFilters),
       // Mismo criterio que Odoo: los vendedores excluidos solo se quitan de
       // productos/clientes cuando se mira una sola sede.
@@ -120,23 +123,14 @@ export async function GET(request: NextRequest) {
         ? { [sellerExcludeCompanyId as number]: sellerExcludeRules }
         : undefined),
       mensualSmartbit(cids, historiaDesde, today, sellerExclusions),
+      existenciaPrincipal(cids).catch((e) => {
+        console.error("stats: existencia del almacén principal", e?.message);
+        return new Map<number, { existencia: number; reservado: number }>();
+      }),
     ]);
     const linesData = mezclarLineasProducto(odooLines, sbResumen.productos);
 
     // Los productos que solo vienen de Smartbit ("sb:...") no tienen stock en Odoo.
-    const productIds = linesData
-      .map((l) => l.product_id[0])
-      .filter((id) => typeof id === "number");
-    const productsInfo =
-      productIds.length > 0
-        ? (await callOdooRPC<any[]>("product.product", "read", [
-            productIds,
-            ["qty_available"],
-          ])) || []
-        : [];
-    const stockMap = new Map(
-      productsInfo.map((p) => [p.id, p.qty_available || 0]),
-    );
 
     const brandMap: Record<string, { revenue: number; cantidad: number }> = {};
     const blacklistWords = [
@@ -174,7 +168,7 @@ export async function GET(request: NextRequest) {
           brandMap[brandName].cantidad += cantidad;
         }
 
-        return { id, name: rawName, brand: brandName, revenue, cantidad, stock: stockMap.get(id) || 0 };
+        return { id, name: rawName, brand: brandName, revenue, cantidad, stock: stockMap.get(id)?.existencia || 0, reservado: stockMap.get(id)?.reservado || 0 };
       });
 
     const sortedBrands = Object.entries(brandMap)

@@ -224,7 +224,11 @@ export interface FichaProducto {
   claveMarca: string;
   categoria: string;
   fisico: number;
+  /** Unidades físicas en el almacén principal (= `fisico`). */
+  existencia: number;
+  /** Reservado para pedidos en el almacén principal. */
   reservado: number;
+  /** existencia − reservado: sobre esto se calculan el plan y la cuota. */
   disponible: number;
   costo: number;
   /** disponible × costo. */

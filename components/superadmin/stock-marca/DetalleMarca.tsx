@@ -92,7 +92,8 @@ function TablaProductos({ productos, multiSede, sedes, hayDisponible }: {
           <thead className="sticky top-0 z-10 bg-slate-50">
             <tr className="border-b border-slate-200 text-[10px] font-semibold tracking-wide text-slate-500">
               {th("nombre", "Producto", "text-left")}
-              {th("stock", "Stock")}
+              {th("stock", "Existencia")}
+              {hayDisponible && <th className="px-2 py-2 text-right uppercase whitespace-nowrap">Reservado</th>}
               {th("vendido", "Vendido")}
               {th("pct", "%")}
               {th("cobertura", "Le alcanza")}
@@ -115,6 +116,9 @@ function TablaProductos({ productos, multiSede, sedes, hayDisponible }: {
                   <p className="font-semibold text-slate-900">{unidadesFmt(p.stock)}</p>
                   {hayDisponible && p.disponible != null && p.disponible !== p.stock && <p className="text-[10px] text-slate-400">{unidadesFmt(p.disponible)} disp.</p>}
                 </td>
+                {hayDisponible && (
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">{p.reservado ? unidadesFmt(p.reservado) : <span className="text-slate-300">–</span>}</td>
+                )}
                 <td className="px-2 py-1.5 text-right tabular-nums">
                   <p className={p.vendido < 0 ? "text-red-600" : "text-slate-800"}>{unidadesFmt(p.vendido)}</p>
                   {p.ventaUsd !== 0 && <p className="text-[10px] text-slate-400">{dinero(p.ventaUsd)}</p>}
@@ -125,7 +129,7 @@ function TablaProductos({ productos, multiSede, sedes, hayDisponible }: {
                 <td className="px-2 py-1.5 text-right tabular-nums text-slate-500 whitespace-nowrap">{p.ultimaVenta ? fechaCorta(p.ultimaVenta, true) : <span className="text-slate-400">Desde abr-26 no</span>}</td>
               </tr>
             ))}
-            {filas.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-slate-400">No hay productos para este filtro.</td></tr>}
+            {filas.length === 0 && <tr><td colSpan={hayDisponible ? 8 : 7} className="py-8 text-center text-slate-400">No hay productos para este filtro.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -193,8 +197,8 @@ export function DetalleMarca({ data, fila, query, onClose }: { data: DatosStock;
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <Dato label={p.enCurso ? "Stock hoy" : "Stock al cierre"} valor={`${unidadesFmt(fila.stock)} u`}
-                  sub={<>{porcentaje(fila.participacionStock, 1)} del stock de {multiSede ? "las sedes" : "la sede"}{fila.disponible != null && fila.disponible !== fila.stock ? ` · ${unidadesFmt(fila.disponible)} disponibles` : ""}</>} />
+                <Dato label={p.enCurso ? "Existencia hoy" : "Existencia al cierre"} valor={`${unidadesFmt(fila.stock)} u`}
+                  sub={<>{porcentaje(fila.participacionStock, 1)} del stock de {multiSede ? "las sedes" : "la sede"}{fila.reservado != null ? ` · ${unidadesFmt(fila.reservado)} reservadas` : ""}{fila.disponible != null && fila.disponible !== fila.stock ? ` · ${unidadesFmt(fila.disponible)} disponibles` : ""}</>} />
                 <Dato label="Vendido" valor={`${unidadesFmt(fila.vendido)} u`} sub={`${dinero(fila.ventaUsd)} sin IVA`} />
                 <Dato label="Valor del stock" valor={dinero(fila.valor)} sub={fila.sinCosto ? `${fila.sinCosto} productos sin costo no suman` : "al costo"} />
                 <Dato label="Le alcanza" valor={fila.stock <= 0 ? "Agotada" : fila.cobertura == null ? "No vendió" : cobertura(fila.cobertura)} sub={`al ritmo de venta del período (${p.dias} días)`} />
