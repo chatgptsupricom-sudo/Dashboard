@@ -11,6 +11,7 @@ export type FilaEstado = {
   descripcion: string;
   monto: number;
   saldo: number | null;
+  referenciaCompleta?: string;
 };
 
 export type EstadoLeido = {
@@ -223,6 +224,7 @@ export function leerFilasExcel(celdas: unknown[][]): EstadoLeido | null {
       if (monto === null || monto === 0) continue;
       filas.push({
         fecha,
+        referenciaCompleta: String(celda(c.referencia) ?? "").trim().replace(/^'+/, ""),
         referencia: String(celda(c.referencia) ?? "").trim().replace(/^'+/, "").slice(0, 60),
         descripcion: descripcion.slice(0, 255),
         monto,
@@ -311,6 +313,7 @@ export type PagoOdoo = {
   conciliado?: boolean;
   /** Solo los apuntes de asientos (id negativo): el asiento, para el enlace a Odoo. */
   asientoId?: number;
+  admiteCruceExtendido?: boolean;
 };
 
 export type ComprobanteBanco = {
@@ -468,6 +471,17 @@ const DIAS_FECHA = 3;
 const DIAS_VENTANA = 15;
 // La referencia del banco con un registro mas viejo o mas nuevo: hasta ~mes y medio.
 const DIAS_REF_LEJOS = 45;
+export const DIAS_CRUCE_EXACTO = 60;
+
+function referenciaOperacion(texto: string) {
+  const claves = texto.toUpperCase().match(/\b(?:FT\d{5}[A-Z0-9]{6}|ACH[- ]?\d{8,}[A-Z0-9]*)\b/g);
+  if (claves?.length === 1) return claves[0].replace(/[- ]/g, "");
+  return /^\d{6,}$/.test(texto.trim()) ? texto.trim() : "";
+}
+
+function referenciaDelMovimiento(m: Movimiento) {
+  return referenciaOperacion(m.referenciaCompleta || m.referencia) || referenciaOperacion(m.descripcion);
+}
 // Los dos cobros de un pago dividido y el movimiento del banco.
 const DIAS_DIVIDIDO = 5;
 // Los comprobantes siguen con sus margenes.
@@ -478,7 +492,13 @@ const DIAS_POR_MONTO = 3;
 export function coincidencia(m: Movimiento, p: PagoOdoo | PagoOdoo[]): Coincide {
   const ps = Array.isArray(p) ? p : [p];
   return {
-    referencia: ps.every((x) => mismaReferencia(x.ref, m.referencia)),
+    referencia: ps.every((x) => {
+      const banco = referenciaDelMovimiento(m);
+      const odoo = referenciaOperacion(x.ref);
+      if (banco && banco === odoo) return true;
+      if (banco.startsWith("FT") && odoo.startsWith("FT")) return false;
+      return mismaReferencia(x.ref, m.referencia);
+    }),
     monto: mismoMonto(ps.reduce((s, x) => s + x.monto, 0), m.monto),
     fecha: ps.every((x) => dias(x.fecha, m.fecha) <= DIAS_FECHA),
   };
@@ -529,6 +549,7 @@ export function cruzarBanco(
   manuales: Map<string, number>,
   cubierto: (dia: string) => boolean,
   yaConciliados: ReadonlySet<string> = new Set(),
+  pagosParaCruceExacto: PagoOdoo[] = [],
 ) {
   const todos = [...movimientos].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const pendientes = todos.filter((m) => !yaConciliados.has(m.id));
@@ -561,6 +582,30 @@ export function cruzarBanco(
   const correr = ([ok, estado]: (typeof pasos)[number]) => {
     for (const m of todos) tomar(m, cercano(m, ok), estado);
   };
+  // Una referencia bancaria completa tiene prioridad sobre las coincidencias por sufijo o importe.
+  const asignadosManualmente = new Set(manuales.values());
+  const porReferencia = new Map<string, PagoOdoo[]>();
+  for (const p of pagosParaCruceExacto) {
+    const ref = referenciaOperacion(p.ref);
+    if (!ref || !p.admiteCruceExtendido || p.conciliado || asignadosManualmente.has(p.id)) continue;
+    const grupo = porReferencia.get(ref) ?? [];
+    grupo.push(p);
+    porReferencia.set(ref, grupo);
+  }
+  const refsBanco = new Map<string, number>();
+  for (const m of todos) {
+    const clave = referenciaDelMovimiento(m);
+    refsBanco.set(clave, (refsBanco.get(clave) ?? 0) + 1);
+  }
+  for (const m of pendientes) {
+    const ref = referenciaDelMovimiento(m);
+    if (!ref || refsBanco.get(ref) !== 1) continue;
+    const candidatos = porReferencia.get(ref)?.filter((p) =>
+      mismoMonto(m.monto, p.monto) && dias(m.fecha, p.fecha) <= DIAS_CRUCE_EXACTO);
+    if (candidatos?.length === 1 && dias(m.fecha, candidatos[0].fecha) > DIAS_FECHA) {
+      tomar(m, candidatos[0], "parcial");
+    }
+  }
   pasos.slice(0, 2).forEach(correr);
   for (const m of pendientes) {
     if (pagoDe.has(m.id) || !normalRef(m.referencia)) continue;
@@ -589,6 +634,7 @@ export function cruzarBanco(
         !usados.has(p.id) &&
         p.monto > 0 === m.monto > 0 &&
         dias(p.fecha, m.fecha) <= DIAS_REF_LEJOS &&
+        !(referenciaDelMovimiento(m).startsWith("FT") && referenciaOperacion(p.ref).startsWith("FT")) &&
         mismaReferencia(memoBase(p.ref), m.referencia) &&
         Math.abs(Math.abs(p.monto) - Math.abs(m.monto)) <= Math.max(0.01, Math.abs(m.monto) * 0.001),
     );

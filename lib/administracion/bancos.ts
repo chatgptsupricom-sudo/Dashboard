@@ -15,6 +15,7 @@ import {
 import {
   armarEstado,
   cruzarBanco,
+  DIAS_CRUCE_EXACTO,
   cuentaSugerida,
   emparejarViejas,
   esComision,
@@ -276,7 +277,7 @@ async function pendientesDelDiario(cuenta: CuentaBanco): Promise<number[]> {
  */
 async function pagosOdoo(cuenta: CuentaBanco, desde: string, hasta: string): Promise<PagoOdoo[]> {
   const ctx = { allowed_company_ids: [cuenta.sede] };
-  const [pagos, pendientes] = await Promise.all([
+  const [pagos, pendientes, empresa] = await Promise.all([
     callOdooRPCEstricto<any[]>(
       "account.payment",
       "search_read",
@@ -288,10 +289,12 @@ async function pagosOdoo(cuenta: CuentaBanco, desde: string, hasta: string): Pro
           ["date", "<=", hasta],
         ],
       ],
-      { fields: ["name", "date", "amount", "payment_type", "partner_id", "ref", "is_matched"], context: ctx },
+      { fields: ["name", "date", "amount", "payment_type", "partner_id", "ref", "is_matched", "currency_id"], context: ctx },
     ),
     pendientesDelDiario(cuenta),
+    cuenta.moneda ? [] : callOdooRPCEstricto<any[]>("res.company", "read", [[cuenta.sede]], { fields: ["currency_id"], context: ctx }),
   ]);
+  const moneda = cuenta.moneda || empresa?.[0]?.currency_id?.[1];
   const apuntes = pendientes.length
     ? await callOdooRPCEstricto<any[]>(
         "account.move.line",
@@ -308,7 +311,7 @@ async function pagosOdoo(cuenta: CuentaBanco, desde: string, hasta: string): Pro
             ["date", "<=", hasta],
           ],
         ],
-        { fields: ["move_id", "date", "amount_currency", "partner_id", "name", "ref"], context: ctx },
+        { fields: ["move_id", "date", "amount_currency", "partner_id", "name", "ref", "currency_id", "journal_id"], context: ctx },
       )
     : [];
   return [
@@ -320,6 +323,7 @@ async function pagosOdoo(cuenta: CuentaBanco, desde: string, hasta: string): Pro
       cliente: Array.isArray(p.partner_id) ? String(p.partner_id[1]) : "",
       ref: String(p.ref || ""),
       conciliado: !!p.is_matched,
+      admiteCruceExtendido: !!moneda && p.currency_id?.[1] === moneda,
     })),
     ...(apuntes || []).map((a) => ({
       id: -a.id,
@@ -329,6 +333,7 @@ async function pagosOdoo(cuenta: CuentaBanco, desde: string, hasta: string): Pro
       cliente: Array.isArray(a.partner_id) ? String(a.partner_id[1]) : String(a.name || ""),
       ref: String(a.ref || a.name || ""),
       conciliado: false,
+      admiteCruceExtendido: !!moneda && a.currency_id?.[1] === moneda && a.journal_id?.[0] === cuenta.id,
       asientoId: Array.isArray(a.move_id) ? Number(a.move_id[0]) : undefined,
     })),
   ];
@@ -2183,10 +2188,10 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
   await ensureTablas();
   const desde = sumarDias(inicio, -MARGEN_DIAS);
   const hasta = sumarDias(fin, MARGEN_DIAS);
-  const [movs, estados, comps, amarres, pagos, concs] = await Promise.all([
+  const [movs, estados, comps, amarres, pagosAmpliados, concs] = await Promise.all([
     // La misma fila en dos archivos (misma huella) va una vez: la del primero.
     query(
-      `SELECT m.huella, DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, m.referencia, m.descripcion, m.monto, m.saldo
+      `SELECT m.huella, m.estado_id, DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, m.referencia, m.descripcion, m.monto, m.saldo
          FROM banco_movimientos m
          JOIN (SELECT MIN(id) AS id FROM banco_movimientos
                 WHERE journal_id = ? AND fecha BETWEEN ? AND ? GROUP BY huella) u ON u.id = m.id
@@ -2206,7 +2211,7 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
       [cuenta.id, desde, hasta],
     ),
     query("SELECT huella, pago_odoo_id FROM banco_amarres WHERE journal_id = ?", [cuenta.id]),
-    pagosOdoo(cuenta, desde, hasta),
+    pagosOdoo(cuenta, sumarDias(inicio, -DIAS_CRUCE_EXACTO), sumarDias(fin, DIAS_CRUCE_EXACTO)),
     query("SELECT huella, st_line_id, detalle, aprobado_por, created_at FROM banco_conciliaciones WHERE journal_id = ?", [cuenta.id]),
   ]);
   // Solo las lineas que siguen en Odoo (alguien pudo romper la conciliacion y borrarla alla).
@@ -2257,6 +2262,41 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
     monto: Number(r.monto),
     saldo: r.saldo === null ? null : Number(r.saldo),
   }));
+  const pagos = pagosAmpliados.filter((p) => p.fecha >= desde && p.fecha <= hasta);
+  const excelIds = new Set(estados.rows.filter((e: any) => esExcel(e.archivo_nombre)).map((e: any) => e.id));
+  const recortados = new Map<number, Movimiento[]>();
+  for (const [i, m] of movimientos.entries()) {
+    const id = movs.rows[i].estado_id;
+    if (m.referencia.length !== 60 || !excelIds.has(id)) continue;
+    const grupo = recortados.get(id) ?? [];
+    grupo.push(m);
+    recortados.set(id, grupo);
+  }
+  // La huella guardada incluye el texto truncado. Recuperar el original solo para el cruce conserva los amarres.
+  for (const [id, grupo] of recortados) {
+    const { rows } = await query("SELECT archivo, archivo_nombre FROM banco_estados WHERE id = ? AND journal_id = ?", [id, cuenta.id]);
+    if (!rows[0]?.archivo) continue;
+    let leido: EstadoLeido;
+    try {
+      leido = await leerEstado(rows[0].archivo, rows[0].archivo_nombre, "");
+    } catch (error) {
+      console.warn("[bancos] No se pudo recuperar la referencia del archivo", id);
+      continue;
+    }
+    const clave = (f: FilaEstado) => JSON.stringify([f.fecha, f.referencia, f.monto, f.saldo, f.descripcion]);
+    const originales = new Map<string, Set<string>>();
+    for (const f of leido.filas) {
+      if (!f.referenciaCompleta) continue;
+      const k = clave(f);
+      const refs = originales.get(k) ?? new Set<string>();
+      refs.add(f.referenciaCompleta);
+      originales.set(k, refs);
+    }
+    for (const m of grupo) {
+      const refs = originales.get(clave(m));
+      if (refs?.size === 1) m.referenciaCompleta = [...refs][0];
+    }
+  }
   const comprobantes: ComprobanteBanco[] = comps.rows.map((r: any) => ({
     id: r.id,
     fecha: r.fecha,
@@ -2315,7 +2355,7 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
     }
   }
   const yaConciliados = new Set([...conciliadoEnOdoo].filter(([, linea]) => linea.conciliada).map(([id]) => id));
-  const cruce = cruzarBanco(movimientos, pagos, comprobantes, manuales, cubierto, yaConciliados);
+  const cruce = cruzarBanco(movimientos, pagos, comprobantes, manuales, cubierto, yaConciliados, pagosAmpliados);
 
   const enSemana = (dia: string) => dia >= inicio && dia <= fin;
   const deLaSemana = await Promise.all(
@@ -2323,6 +2363,7 @@ export async function conciliacionPeriodo(cuenta: CuentaBanco, inicio: string, f
       .filter((m) => enSemana(m.fecha))
       .map(async (m) => ({
         ...m,
+        referencia: m.referenciaCompleta || m.referencia,
         odoo: conciliadoEnOdoo.get(m.id) ?? null,
         /** Cuenta que se propone si no tiene cobro/pago (comision, IGTF). */
         sugerida: m.pago ? null : await sugeridaPara(cuenta, m).catch(() => null),
