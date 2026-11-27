@@ -1,5 +1,5 @@
 import { callOdooRPC } from "@/lib/odoo";
-import { costos, ultimaVenta } from "@/lib/compras/datosOdoo";
+import { almacenSede, costos, disponible, ultimaVenta } from "@/lib/compras/datosOdoo";
 import { FIN_CARGA_INICIAL } from "@/lib/gerente-marca/tipos";
 import { IDS_SEDES, listasPrincipales } from "@/lib/calidad-odoo/odoo";
 import { ultimosIngresos } from "@/lib/inteligencia-negocio/reportes";
@@ -194,26 +194,20 @@ export async function calcularRotacion(
     for (const p of extra || []) agregar(p);
   }
 
-  // --- 3. Stock actual (quants de ubicaciones internas de las compañías) ---
-  const ids = [...infoProd.keys()];
+  // --- 3. Stock actual: solo el almacén principal de cada sede (Existencias +
+  // Entrada, `almacenSede` de Compras), disponible = físico − reservado.
+  // Mal Estado, Exhibición, Demo, RMA y Consumo Interno quedan fuera
+  // (nov-2026, mismo criterio que Rotación de inventario).
   const stock = new Map<number, number>();
   const entrada = new Map<number, string>(); // in_date más viejo con unidades
-  for (let i = 0; i < ids.length; i += 2000) {
-    const batch = ids.slice(i, i + 2000);
-    const quants = await callOdooRPC<any[]>("stock.quant", "search_read", [
-      [
-        ["product_id", "in", batch],
-        ["location_id.usage", "=", "internal"],
-        companyFilter,
-      ],
-    ], { fields: ["product_id", "quantity", "reserved_quantity", "in_date"], limit: 0 });
-    for (const q of quants || []) {
-      const pid = q.product_id?.[0];
-      if (!pid) continue;
-      const dia = q.in_date ? String(q.in_date).slice(0, 10) : "";
-      if (dia && Number(q.quantity) > 0 && (!entrada.has(pid) || dia < entrada.get(pid)!)) entrada.set(pid, dia);
-      const disp = Math.max(0, (Number(q.quantity) || 0) - (Number(q.reserved_quantity) || 0));
-      stock.set(pid, (stock.get(pid) || 0) + disp);
+  const almacenes = await Promise.all(companyIds.map((c) => almacenSede(c)));
+  for (const { stock: porProducto } of almacenes) {
+    for (const [pid, s] of porProducto) {
+      if (!infoProd.has(pid)) continue;
+      const disp = disponible(s);
+      if (disp > 0) stock.set(pid, (stock.get(pid) || 0) + disp);
+      const dia = s.fisico > 0 ? s.enStockDesde : null;
+      if (dia && (!entrada.has(pid) || dia < entrada.get(pid)!)) entrada.set(pid, dia);
     }
   }
 
