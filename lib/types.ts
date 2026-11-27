@@ -306,7 +306,6 @@ export const rolePermissions: RolePermissions = {
       "semaforo_clientes", // Semáforo de clientes de su sede (lib/semaforo-clientes)
       "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
       "perfiles_clientes", // Perfiles que los clientes escriben en Mi cuenta de la tienda web (lib/tienda-web/clientes/perfilesPanel.ts)
-      "rotacion_inventario", // Rotación de inventario de su sede, solo lectura (lib/rotacion-inventario)
       "seller_map", // Mapa de Clientes (sub-item de Ventas)
       // Leads dropdown
       "adminleads", // Leads (permiso principal del dropdown)
@@ -374,7 +373,7 @@ export const rolePermissions: RolePermissions = {
       "clasificacion_clientes_compras", // Clasificación de clientes por actividad comercial (lib/inteligencia-negocio/clasificacion)
       "ordenes_compra", // Órdenes de compra: crear/editar/enviar a aprobación
       "recepcion_packing", // Packing lists: Compras los carga, Almacén los recibe
-      "rotacion_inventario", // Rotación de inventario y solicitudes de apoyo a las marcas (lib/rotacion-inventario)
+      "rotacion_inventario", // Rotación de inventario: solo la ve Oscar (correo en lib/rotacion-inventario/acceso.ts); el sidebar la oculta a los demás
       "actualizacion_precios", // Excel de asignación por sede → listas de precios de Odoo (lib/compras/actualizacionPrecios)
       "validar_factura", // Factura de compra → SKU que faltan en Odoo y crearlos (lib/compras/validarFactura)
     ],
@@ -587,7 +586,7 @@ export const rolePermissions: RolePermissions = {
     canEditUsers: false,
     canDisableUsers: false,
     canViewAudit: false,
-    sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "rotacion_inventario", "gm_banco_imagenes", "actividad"],
+    sections: ["gm_dashboard", "gm_inventario", "gm_antiguedad", "gm_ventas", "gm_banco_imagenes", "actividad"],
   },
   // Marketing y Electrodomésticos (lib/auth/marketingElectro.ts): lo mismo que
   // Inteligencia de Negocio menos Leads, más ventas e inventario por marca (todas
@@ -622,7 +621,6 @@ export const rolePermissions: RolePermissions = {
       "reportes_comerciales",
       "semaforo_clientes", // Semáforo de clientes, como BI (lib/semaforo-clientes)
       "cupo_credito", // Cupo de crédito: consumo del límite por cliente, vendedor y zona, con histórico (lib/cupo-credito)
-      "rotacion_inventario", // Rotación de inventario, como BI (lib/rotacion-inventario)
       "seller_map",
       "spiff",
       // Desplegable Marketing

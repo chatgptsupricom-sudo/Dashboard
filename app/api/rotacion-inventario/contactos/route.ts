@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROL_COMPRAS } from "@/lib/rotacion-inventario/acceso";
 import { alcanceRotacion } from "@/lib/rotacion-inventario/alcance";
 import { ErrorSolicitud, borrarContacto, guardarContacto, listarContactos } from "@/lib/rotacion-inventario/solicitudes";
 
@@ -7,9 +6,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * Contactos de las marcas (a quién se le manda la solicitud): GET los ven
- * todos los que entran al módulo (el Gerente de Marca, los de sus marcas);
+ * todos los que entran al módulo;
  * PUT {marca, companyId (0 = todas), nombre, correos, cc, notas} y
- * DELETE ?id= solo Compras y SuperAdmin.
+ * DELETE ?id= solo SuperAdmin y Oscar de Compras.
  */
 export async function GET(request: NextRequest) {
   const a = await alcanceRotacion(request);
@@ -20,7 +19,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const a = await alcanceRotacion(request, [ROL_COMPRAS]);
+  const a = await alcanceRotacion(request, { soloEdita: true });
   if (a.error) return a.error;
   const body = await request.json().catch(() => ({}));
   try {
@@ -34,7 +33,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const a = await alcanceRotacion(request, [ROL_COMPRAS]);
+  const a = await alcanceRotacion(request, { soloEdita: true });
   if (a.error) return a.error;
   const id = Number(request.nextUrl.searchParams.get("id"));
   if (!(id > 0)) return NextResponse.json({ error: "Contacto inválido" }, { status: 400 });

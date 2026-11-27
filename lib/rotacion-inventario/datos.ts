@@ -10,10 +10,17 @@ import {
   colorDesde,
   diasEntre,
   estadoPlanHoy,
+  finDePlan,
   inicioSemana,
+  lineaPlanRojo,
+  periodoPlanRojo,
+  resumirPlanRojo,
+  type LineaPlanRojo,
+  type PlanRojo,
   mesesSeguimiento,
   referenciaSinVenta,
   sumarDias,
+  tieneMarca,
   vendidasEntre,
   type EstadoSolicitud,
   type FichaProducto,
@@ -136,6 +143,33 @@ export function asegurarTablas(): Promise<void> {
         updated_at DATETIME NULL,
         updated_por VARCHAR(255) NULL,
         UNIQUE KEY uk_contacto (marca, company_id)
+      )`);
+      // Plan para salir del rojo: la foto de lo que estaba en rojo el día que arrancó.
+      await db.query(`CREATE TABLE IF NOT EXISTS rotacion_plan_rojo (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        company_id INT NOT NULL,
+        inicio DATE NOT NULL,
+        estado VARCHAR(12) NOT NULL DEFAULT 'activo',
+        referencias INT NOT NULL DEFAULT 0,
+        unidades DECIMAL(14,2) NOT NULL DEFAULT 0,
+        valor DECIMAL(14,2) NOT NULL DEFAULT 0,
+        cerrado_el DATE NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_plan_rojo (company_id, inicio),
+        INDEX idx_estado (company_id, estado)
+      )`);
+      await db.query(`CREATE TABLE IF NOT EXISTS rotacion_plan_rojo_lineas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        plan_id INT NOT NULL,
+        product_id INT NOT NULL,
+        codigo VARCHAR(120) NULL,
+        nombre VARCHAR(500) NULL,
+        marca VARCHAR(255) NULL,
+        categoria VARCHAR(255) NULL,
+        unidades DECIMAL(14,2) NOT NULL DEFAULT 0,
+        costo_unitario DECIMAL(14,4) NOT NULL DEFAULT 0,
+        dias_sin_venta INT NOT NULL DEFAULT 0,
+        UNIQUE KEY uk_linea (plan_id, product_id)
       )`);
     })();
     tablas.catch(() => {
@@ -323,7 +357,7 @@ export async function agregarASolicitudes(
 ): Promise<number[]> {
   const porMarca = new Map<string, FichaBase[]>();
   for (const f of productos) {
-    if (f.claveMarca === SIN_MARCA) continue;
+    if (!tieneMarca(f.claveMarca)) continue;
     const l = porMarca.get(f.claveMarca) ?? [];
     l.push(f);
     porMarca.set(f.claveMarca, l);
@@ -390,7 +424,7 @@ async function sincronizarSolicitudes(d: DatosSede, companyId: number) {
   const nuevas = [...d.fichas.values()].filter(
     (f) =>
       f.color === "rojo" &&
-      f.claveMarca !== SIN_MARCA &&
+      tieneMarca(f.claveMarca) &&
       !abiertas.has(f.productoId) &&
       !((ultimaPedida.get(f.productoId) ?? "") >= f.colorDesde),
   );
@@ -406,7 +440,7 @@ async function sincronizarSolicitudes(d: DatosSede, companyId: number) {
   );
   for (const l of lineas) {
     const f = d.fichas.get(Number(l.product_id));
-    const sale = !f || (l.origen === "auto" && f.color !== "rojo");
+    const sale = !f || !tieneMarca(f.claveMarca) || (l.origen === "auto" && f.color !== "rojo");
     if (sale) {
       if (!Number(l.excluida)) await db.query(`UPDATE rotacion_solicitud_lineas SET excluida = 1, exclusion = 'auto' WHERE id = ?`, [l.id]);
       continue;
@@ -421,6 +455,80 @@ async function sincronizarSolicitudes(d: DatosSede, companyId: number) {
   }
 }
 
+/**
+ * Plan para salir del rojo de la sede: el primer día que el panel la sincroniza
+ * guarda lo que está en rojo (unidades disponibles y costo de ese día) y de ahí
+ * se mide lo vendido contra la cuota de 90 días. A los 90 días se cierra y
+ * arranca otro con lo que esté en rojo ese día; lo que pasa a rojo en el medio
+ * entra en el siguiente.
+ */
+async function sincronizarPlanRojo(d: DatosSede, companyId: number) {
+  const activo = (await filas(`SELECT id, inicio FROM rotacion_plan_rojo WHERE company_id = ? AND estado = 'activo' ORDER BY inicio DESC LIMIT 1`, [companyId]))[0];
+  if (activo && d.hoy <= finDePlan(dia(activo.inicio)!)) return;
+  if (activo) await db.query(`UPDATE rotacion_plan_rojo SET estado = 'cerrado', cerrado_el = ? WHERE id = ?`, [d.hoy, activo.id]);
+
+  const rojos = [...d.fichas.values()].filter((f) => f.color === "rojo");
+  const [r]: any = await db.query(
+    `INSERT IGNORE INTO rotacion_plan_rojo (company_id, inicio, referencias, unidades, valor) VALUES (?, ?, ?, ?, ?)`,
+    [companyId, d.hoy, rojos.length, r2(rojos.reduce((a, f) => a + f.disponible, 0)), r2(rojos.reduce((a, f) => a + f.valorCosto, 0))],
+  );
+  if (!r.affectedRows) return; // otro proceso lo creó
+  const planId = Number(r.insertId);
+  const valores = rojos.map((f) => [
+    planId,
+    f.productoId,
+    f.codigo,
+    f.nombre.slice(0, 500),
+    f.marca.slice(0, 255),
+    f.categoria.slice(0, 255),
+    f.disponible,
+    f.costo,
+    f.diasSinVenta,
+  ]);
+  for (let i = 0; i < valores.length; i += 500) {
+    await db.query(
+      `INSERT IGNORE INTO rotacion_plan_rojo_lineas
+         (plan_id, product_id, codigo, nombre, marca, categoria, unidades, costo_unitario, dias_sin_venta) VALUES ?`,
+      [valores.slice(i, i + 500)],
+    );
+  }
+}
+
+/** El plan del rojo activo de la sede con lo vendido de cada producto desde que arrancó. */
+export async function planRojoDeSede(companyId: number, d: DatosSede): Promise<PlanRojo | null> {
+  const plan = (await filas(`SELECT id, inicio FROM rotacion_plan_rojo WHERE company_id = ? AND estado = 'activo' ORDER BY inicio DESC LIMIT 1`, [companyId]))[0];
+  if (!plan) return null;
+  const inicio = dia(plan.inicio)!;
+  const p = periodoPlanRojo(inicio, d.hoy);
+  const lineas: LineaPlanRojo[] = (await filas(
+    `SELECT product_id, codigo, nombre, marca, categoria, unidades, costo_unitario FROM rotacion_plan_rojo_lineas WHERE plan_id = ?`,
+    [plan.id],
+  )).map((l) =>
+    lineaPlanRojo(
+      {
+        productoId: Number(l.product_id),
+        codigo: l.codigo ?? "",
+        nombre: l.nombre ?? "",
+        marca: l.marca ?? SIN_MARCA,
+        categoria: l.categoria ?? "Sin categoría",
+        unidades: Number(l.unidades) || 0,
+        costo: Number(l.costo_unitario) || 0,
+      },
+      d.ventas.get(Number(l.product_id)),
+      inicio,
+      p.inicioMes,
+      d.hoy,
+    ),
+  );
+  return {
+    companyId,
+    inicio,
+    ...p,
+    lineas,
+    resumen: resumirPlanRojo(lineas, p.diasCompletos, p.diasCompletosMes),
+  };
+}
+
 const enCurso = new Map<number, Promise<void>>();
 
 /** Planes y solicitudes automáticas de la sede (una a la vez por sede). */
@@ -431,6 +539,7 @@ export function sincronizar(companyId: number, d: DatosSede): Promise<void> {
     .then(async () => {
       await asegurarTablas();
       await sincronizarPlanes(d, companyId);
+      await sincronizarPlanRojo(d, companyId);
       await sincronizarSolicitudes(d, companyId);
     });
   enCurso.set(companyId, esta);
@@ -465,6 +574,7 @@ export interface FichasSede {
   hoy: string;
   meses: string[];
   fichas: FichaProducto[];
+  planRojo: PlanRojo | null;
   avisos: string[];
 }
 
@@ -473,9 +583,10 @@ export async function fichasDeSede(companyId: number): Promise<FichasSede> {
   const avisos: string[] = [];
   let planes = new Map<number, PlanBase>();
   let abiertas = new Map<number, { id: number; estado: EstadoSolicitud }>();
+  let planRojo: PlanRojo | null = null;
   try {
     await sincronizarSiToca(companyId, d);
-    [planes, abiertas] = await Promise.all([planesActivos(companyId), solicitudesAbiertas(companyId)]);
+    [planes, abiertas, planRojo] = await Promise.all([planesActivos(companyId), solicitudesAbiertas(companyId), planRojoDeSede(companyId, d)]);
   } catch (e: any) {
     console.error(`[rotacion-inventario] sede ${companyId}:`, e?.message);
     avisos.push("No se pudo leer la base del panel: los planes salen como si empezaran hoy y no se ven las solicitudes.");
@@ -495,7 +606,7 @@ export async function fichasDeSede(companyId: number): Promise<FichasSede> {
       solicitud: abiertas.get(f.productoId) ?? null,
     });
   }
-  return { hoy: d.hoy, meses: d.meses, fichas, avisos };
+  return { hoy: d.hoy, meses: d.meses, fichas, planRojo, avisos };
 }
 
 // ---------------------------------------------------------------------------
@@ -507,16 +618,18 @@ export async function detalleProducto(companyId: number, productoId: number) {
   const ficha = fichas.find((f) => f.productoId === productoId) ?? null;
   const d = await datosSede(companyId);
   const porDia = d.ventas.get(productoId);
-  // Semanas (lunes) desde el inicio del plan o, si no hay ficha, las últimas 13.
+  // Las últimas 13 semanas (lunes) o desde que arrancó el plan si es antes;
+  // la meta solo en las semanas del plan.
   const semanas: { semana: string; vendidas: number; meta: number | null }[] = [];
-  const desde = ficha ? ficha.plan.inicio : hoy;
-  let lunes = inicioSemana(desde < hoy ? desde : hoy);
-  if (!ficha) lunes = sumarDias(lunes, -7 * 12);
+  const lunesPlan = ficha ? inicioSemana(ficha.plan.inicio) : null;
+  let lunes = sumarDias(inicioSemana(hoy), -7 * 12);
+  if (lunesPlan && lunesPlan < lunes) lunes = lunesPlan;
+  if (lunes < inicioSemana(INICIO_SEGUIMIENTO)) lunes = inicioSemana(INICIO_SEGUIMIENTO);
   while (lunes <= hoy) {
     semanas.push({
       semana: lunes,
       vendidas: vendidasEntre(porDia, lunes, sumarDias(lunes, 6)),
-      meta: ficha ? ficha.plan.metaSemanal : null,
+      meta: ficha && lunesPlan && lunes >= lunesPlan ? ficha.plan.metaSemanal : null,
     });
     lunes = sumarDias(lunes, 7);
   }
