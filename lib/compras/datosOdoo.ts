@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
+import { ALMACENES_STOCK_BY_COMPANY } from "@/lib/compras/constants";
 import { sinIntercompania } from "@/lib/intercompania";
 import { claveMarca, SIN_MARCA } from "@/lib/metas-marca/marcas";
 import { callOdooRPC } from "@/lib/odoo";
@@ -321,7 +321,7 @@ export interface StockProducto {
 
 export interface AlmacenSede {
   nombre: string;
-  /** Todas las ubicaciones internas del almacén principal. */
+  /** Todas las ubicaciones internas del almacén principal (en Panamá, también las de Colón). */
   ubicaciones: number[];
   stock: Map<number, StockProducto>;
 }
@@ -346,22 +346,31 @@ export async function existenciaPrincipal(companyIds: number[]): Promise<Map<num
   return total;
 }
 
-async function ubicacionesAlmacen(companyId: number) {
-  const whId = MAIN_WAREHOUSE_BY_COMPANY[companyId];
-  if (!whId) throw new Error(`Sede ${companyId} sin almacén principal`);
-  const wh = await callOdooRPC<any[]>("stock.warehouse", "search_read", [[["id", "=", whId]]], {
-    fields: ["name", "view_location_id", "wh_input_stock_loc_id"],
-    limit: 1,
-  });
-  if (!Array.isArray(wh) || !wh[0]?.view_location_id) throw new Error("Odoo no respondió el almacén principal");
-  const vista = wh[0].view_location_id[0];
-  const entrada = wh[0].wh_input_stock_loc_id ? wh[0].wh_input_stock_loc_id[0] : null;
-  const [internas, deEntrada] = await Promise.all([
-    callOdooRPC<number[]>("stock.location", "search", [[["id", "child_of", vista], ["usage", "=", "internal"]]]),
-    entrada ? callOdooRPC<number[]>("stock.location", "search", [[["id", "child_of", entrada]]]) : Promise.resolve([]),
-  ]);
-  if (!Array.isArray(internas) || !Array.isArray(deEntrada)) throw new Error("Odoo no respondió las ubicaciones del almacén");
-  return { nombre: String(wh[0].name || ""), vista, internas, deEntrada: new Set(deEntrada) };
+/**
+ * Ubicaciones internas de los almacenes que cuentan como stock de la sede
+ * (`ALMACENES_STOCK_BY_COMPANY`: el principal y, en Panamá, Colón), con sus
+ * vistas y las de Entrada (cuyo reservado es el traslado a Existencias).
+ */
+export function ubicacionesAlmacen(companyId: number): Promise<{ nombre: string; vistas: number[]; internas: number[]; deEntrada: Set<number> }> {
+  return cachear(`ubic|${companyId}`, async () => {
+    const whIds = ALMACENES_STOCK_BY_COMPANY[companyId];
+    if (!whIds?.length) throw new Error(`Sede ${companyId} sin almacén principal`);
+    const whs = await callOdooRPC<any[]>("stock.warehouse", "search_read", [[["id", "in", whIds]]], {
+      fields: ["name", "view_location_id", "wh_input_stock_loc_id"],
+    });
+    if (!Array.isArray(whs) || whs.length !== whIds.length || whs.some((w) => !w.view_location_id)) {
+      throw new Error("Odoo no respondió el almacén principal");
+    }
+    whs.sort((a, b) => whIds.indexOf(a.id) - whIds.indexOf(b.id));
+    const vistas = whs.map((w) => w.view_location_id[0] as number);
+    const entradas = whs.map((w) => (w.wh_input_stock_loc_id ? w.wh_input_stock_loc_id[0] : null)).filter(Boolean) as number[];
+    const [internas, deEntrada] = await Promise.all([
+      callOdooRPC<number[]>("stock.location", "search", [[["id", "child_of", vistas], ["usage", "=", "internal"]]]),
+      entradas.length ? callOdooRPC<number[]>("stock.location", "search", [[["id", "child_of", entradas]]]) : Promise.resolve([] as number[]),
+    ]);
+    if (!Array.isArray(internas) || !Array.isArray(deEntrada)) throw new Error("Odoo no respondió las ubicaciones del almacén");
+    return { nombre: whs.map((w) => String(w.name || "")).join(" + "), vistas, internas, deEntrada: new Set(deEntrada) };
+  }, 60 * 60 * 1000);
 }
 
 export function almacenSede(companyId: number): Promise<AlmacenSede> {

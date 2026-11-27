@@ -10,6 +10,18 @@ export const MAIN_WAREHOUSE_BY_COMPANY: Record<number, number> = {
   7: 7,   // Panamá
 };
 
+/**
+ * Almacenes cuyo stock es el de la sede en todo el panel (el principal
+ * primero). En Panamá también se vende desde Colón (COLO1, almacén 40), así
+ * que su stock suma con el de Central. Mal estado, Uso interno, Exhibición,
+ * Demo, RMA y los demás quedan fuera.
+ */
+export const ALMACENES_STOCK_BY_COMPANY: Record<number, number[]> = {
+  9: [9],      // Valencia: Central
+  10: [10],    // Caracas: Principal
+  7: [7, 40],  // Panamá: Central + Colón
+};
+
 // Compras de Valencia/Caracas maneja proveedores de "Venezuela" como una
 // sola region -- una orden de cualquiera de esas 2 sedes puede usar
 // proveedores de la otra. Panama es su propia region, separada. Pedido
