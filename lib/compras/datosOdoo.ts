@@ -328,6 +328,24 @@ export interface AlmacenSede {
 
 export const disponible = (s?: StockProducto) => (s ? Math.max(0, s.fisico - s.reservado) : 0);
 
+/**
+ * Existencia y reservado del almacén principal de una o varias sedes, sumados
+ * por producto (`almacenSede` de cada una).
+ */
+export async function existenciaPrincipal(companyIds: number[]): Promise<Map<number, { existencia: number; reservado: number }>> {
+  const almacenes = await Promise.all(companyIds.map((c) => almacenSede(c)));
+  const total = new Map<number, { existencia: number; reservado: number }>();
+  for (const { stock } of almacenes) {
+    for (const [pid, s] of stock) {
+      const x = total.get(pid) ?? { existencia: 0, reservado: 0 };
+      x.existencia = r2(x.existencia + s.fisico);
+      x.reservado = r2(x.reservado + s.reservado);
+      total.set(pid, x);
+    }
+  }
+  return total;
+}
+
 async function ubicacionesAlmacen(companyId: number) {
   const whId = MAIN_WAREHOUSE_BY_COMPANY[companyId];
   if (!whId) throw new Error(`Sede ${companyId} sin almacén principal`);

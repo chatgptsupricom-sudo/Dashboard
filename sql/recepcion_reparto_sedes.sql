@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS supricom_panel.recepcion_reparto_lineas (
   ventas_caracas DECIMAL(14,3) NOT NULL DEFAULT 0,
   stock_valencia DECIMAL(14,3) DEFAULT NULL,
   stock_caracas DECIMAL(14,3) DEFAULT NULL,
+  existencia_valencia DECIMAL(14,3) DEFAULT NULL,
+  reservado_valencia DECIMAL(14,3) DEFAULT NULL,
+  existencia_caracas DECIMAL(14,3) DEFAULT NULL,
+  reservado_caracas DECIMAL(14,3) DEFAULT NULL,
   costo DECIMAL(14,4) DEFAULT NULL,
   motivo_manual VARCHAR(500) DEFAULT NULL,
   manual_por VARCHAR(200) DEFAULT NULL,
@@ -68,5 +72,15 @@ CREATE TABLE IF NOT EXISTS supricom_panel.recepcion_reparto_eventos (
   KEY idx_reparto_eventos (recepcion_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Instalaciones que ya tenían la tabla de líneas (nov-2026: existencia y
+-- reservado de cada sede, informativos; el panel también las agrega solo).
+-- Antes: SHOW COLUMNS FROM supricom_panel.recepcion_reparto_lineas;
+-- y correr solo las que falten (MySQL no tiene ADD COLUMN IF NOT EXISTS):
+-- ALTER TABLE supricom_panel.recepcion_reparto_lineas ADD COLUMN existencia_valencia DECIMAL(14,3) DEFAULT NULL;
+-- ALTER TABLE supricom_panel.recepcion_reparto_lineas ADD COLUMN reservado_valencia DECIMAL(14,3) DEFAULT NULL;
+-- ALTER TABLE supricom_panel.recepcion_reparto_lineas ADD COLUMN existencia_caracas DECIMAL(14,3) DEFAULT NULL;
+-- ALTER TABLE supricom_panel.recepcion_reparto_lineas ADD COLUMN reservado_caracas DECIMAL(14,3) DEFAULT NULL;
+
 -- Verificar:
 -- SHOW TABLES FROM supricom_panel LIKE 'recepcion_reparto%';
+-- SHOW COLUMNS FROM supricom_panel.recepcion_reparto_lineas;

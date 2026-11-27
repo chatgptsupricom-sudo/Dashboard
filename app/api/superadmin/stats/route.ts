@@ -219,6 +219,7 @@
 //   }
 // }
 import { callOdooRPC } from "@/lib/odoo";
+import { existenciaPrincipal } from "@/lib/compras/datosOdoo";
 import { conSinIntercompaniaBI, terminosSinIC } from "@/lib/intercompania";
 import {
   crecimientoVsMesAnterior,
@@ -322,28 +323,20 @@ async function estadisticas(request: NextRequest) {
       7: ["hercilio"],
     };
 
-    const [odooLines, sbResumen, sbMensual] = await Promise.all([
+    // Existencia y reservado del almacén principal de cada sede (se lee junto
+    // con las ventas; si falla, los productos salen sin stock).
+    const [odooLines, sbResumen, sbMensual, stockMap] = await Promise.all([
       lineasProductoOdoo(currentMonthFilters),
       resumenSmartbit(cids, firstDayOfMonth, lastDayOfMonth),
       mensualSmartbit(cids, historiaDesde, today, sellerExclusions),
+      existenciaPrincipal(cids).catch((e) => {
+        console.error("stats: existencia del almacén principal", e?.message);
+        return new Map<number, { existencia: number; reservado: number }>();
+      }),
     ]);
     const linesData = mezclarLineasProducto(odooLines, sbResumen.productos);
 
-    // 4. OBTENER STOCK (Opcional: Si quieres que el stock sea global, no filtres aquí)
     // Los productos que solo vienen de Smartbit ("sb:...") no tienen stock en Odoo.
-    const productIds = linesData
-      .map((l) => l.product_id[0])
-      .filter((id) => typeof id === "number");
-    const productsInfo =
-      productIds.length > 0
-        ? (await callOdooRPC<any[]>("product.product", "read", [
-            productIds,
-            ["qty_available"],
-          ])) || []
-        : [];
-    const stockMap = new Map(
-      productsInfo.map((p) => [p.id, p.qty_available || 0]),
-    );
 
     // 5. PROCESAMIENTO
     // 👇 CAMBIO 2: Cambiamos brandMap para almacenar revenue y cantidad
@@ -401,7 +394,8 @@ async function estadisticas(request: NextRequest) {
           brand: brandName,
           revenue,
           cantidad, // Agregamos la cantidad al producto
-          stock: stockMap.get(id) || 0,
+          stock: stockMap.get(id)?.existencia || 0,
+          reservado: stockMap.get(id)?.reservado || 0,
         };
       });
 

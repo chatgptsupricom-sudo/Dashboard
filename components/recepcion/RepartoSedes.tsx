@@ -334,6 +334,10 @@ function RepartoSedes({
       t("csv.cajas_valencia"),
       t("csv.cajas_caracas"),
       t("csv.origen"),
+      t("csv.existencia_valencia"),
+      t("csv.reservado_valencia"),
+      t("csv.existencia_caracas"),
+      t("csv.reservado_caracas"),
     ];
     const filas = lineas.map((l) =>
       [
@@ -345,6 +349,11 @@ function RepartoSedes({
         cajasDe(l.cantidadValencia, l.porCaja) ?? "",
         cajasDe(l.cantidadCaracas, l.porCaja) ?? "",
         l.origen === "manual" ? t("origen.manual") : t("origen.auto"),
+        // Repartos de antes de estas columnas: vacío.
+        l.existenciaValencia ?? "",
+        l.reservadoValencia ?? "",
+        l.existenciaCaracas ?? "",
+        l.reservadoCaracas ?? "",
       ]
         .map(celda)
         .join(","),
@@ -959,6 +968,36 @@ function porQue(l: LineaGuardada, t: T): string {
   return partes.join(" · ");
 }
 
+/**
+ * Existencia y reservado de la sede cuando se calculó el reparto. Los repartos
+ * calculados antes de guardarse esas columnas solo tienen el disponible.
+ */
+function StockSede({
+  existencia,
+  reservado,
+  disponible,
+  t,
+}: {
+  existencia: number | null | undefined;
+  reservado: number | null | undefined;
+  disponible: number | null | undefined;
+  t: T;
+}) {
+  if (existencia != null && reservado != null) {
+    return (
+      <p className="text-[11px] text-slate-400" title={t("stock_ayuda")}>
+        {t("existencia_reservado", { e: num(existencia), r: num(reservado) })}
+      </p>
+    );
+  }
+  if (disponible == null) return null;
+  return (
+    <p className="text-[11px] text-slate-400" title={t("stock_ayuda")}>
+      {t("stock", { n: num(disponible) })}
+    </p>
+  );
+}
+
 function Tabla({
   lineas,
   ventanaDias,
@@ -1053,19 +1092,11 @@ function Tabla({
                 </td>
                 <td className={td}>
                   <p className="text-slate-700">{num(l.ventasValencia)}</p>
-                  {l.stockValencia != null && (
-                    <p className="text-[11px] text-slate-400" title={t("stock_ayuda")}>
-                      {t("stock", { n: num(l.stockValencia) })}
-                    </p>
-                  )}
+                  <StockSede existencia={l.existenciaValencia} reservado={l.reservadoValencia} disponible={l.stockValencia} t={t} />
                 </td>
                 <td className={td}>
                   <p className="text-slate-700">{num(l.ventasCaracas)}</p>
-                  {l.stockCaracas != null && (
-                    <p className="text-[11px] text-slate-400" title={t("stock_ayuda")}>
-                      {t("stock", { n: num(l.stockCaracas) })}
-                    </p>
-                  )}
+                  <StockSede existencia={l.existenciaCaracas} reservado={l.reservadoCaracas} disponible={l.stockCaracas} t={t} />
                 </td>
                 <td className={`${td} text-slate-600`}>{l.pctRotacionCaracas == null ? "—" : pct(l.pctRotacionCaracas)}</td>
                 <td className={`${td} text-slate-600`}>{pct(l.pctObjetivoCaracas)}</td>

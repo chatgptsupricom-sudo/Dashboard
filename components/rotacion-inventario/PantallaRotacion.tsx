@@ -201,6 +201,8 @@ export default function PantallaRotacion() {
     { clave: "marca", titulo: "Marca" },
     { clave: "categoria", titulo: "Categoría" },
     ...(multiSede ? [{ clave: "sede", titulo: "Sede" } as Columna<Fila>] : []),
+    { clave: "existencia", titulo: "Existencia", tipo: "numero", sumar: true },
+    { clave: "reservado", titulo: "Reservado", tipo: "numero", sumar: true },
     { clave: "disponible", titulo: "Disponibles", tipo: "numero", sumar: true },
     { clave: "costo", titulo: "Costo unit.", tipo: "dinero" },
     { clave: "valorCosto", titulo: "Valor a costo", tipo: "dinero", sumar: true },

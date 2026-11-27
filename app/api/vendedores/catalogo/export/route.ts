@@ -1,4 +1,5 @@
 import { sedeDelCatalogo } from "@/lib/catalogo/sede";
+import { almacenSede } from "@/lib/compras/datosOdoo";
 import { verifyToken } from "@/lib/jwt";
 import { callOdooRPC } from "@/lib/odoo";
 import { NextResponse } from "next/server";
@@ -24,7 +25,9 @@ export async function GET(request: Request) {
       referencia: searchParams.get("referencia") !== "0",
       nombre: searchParams.get("nombre") !== "0",
       marca: searchParams.get("marca") !== "0",
+      // `stock` = Existencia (la llave de antes); `reservado` es nueva.
       stock: searchParams.get("stock") !== "0",
+      reservado: searchParams.get("reservado") !== "0",
       precio: searchParams.get("precio") !== "0",
       imagen: searchParams.get("imagen") !== "0",
     };
@@ -47,28 +50,22 @@ export async function GET(request: Request) {
         { status: 403 },
       );
 
-    const warehouses = await callOdooRPC<any[]>(
-      "stock.warehouse",
-      "search_read",
-      [
-        [
-          ["company_id", "=", userCompanyId],
-          ["name", "in", ["Central", "Principal"]],
-        ],
-      ],
-      { fields: ["id", "lot_stock_id"], limit: 1 },
-    );
-    const locationId = warehouses?.[0]?.lot_stock_id?.[0] ?? null;
+    // Existencia y reservado del almacén principal de la sede (Existencias +
+    // Entrada), el mismo número que el resto del panel.
+    const { stock } = await almacenSede(userCompanyId);
+    const conExistencia = [...stock]
+      .filter(([, s]) => s.fisico > 0)
+      .map(([id]) => id);
 
     const domain: any[] = [
+      ["id", "in", conExistencia],
       ["sale_ok", "=", true],
-      ["qty_available", ">", 0],
       ["type", "=", "product"],
     ];
     if (categoria !== "todas") domain.push(["categ_id.name", "=", categoria]);
     if (ids.length) domain.push(["id", "in", ids]);
 
-    const productos = await callOdooRPC<any[]>(
+    const productos = !conExistencia.length ? [] : await callOdooRPC<any[]>(
       "product.product",
       "search_read",
       [domain],
@@ -80,7 +77,6 @@ export async function GET(request: Request) {
           "product_tmpl_id",
           "default_code",
           "company_sale_price",
-          "qty_available",
           "categ_id",
           "image_128",
           "uom_id",
@@ -91,10 +87,14 @@ export async function GET(request: Request) {
         context: {
           allowed_company_ids: [userCompanyId],
           lang: "es_VE",
-          ...(locationId ? { location: locationId } : {}),
         },
       },
     );
+    if (!productos)
+      return NextResponse.json(
+        { error: "No se pudo conectar con Odoo" },
+        { status: 502 },
+      );
 
     // Translated names
     const tmplIds = [
@@ -115,7 +115,7 @@ export async function GET(request: Request) {
         context: { lang: "es_VE", allowed_company_ids: [userCompanyId] },
       },
     );
-    const tmplNameMap = new Map(templates.map((t: any) => [t.id, t.name]));
+    const tmplNameMap = new Map((templates ?? []).map((t: any) => [t.id, t.name]));
 
     productos.forEach((p: any) => {
       const tmplId = Array.isArray(p.product_tmpl_id)
@@ -124,6 +124,10 @@ export async function GET(request: Request) {
       p.translated_name = tmplId ? tmplNameMap.get(tmplId) || null : null;
       const m = p.x_studio_marca;
       p.marca = Array.isArray(m) ? m[1] : m || "";
+      const s = stock.get(p.id);
+      p.existencia = s?.fisico ?? 0;
+      p.reservado = s?.reservado ?? 0;
+      p.qty_available = p.existencia;
     });
 
     const getNombre = (p: any) =>
@@ -206,7 +210,9 @@ export async function GET(request: Request) {
       if (cols.marca)
         colDefs.push({ header: "Marca", key: "marca", width: 20 });
       if (cols.stock)
-        colDefs.push({ header: "Cantidad Disponible", key: "stock", width: 20 });
+        colDefs.push({ header: "Existencia", key: "stock", width: 14 });
+      if (cols.reservado)
+        colDefs.push({ header: "Reservado", key: "reservado", width: 14 });
       if (cols.precio)
         colDefs.push({ header: "Precio", key: "precio", width: 14 });
       if (cols.imagen)
@@ -235,7 +241,8 @@ export async function GET(request: Request) {
         if (cols.nombre) rowData.nombre = getNombre(p);
         if (incluirColumnaCategoria) rowData.categoria = getCategoria(p);
         if (cols.marca) rowData.marca = p.marca || "";
-        if (cols.stock) rowData.stock = p.qty_available ?? 0;
+        if (cols.stock) rowData.stock = p.existencia ?? 0;
+        if (cols.reservado) rowData.reservado = p.reservado ?? 0;
         if (cols.precio) rowData.precio = p.company_sale_price ?? 0;
         if (cols.imagen) rowData.imagen = "";
 

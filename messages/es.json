@@ -2006,7 +2006,10 @@
       "vendidas_en": "Vendidas en",
       "vendidas_30": "Vendidas: 30 días",
       "vendidas_90": "Vendidas: 90 días",
-      "vendidas_365": "Vendidas: 12 meses"
+      "vendidas_365": "Vendidas: 12 meses",
+      "existencia": "Existencia",
+      "reservado": "Reservado",
+      "nota_principal": "Almacén principal de cada sede"
     },
     "integracion_pago": {
       "title": "IntegracionDePago",
@@ -4157,7 +4160,8 @@
       },
       "ventas_ayuda": "Unidades vendidas en los últimos {dias} días, sin empresas del grupo (las notas de crédito restan)",
       "stock": "disp. {n}",
-      "stock_ayuda": "Disponible hoy en el almacén principal de la sede",
+      "existencia_reservado": "existencia {e} · reservado {r}",
+      "stock_ayuda": "En el almacén principal de la sede cuando se calculó el reparto: existencia física y lo reservado para pedidos (disponible = existencia − reservado)",
       "cajas": "{cajas} cajas · {porCaja} u/caja",
       "cajas_solo": "{cajas} cajas",
       "origen": {
@@ -4178,7 +4182,11 @@
         "caracas": "Caracas",
         "cajas_valencia": "Cajas Valencia",
         "cajas_caracas": "Cajas Caracas",
-        "origen": "Origen"
+        "origen": "Origen",
+        "existencia_valencia": "Existencia Valencia",
+        "reservado_valencia": "Reservado Valencia",
+        "existencia_caracas": "Existencia Caracas",
+        "reservado_caracas": "Reservado Caracas"
       },
       "historial": "Historial ({count})",
       "accion": {

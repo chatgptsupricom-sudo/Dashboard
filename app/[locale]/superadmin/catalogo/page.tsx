@@ -22,7 +22,8 @@ const COLUMNAS_DISPONIBLES = [
   { key: "referencia", label: "Referencia" },
   { key: "nombre", label: "Nombre en pantalla" },
   { key: "marca", label: "Marca" },
-  { key: "stock", label: "Cantidad Disponible" },
+  { key: "stock", label: "Existencia" },
+  { key: "reservado", label: "Reservado" },
   { key: "precio", label: "Precio" },
   { key: "imagen", label: "Imagen" },
 ];
@@ -380,7 +381,9 @@ function ProductoCard({
   const categoria = Array.isArray(producto.categ_id)
     ? producto.categ_id[1]
     : null;
-  const stock = producto.qty_available ?? 0;
+  // Existencia y reservado del almacén principal de la sede.
+  const stock = producto.existencia ?? producto.qty_available ?? 0;
+  const reservado = producto.reservado ?? 0;
   const precio = producto.company_sale_price ?? 0;
   const nombreLimpio = producto.display_name?.replace(/\[.*?\]/g, "").trim() || producto.name;
 
@@ -418,13 +421,14 @@ function ProductoCard({
             )}
             {/* Badge de stock */}
             <span
+              title={`${stock} en existencia · ${reservado} reservadas`}
               className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${
                 stock > 0
                   ? "bg-emerald-100 text-emerald-700"
                   : "bg-red-100 text-red-600"
               }`}
             >
-              {stock > 0 ? `${stock} ${t("disp")}` : t("sin_stock")}
+              {stock > 0 ? `${stock} exist. · ${reservado} reserv.` : t("sin_stock")}
             </span>
           </div>
 

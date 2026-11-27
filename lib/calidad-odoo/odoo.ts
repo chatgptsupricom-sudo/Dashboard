@@ -1,3 +1,4 @@
+import { almacenSede, catalogo } from "@/lib/compras/datosOdoo";
 import { callOdooRPC } from "@/lib/odoo";
 import { CORTE_ODOO } from "@/lib/smartbit";
 
@@ -185,15 +186,59 @@ export async function leerCategorias(): Promise<Categoria[]> {
   return r.map((c) => ({ id: c.id, nombre: txt(c.name), ruta: txt(c.complete_name), productos: c.product_count || 0 }));
 }
 
-/** Costo y stock de cada almacenable vistos desde una sede (son por empresa). */
-export async function costoYStock(companyId: number): Promise<Map<number, { costo: number; stock: number }>> {
-  const r = await leerTodo(
-    "product.template",
-    [["active", "=", true], ["detailed_type", "=", "product"]],
-    ["standard_price", "qty_available"],
-    { allowed_company_ids: [companyId], company_id: companyId },
+/**
+ * Costo (por empresa) y stock de cada almacenable en una sede, por plantilla.
+ * El stock es el del almacén principal de la sede (`almacenSede` de Compras:
+ * Existencias + Entrada), no el `qty_available` de la plantilla, que suma
+ * todos los almacenes de la empresa (Mal Estado, RMA, Exhibición...).
+ * `stock` = existencia (unidades físicas); `reservado` = reservado para pedidos.
+ */
+export async function costoYStock(companyId: number): Promise<Map<number, { costo: number; stock: number; reservado: number }>> {
+  const [r, almacen, cat] = await Promise.all([
+    leerTodo(
+      "product.template",
+      [["active", "=", true], ["detailed_type", "=", "product"]],
+      ["standard_price"],
+      { allowed_company_ids: [companyId], company_id: companyId },
+    ),
+    almacenSede(companyId),
+    catalogo(),
+  ]);
+  // Variante → plantilla: el catálogo de Compras trae las activas; las que
+  // falten (archivadas con stock) se leen aparte.
+  const plantilla = new Map<number, number>();
+  const faltan: number[] = [];
+  for (const pid of almacen.stock.keys()) {
+    const t = cat.get(pid)?.tmplId;
+    if (t) plantilla.set(pid, t);
+    else faltan.push(pid);
+  }
+  for (let i = 0; i < faltan.length; i += 1000) {
+    const v = await callOdooRPC<any[]>("product.product", "read", [faltan.slice(i, i + 1000), ["product_tmpl_id"]], {
+      context: { active_test: false },
+    });
+    if (!Array.isArray(v)) throw new Error("Odoo no respondió product.product.read");
+    for (const p of v) {
+      const t = m2o(p.product_tmpl_id);
+      if (t) plantilla.set(p.id, t[0]);
+    }
+  }
+  const stock = new Map<number, { fisico: number; reservado: number }>();
+  for (const [pid, s] of almacen.stock) {
+    const t = plantilla.get(pid);
+    if (!t) continue;
+    const x = stock.get(t) ?? { fisico: 0, reservado: 0 };
+    x.fisico += s.fisico;
+    x.reservado += s.reservado;
+    stock.set(t, x);
+  }
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return new Map(
+    r.map((t) => {
+      const s = stock.get(t.id);
+      return [t.id, { costo: Number(t.standard_price) || 0, stock: r2(s?.fisico ?? 0), reservado: r2(s?.reservado ?? 0) }];
+    }),
   );
-  return new Map(r.map((t) => [t.id, { costo: Number(t.standard_price) || 0, stock: Number(t.qty_available) || 0 }]));
 }
 
 export interface ListaPrecios {

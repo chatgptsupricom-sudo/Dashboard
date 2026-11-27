@@ -21,6 +21,7 @@ type Fila = {
   /** Solo viene para SuperAdmin e Inteligencia de Negocio; null = sin costo. */
   costo?: number | null;
   stock: number;
+  reservado: number;
   vendidas30: number;
   vendidas60: number;
   coberturaDias: number | null;
@@ -71,6 +72,7 @@ type SortCol =
   | "precio"
   | "costo"
   | "stock"
+  | "reservado"
   | "vendidas30"
   | "vendidas60"
   | "coberturaDias"
@@ -326,7 +328,8 @@ export function RotacionSkus({ sede }: { sede?: string } = {}) {
                 {th("categoria", "Categoría")}
                 {th("precio", "Precio", true)}
                 {data?.verCosto && th("costo", "Costo", true)}
-                {th("stock", "Stock", true)}
+                {th("stock", "Existencia", true)}
+                {th("reservado", "Reservado", true)}
                 {th("vendidas30", "30 d", true)}
                 {th("vendidas60", "60 d", true)}
                 {th("coberturaDias", "Cobertura", true)}
@@ -369,6 +372,9 @@ export function RotacionSkus({ sede }: { sede?: string } = {}) {
                   )}
                   <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                     {f.stock.toLocaleString("es-VE")}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">
+                    {f.reservado.toLocaleString("es-VE")}
                   </td>
                   <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
                     {f.vendidas30.toLocaleString("es-VE")}
@@ -432,7 +438,7 @@ export function RotacionSkus({ sede }: { sede?: string } = {}) {
               {filtradas.length === 0 && (
                 <tr>
                   <td
-                    colSpan={data?.verCosto ? 15 : 14}
+                    colSpan={data?.verCosto ? 16 : 15}
                     className="py-12 text-center text-sm text-slate-400"
                   >
                     Ningún SKU coincide con los filtros.
@@ -450,7 +456,7 @@ export function RotacionSkus({ sede }: { sede?: string } = {}) {
             ? `Mostrando los primeros ${MAX_FILAS} de ${filtradas.length}. Afiná los filtros o exportá para verlos todos.`
             : `${filtradas.length} SKU${filtradas.length === 1 ? "" : "s"}.`}
           {data?.periodo &&
-            ` · Ventas desde ${data.periodo.desde} · "Cobertura" = días que dura el stock al ritmo de venta de los últimos 60 días (no es cuánto lleva en el almacén) · "Antigüedad" = días desde que entró la unidad más vieja del stock; "+" = entró con la carga inicial de Odoo, la fecha real es anterior · "Último ingreso" = última recepción de compra al almacén principal.`}
+            ` · Ventas desde ${data.periodo.desde} · "Existencia" = unidades en el almacén principal y "Reservado" = lo apartado para pedidos · "Cobertura" = días que dura lo disponible (existencia − reservado) al ritmo de venta de los últimos 60 días (no es cuánto lleva en el almacén) · "Antigüedad" = días desde que entró la unidad más vieja del stock; "+" = entró con la carga inicial de Odoo, la fecha real es anterior · "Último ingreso" = última recepción de compra al almacén principal.`}
         </p>
       )}
     </section>

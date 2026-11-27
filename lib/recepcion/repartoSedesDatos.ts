@@ -126,6 +126,9 @@ export interface Reparto {
 
 let tablasListas: Promise<void> | null = null;
 
+/** Existencia y reservado de cada sede (nov-2026): null en los repartos de antes. */
+const COLUMNAS_LINEA_NUEVAS = ["existencia_valencia", "reservado_valencia", "existencia_caracas", "reservado_caracas"];
+
 export function asegurarTablasReparto(): Promise<void> {
   if (!tablasListas) {
     tablasListas = (async () => {
@@ -171,6 +174,10 @@ export function asegurarTablasReparto(): Promise<void> {
         ventas_caracas DECIMAL(14,3) NOT NULL DEFAULT 0,
         stock_valencia DECIMAL(14,3) DEFAULT NULL,
         stock_caracas DECIMAL(14,3) DEFAULT NULL,
+        existencia_valencia DECIMAL(14,3) DEFAULT NULL,
+        reservado_valencia DECIMAL(14,3) DEFAULT NULL,
+        existencia_caracas DECIMAL(14,3) DEFAULT NULL,
+        reservado_caracas DECIMAL(14,3) DEFAULT NULL,
         costo DECIMAL(14,4) DEFAULT NULL,
         motivo_manual VARCHAR(500) DEFAULT NULL,
         manual_por VARCHAR(200) DEFAULT NULL,
@@ -178,6 +185,12 @@ export function asegurarTablasReparto(): Promise<void> {
         UNIQUE KEY uq_reparto_linea (recepcion_id, clave),
         KEY idx_reparto_recepcion (recepcion_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      // Columnas agregadas después (se agregan solas: SHOW COLUMNS + ALTER).
+      const cols = await query("SHOW COLUMNS FROM recepcion_reparto_lineas");
+      const hay = new Set((cols.rows as any[]).map((c) => String(c.Field)));
+      for (const nombre of COLUMNAS_LINEA_NUEVAS) {
+        if (!hay.has(nombre)) await query(`ALTER TABLE recepcion_reparto_lineas ADD COLUMN ${nombre} DECIMAL(14,3) DEFAULT NULL`);
+      }
       await query(`CREATE TABLE IF NOT EXISTS recepcion_reparto_eventos (
         id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
         recepcion_id INT NOT NULL,
@@ -244,6 +257,10 @@ function aLinea(f: any): LineaGuardada {
     ventasCaracas: Number(f.ventas_caracas),
     stockValencia: n(f.stock_valencia),
     stockCaracas: n(f.stock_caracas),
+    existenciaValencia: n(f.existencia_valencia),
+    reservadoValencia: n(f.reservado_valencia),
+    existenciaCaracas: n(f.existencia_caracas),
+    reservadoCaracas: n(f.reservado_caracas),
     costo: n(f.costo),
     motivoManual: f.motivo_manual ?? null,
     manualPor: f.manual_por ?? null,
@@ -443,7 +460,8 @@ async function escribir(recepcionId: number, quien: Quien, e: Escritura): Promis
         "recepcion_id", "clave", "codigo", "producto", "odoo_product_id", "cantidad", "cajas", "por_caja",
         "cantidad_valencia", "cantidad_caracas", "auto_caracas", "origen", "base",
         "pct_cuota_caracas", "pct_rotacion_caracas", "pct_objetivo_caracas",
-        "ventas_valencia", "ventas_caracas", "stock_valencia", "stock_caracas", "costo",
+        "ventas_valencia", "ventas_caracas", "stock_valencia", "stock_caracas",
+        "existencia_valencia", "reservado_valencia", "existencia_caracas", "reservado_caracas", "costo",
         "motivo_manual", "manual_por", "manual_at",
       ];
       const fila = `(${COLS.map(() => "?").join(",")})`;
@@ -473,6 +491,10 @@ async function escribir(recepcionId: number, quien: Quien, e: Escritura): Promis
             l.ventasCaracas,
             l.stockValencia ?? null,
             l.stockCaracas ?? null,
+            l.existenciaValencia ?? null,
+            l.reservadoValencia ?? null,
+            l.existenciaCaracas ?? null,
+            l.reservadoCaracas ?? null,
             l.costo ?? null,
             manual && l.motivoManual ? String(l.motivoManual).slice(0, 500) : null,
             manual && l.manualPor ? String(l.manualPor).slice(0, 200) : null,
@@ -537,6 +559,10 @@ const compacta = (l: LineaReparto) => ({
   ventasCaracas: l.ventasCaracas,
   stockValencia: l.stockValencia,
   stockCaracas: l.stockCaracas,
+  existenciaValencia: l.existenciaValencia,
+  reservadoValencia: l.reservadoValencia,
+  existenciaCaracas: l.existenciaCaracas,
+  reservadoCaracas: l.reservadoCaracas,
   costo: l.costo,
   pctCuotaCaracas: l.pctCuotaCaracas,
   pctRotacionCaracas: l.pctRotacionCaracas,
@@ -619,6 +645,14 @@ export interface OpcionesCalculo {
   activar?: boolean;
 }
 
+/** Stock de un producto en el almacén principal de una sede (de `almacenSede`). */
+interface StockLinea {
+  disponible: number;
+  existencia: number;
+  reservado: number;
+}
+const SIN_STOCK: StockLinea = { disponible: 0, existencia: 0, reservado: 0 };
+
 export async function calcularReparto(recepcionId: number, quien: Quien, opts: OpcionesCalculo = {}): Promise<number> {
   await asegurarTablasReparto();
   const { rec, items, base } = await recepcionEditable(recepcionId);
@@ -640,8 +674,8 @@ export async function calcularReparto(recepcionId: number, quien: Quien, opts: O
     ventasV: Map<number, number>;
     ventasC: Map<number, number>;
     pids: Map<string, number>;
-    stockV: Map<number, number> | null;
-    stockC: Map<number, number> | null;
+    stockV: Map<number, StockLinea> | null;
+    stockC: Map<number, StockLinea> | null;
     costo: Map<number, number> | null;
   };
   try {
@@ -654,8 +688,10 @@ export async function calcularReparto(recepcionId: number, quien: Quien, opts: O
     ]);
     const stock = (r: PromiseSettledResult<any>) => {
       if (r.status !== "fulfilled") return null;
-      const m = new Map<number, number>();
-      for (const [id, s] of r.value.stock as Map<number, any>) m.set(id, disponible(s));
+      const m = new Map<number, StockLinea>();
+      for (const [id, s] of r.value.stock as Map<number, any>) {
+        m.set(id, { disponible: disponible(s), existencia: Number(s?.fisico) || 0, reservado: Number(s?.reservado) || 0 });
+      }
       return m;
     };
     datos = {
@@ -683,13 +719,20 @@ export async function calcularReparto(recepcionId: number, quien: Quien, opts: O
   const descartados: { clave: string; caracasAntes: number; cantidadAntes: number; cantidadAhora: number }[] = [];
   const lineas: LineaGuardada[] = productos.map((p) => {
     const pid = p.odooProductId || datos.pids.get(p.clave) || null;
+    // Sin producto o sin poder leer el almacén: null (no se sabe); producto sin quants: 0.
+    const sv = pid && datos.stockV ? (datos.stockV.get(pid) ?? SIN_STOCK) : null;
+    const sc = pid && datos.stockC ? (datos.stockC.get(pid) ?? SIN_STOCK) : null;
     const auto = lineaAutomatica(
       { ...p, odooProductId: pid },
       {
         ventasValencia: pid ? (datos.ventasV.get(pid) ?? 0) : 0,
         ventasCaracas: pid ? (datos.ventasC.get(pid) ?? 0) : 0,
-        stockValencia: pid && datos.stockV ? (datos.stockV.get(pid) ?? 0) : null,
-        stockCaracas: pid && datos.stockC ? (datos.stockC.get(pid) ?? 0) : null,
+        stockValencia: sv ? sv.disponible : null,
+        stockCaracas: sc ? sc.disponible : null,
+        existenciaValencia: sv ? sv.existencia : null,
+        reservadoValencia: sv ? sv.reservado : null,
+        existenciaCaracas: sc ? sc.existencia : null,
+        reservadoCaracas: sc ? sc.reservado : null,
         costo: pid && datos.costo ? (datos.costo.get(pid) || null) : null,
       },
       pctCuota,

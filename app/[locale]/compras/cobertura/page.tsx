@@ -34,6 +34,10 @@ interface ProductoCobertura {
   categoria: string;
   abc: string;
   stockDisponible: number;
+  /** Físico en el almacén principal. */
+  existencia: number;
+  /** Reservado para pedidos. */
+  reservado: number;
   ventas45d: number;
   demandaDiaria: number;
   diasCobertura: number;
@@ -187,7 +191,8 @@ export default function CoberturaPage() {
       Nombre: p.name,
       ABC: p.abc,
       Categoría: p.categoria,
-      "Stock disponible": p.stockDisponible,
+      Existencia: p.existencia,
+      Reservado: p.reservado,
       "Ventas 45d": p.ventas45d,
       "Demanda diaria": p.demandaDiaria,
       "Días cobertura":
@@ -361,7 +366,10 @@ export default function CoberturaPage() {
                     <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
                   </TableHead>
                   <TableHead className="text-center">
-                    <ColumnHeader label="Stock" tooltip={COLUMN_TOOLTIPS.Stock} />
+                    <ColumnHeader label="Existencia" tooltip="Unidades físicas en el almacén principal de la sede (Existencias y zona de Entrada)" />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Reservado" tooltip="Unidades de la existencia reservadas para pedidos de venta. La cobertura se calcula sobre lo disponible (existencia − reservado)" />
                   </TableHead>
                   <TableHead className="text-center">
                     <ColumnHeader label="Ventas 45d" tooltip={COLUMN_TOOLTIPS["Ventas 45d"]} />
@@ -381,7 +389,7 @@ export default function CoberturaPage() {
                 {pageItems.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={9}
                       className="text-center py-8 text-gray-400"
                     >
                       No hay productos con los filtros seleccionados.
@@ -417,7 +425,10 @@ export default function CoberturaPage() {
                         {p.categoria}
                       </TableCell>
                       <TableCell className="text-center font-medium">
-                        {p.stockDisponible}
+                        {p.existencia}
+                      </TableCell>
+                      <TableCell className="text-center font-medium">
+                        {p.reservado}
                       </TableCell>
                       <TableCell className="text-center text-gray-600">
                         {p.ventas45d}

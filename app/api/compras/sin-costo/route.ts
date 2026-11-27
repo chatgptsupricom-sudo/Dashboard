@@ -29,6 +29,8 @@ export async function GET(request: NextRequest) {
         name: p.nombre,
         categoria: p.categoria,
         stockTotal: stock,
+        existencia: Math.round(almacen.stock.get(p.id)?.fisico ?? 0),
+        reservado: Math.round(almacen.stock.get(p.id)?.reservado ?? 0),
         stockPorSede: { [nombre]: stock },
         sinCostoEn: [nombre],
       }))

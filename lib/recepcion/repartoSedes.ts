@@ -175,6 +175,15 @@ export interface DatosProducto {
   /** Disponible hoy en el almacén principal (informativo). */
   stockValencia: number | null;
   stockCaracas: number | null;
+  /**
+   * Existencia física y reservado hoy en el almacén principal (informativo;
+   * disponible = existencia − reservado). null en los repartos calculados
+   * antes de guardarse estas columnas, o si no se pudo leer el almacén.
+   */
+  existenciaValencia: number | null;
+  reservadoValencia: number | null;
+  existenciaCaracas: number | null;
+  reservadoCaracas: number | null;
   /** Costo unitario en la sede donde llega (para el % por valor). */
   costo: number | null;
 }

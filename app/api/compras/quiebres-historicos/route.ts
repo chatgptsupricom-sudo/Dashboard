@@ -113,6 +113,8 @@ async function quiebresHistoricos(sedeId: number) {
       name: p.nombre,
       categoria: p.categoria,
       stockActual: Math.max(0, (almacen.stock.get(p.id)?.fisico ?? 0) - (almacen.stock.get(p.id)?.reservado ?? 0)),
+      existencia: Math.round(almacen.stock.get(p.id)?.fisico ?? 0),
+      reservado: Math.round(almacen.stock.get(p.id)?.reservado ?? 0),
       totalSalidas180d: Math.max(0, Math.round(sumaEntre(dias, inicio, hoy))),
       semanasConVenta,
       quiebresContados: quiebres,

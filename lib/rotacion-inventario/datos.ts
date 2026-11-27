@@ -216,6 +216,7 @@ export function datosSede(companyId: number): Promise<DatosSede> {
         claveMarca: claveMarca(p.marca),
         categoria: p.categoria,
         fisico: s.fisico,
+        existencia: s.fisico,
         reservado: s.reservado,
         disponible: disp,
         costo: r2(c),

@@ -97,7 +97,8 @@ export function PorLlegar() {
     },
     { clave: "documentos", titulo: "Orden / packing list", ancho: "min-w-[160px]" },
     { clave: "proveedor", titulo: "Proveedor", ancho: "min-w-[160px]" },
-    { clave: "stock", titulo: "Stock actual", tipo: "numero", sumar: true },
+    { clave: "existencia", titulo: "Existencia", tipo: "numero", sumar: true },
+    { clave: "reservado", titulo: "Reservado", tipo: "numero", sumar: true },
     {
       clave: "ventas",
       titulo: "¿Se ha vendido?",
@@ -281,7 +282,8 @@ function DetalleVentas({ fila, onCerrar }: { fila: Fila; onCerrar: () => void })
             Ventas en {fila.sedeNombre}: {fila.producto}
           </DialogTitle>
           <p className="text-xs text-slate-500">
-            {fila.codigo} · {fila.marca} · por llegar {fila.cantidad.toLocaleString("en-US")} · stock {fila.stock.toLocaleString("en-US")}
+            {fila.codigo} · {fila.marca} · por llegar {fila.cantidad.toLocaleString("en-US")} · existencia {(fila.existencia ?? 0).toLocaleString("en-US")} · reservado{" "}
+            {(fila.reservado ?? 0).toLocaleString("en-US")}
           </p>
         </DialogHeader>
 

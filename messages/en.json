@@ -2192,7 +2192,10 @@
       "vendidas_en": "Sold in",
       "vendidas_30": "Sold: 30 days",
       "vendidas_90": "Sold: 90 days",
-      "vendidas_365": "Sold: 12 months"
+      "vendidas_365": "Sold: 12 months",
+      "existencia": "On hand",
+      "reservado": "Reserved",
+      "nota_principal": "Main warehouse of each site"
     }
   },
   "cxc": {
@@ -4168,7 +4171,8 @@
       },
       "ventas_ayuda": "Units sold in the last {dias} days, excluding group companies (credit notes subtract)",
       "stock": "avail. {n}",
-      "stock_ayuda": "Available today in the branch main warehouse",
+      "existencia_reservado": "on hand {e} · reserved {r}",
+      "stock_ayuda": "In the branch main warehouse when the split was calculated: physical stock on hand and what is reserved for orders (available = on hand − reserved)",
       "cajas": "{cajas} boxes · {porCaja} u/box",
       "cajas_solo": "{cajas} boxes",
       "origen": {
@@ -4189,7 +4193,11 @@
         "caracas": "Caracas",
         "cajas_valencia": "Valencia boxes",
         "cajas_caracas": "Caracas boxes",
-        "origen": "Source"
+        "origen": "Source",
+        "existencia_valencia": "Valencia on hand",
+        "reservado_valencia": "Valencia reserved",
+        "existencia_caracas": "Caracas on hand",
+        "reservado_caracas": "Caracas reserved"
       },
       "historial": "History ({count})",
       "accion": {

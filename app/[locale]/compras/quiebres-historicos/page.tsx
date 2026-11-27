@@ -32,6 +32,8 @@ interface QuiebreHistorico {
   name: string;
   categoria: string;
   stockActual: number;
+  existencia: number;
+  reservado: number;
   totalSalidas180d: number;
   semanasConVenta: number;
   quiebresContados: number;
@@ -115,7 +117,8 @@ export default function QuiebresHistoricosPage() {
       Código: p.codigo,
       Nombre: p.name,
       Categoría: p.categoria,
-      "Stock actual": p.stockActual,
+      Existencia: p.existencia,
+      Reservado: p.reservado,
       "Salidas 180d": p.totalSalidas180d,
       "Semanas con venta": p.semanasConVenta,
       "Quiebres detectados": p.quiebresContados,
@@ -265,7 +268,10 @@ export default function QuiebresHistoricosPage() {
                     <ColumnHeader label="Categoría" tooltip={COLUMN_TOOLTIPS.Categoría} />
                   </TableHead>
                   <TableHead className="text-center">
-                    <ColumnHeader label="Stock actual" tooltip={COLUMN_TOOLTIPS["Stock actual"]} />
+                    <ColumnHeader label="Existencia" tooltip="Unidades físicas hoy en el almacén principal de la sede (Existencias y zona de Entrada)" />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Reservado" tooltip="Unidades de la existencia reservadas para pedidos de venta" />
                   </TableHead>
                   <TableHead className="text-center">
                     <ColumnHeader label="Salidas 180d" tooltip={COLUMN_TOOLTIPS["Salidas 180d"]} />
@@ -294,7 +300,7 @@ export default function QuiebresHistoricosPage() {
                 {pageItems.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={11}
                       className="text-center py-8 text-gray-400"
                     >
                       No se detectaron quiebres históricos con los filtros
@@ -317,15 +323,18 @@ export default function QuiebresHistoricosPage() {
                         {p.categoria}
                       </TableCell>
                       <TableCell className="text-center">
-                        {p.stockActual > 0 ? (
+                        {p.existencia > 0 ? (
                           <span className="font-medium text-gray-700">
-                            {p.stockActual}
+                            {p.existencia}
                           </span>
                         ) : (
                           <Badge className="bg-red-600 text-white text-xs">
                             0
                           </Badge>
                         )}
+                      </TableCell>
+                      <TableCell className="text-center text-gray-600">
+                        {p.reservado}
                       </TableCell>
                       <TableCell className="text-center text-gray-600">
                         {p.totalSalidas180d.toLocaleString()}

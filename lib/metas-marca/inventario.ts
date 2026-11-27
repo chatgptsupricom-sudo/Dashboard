@@ -1,5 +1,6 @@
 import { callOdooRPC } from "@/lib/odoo";
 import { MAIN_WAREHOUSE_BY_COMPANY } from "@/lib/compras/constants";
+import { almacenSede, disponible as disponibleDe } from "@/lib/compras/datosOdoo";
 import { claveMarca, SIN_MARCA } from "./marcas";
 import { partnersIntercompania } from "@/lib/intercompania";
 import { leerProductos } from "./odoo";
@@ -8,9 +9,10 @@ import { hoyCaracas, isoDia } from "./servicio";
 /**
  * Inventario por marca para la meta en unidades de Metas por marca.
  *
- * - Stock = disponible hoy (cantidad − reservado) en el almacén principal de
- *   la sede (`MAIN_WAREHOUSE_BY_COMPANY`, el mismo de Compras) y sus
- *   sububicaciones. No cuenta Exhibición, Mal estado, Demo, RMA ni Tránsito.
+ * - Stock = disponible hoy (existencia − reservado) en el almacén principal de
+ *   la sede: `almacenSede` de Compras (Existencias + Entrada; el reservado del
+ *   traslado Entrada → Existencias no cuenta). No cuenta Exhibición, Mal
+ *   estado, Demo, RMA ni Tránsito. La marca trae además existencia y reservado.
  * - Valor de cada producto = disponible × precio promedio al que se vendió
  *   (−balance ÷ unidades de facturas de cliente, sin intercompañía) en los
  *   últimos 3 meses; si no se vendió, en los últimos 12; si tampoco, al costo
@@ -40,7 +42,12 @@ export interface ProductoInventario {
 export interface InventarioMarca {
   clave: string;
   marca: string;
+  /** Disponible hoy (existencia − reservado): con esto se calcula la meta en unidades. */
   unidades: number;
+  /** Unidades físicas en el almacén principal (incluye lo reservado). */
+  existencia: number;
+  /** Reservado para pedidos. */
+  reservado: number;
   valor: number;
   productos: number;
   /** Parte del valor que sale del costo (productos sin venta en 12 meses). */
@@ -51,8 +58,12 @@ export interface InventarioMarca {
 
 export interface InventarioSede {
   companyId: number;
+  /** Nombre del almacén principal. */
   ubicacion: string;
-  ubicacionId: number | null;
+  /** Ubicaciones internas del almacén principal (las de `almacenSede`). */
+  ubicaciones: number[];
+  /** Las de Entrada (dentro de `ubicaciones`): su reservado no cuenta. */
+  ubicacionesEntrada: number[];
   fecha: string;
   productos: ProductoInventario[];
   porMarca: Map<string, InventarioMarca>;
@@ -62,15 +73,32 @@ export interface InventarioSede {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-async function ubicacionPrincipal(companyId: number): Promise<{ id: number | null; nombre: string }> {
+/** Ubicaciones de Entrada del almacén principal (su reservado no cuenta, como en `almacenSede`). */
+async function ubicacionesEntrada(companyId: number): Promise<number[]> {
   const warehouseId = MAIN_WAREHOUSE_BY_COMPANY[companyId];
-  if (!warehouseId) return { id: null, nombre: "" };
+  if (!warehouseId) return [];
   const wh = await callOdooRPC<any[]>("stock.warehouse", "search_read", [[["id", "=", warehouseId]]], {
-    fields: ["lot_stock_id"], limit: 1, context: { allowed_company_ids: [companyId] },
+    fields: ["wh_input_stock_loc_id"], limit: 1,
   });
   if (!Array.isArray(wh)) throw new Error("Odoo no respondió stock.warehouse");
-  const loc = wh[0]?.lot_stock_id;
-  return loc ? { id: loc[0], nombre: loc[1] || "" } : { id: null, nombre: "" };
+  const entrada = wh[0]?.wh_input_stock_loc_id?.[0];
+  if (!entrada) return [];
+  const ids = await callOdooRPC<number[]>("stock.location", "search", [[["id", "child_of", entrada]]]);
+  if (!Array.isArray(ids)) throw new Error("Odoo no respondió las ubicaciones de Entrada");
+  return ids;
+}
+
+/** Productos cuya cantidad total en el almacén es negativa (`almacenSede` los toma como 0). */
+async function productosNegativos(companyId: number, ubicaciones: number[]): Promise<number> {
+  if (!ubicaciones.length) return 0;
+  const dominio = [["location_id", "in", ubicaciones], ["company_id", "=", companyId]];
+  const conNegativo = await callOdooRPC<any[]>("stock.quant", "read_group", [[...dominio, ["quantity", "<", 0]], ["quantity:sum"], ["product_id"]], { lazy: false });
+  if (!Array.isArray(conNegativo)) throw new Error("Odoo no respondió stock.quant");
+  const ids = conNegativo.map((g) => g.product_id?.[0]).filter(Boolean);
+  if (!ids.length) return 0;
+  const sumas = await callOdooRPC<any[]>("stock.quant", "read_group", [[...dominio, ["product_id", "in", ids]], ["quantity:sum"], ["product_id"]], { lazy: false });
+  if (!Array.isArray(sumas)) throw new Error("Odoo no respondió stock.quant");
+  return sumas.filter((g) => (Number(g.quantity) || 0) < 0).length;
 }
 
 /** Precio promedio vendido por producto desde `desde` (solo facturas, sin intercompañía). */
@@ -101,25 +129,20 @@ async function leerInventario(companyId: number): Promise<InventarioSede> {
   const hasta = isoDia(hoy);
   const menosMeses = (n: number) => isoDia(new Date(hoy.getFullYear(), hoy.getMonth() - n, hoy.getDate()));
 
-  const [ubic, ic] = await Promise.all([ubicacionPrincipal(companyId), partnersIntercompania()]);
-  const dominio: any[] = [["company_id", "=", companyId]];
-  dominio.push(ubic.id ? ["location_id", "child_of", [ubic.id]] : ["location_id.usage", "=", "internal"]);
-  const quants = await callOdooRPC<any[]>("stock.quant", "read_group", [dominio, ["quantity:sum", "reserved_quantity:sum"], ["product_id"]], { lazy: false });
-  if (!Array.isArray(quants)) throw new Error("Odoo no respondió stock.quant");
+  const [almacen, ic, entrada] = await Promise.all([almacenSede(companyId), partnersIntercompania(), ubicacionesEntrada(companyId)]);
+  const negativos = await productosNegativos(companyId, almacen.ubicaciones);
 
-  let negativos = 0;
+  // Mismo stock que Compras: existencia (negativos = 0) y reservado sin el de Entrada.
   const stock = new Map<number, { cantidad: number; reservado: number }>();
-  for (const q of quants) {
-    if (!q.product_id) continue;
-    const cantidad = Number(q.quantity) || 0;
-    if (cantidad < 0) negativos++;
-    stock.set(q.product_id[0], { cantidad, reservado: Number(q.reserved_quantity) || 0 });
+  for (const [id, s] of almacen.stock) {
+    if (s.fisico > 0) stock.set(id, { cantidad: s.fisico, reservado: s.reservado });
   }
-  const conStock = [...stock.entries()].filter(([, s]) => s.cantidad - s.reservado > 0).map(([id]) => id);
+  const conExistencia = [...stock.keys()];
+  const conStock = [...almacen.stock.entries()].filter(([, s]) => disponibleDe(s) > 0).map(([id]) => id);
 
   const icIds = [...ic.keys()];
   const [info, p3, p12] = await Promise.all([
-    leerProductos(conStock),
+    leerProductos(conExistencia),
     precioVendido(companyId, menosMeses(3), hasta, conStock, icIds),
     precioVendido(companyId, menosMeses(12), hasta, conStock, icIds),
   ]);
@@ -135,6 +158,20 @@ async function leerInventario(companyId: number): Promise<InventarioSede> {
 
   const productos: ProductoInventario[] = [];
   const porMarca = new Map<string, InventarioMarca>();
+  const nuevaMarca = (clave: string, marcaOdoo: string): InventarioMarca => ({
+    clave, marca: marcaOdoo.trim() || clave, unidades: 0, existencia: 0, reservado: 0, valor: 0, productos: 0,
+    valorAlCosto: 0, productosAlCosto: 0, productosSinPrecio: 0,
+  });
+  // Existencia y reservado de la marca cuentan también lo que está todo reservado.
+  for (const id of conExistencia) {
+    const s = stock.get(id)!;
+    const p = info.get(id);
+    const clave = p?.marcaId ? claveMarca(p.marca) : SIN_MARCA;
+    const m = porMarca.get(clave) ?? nuevaMarca(clave, p?.marca || "");
+    m.existencia += s.cantidad;
+    m.reservado += s.reservado;
+    porMarca.set(clave, m);
+  }
   for (const id of conStock) {
     const s = stock.get(id)!;
     const p = info.get(id);
@@ -150,10 +187,7 @@ async function leerInventario(companyId: number): Promise<InventarioSede> {
       productoId: id, codigo: p?.codigo || "", producto: p?.nombre || "", clave, marcaOdoo: p?.marca || "",
       cantidad: r2(s.cantidad), reservado: r2(s.reservado), disponible: r2(disponible), precio: r2(precio), fuente, valor: r2(valor),
     });
-    const m = porMarca.get(clave) ?? {
-      clave, marca: (p?.marca || "").trim() || clave, unidades: 0, valor: 0, productos: 0,
-      valorAlCosto: 0, productosAlCosto: 0, productosSinPrecio: 0,
-    };
+    const m = porMarca.get(clave) ?? nuevaMarca(clave, p?.marca || "");
     m.unidades += disponible;
     m.valor += valor;
     m.productos++;
@@ -163,11 +197,16 @@ async function leerInventario(companyId: number): Promise<InventarioSede> {
   }
   for (const m of porMarca.values()) {
     m.unidades = r2(m.unidades);
+    m.existencia = r2(m.existencia);
+    m.reservado = r2(m.reservado);
     m.valor = r2(m.valor);
     m.valorAlCosto = r2(m.valorAlCosto);
   }
 
-  return { companyId, ubicacion: ubic.nombre, ubicacionId: ubic.id, fecha: hasta, productos, porMarca, negativos };
+  return {
+    companyId, ubicacion: almacen.nombre, ubicaciones: almacen.ubicaciones, ubicacionesEntrada: entrada,
+    fecha: hasta, productos, porMarca, negativos,
+  };
 }
 
 const cache = new Map<number, { vence: number; valor: Promise<InventarioSede> }>();
@@ -193,6 +232,8 @@ export async function inventarioPorMarca(sedes: number[], refrescar = false): Pr
       const x = suma.get(m.clave);
       if (!x) { suma.set(m.clave, { ...m }); continue; }
       x.unidades = r2(x.unidades + m.unidades);
+      x.existencia = r2(x.existencia + m.existencia);
+      x.reservado = r2(x.reservado + m.reservado);
       x.valor = r2(x.valor + m.valor);
       x.productos += m.productos;
       x.valorAlCosto = r2(x.valorAlCosto + m.valorAlCosto);

@@ -273,7 +273,7 @@ export function EditorMetas({ data, companyId, onGuardado }: { data: DatosMetas;
                 <th className="px-3 py-2.5 text-right">Prom. 3 meses</th>
                 <th className="px-3 py-2.5 text-right">{mesAnt ? nombreMes(mesAnt, true) : "Mes anterior"}</th>
                 <th className="px-3 py-2.5 text-right">Vendido este mes</th>
-                <th className="px-3 py-2.5 text-right">Stock disponible hoy</th>
+                <th className="px-3 py-2.5 text-right">Existencia / Reservado hoy</th>
                 <th className="px-3 py-2.5 text-right">Meta unidades</th>
                 <th className="px-3 py-2.5 text-right">Meta del mes $</th>
                 <th className="px-3 py-2.5 text-right">vs promedio</th>
@@ -301,9 +301,12 @@ export function EditorMetas({ data, companyId, onGuardado }: { data: DatosMetas;
                     <td className="px-3 py-2 text-right tabular-nums text-slate-500">{dinero(f.mesAnterior)}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-slate-500">{dinero(f.vendido)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {f.inv && f.inv.unidades > 0 ? (
+                      {f.inv && (f.inv.existencia > 0 || f.inv.unidades > 0) ? (
                         <>
-                          <p className="text-slate-700">{unidadesFmt(f.inv.unidades)} u</p>
+                          <p className="text-slate-700">{unidadesFmt(f.inv.existencia)} u <span className="text-[11px] text-slate-400">exist.</span></p>
+                          <p className="text-[11px] text-slate-500" title="La meta en unidades se calcula sobre lo disponible (existencia − reservado)">
+                            {unidadesFmt(f.inv.reservado)} reserv. · {unidadesFmt(f.inv.unidades)} disp.
+                          </p>
                           <p className="text-[11px] text-slate-400" title={f.inv.valorAlCosto > 0 ? `${dinero(f.inv.valorAlCosto)} valorado al costo (${f.inv.productosAlCosto} productos sin venta en 12 meses)` : undefined}>
                             {dinero(f.inv.valor)} · {f.inv.productos} prod.
                           </p>

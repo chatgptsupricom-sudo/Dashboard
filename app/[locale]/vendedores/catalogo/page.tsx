@@ -258,7 +258,8 @@ const COLUMNAS_DISPONIBLES = [
   { key: "referencia", label: "Referencia" },
   { key: "nombre", label: "Nombre en pantalla" },
   { key: "marca", label: "Marca" },
-  { key: "stock", label: "Cantidad Disponible" },
+  { key: "stock", label: "Existencia" },
+  { key: "reservado", label: "Reservado" },
   { key: "precio", label: "Precio" },
   { key: "imagen", label: "Imagen" },
 ];
@@ -395,7 +396,7 @@ export default function CatalogoPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert("Error al exportar: " + e.message);
+      alert("Error al exportar: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setExportando(false);
     }
@@ -694,7 +695,9 @@ function ProductoCard({
   const categoria = Array.isArray(producto.categ_id)
     ? producto.categ_id[1]
     : null;
-  const stock = producto.qty_available ?? 0;
+  // Existencia y reservado del almacén principal de la sede.
+  const stock = producto.existencia ?? producto.qty_available ?? 0;
+  const reservado = producto.reservado ?? 0;
   const precio = producto.company_sale_price ?? 0;
   const templateName = Array.isArray(producto.product_tmpl_id)
     ? producto.product_tmpl_id[1]?.replace(/\[.*?\]/g, "").trim()
@@ -733,7 +736,7 @@ function ProductoCard({
                 src={imagen}
                 alt={nombreLimpio}
                 loading="lazy"
-                style={{ imageRendering: "high-quality" }}
+                style={{ imageRendering: "high-quality" as any }}
                 className="w-full h-full object-contain p-2"
               />
             ) : (
@@ -741,13 +744,14 @@ function ProductoCard({
             )}
             {/* Badge de stock */}
             <span
+              title={`${stock} en existencia · ${reservado} reservadas`}
               className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${
                 stock > 0
                   ? "bg-emerald-100 text-emerald-700"
                   : "bg-red-100 text-red-600"
               }`}
             >
-              {stock > 0 ? `${stock} disp.` : "Sin stock"}
+              {stock > 0 ? `${stock} exist. · ${reservado} reserv.` : "Sin stock"}
             </span>
           </div>
 

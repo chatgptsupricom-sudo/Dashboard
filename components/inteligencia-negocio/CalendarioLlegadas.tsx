@@ -23,6 +23,8 @@ export interface LlegadaCal {
   cantidad: number;
   vendido: boolean;
   stock: number;
+  existencia: number;
+  reservado: number;
   unidades12m: number;
   documentos: string;
   proveedor: string;
@@ -512,7 +514,7 @@ export function CalendarioLlegadas<T extends LlegadaCal>({
                           <Sparkles className="h-3 w-3" /> Nuevo en {f.sedeNombre}
                         </span>
                       )}
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">Stock {n(f.stock)}</span>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">Existencia {n(f.existencia)} · Reservado {n(f.reservado)}</span>
                       {f.vendido && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{n(f.unidades12m)} vendidas en 12 m</span>}
                     </div>
                     <p className="mt-2 truncate text-[11px] text-slate-500" title={`${f.documentos} · ${f.proveedor}`}>

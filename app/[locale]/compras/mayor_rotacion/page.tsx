@@ -148,7 +148,8 @@ export default function MayorRotacionPage() {
       Marca: item.marca,
       Categoría: item.categoria,
       "Ventas (Últ. 45 Días)": item.ventas45d,
-      "Stock disponible": item.stockDisponible,
+      Existencia: item.fisico,
+      Reservado: item.reservado,
       "En tránsito": item.transito,
       "Demanda Diaria": Number(item.demandaDiaria.toFixed(2)),
       "ETA (días)": item.eta,
@@ -329,7 +330,10 @@ export default function MayorRotacionPage() {
                     <ColumnHeader label="Ventas (45d)" tooltip={COLUMN_TOOLTIPS["Ventas (45d)"]} />
                   </TableHead>
                   <TableHead className="text-center text-orange-700 font-bold">
-                    <ColumnHeader label="Disponible" tooltip={COLUMN_TOOLTIPS["Stock disponible"]} />
+                    <ColumnHeader label="Existencia" tooltip="Unidades físicas en el almacén principal de la sede (Existencias y zona de Entrada). En rojo si no queda nada disponible (existencia − reservado)" />
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <ColumnHeader label="Reservado" tooltip="Unidades de la existencia reservadas para pedidos de venta" />
                   </TableHead>
                   <TableHead className="text-center">
                     <ColumnHeader label="Tránsito" tooltip={COLUMN_TOOLTIPS["En tránsito"]} />
@@ -351,7 +355,7 @@ export default function MayorRotacionPage() {
               <TableBody>
                 {currentItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       ¡Excelente! Tu inventario de alta rotación está
                       abastecido.
                     </TableCell>
@@ -400,8 +404,11 @@ export default function MayorRotacionPage() {
                               : "bg-orange-500"
                           }
                         >
-                          {item.stockDisponible}
+                          {item.fisico}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-center text-gray-600">
+                        {item.reservado}
                       </TableCell>
                       <TableCell className="text-center text-gray-600">
                         {item.transito > 0 ? item.transito : "—"}

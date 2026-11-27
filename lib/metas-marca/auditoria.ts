@@ -417,20 +417,37 @@ async function auditarInventario(inv: InventarioSede, metas: MetaEntrada[]): Pro
     const c = claveMarca(b.name);
     idsPorClave.set(c, [...(idsPorClave.get(c) || []), b.id]);
   }
-  const dominioBase: any[] = [["company_id", "=", inv.companyId]];
-  dominioBase.push(inv.ubicacionId ? ["location_id", "child_of", [inv.ubicacionId]] : ["location_id.usage", "=", "internal"]);
+  // Las mismas ubicaciones que `almacenSede` (Existencias + Entrada del almacén principal);
+  // el reservado de Entrada no cuenta y, por producto, existencia < 0 = 0 y reservado ≤ existencia.
+  const dominioBase: any[] = [["company_id", "=", inv.companyId], ["location_id", "in", inv.ubicaciones]];
+  const deEntrada = new Set(inv.ubicacionesEntrada);
   let fallas = 0;
   const filas: Record<string, string | number | null>[] = [];
   for (const clave of claves) {
     const ids = idsPorClave.get(clave) || [];
     const panel = inv.porMarca.get(clave)?.unidades ?? 0;
     let odoo: number | null = null;
-    if (ids.length) {
+    if (ids.length && inv.ubicaciones.length) {
       const g = await callOdooRPC<any[]>("stock.quant", "read_group", [
-        [...dominioBase, ["product_id.spiff_brand_id", "in", ids]], ["quantity:sum", "reserved_quantity:sum"], ["product_id"],
+        [...dominioBase, ["product_id.spiff_brand_id", "in", ids]], ["quantity:sum", "reserved_quantity:sum"], ["product_id", "location_id"],
       ], { lazy: false });
       if (!Array.isArray(g)) throw new Error("Odoo no respondió la verificación de stock por marca");
-      odoo = g.reduce((s, x) => s + Math.max(0, (Number(x.quantity) || 0) - (Number(x.reserved_quantity) || 0)), 0);
+      const porProducto = new Map<number, { q: number; r: number }>();
+      for (const x of g) {
+        const pid = x.product_id?.[0];
+        if (!pid) continue;
+        const t = porProducto.get(pid) ?? { q: 0, r: 0 };
+        t.q += Number(x.quantity) || 0;
+        if (!deEntrada.has(x.location_id?.[0])) t.r += Number(x.reserved_quantity) || 0;
+        porProducto.set(pid, t);
+      }
+      odoo = 0;
+      for (const t of porProducto.values()) {
+        const q = Math.max(0, r2(t.q));
+        odoo += q - Math.min(q, Math.max(0, r2(t.r)));
+      }
+    } else if (ids.length) {
+      odoo = 0;
     }
     const dif = odoo == null ? null : r2(panel - odoo);
     if (dif == null || Math.abs(dif) > 0.01) fallas++;
@@ -445,7 +462,7 @@ async function auditarInventario(inv: InventarioSede, metas: MetaEntrada[]): Pro
       : fallas
         ? `${fallas} de ${claves.length} marcas no cuadran con el stock de Odoo.`
         : `${claves.length} marcas: el stock disponible cuadra con Odoo. Almacén ${inv.ubicacion || "(sin almacén principal)"}: ${Math.round(unidades).toLocaleString("es-VE")} unidades disponibles, ${usd(total)} a precio de venta.`,
-    explicacion: "Stock disponible = cantidad − reservado en el almacén principal de la sede (el mismo que usa Compras) y sus sububicaciones, al día de hoy. Odoo lo suma en el servidor filtrando por la marca en el dominio y se compara con el del panel. Exhibición, Mal estado, Demo, RMA y Tránsito no cuentan.",
+    explicacion: "Stock disponible = existencia − reservado en el almacén principal de la sede (el mismo que usa Compras: Existencias + Entrada; el reservado de Entrada no cuenta), al día de hoy. Odoo lo suma en el servidor filtrando por la marca en el dominio y se compara con el del panel. Exhibición, Mal estado, Demo, RMA y Tránsito no cuentan.",
     columnas: [
       { key: "marca", label: "Marca" }, { key: "panel", label: "Unidades panel", tipo: "numero" },
       { key: "odoo", label: "Unidades Odoo", tipo: "numero" }, { key: "diferencia", label: "Diferencia", tipo: "numero" },

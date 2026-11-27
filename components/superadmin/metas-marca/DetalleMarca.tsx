@@ -91,11 +91,11 @@ export function DetalleMarca({ data, fila, onClose }: { data: DatosMetas; fila: 
                     ? <span className={colorPct(fila.cumplimientoUnidades)}>{porcentaje(fila.cumplimientoUnidades)} de la meta en unidades{fila.stockBase != null ? ` (de ${unidadesFmt(fila.stockBase)} en stock al cargarla)` : ""}</span>
                     : `vendidas · prom. ${unidadesFmt(fila.promedioUnidades3m)}/mes`}
                 />
-                {inv && inv.unidades > 0 && (
+                {inv && (inv.existencia > 0 || inv.unidades > 0) && (
                   <Dato
-                    label="Stock disponible hoy"
-                    valor={`${unidadesFmt(inv.unidades)} u`}
-                    sub={<>{dinero(inv.valor)} a precio de venta · {inv.productos} productos{inv.valorAlCosto > 0 ? ` (${dinero(inv.valorAlCosto)} al costo)` : ""}</>}
+                    label="Existencia / Reservado hoy"
+                    valor={`${unidadesFmt(inv.existencia)} u / ${unidadesFmt(inv.reservado)} u`}
+                    sub={<>{unidadesFmt(inv.unidades)} disponibles · {dinero(inv.valor)} a precio de venta · {inv.productos} productos{inv.valorAlCosto > 0 ? ` (${dinero(inv.valorAlCosto)} al costo)` : ""}</>}
                   />
                 )}
                 <Dato label="Promedio 3 meses" valor={dinero(fila.promedio3m)} sub={fila.variacionVsPromedio != null ? <span className={fila.variacionVsPromedio >= 0 ? "text-emerald-600" : "text-red-600"}>{fila.variacionVsPromedio >= 0 ? "+" : ""}{porcentaje(fila.variacionVsPromedio)} {enCurso ? "proyectado" : "este mes"}</span> : undefined} />

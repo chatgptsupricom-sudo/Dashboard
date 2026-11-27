@@ -110,7 +110,7 @@ export function AuditoriaPanel({ companyParam, mes }: { companyParam: string; me
       };
       const inventario = ((j.inventario || []) as any[]).map((p) => ({
         Empresa: p.companyId, Ubicación: p.ubicacion, Código: p.codigo, Producto: p.producto,
-        "Marca Odoo": p.marcaOdoo || "(sin marca)", "Marca panel": p.clave, Cantidad: p.cantidad, Reservado: p.reservado,
+        "Marca Odoo": p.marcaOdoo || "(sin marca)", "Marca panel": p.clave, Existencia: p.cantidad, Reservado: p.reservado,
         Disponible: p.disponible, "Precio usado (USD)": p.precio, "Precio de": FUENTE[p.fuente] || p.fuente, "Valor (USD)": p.valor,
       }));
       const ws = XLSX.utils.json_to_sheet(filas);
