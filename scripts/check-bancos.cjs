@@ -449,3 +449,17 @@ console.log("ajustePermitido ok");
     assert.strictEqual(propuesta.estado, "parcial");
   }
 }
+
+{
+  const filas = [
+    ["Fecha", "Descripción", "Referencia", "Monto"],
+    ["27/04/2026", "Retiro", "123", -21717],
+    ["", "", "saldo inicial ", 40075],
+  ];
+  const leido = leerFilasExcel(filas);
+  assert.strictEqual(leido.filas.length, 1);
+  assert.strictEqual(leido.saldoInicialDeclarado, 40075);
+  assert.strictEqual(leido.desde, "2026-04-01");
+  filas[2][3] = 0;
+  assert.strictEqual(leerFilasExcel(filas).saldoInicialDeclarado, 0);
+}
